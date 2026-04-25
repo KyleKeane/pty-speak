@@ -1,0 +1,32 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    open-pull-requests-limit: 5
+    ignore:
+      # Major version bumps for accessibility-critical libraries land
+      # only after manual NVDA validation per docs/ACCESSIBILITY-TESTING.md.
+      - dependency-name: "Velopack"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "NAudio"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Elmish.WPF"
+        update-types: ["version-update:semver-major"]

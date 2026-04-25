@@ -1,0 +1,13 @@
+{
+  "ignorePatterns": [
+    { "pattern": "^https://github.com/KyleKeane/pty-speak/security/advisories/new" },
+    { "pattern": "^\\.\\./\\.\\./" },
+    { "pattern": "^\\.\\./\\." },
+    { "pattern": "^https://signpath.org" },
+    { "pattern": "^https://addons.nvda-project.org" }
+  ],
+  "timeout": "20s",
+  "retryOn429": true,
+  "retryCount": 3,
+  "fallbackRetryDelay": "30s"
+}

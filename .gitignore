@@ -205,3 +205,59 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ---------------------------------------------------------------------
+# .NET / F# / WPF — added for pty-speak (see docs/BUILD.md)
+# ---------------------------------------------------------------------
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Ll]og/
+[Ll]ogs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+*.ncrunch*
+.vs/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+publish/
+publish-signed/
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+BenchmarkDotNet.Artifacts/
+
+# Velopack output
+releases/
+*.nupkg
+*.snupkg
+Setup.exe
+*Setup.exe
+
+# Signing material — never commit
+*.pfx
+*.pem
+*.snk
+*.key
+minisign.key
+release-private.key
+
+# JetBrains Rider
+.idea/
+
+# Tools
+.config/dotnet-tools.json.lock
+

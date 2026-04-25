@@ -1,0 +1,55 @@
+name: Bug report
+description: Something is broken that is not specifically an accessibility regression.
+title: "[bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For screen-reader regressions please use the **Accessibility regression** template instead — it asks for the right context up front.
+
+  - type: input
+    id: pty-speak-version
+    attributes:
+      label: pty-speak version
+      placeholder: v0.1.0 or commit abcdef0
+    validations:
+      required: true
+
+  - type: input
+    id: windows-version
+    attributes:
+      label: Windows version
+      description: "`winver` output"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / VT byte capture (optional)
+      description: |
+        If you can, attach a Velopack log (`%LocalAppData%\pty-speak\Velopack.log`)
+        or a VT byte capture from developer mode (`Terminal.App --record output.bin`).
+      render: text
