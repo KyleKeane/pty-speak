@@ -161,7 +161,7 @@ jobs:
 
       - name: Create GitHub Release and upload artifacts
         if: ${{ hashFiles('releases/**') != '' }}
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: pty-speak ${{ steps.version.outputs.version }}
