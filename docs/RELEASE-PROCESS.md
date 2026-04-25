@@ -138,7 +138,7 @@ On a clean VM:
 
 ### 6. Announce
 
-Update the [pinned issue / discussions thread] with the release notes
+Update the pinned issue or discussions thread with the release notes
 and the highlights. If the release closes any GitHub Security
 Advisory, flip the advisory's status to *Published* and link the fix
 commit.

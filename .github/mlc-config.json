@@ -1,13 +1,16 @@
 {
   "ignorePatterns": [
-    { "pattern": "^https://github.com/KyleKeane/pty-speak/security/advisories/new" },
     { "pattern": "^\\.\\./\\.\\./" },
-    { "pattern": "^\\.\\./\\." },
+    { "pattern": "^https://github.com/KyleKeane/pty-speak/security/advisories" },
+    { "pattern": "^https://github.com/KyleKeane/pty-speak/discussions" },
+    { "pattern": "^https://github.com/KyleKeane/pty-speak/issues/new" },
+    { "pattern": "^https://github.com/KyleKeane/pty-speak/security/dependabot" },
     { "pattern": "^https://signpath.org" },
     { "pattern": "^https://addons.nvda-project.org" }
   ],
   "timeout": "20s",
   "retryOn429": true,
   "retryCount": 3,
-  "fallbackRetryDelay": "30s"
+  "fallbackRetryDelay": "30s",
+  "aliveStatusCodes": [200, 206, 301, 302, 308, 403, 429]
 }

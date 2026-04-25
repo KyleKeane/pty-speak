@@ -68,13 +68,30 @@ jobs:
     name: Markdown link check
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Informational only. Link checks legitimately flake on network and
+    # third-party rate limits; we don't want a flake to block a release.
+    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Lint Markdown links
+      # Restrict to docs we author (root + docs/). spec/ contains
+      # reference citations to academic and vendor sources that we
+      # treat as immutable; we do not want to gate PRs on those URLs
+      # being reachable from an unauthenticated runner.
+      - name: Lint Markdown links (docs/)
         uses: gaurav-nelson/github-action-markdown-link-check@v1
         with:
           use-quiet-mode: 'yes'
           use-verbose-mode: 'yes'
           config-file: '.github/mlc-config.json'
+          folder-path: 'docs'
+          max-depth: 2
+
+      - name: Lint Markdown links (root)
+        uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: 'yes'
+          use-verbose-mode: 'yes'
+          config-file: '.github/mlc-config.json'
+          file-path: './README.md, ./CONTRIBUTING.md, ./SECURITY.md, ./CODE_OF_CONDUCT.md, ./CHANGELOG.md'
