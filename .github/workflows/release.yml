@@ -88,7 +88,7 @@ jobs:
       # ---------------------------------------------------------------
       - name: Submit to SignPath for Authenticode signing
         if: ${{ hashFiles('publish/**') != '' && env.SIGNPATH_API_TOKEN != '' }}
-        uses: signpath/github-action-submit-signing-request@v1
+        uses: signpath/github-action-submit-signing-request@v2
         env:
           SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
         with:
