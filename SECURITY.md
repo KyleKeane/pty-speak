@@ -1,5 +1,15 @@
 # Security policy and trust model
 
+> [!WARNING]
+> **Releases tagged before `v0.1.0` are unsigned previews.** They
+> carry no Authenticode signature and no Ed25519 release-manifest
+> signature. SmartScreen will warn on first install. **Do not use
+> preview builds in production or on machines that handle sensitive
+> data.** Authenticode (via SignPath OSS) and Ed25519 manifest pinning
+> return before `v0.1.0`; the procedure is preserved in
+> [`docs/RELEASE-PROCESS.md`](docs/RELEASE-PROCESS.md) under
+> "Re-enabling signing (deferred)".
+
 `pty-speak` is a terminal emulator. That means it routinely renders
 attacker-influenced bytes (build logs, `git log` output, `npm install`
 output, model responses) and forwards user keystrokes to a child
@@ -60,7 +70,11 @@ We do not defend against:
 
 ## Release signing and verification
 
-Every published release is signed in two layers:
+> The two layers below describe the **target** trust model from
+> `v0.1.0` onward. Preview releases (`-preview.N`) are not yet signed;
+> see the warning at the top of this document.
+
+Every published `v0.1.0`+ release is signed in two layers:
 
 1. **Authenticode** via the
    [SignPath Foundation OSS programme](https://signpath.org/) (free for

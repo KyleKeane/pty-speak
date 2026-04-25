@@ -2,8 +2,15 @@
 
 This document describes how to cut a public release of `pty-speak` and
 ship it to GitHub Releases. The pipeline uses Velopack for packaging
-and delta-update generation, GitHub Releases as the distribution
-endpoint, and SignPath Foundation OSS for Authenticode signing.
+and delta-update generation and GitHub Releases as the distribution
+endpoint.
+
+> **Signing status.** The current `0.0.x-preview.N` line ships
+> **unsigned** while the project gets the deployment pipe working
+> end-to-end. Authenticode (via SignPath Foundation OSS) and Ed25519
+> release-manifest pinning return before `v0.1.0`. The detailed
+> procedure for re-enabling signing is preserved at the bottom of this
+> document — see [Re-enabling signing (deferred)](#re-enabling-signing-deferred).
 
 The steps below are also encoded in
 [`.github/workflows/release.yml`](../.github/workflows/release.yml);
@@ -12,15 +19,18 @@ Claude Code) can rerun the process by hand if CI is unavailable.
 
 ## Release principles
 
-1. **One tag, one release.** Tags follow `vMAJOR.MINOR.PATCH`. Every
-   tag triggers exactly one release run; reuploads happen via a new
-   patch tag, never by editing an existing release.
-2. **Stage gates before tags.** Don't tag a release until the relevant
-   stage's validation matrix from
+1. **One tag, one release.** Tags follow `vMAJOR.MINOR.PATCH` (or
+   `-preview.N` / `-rc.N`). Every tag triggers exactly one release
+   run; reuploads happen via a new patch tag, never by editing an
+   existing release.
+2. **Stage gates before tags.** Don't tag a stable release until the
+   relevant stage's validation matrix from
    [`spec/tech-plan.md`](../spec/tech-plan.md) passes against NVDA on
-   a clean Windows VM.
-3. **Authenticode + Ed25519, both required.** A release that is missing
-   either signature must not be promoted from prerelease to stable.
+   a clean Windows VM. Preview tags are exempt (their job is to
+   validate the pipe).
+3. **Once signing is re-enabled, both layers are required.** A
+   `vX.Y.Z` (non-preview) release that is missing either Authenticode
+   or Ed25519 must not be promoted to stable.
 4. **Changelogs are part of the release.** The `## [X.Y.Z]` section of
    [`CHANGELOG.md`](../CHANGELOG.md) becomes the GitHub release body.
 
@@ -32,40 +42,19 @@ Claude Code) can rerun the process by hand if CI is unavailable.
 | `vX.Y.Z-rc.N`             | Release candidate; NVDA validation in progress  | GitHub prerelease      |
 | `vX.Y.Z`                  | Validated stage release                         | GitHub release (latest)|
 
-Velopack uses these directly as `--packVersion`. The Ed25519 manifest
-signature covers the version string, so a re-tag is impossible without
-re-signing.
+Velopack uses these directly as `--packVersion`. Once Ed25519 manifest
+pinning is re-enabled, the manifest signature will cover the version
+string, making a re-tag impossible without re-signing.
 
-## One-time setup
+## One-time setup (current, unsigned line)
 
-Before the first release ever ships, a maintainer must do the
-following — this is bookkeeping, not code, but it must be done in
-order:
+The only setup required for the current pipeline is the `release`
+GitHub Environment, which the release workflow targets so a maintainer
+can require approval before each release runs:
 
-1. **Apply to SignPath Foundation OSS** at
-   [signpath.org/apply](https://signpath.org/apply/). Provide the GitHub
-   repository URL (`https://github.com/KyleKeane/pty-speak`) and the MIT
-   license. SignPath assigns an organization and project ID.
-2. **Generate the Ed25519 release-signing keypair** offline:
-   ```powershell
-   dotnet tool install -g minisign  # or any Ed25519 CLI
-   minisign -G -p docs/release-pubkey.txt -s ~/.config/pty-speak/release.key
-   ```
-   Commit `docs/release-pubkey.txt` (public key only). Store the
-   private key offline; never check it in.
-3. **Create the GitHub repository secrets** under
-   *Settings → Secrets and variables → Actions*:
-   - `SIGNPATH_API_TOKEN` — from SignPath after onboarding.
-   - `SIGNPATH_ORGANIZATION_ID` — from SignPath.
-   - `SIGNPATH_PROJECT_SLUG` — `pty-speak`.
-   - `SIGNPATH_SIGNING_POLICY_SLUG` — `release-signing` (we configure this in SignPath).
-   - `MINISIGN_SECRET_KEY` — base64-encoded private key for the
-     manifest signature. **Use a separate organization secret with
-     manual-approval environment protection.**
-4. **Create the `release` GitHub Environment** with required reviewers
-   set to the maintainer team. The release workflow targets this
-   environment, so SignPath signing and Ed25519 manifest signing both
-   require human approval.
+1. *Settings → Environments → New environment* → name `release`.
+2. Add **required reviewers** = the maintainer team.
+3. Leave secrets empty for now; the unsigned pipeline doesn't read any.
 
 ## Cutting a release
 
@@ -104,37 +93,36 @@ The workflow runs the following on `windows-latest`, in order:
    anything regressed since the merge.
 2. `dotnet publish` — produces a self-contained `win-x64` build of
    `Terminal.App` into `publish/`.
-3. **SignPath signing of the unpacked binaries.** The job uploads
-   `publish/` to SignPath via the official GitHub Action and waits for
-   a maintainer to approve in the SignPath dashboard. (For OSS-tier
-   accounts each release is manually approved.)
-4. `vpk pack` — wraps the now-signed binaries into a Velopack release
-   (`Setup.exe`, full nupkg, delta nupkg, `releases.json`).
-5. **Ed25519 manifest signature.** A small script signs `releases.json`
-   with the offline key (loaded from `MINISIGN_SECRET_KEY`) and writes
-   `releases.json.minisig`.
-6. `vpk upload github` — uploads all artifacts to a draft GitHub
-   Release pinned to the tag.
-7. The workflow promotes the draft to a published release with
-   `prerelease=false` for `vX.Y.Z` tags and `prerelease=true` for
-   `-preview.N` / `-rc.N` tags.
+3. `vpk pack` — wraps the published binaries into a Velopack release
+   (`Setup.exe`, full nupkg, delta nupkg, `releases.json`,
+   `RELEASES`).
+4. The release-notes section of `CHANGELOG.md` matching the tag is
+   prepended with the unsigned-preview banner and used as the GitHub
+   release body.
+5. `softprops/action-gh-release` uploads all artifacts to the GitHub
+   Release pinned to the tag, with `prerelease=true` for
+   `-preview.N` / `-rc.N` tags and `prerelease=false` for `vX.Y.Z`.
 
 ### 5. Smoke-test the release
 
 On a clean VM:
 
 1. Download `pty-speak-Setup.exe` from the new release.
-2. Confirm the Authenticode signature:
+2. Confirm the build is **unsigned** (this is currently expected):
    ```powershell
    Get-AuthenticodeSignature .\pty-speak-Setup.exe |
-     Select-Object Status, SignerCertificate
+     Select-Object Status, StatusMessage
    ```
-   `Status` must be `Valid`; the signer must be the SignPath OSS cert.
-3. Run the installer; confirm NVDA announces the install progress.
-4. Launch the app; confirm version in the title bar matches `X.Y.Z`.
-5. Trigger the auto-update path from a previously-installed older
-   version (`Ctrl+Shift+U`); confirm the delta downloads, the manifest
-   signature verifies, and the relaunch happens within ~2 seconds.
+   `Status` is `NotSigned`; `StatusMessage` confirms no signature.
+   SmartScreen will prompt; choose "More info → Run anyway" or use
+   `Unblock-File` first.
+3. Run the installer; for the Stage 0 preview, confirm an empty
+   window titled "pty-speak" opens with no errors.
+4. Launch the app from the Start menu; confirm the same window opens
+   from the installed location (`%LocalAppData%\pty-speak\current\`).
+5. Once Stage 11 lands, trigger the auto-update path from a previously
+   installed older version (`Ctrl+Shift+U`); confirm the delta
+   downloads and the relaunch happens within ~2 seconds.
 
 ### 6. Announce
 
@@ -145,19 +133,98 @@ commit.
 
 ## What to do if a release goes wrong
 
-- **CI failed mid-release.** Delete the draft GitHub release and the
-  tag (`git push --delete origin vX.Y.Z` — coordinate with maintainers
-  first). Fix the underlying issue. Re-tag.
-- **Authenticode passed but Ed25519 verification fails on user
-  machines.** Treat as a security advisory. Yank the release (mark it
-  as a prerelease and add a banner in the release notes). Investigate
-  whether the manifest signing key is intact; if compromised, follow
-  the key-rotation playbook below.
-- **The signed artifact misbehaves on first install.** Push a
-  `vX.Y.Z+1` patch release with the fix; do not edit the existing
-  release.
+- **CI failed mid-release.** Delete the GitHub release if one was
+  partially created and the tag (`git push --delete origin vX.Y.Z` —
+  coordinate with maintainers first). Fix the underlying issue.
+  Re-tag.
+- **The artifact misbehaves on first install.** Push a `vX.Y.Z+1`
+  patch release with the fix; do not edit the existing release.
+- **(Once signing is re-enabled) Authenticode passed but Ed25519
+  verification fails on user machines.** Treat as a security
+  advisory. Yank the release (mark it as a prerelease and add a
+  banner in the release notes). Investigate whether the manifest
+  signing key is intact; if compromised, follow the key-rotation
+  playbook below.
 
-## Key rotation
+## Reproducibility
+
+CI release builds are deterministic with respect to:
+
+- The committed source at the tag.
+- The `dotnet --version` recorded in the workflow log.
+- The `vpk --version` recorded in the workflow log.
+
+`Directory.Build.props` sets `Deterministic=true` and (under
+`GITHUB_ACTIONS`) `ContinuousIntegrationBuild=true`. Anyone can
+rebuild the artifacts locally per [`docs/BUILD.md`](BUILD.md) and
+confirm hash equality with the released nupkg.
+
+---
+
+## Re-enabling signing (deferred)
+
+The procedure below was the design before signing was deferred. It is
+preserved verbatim so that re-enabling signing is a matter of restoring
+a few workflow steps and executing the one-time setup, not redoing the
+research.
+
+### One-time signing setup
+
+1. **Apply to SignPath Foundation OSS** at
+   [signpath.org/apply](https://signpath.org/apply/). Provide the GitHub
+   repository URL (`https://github.com/KyleKeane/pty-speak`) and the MIT
+   license. SignPath assigns an organization and project ID.
+2. **Generate the Ed25519 release-signing keypair** offline:
+   ```powershell
+   dotnet tool install -g minisign  # or any Ed25519 CLI
+   minisign -G -p docs/release-pubkey.txt -s ~/.config/pty-speak/release.key
+   ```
+   Commit `docs/release-pubkey.txt` (public key only). Store the
+   private key offline; never check it in.
+3. **Create the GitHub repository secrets** under
+   *Settings → Secrets and variables → Actions*:
+   - `SIGNPATH_API_TOKEN` — from SignPath after onboarding.
+   - `SIGNPATH_ORGANIZATION_ID` — from SignPath.
+   - `SIGNPATH_PROJECT_SLUG` — `pty-speak`.
+   - `SIGNPATH_SIGNING_POLICY_SLUG` — `release-signing` (we configure this in SignPath).
+   - `MINISIGN_SECRET_KEY` — base64-encoded private key for the
+     manifest signature. **Use a separate organization secret with
+     manual-approval environment protection.**
+4. The `release` GitHub Environment with required reviewers (already
+   set up for the unsigned line) gates SignPath signing and Ed25519
+   manifest signing on human approval.
+
+### Workflow changes when signing returns
+
+Add these steps back to `.github/workflows/release.yml` (they were
+removed in the Stage 0 unsigned-preview cutover and the file's git
+history shows the exact previous content):
+
+1. **Upload `publish/` as a workflow artifact** (so SignPath can pull
+   it). Use `actions/upload-artifact@v4` and capture
+   `outputs.artifact-id`.
+2. **`signpath/github-action-submit-signing-request@v1`** between
+   `dotnet publish` and `vpk pack`. It must consume the artifact ID
+   from step (1) and write to `publish-signed/`. Switch the `vpk pack`
+   step's `--packDir` to `publish-signed`.
+3. **Ed25519 manifest signature.** After `vpk pack`, install
+   `Minisign.Tool`, write `MINISIGN_SECRET_KEY` to a temp file using
+   `Set-Content -AsByteStream` (not `Out-File -Encoding ASCII`,
+   which corrupts base64), then sign `releases/releases.json` to
+   produce `releases/releases.json.minisig`.
+4. **Authenticode verification gate.** Run
+   `Get-AuthenticodeSignature releases/*Setup.exe` and fail the job
+   if `Status -ne 'Valid'`. This catches a SignPath misconfiguration
+   before users see it.
+5. Add `releases/releases.json.minisig` to the
+   `softprops/action-gh-release` files list.
+6. Drop the unsigned-preview banner from the `Generate release notes`
+   step.
+7. Update `SECURITY.md` to remove the "Releases tagged before v0.1.0
+   are unsigned previews" warning, and update the "Install" section
+   of `README.md` similarly.
+
+### Key rotation
 
 If the Ed25519 release-signing key is suspected compromised:
 
@@ -169,15 +236,3 @@ If the Ed25519 release-signing key is suspected compromised:
 4. Cut a `vX.Y.(Z+1)` release using the new key. The application
    will accept either old or new keys for one transitional release,
    then drop the old key in `vX.(Y+1).0`.
-
-## Reproducibility
-
-CI release builds are deterministic with respect to:
-
-- The committed source at the tag.
-- The `dotnet --version` recorded in the workflow log.
-- The `vpk --version` recorded in the workflow log.
-
-Anyone can rebuild the unsigned artifacts locally per
-[`docs/BUILD.md`](BUILD.md) and confirm hash equality with the signed
-release's underlying nupkg.

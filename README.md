@@ -5,9 +5,10 @@ from the ground up for blind developers using NVDA, JAWS, or Narrator —
 with Anthropic's Claude Code (and other Ink/React TUIs) as the primary
 target workload.
 
-> Status: **pre-alpha, design complete, implementation Stage 0.**
-> No binaries shipped yet. Follow [Releases](../../releases) for the first
-> tagged build.
+> Status: **pre-alpha, Stage 0 (shipping skeleton) merged.** The
+> first preview build, `v0.0.1-preview.1`, is an empty WPF window —
+> the point is to validate the release pipe end to end. Follow
+> [Releases](../../releases) for new builds.
 
 ## Why this exists
 
@@ -68,8 +69,8 @@ docs/                    Living developer documentation
 .github/
   workflows/             CI and release automation
   ISSUE_TEMPLATE/        Bug, feature, accessibility-issue templates
-src/                     (Stage 0+) F# / WPF source
-tests/                   (Stage 0+) Expecto / xUnit / FlaUI
+src/                     F# / C# / WPF source (Stage 0 skeleton merged)
+tests/                   xUnit + FsCheck.Xunit + FlaUI placeholder
 ```
 
 ## Quick links
@@ -85,9 +86,16 @@ tests/                   (Stage 0+) Expecto / xUnit / FlaUI
 - **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - **Changelog:** [`CHANGELOG.md`](CHANGELOG.md)
 
-## Install (once Stage 11 ships)
+## Install
 
-The signed installer will be published to GitHub Releases:
+> [!WARNING]
+> **Preview builds are unsigned.** `v0.0.x-preview.N` releases carry
+> no Authenticode signature and no Ed25519 manifest signature.
+> SmartScreen will warn on first install. Do not install preview
+> builds on machines that handle sensitive data. Authenticode + Ed25519
+> signing return before `v0.1.0` — see [`SECURITY.md`](SECURITY.md).
+
+Once Stage 11 (Velopack auto-update) lands, the GA flow is:
 
 1. Download `pty-speak-Setup.exe` from the latest release.
 2. Run it. Velopack installs to `%LocalAppData%\pty-speak\current\` and
@@ -97,10 +105,9 @@ The signed installer will be published to GitHub Releases:
 4. Self-update from inside the app with `Ctrl+Shift+U` (this checks GitHub
    Releases and applies the delta in ~2 seconds).
 
-Until Stage 11 ships, follow [`docs/BUILD.md`](docs/BUILD.md) to build
-locally. Releases will be Authenticode-signed via the SignPath
-Foundation OSS programme; an additional Ed25519 manifest pin is verified
-inside the app. See [`SECURITY.md`](SECURITY.md) for the full trust model.
+For the Stage 0 preview the installer opens an empty window — there is
+no terminal surface yet. Until Stage 11 ships, follow
+[`docs/BUILD.md`](docs/BUILD.md) to build locally.
 
 ## System requirements
 

@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   release:
-    name: Build, sign, and publish to GitHub Releases
+    name: Build and publish unsigned preview to GitHub Releases
     runs-on: windows-latest
     environment: release
     timeout-minutes: 60
@@ -47,7 +47,7 @@ jobs:
           } else {
             $prerelease = 'false'
           }
-          "version=$v"          | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "version=$v"            | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "prerelease=$prerelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           Write-Host "Releasing version $v (prerelease=$prerelease)"
 
@@ -58,88 +58,31 @@ jobs:
 
       - name: Restore
         run: dotnet restore
-        if: ${{ hashFiles('**/*.sln', '**/*.fsproj', '**/*.csproj') != '' }}
 
       - name: Build (Release)
         run: dotnet build --configuration Release --no-restore /p:Version=${{ steps.version.outputs.version }}
-        if: ${{ hashFiles('**/*.sln', '**/*.fsproj', '**/*.csproj') != '' }}
 
       - name: Test
         run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=test-results.trx"
-        if: ${{ hashFiles('**/*.sln', '**/*.fsproj', '**/*.csproj') != '' }}
 
       - name: Publish (self-contained win-x64)
         run: dotnet publish src/Terminal.App/Terminal.App.fsproj -c Release -r win-x64 --self-contained -o publish /p:Version=${{ steps.version.outputs.version }}
-        if: ${{ hashFiles('src/Terminal.App/Terminal.App.fsproj') != '' }}
-
-      # ---------------------------------------------------------------
-      # SignPath signing (Authenticode).
-      #
-      # Requires the following GitHub Secrets:
-      #   SIGNPATH_API_TOKEN
-      #   SIGNPATH_ORGANIZATION_ID
-      # And these inputs (configured per project in SignPath):
-      #   project-slug, signing-policy-slug
-      #
-      # SignPath OSS-tier accounts require a maintainer to manually
-      # approve each signing request; the action below blocks here.
-      #
-      # See docs/RELEASE-PROCESS.md for the one-time setup.
-      # ---------------------------------------------------------------
-      - name: Submit to SignPath for Authenticode signing
-        if: ${{ hashFiles('publish/**') != '' && env.SIGNPATH_API_TOKEN != '' }}
-        uses: signpath/github-action-submit-signing-request@v1
-        env:
-          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'pty-speak' }}
-          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
-          artifact-configuration-slug: initial
-          github-artifact-id: ${{ steps.upload-publish.outputs.artifact-id }}
-          wait-for-completion: true
-          output-artifact-directory: publish-signed
 
       - name: Install Velopack CLI
         run: dotnet tool install -g vpk
 
       - name: Pack with Velopack
-        if: ${{ hashFiles('publish-signed/**') != '' || hashFiles('publish/**') != '' }}
         shell: pwsh
         run: |
-          $publishDir = if (Test-Path publish-signed) { 'publish-signed' } else { 'publish' }
           New-Item -ItemType Directory -Force -Path releases | Out-Null
           vpk pack `
             --packId pty-speak `
             --packTitle 'pty-speak' `
             --packAuthors 'pty-speak contributors' `
             --packVersion ${{ steps.version.outputs.version }} `
-            --packDir $publishDir `
+            --packDir publish `
             --mainExe Terminal.App.exe `
             --outputDir releases
-
-      - name: Sign release manifest with Ed25519 (minisign)
-        if: ${{ env.MINISIGN_SECRET_KEY != '' && hashFiles('releases/releases.json') != '' }}
-        env:
-          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
-        shell: pwsh
-        run: |
-          dotnet tool install -g Minisign.Tool || $true
-          $key = $env:MINISIGN_SECRET_KEY | Out-File -FilePath minisign.key -Encoding ASCII
-          minisign -S -s minisign.key -m releases/releases.json -x releases/releases.json.minisig
-          Remove-Item minisign.key -Force
-
-      - name: Verify Authenticode on the installer
-        if: ${{ hashFiles('releases/*Setup.exe') != '' }}
-        shell: pwsh
-        run: |
-          $sig = Get-AuthenticodeSignature (Get-ChildItem releases/*Setup.exe).FullName
-          $sig | Format-List
-          if ($sig.Status -ne 'Valid') {
-            Write-Error "Installer is not Authenticode-valid: $($sig.Status) / $($sig.StatusMessage)"
-            exit 1
-          }
 
       - name: Generate release notes from CHANGELOG.md
         id: notes
@@ -154,13 +97,21 @@ jobs:
           } else {
             $body = "Release $version. See CHANGELOG.md for details."
           }
+          $banner = @"
+> [!WARNING]
+> **Unsigned preview build.** Releases tagged before v0.1.0 are not
+> Authenticode-signed and have no Ed25519 manifest signature. Windows
+> SmartScreen will warn on first install. Authenticode + Ed25519
+> signing return before v0.1.0 — see SECURITY.md.
+
+"@
+          $body = $banner + $body
           $delim = "EOF_$([guid]::NewGuid().ToString('N'))"
-          "body<<$delim"  | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          $body            | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          $delim          | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "body<<$delim" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          $body          | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          $delim         | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Create GitHub Release and upload artifacts
-        if: ${{ hashFiles('releases/**') != '' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -173,12 +124,4 @@ jobs:
             releases/*-full.nupkg
             releases/*-delta.nupkg
             releases/releases.json
-            releases/releases.json.minisig
             releases/RELEASES
-
-      - name: Pre-source-tree placeholder
-        if: ${{ hashFiles('**/*.sln', '**/*.fsproj', '**/*.csproj') == '' }}
-        run: |
-          echo "No .NET solution committed yet — release workflow is wired but inert."
-          echo "Stage 0 of the tech plan introduces the F# solution; tagging vX.Y.Z"
-          echo "after Stage 11 will produce a signed Velopack installer."
