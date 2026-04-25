@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <DisableWinExeOutputInference>true</DisableWinExeOutputInference>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>PtySpeak.App</RootNamespace>
+    <AssemblyName>Terminal.App</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" />
+    <PackageReference Include="Velopack" />
+    <PackageReference Include="Elmish.WPF" />
+    <ProjectReference Include="..\Terminal.Core\Terminal.Core.fsproj" />
+    <ProjectReference Include="..\Terminal.Pty\Terminal.Pty.fsproj" />
+    <ProjectReference Include="..\Terminal.Parser\Terminal.Parser.fsproj" />
+    <ProjectReference Include="..\Terminal.Audio\Terminal.Audio.fsproj" />
+    <ProjectReference Include="..\Terminal.Accessibility\Terminal.Accessibility.fsproj" />
+    <ProjectReference Include="..\Views\Views.csproj" />
+  </ItemGroup>
+
+</Project>

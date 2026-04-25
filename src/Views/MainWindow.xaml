@@ -1,0 +1,11 @@
+<Window x:Class="PtySpeak.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="pty-speak"
+        Height="600"
+        Width="800"
+        AutomationProperties.Name="pty-speak terminal"
+        AutomationProperties.AutomationId="pty-speak.MainWindow"
+        AutomationProperties.HelpText="Screen-reader-native Windows terminal. Stage 0 skeleton; no terminal surface yet.">
+    <Grid />
+</Window>
