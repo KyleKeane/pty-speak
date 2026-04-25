@@ -68,9 +68,11 @@ jobs:
     name: Markdown link check
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Informational only. Link checks legitimately flake on network and
-    # third-party rate limits; we don't want a flake to block a release.
-    continue-on-error: true
+    # Informational only — link checks legitimately flake on network
+    # and third-party rate limits. Each step uses
+    # `continue-on-error: true` so the job stays green and the report
+    # is purely advisory; review it periodically rather than blocking
+    # PRs on it.
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -80,6 +82,7 @@ jobs:
       # treat as immutable; we do not want to gate PRs on those URLs
       # being reachable from an unauthenticated runner.
       - name: Lint Markdown links (docs/)
+        continue-on-error: true
         uses: gaurav-nelson/github-action-markdown-link-check@v1
         with:
           use-quiet-mode: 'yes'
@@ -89,6 +92,7 @@ jobs:
           max-depth: 2
 
       - name: Lint Markdown links (root)
+        continue-on-error: true
         uses: gaurav-nelson/github-action-markdown-link-check@v1
         with:
           use-quiet-mode: 'yes'
