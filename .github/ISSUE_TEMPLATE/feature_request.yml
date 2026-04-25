@@ -1,0 +1,47 @@
+name: Feature request
+description: Suggest an addition or change. Please check the roadmap first.
+title: "[feat]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Please confirm the request is not already
+        covered by [the roadmap](../blob/main/docs/ROADMAP.md) or
+        [the spec](../blob/main/spec/overview.md). If it is, comment on the
+        relevant tracking issue instead of opening a new one.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the user-facing problem, not the implementation. Who is the user, what are they trying to do, and what gets in their way today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Optional. A sketch of how this might work.
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Which phase does this belong in?
+      description: See docs/ROADMAP.md.
+      options:
+        - "Phase 1 — MVP (toward v0.1.0)"
+        - "Phase 2 — accessibility depth"
+        - "Phase 3 — audio depth"
+        - "Phase 4 — beyond Claude Code"
+        - "Out of scope per the spec"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds, other tools, or earlier attempts.

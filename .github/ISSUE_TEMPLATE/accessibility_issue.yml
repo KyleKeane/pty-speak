@@ -1,0 +1,100 @@
+name: Accessibility regression
+description: A screen reader, braille display, or earcon behaviour does not match the spec or the validation matrix.
+title: "[a11y]: "
+labels: ["accessibility", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing this. Accessibility regressions are top-priority bugs.
+        Please fill out as much as you can. If a field does not apply, write "n/a".
+
+  - type: input
+    id: screen-reader
+    attributes:
+      label: Screen reader and version
+      description: e.g. "NVDA 2024.2", "Narrator (Windows 11 23H2)", "JAWS 2024.2402.111"
+      placeholder: NVDA 2024.x
+    validations:
+      required: true
+
+  - type: input
+    id: pty-speak-version
+    attributes:
+      label: pty-speak version
+      description: From the title bar or "Help → About". For local builds, paste the commit SHA.
+      placeholder: v0.1.0 or commit abcdef0
+    validations:
+      required: true
+
+  - type: input
+    id: windows-version
+    attributes:
+      label: Windows version
+      description: "`winver` output, e.g. 'Windows 11 23H2 build 22631.4317'"
+    validations:
+      required: true
+
+  - type: textarea
+    id: child-process
+    attributes:
+      label: Child process
+      description: What was running inside the terminal? (Claude Code version, PowerShell, cmd, vim, etc.)
+      placeholder: claude 1.x.x
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Keystrokes, commands, and any prior state. Numbered list preferred.
+      placeholder: |
+        1. Launch pty-speak.
+        2. Run `claude`.
+        3. Type "List my files".
+        4. Press Enter.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected screen-reader behaviour
+      description: What should NVDA / Narrator / JAWS have said or done? Reference docs/ACCESSIBILITY-TESTING.md if relevant.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual screen-reader behaviour
+      description: Quote NVDA's speech if you can. Stuck? Frozen? Double-announcement? Wrong control type?
+    validations:
+      required: true
+
+  - type: textarea
+    id: event-tracker
+    attributes:
+      label: NVDA Event Tracker output
+      description: |
+        If reproducible, install the NVDA Event Tracker add-on
+        (https://addons.nvda-project.org/addons/evtTracker.en.html), reproduce,
+        and paste the relevant events here. This is the single most useful artefact for triage.
+      render: text
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - "Blocker — screen reader freezes, app unusable"
+        - "Major — feature unavailable to screen-reader users"
+        - "Minor — content readable but suboptimal (verbose, mispronounced, etc.)"
+        - "Cosmetic — visual-only, screen-reader behaviour correct"
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Known workaround (optional)
+      description: e.g. "Toggling review mode and back resets the buffer," or "Disabling earcons avoids it."
