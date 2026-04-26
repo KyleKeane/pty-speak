@@ -4,7 +4,6 @@
     <TargetFramework>net9.0-windows</TargetFramework>
     <RootNamespace>Terminal.Core</RootNamespace>
     <AssemblyName>Terminal.Core</AssemblyName>
-    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>

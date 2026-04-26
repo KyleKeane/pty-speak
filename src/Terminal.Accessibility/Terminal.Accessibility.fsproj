@@ -4,7 +4,6 @@
     <TargetFramework>net9.0-windows</TargetFramework>
     <RootNamespace>Terminal.Accessibility</RootNamespace>
     <AssemblyName>Terminal.Accessibility</AssemblyName>
-    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>
