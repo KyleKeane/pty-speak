@@ -16,7 +16,6 @@
   <ItemGroup>
     <PackageReference Include="FSharp.Core" />
     <PackageReference Include="Velopack" />
-    <PackageReference Include="Elmish.WPF" />
     <ProjectReference Include="..\Terminal.Core\Terminal.Core.fsproj" />
     <ProjectReference Include="..\Terminal.Pty\Terminal.Pty.fsproj" />
     <ProjectReference Include="..\Terminal.Parser\Terminal.Parser.fsproj" />
