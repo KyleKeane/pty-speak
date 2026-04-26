@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <OutputType>Library</OutputType>
+    <RootNamespace>PtySpeak.Views</RootNamespace>
+    <AssemblyName>PtySpeak.Views</AssemblyName>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+</Project>

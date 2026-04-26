@@ -78,6 +78,16 @@ block PRs that violate them.
 
 ## F# / P/Invoke conventions
 
+- `<Nullable>enable</Nullable>` is set in `Directory.Build.props`,
+  which propagates to the F# projects. F# code that assigns `null`
+  into a non-nullable type will fail under
+  `TreatWarningsAsErrors=true`. Either use option types or the
+  appropriate nullable-reference annotations (`string | null` in F#
+  9+).
+- `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` is also
+  project-wide. Fix warnings rather than suppressing them; if
+  suppression is genuinely warranted, prefer per-file
+  `<NoWarn>FSXXXX</NoWarn>` over project-wide.
 - `Terminal.Pty.Native` is the only module allowed to declare
   `[<DllImport>]` signatures. Everything else consumes a `Result<_,_>`
   facade.
