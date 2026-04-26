@@ -24,7 +24,13 @@ jobs:
   release:
     name: Build and publish unsigned preview to GitHub Releases
     runs-on: windows-latest
-    environment: release
+    # `environment:` deliberately omitted while we ship unsigned
+    # previews — three consecutive 0s startup_failures on
+    # v0.0.1-preview.{1,2,3} pointed at GitHub Environment integration
+    # as the suspect, despite the env existing with a matching name and
+    # default config. Re-add `environment: release` when SignPath /
+    # Ed25519 signing returns and we actually need the approval gate
+    # (see docs/RELEASE-PROCESS.md "Re-enabling signing (deferred)").
     timeout-minutes: 60
 
     steps:
