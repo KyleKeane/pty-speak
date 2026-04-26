@@ -13,18 +13,18 @@ matching tag triggers the Velopack release workflow described in
 
 _(empty — Stage 1 work lands here)_
 
-## [0.0.1-preview.2] — 2026-04-26
+## [0.0.1-preview.3] — 2026-04-26
 
 > **Unsigned preview build.** Authenticode + Ed25519 signing are
 > deferred until before `v0.1.0`; SmartScreen will warn on first run.
 > See [`SECURITY.md`](SECURITY.md).
 
-> Note: `v0.0.1-preview.1` was tagged but never published — the
-> release workflow couldn't start because the targeted GitHub
-> Environment had a capitalised name (`Release` instead of `release`).
-> `v0.0.1-preview.2` is the first preview that actually ships
-> artifacts; the scope is otherwise identical to what
-> `v0.0.1-preview.1` would have shipped.
+> Note: `v0.0.1-preview.1` and `v0.0.1-preview.2` were tagged but
+> never shipped artifacts — both release-workflow runs hit a
+> startup_failure (first one due to a capitalised environment name,
+> second one indeterminate). `v0.0.1-preview.3` is the first preview
+> that actually ships artifacts; the scope is otherwise identical to
+> what `.1` and `.2` would have shipped.
 
 ### Added
 
