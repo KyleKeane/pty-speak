@@ -54,7 +54,10 @@ jobs:
           path: '**/test-results.trx'
 
       - name: Publish Terminal.App for Velopack pack smoke
-        run: dotnet publish src/Terminal.App/Terminal.App.fsproj --configuration Release --runtime win-x64 --self-contained true --no-restore --output publish
+        # No --no-restore: a win-x64 self-contained publish needs a
+        # RID-specific restore that the earlier platform-default
+        # restore step doesn't produce.
+        run: dotnet publish src/Terminal.App/Terminal.App.fsproj --configuration Release --runtime win-x64 --self-contained true --output publish
 
       - name: Install Velopack CLI (vpk)
         run: dotnet tool install -g vpk
