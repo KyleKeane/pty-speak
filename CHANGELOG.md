@@ -13,20 +13,23 @@ matching tag triggers the Velopack release workflow described in
 
 _(empty — Stage 1 work lands here)_
 
-## [0.0.1-preview.4] — 2026-04-26
+## [0.0.1-preview.5] — 2026-04-26
 
 > **Unsigned preview build.** Authenticode + Ed25519 signing are
 > deferred until before `v0.1.0`; SmartScreen will warn on first run.
 > See [`SECURITY.md`](SECURITY.md).
 
-> Note: `v0.0.1-preview.{1,2,3}` were tagged but never shipped
-> artifacts — three consecutive release-workflow startup_failures
-> traced (eventually) to GitHub Environment integration. Dropped
-> `environment: release` from the workflow for the unsigned preview
-> line; will restore when signing returns and the approval gate is
-> actually useful. `v0.0.1-preview.4` is the first preview that
-> actually ships artifacts; scope is otherwise identical to what
-> `.1`–`.3` would have shipped.
+> Note: `v0.0.1-preview.{1,2,3,4}` were tagged but never shipped
+> artifacts — every run of the `push: tags:`-triggered release
+> workflow hit a silent startup_failure (0s, no steps, no banner)
+> on this repo despite incrementally fixing every visible cause:
+> environment name, workflow permissions, allowed-actions,
+> and finally dropping the `environment:` directive entirely. The
+> `release.yml` trigger has been switched to `release: published`,
+> which fires when a release is published via the website and
+> bypasses whatever tag-trigger gating was biting us. `.5` is the
+> first preview that actually ships artifacts; scope is otherwise
+> identical to what `.1`–`.4` would have shipped.
 
 ### Added
 
