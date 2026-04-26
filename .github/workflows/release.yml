@@ -1,36 +1,35 @@
 name: Release
 
+# Triggered when a release is published via the GitHub UI or API.
+# We deliberately do NOT trigger on tag pushes — four consecutive
+# `push: tags:` runs on v0.0.1-preview.{1,2,3,4} hit silent
+# startup_failures (0s, no steps, no banner) on this repo even after
+# correcting environment, permissions, allowed-actions, and dropping
+# the env directive. The release-event trigger sidesteps whatever
+# tag-trigger gating is biting us.
+#
+# Workflow:
+# 1. Maintainer publishes a release at v<version> via Releases UI
+#    (leaving title/body blank; a-version-only checkbox for prerelease).
+# 2. This workflow runs, builds + tests + publishes + Velopack-packs.
+# 3. softprops/action-gh-release@v3 *updates* the just-created release
+#    with the proper title, CHANGELOG body, prerelease flag, and
+#    Velopack artifact files.
 on:
-  push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
-      - 'v[0-9]+.[0-9]+.[0-9]+-preview.[0-9]+'
-      - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to release (e.g. 0.1.0 or 0.1.0-preview.1)'
-        required: true
-        type: string
+  release:
+    types: [published]
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event.release.tag_name }}
   cancel-in-progress: false
 
 jobs:
   release:
     name: Build and publish unsigned preview to GitHub Releases
     runs-on: windows-latest
-    # `environment:` deliberately omitted while we ship unsigned
-    # previews — three consecutive 0s startup_failures on
-    # v0.0.1-preview.{1,2,3} pointed at GitHub Environment integration
-    # as the suspect, despite the env existing with a matching name and
-    # default config. Re-add `environment: release` when SignPath /
-    # Ed25519 signing returns and we actually need the approval gate
-    # (see docs/RELEASE-PROCESS.md "Re-enabling signing (deferred)").
     timeout-minutes: 60
 
     steps:
@@ -38,16 +37,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
 
       - name: Resolve version
         id: version
         shell: pwsh
         run: |
-          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
-            $v = '${{ inputs.version }}'
-          } else {
-            $v = '${{ github.ref_name }}' -replace '^v',''
-          }
+          $v = '${{ github.event.release.tag_name }}' -replace '^v',''
           if ($v -match '-(preview|rc)\.') {
             $prerelease = 'true'
           } else {
@@ -117,10 +113,10 @@ jobs:
           $body          | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           $delim         | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      - name: Create GitHub Release and upload artifacts
+      - name: Update GitHub Release with body and artifacts
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ github.event.release.tag_name }}
           name: pty-speak ${{ steps.version.outputs.version }}
           body: ${{ steps.notes.outputs.body }}
           prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
