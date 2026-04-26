@@ -20,7 +20,6 @@ module Program =
         VelopackApp.Build().Run()
 
         let app = PtySpeak.Views.App()
-        app.InitializeComponent()
         let window = PtySpeak.Views.MainWindow()
         compose app window
         app.Run(window)
