@@ -68,7 +68,7 @@ jobs:
             --packId pty-speak `
             --packTitle "pty-speak" `
             --packAuthors "pty-speak contributors" `
-            --packVersion "0.0.0-ci.${{ github.run_number }}" `
+            --packVersion "0.0.1-ci.${{ github.run_number }}" `
             --packDir publish `
             --mainExe Terminal.App.exe `
             --outputDir releases
