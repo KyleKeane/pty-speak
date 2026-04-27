@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <Compile Include="SmokeTests.fs" />
+    <Compile Include="ConPtyHostTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
@@ -25,6 +26,7 @@
     <PackageReference Include="FsCheck.Xunit" />
     <PackageReference Include="FluentAssertions" />
     <ProjectReference Include="..\..\src\Terminal.Core\Terminal.Core.fsproj" />
+    <ProjectReference Include="..\..\src\Terminal.Pty\Terminal.Pty.fsproj" />
   </ItemGroup>
 
 </Project>

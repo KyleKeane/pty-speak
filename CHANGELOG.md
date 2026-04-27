@@ -17,6 +17,25 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Stage 1 — ConPTY host.** `Terminal.Pty` library now contains the
+  `Terminal.Pty.Native` P/Invoke surface (`COORD`, `STARTUPINFOEX`,
+  `PROCESS_INFORMATION`, etc., and the kernel32 externs for
+  `CreatePseudoConsole` / `CreatePipe` / `InitializeProcThreadAttributeList`
+  / `UpdateProcThreadAttribute` / `CreateProcess`), a typed
+  `PseudoConsole.create` lifecycle wrapper enforcing the strict 9-step
+  Microsoft order (close ConPTY-owned handles in parent; correct
+  `STARTUPINFOEX.cb`; no `CREATE_NEW_PROCESS_GROUP`), and a
+  `ConPtyHost` high-level API exposing a stdin `FileStream` plus a
+  `ChannelReader<byte array>` over stdout backed by a dedicated reader
+  task. `SafePseudoConsoleHandle` (a `SafeHandleZeroOrMinusOneIsInvalid`
+  subclass) ensures `ClosePseudoConsole` runs on disposal. See
+  [`spec/tech-plan.md`](spec/tech-plan.md) Stage 1.
+- Stage 1 acceptance test in `tests/Tests.Unit/ConPtyHostTests.fs`
+  spawning `cmd.exe` under ConPTY, sending `dir\r\n` + `exit\r\n`, and
+  asserting the captured stdout contains a directory-listing marker
+  (`<DIR>` or ` bytes`). Windows-only; trivially passes on
+  non-Windows so the suite still runs unchanged on dev workstations.
+
 - [`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md): rollback guide
   documenting stable development checkpoints. Defines the three
   durable references for each checkpoint (git tag in `baseline/`

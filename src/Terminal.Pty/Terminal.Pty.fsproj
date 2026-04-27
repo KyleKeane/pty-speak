@@ -7,7 +7,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Placeholder.fs" />
+    <Compile Include="Native.fs" />
+    <Compile Include="PseudoConsole.fs" />
+    <Compile Include="ConPtyHost.fs" />
   </ItemGroup>
 
   <ItemGroup>
