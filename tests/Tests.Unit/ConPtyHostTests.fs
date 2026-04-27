@@ -4,6 +4,7 @@ open System
 open System.Runtime.InteropServices
 open System.Text
 open System.Threading
+open System.Threading.Channels
 open System.Threading.Tasks
 open Xunit
 open Terminal.Pty
