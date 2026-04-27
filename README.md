@@ -5,9 +5,10 @@ from the ground up for blind developers using NVDA, JAWS, or Narrator —
 with Anthropic's Claude Code (and other Ink/React TUIs) as the primary
 target workload.
 
-> Status: **pre-alpha, Stage 0 (shipping skeleton) merged.** The
-> first preview build, `v0.0.1-preview.1`, is an empty WPF window —
-> the point is to validate the release pipe end to end. Follow
+> Status: **pre-alpha, Stage 0 shipped.** The first preview build,
+> `v0.0.1-preview.15`, is an empty WPF window with the deployment
+> pipe (build → Velopack pack → GitHub Releases) validated end to
+> end. NVDA announces the window title. Follow
 > [Releases](../../releases) for new builds.
 
 ## Why this exists

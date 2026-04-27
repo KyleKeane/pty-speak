@@ -19,10 +19,11 @@ Claude Code) can rerun the process by hand if CI is unavailable.
 
 ## Release principles
 
-1. **One tag, one release.** Tags follow `vMAJOR.MINOR.PATCH` (or
-   `-preview.N` / `-rc.N`). Every tag triggers exactly one release
-   run; reuploads happen via a new patch tag, never by editing an
-   existing release.
+1. **One release, one tag.** A maintainer **publishes a release** in
+   the GitHub Releases UI; that creates the tag (`vMAJOR.MINOR.PATCH`
+   or `-preview.N` / `-rc.N`) and fires `release: published` which
+   runs the workflow. Reuploads happen by publishing a new release at
+   a new tag, never by editing an existing release.
 2. **Stage gates before tags.** Don't tag a stable release until the
    relevant stage's validation matrix from
    [`spec/tech-plan.md`](../spec/tech-plan.md) passes against NVDA on
@@ -48,13 +49,17 @@ string, making a re-tag impossible without re-signing.
 
 ## One-time setup (current, unsigned line)
 
-The only setup required for the current pipeline is the `release`
-GitHub Environment, which the release workflow targets so a maintainer
-can require approval before each release runs:
+None. The unsigned-preview pipeline targets no GitHub Environment,
+reads no secrets, and uses only stable public actions
+(`actions/checkout@v4`, `actions/setup-dotnet@v5`,
+`softprops/action-gh-release@v3`). The repo's default permissions
+("Read and write" under *Settings → Actions → General*) are
+sufficient.
 
-1. *Settings → Environments → New environment* → name `release`.
-2. Add **required reviewers** = the maintainer team.
-3. Leave secrets empty for now; the unsigned pipeline doesn't read any.
+The earlier draft of this document required a `release` Environment
+to gate SignPath approval; that's preserved under
+[Re-enabling signing (deferred)](#re-enabling-signing-deferred) for
+when signing returns.
 
 ## Cutting a release
 
@@ -73,35 +78,55 @@ Move the `## [Unreleased]` items into a new `## [X.Y.Z]` section in
 each `.fsproj`) to match. Open a PR titled `release: vX.Y.Z`. Merge
 when CI is green.
 
-### 3. Tag and push
+### 3. Publish the release
 
-```powershell
-git checkout main
-git pull
-git tag -a vX.Y.Z -m "vX.Y.Z"
-git push origin vX.Y.Z
-```
+In the GitHub UI:
 
-Pushing the tag triggers
+1. Go to *Releases → Draft a new release*
+   (`https://github.com/KyleKeane/pty-speak/releases/new`).
+2. **Choose a tag** → type `vX.Y.Z` (or `-preview.N` / `-rc.N`) →
+   click "Create new tag: `vX.Y.Z` on publish".
+3. **Target**: `main`. **Verify this — the dropdown defaults to main
+   but at least one preview accidentally targeted a stale branch and
+   ran the wrong workflow file.**
+4. Leave title and description blank — the workflow overwrites both
+   from the matching `CHANGELOG.md` section + unsigned-preview banner.
+5. Check **"Set as a pre-release"** for `-preview.N` / `-rc.N` tags.
+6. Click **Publish release**.
+
+The `release: published` event fires
 [`.github/workflows/release.yml`](../.github/workflows/release.yml).
 
 ### 4. Wait for the release workflow
 
-The workflow runs the following on `windows-latest`, in order:
+Triggered by the `release: published` event you just fired. Runs on
+`windows-latest`, in order:
 
-1. `dotnet test -c Release` — same suite as CI; release fails fast if
-   anything regressed since the merge.
-2. `dotnet publish` — produces a self-contained `win-x64` build of
-   `Terminal.App` into `publish/`.
-3. `vpk pack` — wraps the published binaries into a Velopack release
-   (`Setup.exe`, full nupkg, delta nupkg, `releases.json`,
-   `RELEASES`).
-4. The release-notes section of `CHANGELOG.md` matching the tag is
-   prepended with the unsigned-preview banner and used as the GitHub
-   release body.
-5. `softprops/action-gh-release` uploads all artifacts to the GitHub
-   Release pinned to the tag, with `prerelease=true` for
-   `-preview.N` / `-rc.N` tags and `prerelease=false` for `vX.Y.Z`.
+1. **Confirm workflow started** — echo step that prints the release's
+   tag, ID, and event name. Belt-and-suspenders so the run shows
+   meaningful output even if a later step crashes.
+2. **Checkout** with default `ref` — release events set `GITHUB_REF`
+   to `refs/tags/<tag_name>` so the source at the tag is checked out.
+3. **Setup .NET 9** via `actions/setup-dotnet@v5`.
+4. **Resolve version** — strips the leading `v` from
+   `github.event.release.tag_name`, detects prerelease from the
+   `-preview.N` / `-rc.N` suffix.
+5. `dotnet restore` / `dotnet build -c Release` / `dotnet test`.
+6. `dotnet publish src/Terminal.App/Terminal.App.fsproj -c Release -r win-x64 --self-contained -o publish` (with `/p:Version=...`).
+7. **Install Velopack CLI** (`dotnet tool install -g vpk`).
+8. **`vpk pack`** — wraps `publish/` into a Velopack release at
+   `releases/`: `*Setup.exe`, full nupkg, `RELEASES`. (No
+   `*-delta.nupkg` on the first release; `releases.json` is not
+   produced by our `vpk pack` config.)
+9. **Generate release notes from `CHANGELOG.md`** — writes
+   `release-body.md` with the unsigned-preview banner prepended to the
+   matching `## [<version>]` section.
+10. **Update GitHub Release** via `softprops/action-gh-release@v3`:
+    sets title to `pty-speak <version>`, replaces the auto-generated
+    body with `release-body.md`, sets `prerelease` from step 4, and
+    attaches the artifact files. `fail_on_unmatched_files: false` so
+    the optional `*-delta.nupkg` and `releases.json` patterns don't
+    fail the upload when they're absent.
 
 ### 5. Smoke-test the release
 
@@ -133,11 +158,13 @@ commit.
 
 ## What to do if a release goes wrong
 
-- **CI failed mid-release.** Delete the GitHub release if one was
-  partially created and the tag (`git push --delete origin vX.Y.Z` —
-  coordinate with maintainers first). Fix the underlying issue.
-  Re-tag.
-- **The artifact misbehaves on first install.** Push a `vX.Y.Z+1`
+- **Workflow failed mid-release.** Fix the underlying issue on a PR
+  to `main`. Then publish a new release at the next preview/patch
+  version (e.g. `vX.Y.Z-preview.<N+1>`). Don't try to retry the same
+  tag — `release: published` doesn't refire for a tag GitHub has
+  already seen, even if the underlying release is deleted and
+  republished. Bump and try again.
+- **The artifact misbehaves on first install.** Publish a `vX.Y.Z+1`
   patch release with the fix; do not edit the existing release.
 - **(Once signing is re-enabled) Authenticode passed but Ed25519
   verification fails on user machines.** Treat as a security
@@ -158,6 +185,42 @@ CI release builds are deterministic with respect to:
 `GITHUB_ACTIONS`) `ContinuousIntegrationBuild=true`. Anyone can
 rebuild the artifacts locally per [`docs/BUILD.md`](BUILD.md) and
 confirm hash equality with the released nupkg.
+
+## Common pitfalls
+
+Lessons learned the hard way bringing the pipeline up; documented so
+they aren't re-discovered.
+
+- **PowerShell `@"..."@` heredocs inside a YAML `run: |` block.** The
+  heredoc body lines must be indented at least as much as the run
+  block's first content line. Column-0 lines silently terminate the
+  YAML literal block, producing a malformed workflow file that GitHub
+  Actions rejects at load time **with no banner, no error, no jobs
+  spawned, 0-second "failed" runs**. If you need a multi-line string,
+  build it from a properly-indented PowerShell array joined by
+  `` `n `` instead — see the `Generate release notes from CHANGELOG.md`
+  step in
+  [`.github/workflows/release.yml`](../.github/workflows/release.yml)
+  for the canonical pattern.
+- **Releases UI Target dropdown.** It defaults to the default branch,
+  but at least one preview accidentally targeted a stale branch
+  (`claude/create-project-docs-xVA6n`) which still had the old broken
+  workflow file. Always **confirm Target = `main`** before clicking
+  Publish.
+- **`fail_on_unmatched_files: true` on a glob that's only sometimes
+  populated.** `vpk pack` doesn't produce `*-delta.nupkg` until there's
+  a previous release to diff against, so a strict files list fails on
+  the first release. We use `fail_on_unmatched_files: false`; required
+  artifacts are gated upstream by `vpk pack` itself failing if any
+  expected output is missing.
+- **Don't pass `--no-restore` to `dotnet publish` after a
+  platform-default `dotnet restore`.** A self-contained `--runtime
+  win-x64` publish needs RID-specific assets that the earlier restore
+  didn't produce; NETSDK1047. Either restore once with the RID, or
+  drop `--no-restore` from the publish step (we drop it).
+- **Velopack `--packVersion` minimum.** `vpk pack` rejects versions
+  below `0.0.1`. Our CI smoke uses `0.0.1-ci.<run_number>`; SemVer
+  prerelease ordering keeps it strictly less than any real preview.
 
 ---
 
