@@ -115,9 +115,17 @@ jobs:
           name: pty-speak ${{ steps.version.outputs.version }}
           body_path: release-body.md
           prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
-          fail_on_unmatched_files: true
+          # fail_on_unmatched_files: false — vpk pack only produces a
+          # *-delta.nupkg when there's a previous release to diff
+          # against, so the delta pattern legitimately matches no files
+          # on the very first release. Required artifacts (Setup.exe,
+          # full nupkg, releases.json, RELEASES) are always produced
+          # by vpk pack; if any of them are missing, the prior vpk
+          # pack step would have failed already.
+          fail_on_unmatched_files: false
           files: |
             releases/*Setup.exe
             releases/*-full.nupkg
+            releases/*-delta.nupkg
             releases/releases.json
             releases/RELEASES
