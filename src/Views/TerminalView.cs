@@ -39,9 +39,13 @@ public class TerminalView : FrameworkElement
 
     private Screen? _screen;
 
+    /// <summary>Default background fill for the terminal grid.
+    /// FrameworkElement (unlike Control / Panel) does not expose
+    /// `Background` itself, so we keep our own.</summary>
+    private readonly Brush _background = Brushes.Black;
+
     public TerminalView()
     {
-        Background = Brushes.Black;
         Focusable = true;
         FocusVisualStyle = null;
         SnapsToDevicePixels = true;
@@ -91,7 +95,7 @@ public class TerminalView : FrameworkElement
     {
         // Always paint the background first so the grid has a consistent
         // dark surface even when no screen is attached yet.
-        drawingContext.DrawRectangle(Background, null, new Rect(RenderSize));
+        drawingContext.DrawRectangle(_background, null, new Rect(RenderSize));
 
         if (_screen is null)
         {
