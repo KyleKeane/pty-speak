@@ -20,6 +20,7 @@ with the release workflow.
 | Tag | PR | Release | Description |
 |---|---|---|---|
 | `baseline/stage-0-ci-release` | [#26](https://github.com/KyleKeane/pty-speak/pull/26) | [v0.0.1-preview.15](https://github.com/KyleKeane/pty-speak/releases/tag/v0.0.1-preview.15) | Stage 0 ship: F# / .NET 9 / WPF skeleton, working CI (build + test + Velopack pack smoke), working release pipeline (`release: published` → build → vpk pack → softprops upload). NVDA-validated unsigned installer. First state where the end-to-end deployment pipe is demonstrably green. |
+| `baseline/stage-1-conpty-hello-world` | [#28](https://github.com/KyleKeane/pty-speak/pull/28) | _(no release; library-only stage)_ | Stage 1 ship: `Terminal.Pty` library with `Native` P/Invoke surface, typed `PseudoConsole.create` lifecycle wrapper enforcing the strict 9-step Microsoft order, and `ConPtyHost` high-level API (synchronous stdin `FileStream`, dedicated reader `Task` draining the output pipe into a bounded `Channel<byte array>`). Acceptance test in `Tests.Unit/ConPtyHostTests.fs` proves the chain on `windows-2025`. ConPTY render-cadence quirk documented in [`CONPTY-NOTES.md`](CONPTY-NOTES.md). No WPF surface change yet — same empty-window installer as `v0.0.1-preview.15`. |
 
 ## Rolling back to a checkpoint
 

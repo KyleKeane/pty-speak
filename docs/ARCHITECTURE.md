@@ -152,3 +152,5 @@ If you only have time to read three files when you start contributing:
 - Roadmap: [`ROADMAP.md`](ROADMAP.md)
 - Build: [`BUILD.md`](BUILD.md)
 - Release process: [`RELEASE-PROCESS.md`](RELEASE-PROCESS.md)
+- ConPTY platform notes (observed quirks): [`CONPTY-NOTES.md`](CONPTY-NOTES.md)
+- Stable checkpoints / rollback: [`CHECKPOINTS.md`](CHECKPOINTS.md)

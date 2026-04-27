@@ -22,11 +22,6 @@ open Terminal.Pty
 let private isWindows () =
     RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
 
-let private write (host: ConPtyHost) (text: string) =
-    let bytes = Encoding.UTF8.GetBytes(text: string)
-    host.Stdin.Write(bytes, 0, bytes.Length)
-    host.Stdin.Flush()
-
 let private collectStdout (host: ConPtyHost) (timeout: TimeSpan) : string =
     use cts = new CancellationTokenSource(timeout)
     let buffer = StringBuilder()
