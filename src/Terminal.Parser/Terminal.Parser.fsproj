@@ -7,7 +7,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Placeholder.fs" />
+    <Compile Include="StateMachine.fs" />
+    <Compile Include="Parser.fs" />
   </ItemGroup>
 
   <ItemGroup>

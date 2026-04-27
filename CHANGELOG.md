@@ -17,6 +17,35 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Stage 2 — VT500 parser.** `Terminal.Parser` now contains a
+  pure-F# implementation of Paul Williams' DEC ANSI parser
+  ([vt100.net/emu/dec_ansi_parser.html](https://vt100.net/emu/dec_ansi_parser.html)),
+  matching alacritty/vte's table-driven structure. `StateMachine`
+  is a stateful single-byte feeder over fourteen `VtState` cases
+  (Ground, Escape, EscapeIntermediate, CsiEntry/Param/Intermediate/Ignore,
+  DcsEntry/Param/Intermediate/Passthrough/Ignore, OscString,
+  SosPmApcString) with the canonical alacritty caps applied
+  (`MAX_INTERMEDIATES = 2`, `MAX_OSC_PARAMS = 16`,
+  `MAX_OSC_RAW = 1024`, `MAX_PARAMS = 16`). `Parser` exposes
+  `create`/`feed`/`feedBytes`/`feedArray` for downstream consumers.
+  A small UTF-8 decoder buffers continuation bytes and emits a
+  single `Print of Rune` per scalar; malformed UTF-8 emits
+  U+FFFD. See [`spec/tech-plan.md`](spec/tech-plan.md) Stage 2.
+- The placeholder `VtEvent` discriminated union in
+  `Terminal.Core/Types.fs` is replaced with the real DU per spec
+  §2.2 (`Print | Execute | CsiDispatch | EscDispatch | OscDispatch
+  | DcsHook | DcsPut | DcsUnhook`). Other DUs in `Types.fs` remain
+  placeholders pending their owning stages.
+- Stage 2 tests in `tests/Tests.Unit/VtParserTests.fs`:
+  - **Fixture tests** for every byte-string example called out in
+    spec §2.4 (`"Hello\r\n"`, `"\x1b[31mRed\x1b[0m"`, `"\x1b[2J"`,
+    `"\x1b]0;Title\x07"`, `"\x1b[?1049h"`) plus multi-param
+    SGR, default-parameter CSI, ESC dispatch (DECKPAM), CAN
+    cancellation, and UTF-8 multi-byte assembly.
+  - **FsCheck property tests** verifying the spec's robustness
+    contract: parser never throws on arbitrary bytes; chunked feed
+    equals whole-array feed; CAN (0x18) at any point returns the
+    parser to `Ground`.
 - [`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md): rollback guide
   documenting stable development checkpoints. Defines the three
   durable references for each checkpoint (git tag in `baseline/`
