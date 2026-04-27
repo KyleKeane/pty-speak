@@ -17,6 +17,32 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Stage 3b — WPF rendering + end-to-end wiring.** First visible
+  terminal surface. New `TerminalView : FrameworkElement` in
+  `src/Views/TerminalView.cs` overrides `OnRender(DrawingContext)`
+  per spec §3.3: contiguous cells with identical SGR attrs coalesce
+  into a single `FormattedText` run; backgrounds drawn first, text
+  on top; manual underline at baseline; bold/italic via
+  `FormattedText.SetFontWeight` / `SetFontStyle`. Default monospaced
+  font is "Cascadia Mono" with Consolas / Courier New fallbacks at
+  14pt; cell metrics computed once at construction. ANSI 16-colour
+  palette mapped to WPF brushes; truecolor brushes constructed
+  per-call.
+- `MainWindow.xaml` now hosts a `<views:TerminalView />` with
+  `x:FieldModifier="public"` so F# composition code in
+  `Terminal.App` can reach it across the assembly boundary.
+- `Program.fs` (Terminal.App) now wires the full Stage 3 pipeline:
+  on `Window.Loaded` it spawns a 120×30 `ConPtyHost` running
+  `cmd.exe`, then a background `Task` reads stdout chunks, feeds
+  them through the Stage 2 `Parser`, and dispatches the resulting
+  `VtEvent`s back to the UI thread via `Dispatcher.InvokeAsync`
+  to apply them to a single `Screen` and invalidate the
+  `TerminalView`. `Application.Exit` cancels the reader and
+  disposes the `ConPtyHost`.
+- `src/Views/Views.csproj` gains a `ProjectReference` to
+  `Terminal.Core` so the C# control can use `Screen` / `Cell` /
+  `SgrAttrs` / `ColorSpec` directly.
+
 - **Stage 3a — screen model.** `Terminal.Core` gains the data types
   per spec §3.1 (`ColorSpec` DU, `SgrAttrs` struct, `Cell` struct,
   `Cursor` mutable record) and a `Screen` class consuming `VtEvent`s
