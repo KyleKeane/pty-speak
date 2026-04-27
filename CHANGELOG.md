@@ -15,7 +15,15 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
-_(empty — Stage 1 work lands here)_
+### Removed
+
+- `.github/workflows/diagnose.yml`. Was added during the Stage 0
+  release-pipeline diagnostic loop to isolate `release.yml` from
+  workflow-level config issues. Its lessons live in the "Common
+  pitfalls" section of [`docs/RELEASE-PROCESS.md`](docs/RELEASE-PROCESS.md);
+  the workflow itself is no longer needed.
+
+_(Stage 1 work lands here.)_
 
 ## [0.0.1-preview.15] — 2026-04-27
 
