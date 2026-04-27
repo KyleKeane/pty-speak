@@ -88,23 +88,34 @@ module PseudoConsole =
     ///     ERROR_INVALID_PARAMETER (0x57) from CreateProcess.
     let create (cfg: PtyConfig) : Result<PtySession, PtyCreateError> =
         // 1+2. Two anonymous pipes — one for input, one for output.
-        let mutable inputRead = Unchecked.defaultof<SafeFileHandle>
-        let mutable inputWrite = Unchecked.defaultof<SafeFileHandle>
-        let mutable outputRead = Unchecked.defaultof<SafeFileHandle>
-        let mutable outputWrite = Unchecked.defaultof<SafeFileHandle>
+        // Bind raw IntPtr handles first, then wrap into SafeFileHandle
+        // manually. F#'s `out SafeFileHandle` byref marshalling has been
+        // observed to silently produce NullReferenceException at runtime;
+        // the IntPtr-then-wrap pattern avoids that.
+        let mutable inputReadHandle = IntPtr.Zero
+        let mutable inputWriteHandle = IntPtr.Zero
+        let mutable outputReadHandle = IntPtr.Zero
+        let mutable outputWriteHandle = IntPtr.Zero
 
-        if not (Win32.CreatePipe(&inputRead, &inputWrite, IntPtr.Zero, 0u)) then
+        if not (Win32.CreatePipe(&inputReadHandle, &inputWriteHandle, IntPtr.Zero, 0u)) then
             Error(CreatePipeFailed("input", Marshal.GetLastWin32Error()))
-        elif not (Win32.CreatePipe(&outputRead, &outputWrite, IntPtr.Zero, 0u)) then
-            inputRead.Dispose()
-            inputWrite.Dispose()
+        elif not (Win32.CreatePipe(&outputReadHandle, &outputWriteHandle, IntPtr.Zero, 0u)) then
+            Win32.CloseHandle(inputReadHandle) |> ignore
+            Win32.CloseHandle(inputWriteHandle) |> ignore
             Error(CreatePipeFailed("output", Marshal.GetLastWin32Error()))
         else
+            // Wrap pipe ends into SafeFileHandles now that we have all
+            // four. Each takes ownership; CloseHandle runs on disposal.
+            let inputRead = new SafeFileHandle(inputReadHandle, true)
+            let inputWrite = new SafeFileHandle(inputWriteHandle, true)
+            let outputRead = new SafeFileHandle(outputReadHandle, true)
+            let outputWrite = new SafeFileHandle(outputWriteHandle, true)
+
             // 3. CreatePseudoConsole — takes the read end of the input
             // pipe and the write end of the output pipe.
             let size = { X = cfg.Cols; Y = cfg.Rows }
-            let mutable hPC = Unchecked.defaultof<SafePseudoConsoleHandle>
-            let createHr = Win32.CreatePseudoConsole(size, inputRead, outputWrite, 0u, &hPC)
+            let mutable hPCRaw = IntPtr.Zero
+            let createHr = Win32.CreatePseudoConsole(size, inputRead, outputWrite, 0u, &hPCRaw)
 
             if createHr <> 0 then
                 inputRead.Dispose()
@@ -113,6 +124,7 @@ module PseudoConsole =
                 outputWrite.Dispose()
                 Error(CreatePseudoConsoleFailed createHr)
             else
+                let hPC = new SafePseudoConsoleHandle(hPCRaw)
                 // 4. Drop the handles ConPTY now owns. The parent must
                 // not retain references; otherwise the pipe never
                 // signals EOF on shutdown.
@@ -223,7 +235,7 @@ module PseudoConsole =
     /// thread-safe.
     let resize (session: PtySession) (cols: int16) (rows: int16) : Result<unit, int> =
         let size = { X = cols; Y = rows }
-        let hr = Win32.ResizePseudoConsole(session.Console, size)
+        let hr = Win32.ResizePseudoConsole(session.Console.DangerousGetHandle(), size)
         if hr = 0 then Ok() else Error hr
 
     /// Throw a Win32Exception describing the last error. Used by tests

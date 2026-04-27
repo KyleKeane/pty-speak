@@ -91,11 +91,22 @@ module Constants =
 /// callers don't have to remember to close it. Treats 0 and -1 as
 /// invalid (matches conpty's convention even though 0 is the more
 /// common failure value).
+///
+/// We wrap manually (via SetHandle in the secondary constructor) instead
+/// of relying on `SafePseudoConsoleHandle&` byref marshalling, which is
+/// a known sharp edge for F# `out`-parameter interop and was producing
+/// runtime failures in earlier iterations of this file.
 type SafePseudoConsoleHandle() =
     inherit SafeHandleZeroOrMinusOneIsInvalid(true)
 
     [<DllImport("kernel32.dll", SetLastError = true)>]
     static extern void ClosePseudoConsole(nativeint hPC)
+
+    /// Construct from a kernel-returned HPCON. The handle takes
+    /// ownership and will run ClosePseudoConsole on disposal.
+    new(preexistingHandle: nativeint) as this =
+        new SafePseudoConsoleHandle()
+        then this.SetHandle(preexistingHandle)
 
     override this.ReleaseHandle() =
         ClosePseudoConsole(this.handle)
@@ -105,6 +116,12 @@ type SafePseudoConsoleHandle() =
 /// callable surface is auditable in one place. Every signature mirrors
 /// what MiniTerm uses; deviations from the canonical signature are a
 /// bug.
+///
+/// Parameters that C# binds as `out SafeFileHandle` / `out HPCON` are
+/// declared here as `nativeint&` and wrapped manually by callers.
+/// F#'s built-in marshalling of byref-SafeHandle arguments has been
+/// reported to produce silent NullReferenceException at runtime;
+/// the IntPtr-then-wrap pattern is more boring and more reliable.
 module Win32 =
     [<DllImport("kernel32.dll", SetLastError = true)>]
     extern int CreatePseudoConsole(
@@ -112,15 +129,15 @@ module Win32 =
         SafeFileHandle hInput,
         SafeFileHandle hOutput,
         uint32 dwFlags,
-        SafePseudoConsoleHandle& phPC)
+        nativeint& phPC)
 
     [<DllImport("kernel32.dll", SetLastError = true)>]
-    extern int ResizePseudoConsole(SafePseudoConsoleHandle hPC, COORD size)
+    extern int ResizePseudoConsole(nativeint hPC, COORD size)
 
     [<DllImport("kernel32.dll", SetLastError = true)>]
     extern bool CreatePipe(
-        SafeFileHandle& hReadPipe,
-        SafeFileHandle& hWritePipe,
+        nativeint& hReadPipe,
+        nativeint& hWritePipe,
         nativeint lpPipeAttributes,
         uint32 nSize)
 

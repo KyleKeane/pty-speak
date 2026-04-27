@@ -67,38 +67,47 @@ let ``ConPtyHost spawns cmd.exe and round-trips dir`` () =
         // locally.
         ()
     else
-        let cfg =
-            { Cols = 120s
-              Rows = 30s
-              CommandLine = "cmd.exe /K @echo off & prompt $G" }
+        try
+            let cfg =
+                { Cols = 120s
+                  Rows = 30s
+                  CommandLine = "cmd.exe /K @echo off & prompt $G" }
 
-        match ConPtyHost.start cfg with
-        | Error e ->
-            Assert.Fail(sprintf "ConPtyHost.start failed: %A" e)
-        | Ok host ->
-            use host = host
-            // Wait briefly for cmd.exe to print its initial prompt
-            // before we send anything. 250 ms is plenty.
-            Thread.Sleep(250)
+            match ConPtyHost.start cfg with
+            | Error e ->
+                Assert.Fail(sprintf "ConPtyHost.start failed: %A" e)
+            | Ok host ->
+                use host = host
+                // Wait briefly for cmd.exe to print its initial prompt
+                // before we send anything. 250 ms is plenty.
+                Thread.Sleep(250)
 
-            // Send 'dir' followed by 'exit' so cmd.exe terminates and
-            // the stdout pipe drains naturally rather than waiting on
-            // the 2-second timeout.
-            write host "dir\r\nexit\r\n"
+                // Send 'dir' followed by 'exit' so cmd.exe terminates
+                // and the stdout pipe drains naturally rather than
+                // waiting on the timeout.
+                write host "dir\r\nexit\r\n"
 
-            let output = collectStdout host (TimeSpan.FromSeconds(5.0))
+                let output = collectStdout host (TimeSpan.FromSeconds(5.0))
 
-            // 'dir' on Windows always prints either ' Directory of '
-            // or '<DIR>' (folder marker) at minimum. Looking for the
-            // simplest string that's stable across locales: '<DIR>'
-            // appears next to every subdirectory, and a Windows
-            // user's home / repo / build dir always has at least one.
-            // If the test environment is unexpectedly empty, fall
-            // back to ' bytes' which appears in dir's summary line.
-            let stable = output.Contains("<DIR>") || output.Contains(" bytes")
-            Assert.True(
-                stable,
+                // 'dir' always prints '<DIR>' next to subdirectories
+                // or ' bytes' in the summary line; both are
+                // locale-stable.
+                let stable = output.Contains("<DIR>") || output.Contains(" bytes")
+                Assert.True(
+                    stable,
+                    sprintf
+                        "Expected dir output marker in stdout. Captured %d bytes:\n%s"
+                        output.Length
+                        output)
+        with
+        | ex ->
+            // Surface the full exception (type, message, stack, inner)
+            // so a future CI failure shows the actual cause instead of
+            // xUnit's standard reflection-invoke wrapper.
+            Assert.Fail(
                 sprintf
-                    "Expected dir output marker in stdout. Captured %d bytes:\n%s"
-                    output.Length
-                    output)
+                    "ConPtyHost test threw %s: %s\n\nStack trace:\n%s\n\nInner: %A"
+                    (ex.GetType().FullName)
+                    ex.Message
+                    ex.StackTrace
+                    ex.InnerException)
