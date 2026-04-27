@@ -13,7 +13,7 @@ matching tag triggers the Velopack release workflow described in
 
 _(empty — Stage 1 work lands here)_
 
-## [0.0.1-preview.9] — 2026-04-27
+## [0.0.1-preview.10] — 2026-04-27
 
 > **Unsigned preview build.** Authenticode + Ed25519 signing are
 > deferred until before `v0.1.0`; SmartScreen will warn on first run.
