@@ -107,3 +107,18 @@ jobs:
           $body = $banner + $body
           Set-Content -Path release-body.md -Value $body -Encoding UTF8
           Write-Host "Release body written to release-body.md ($($body.Length) chars)"
+
+      - name: Update GitHub Release with body and artifacts
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          name: pty-speak ${{ steps.version.outputs.version }}
+          body_path: release-body.md
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
+          fail_on_unmatched_files: true
+          files: |
+            releases/*Setup.exe
+            releases/*-full.nupkg
+            releases/*-delta.nupkg
+            releases/releases.json
+            releases/RELEASES
