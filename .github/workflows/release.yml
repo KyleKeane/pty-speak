@@ -2,11 +2,27 @@ name: Release
 
 # Triggered when a release is published via the GitHub UI or API.
 #
-# Incremental restoration. v0.0.1-preview.6 confirmed the trigger
-# and basic shape work on ubuntu-latest. v0.0.1-preview.7 confirmed
-# the same on windows-latest. This iteration restores
-# checkout + setup-dotnet + restore + build + test. Next iteration
-# will add publish + vpk pack + softprops/action-gh-release upload.
+# Final restoration. v0.0.1-preview.{6,7,8} confirmed in turn:
+#   - basic shape and release: published trigger work (.6 ubuntu)
+#   - windows-latest is fine (.7)
+#   - checkout + setup-dotnet + restore + build + test work (.8)
+#
+# This iteration adds the remaining pipeline:
+#   - Resolve version from the event's tag_name
+#   - dotnet publish (self-contained win-x64)
+#   - Install Velopack CLI (vpk)
+#   - vpk pack (produces Setup.exe, nupkgs, manifests)
+#   - Generate release notes from CHANGELOG.md (with unsigned-preview banner)
+#   - Update GitHub Release with body and attach artifacts via
+#     softprops/action-gh-release@v3
+#
+# Constructs deliberately NOT restored from the original release.yml,
+# which had been failing silently before the strip:
+#   - `concurrency:` block (was a suspect)
+#   - `timeout-minutes: 60` (was a suspect)
+#   - long job `name:` field (was a suspect)
+#   - `actions/checkout@v4` with explicit `ref:` (default checkout
+#     of GITHUB_REF works for release events)
 on:
   release:
     types: [published]
@@ -32,17 +48,82 @@ jobs:
         with:
           dotnet-version: 9.0.x
 
-      - name: Show .NET version
-        run: dotnet --version
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $v = '${{ github.event.release.tag_name }}' -replace '^v',''
+          if ($v -match '-(preview|rc)\.') {
+            $prerelease = 'true'
+          } else {
+            $prerelease = 'false'
+          }
+          "version=$v"            | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "prerelease=$prerelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Releasing version $v (prerelease=$prerelease)"
 
       - name: Restore
         run: dotnet restore
 
       - name: Build (Release)
-        run: dotnet build --configuration Release --no-restore
+        run: dotnet build --configuration Release --no-restore /p:Version=${{ steps.version.outputs.version }}
 
       - name: Test
         run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=test-results.trx"
 
-      - name: Confirm pipeline reached end
-        run: echo "Build and test pipeline completed for tag ${{ github.event.release.tag_name }}"
+      - name: Publish (self-contained win-x64)
+        run: dotnet publish src/Terminal.App/Terminal.App.fsproj -c Release -r win-x64 --self-contained -o publish /p:Version=${{ steps.version.outputs.version }}
+
+      - name: Install Velopack CLI
+        run: dotnet tool install -g vpk
+
+      - name: Pack with Velopack
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path releases | Out-Null
+          vpk pack `
+            --packId pty-speak `
+            --packTitle 'pty-speak' `
+            --packAuthors 'pty-speak contributors' `
+            --packVersion ${{ steps.version.outputs.version }} `
+            --packDir publish `
+            --mainExe Terminal.App.exe `
+            --outputDir releases
+
+      - name: Generate release notes from CHANGELOG.md
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $content = Get-Content CHANGELOG.md -Raw
+          $pattern = "(?ms)^## \[$version\].*?(?=^## \[|\z)"
+          $match = [regex]::Match($content, $pattern)
+          if ($match.Success) {
+            $body = $match.Value.Trim()
+          } else {
+            $body = "Release $version. See CHANGELOG.md for details."
+          }
+          $banner = @"
+> [!WARNING]
+> **Unsigned preview build.** Releases tagged before v0.1.0 are not
+> Authenticode-signed and have no Ed25519 manifest signature. Windows
+> SmartScreen will warn on first install. Authenticode + Ed25519
+> signing return before v0.1.0 — see SECURITY.md.
+
+"@
+          $body = $banner + $body
+          Set-Content -Path release-body.md -Value $body -Encoding UTF8
+
+      - name: Update GitHub Release with body and artifacts
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          name: pty-speak ${{ steps.version.outputs.version }}
+          body_path: release-body.md
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
+          fail_on_unmatched_files: true
+          files: |
+            releases/*Setup.exe
+            releases/*-full.nupkg
+            releases/*-delta.nupkg
+            releases/releases.json
+            releases/RELEASES
