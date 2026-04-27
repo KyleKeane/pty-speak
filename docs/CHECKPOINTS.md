@@ -22,6 +22,23 @@ with the release workflow.
 | `baseline/stage-0-ci-release` | [#26](https://github.com/KyleKeane/pty-speak/pull/26) | [v0.0.1-preview.15](https://github.com/KyleKeane/pty-speak/releases/tag/v0.0.1-preview.15) | Stage 0 ship: F# / .NET 9 / WPF skeleton, working CI (build + test + Velopack pack smoke), working release pipeline (`release: published` → build → vpk pack → softprops upload). NVDA-validated unsigned installer. First state where the end-to-end deployment pipe is demonstrably green. |
 | `baseline/stage-1-conpty-hello-world` | [#28](https://github.com/KyleKeane/pty-speak/pull/28) | _(no release; library-only stage)_ | Stage 1 ship: `Terminal.Pty` library with `Native` P/Invoke surface, typed `PseudoConsole.create` lifecycle wrapper enforcing the strict 9-step Microsoft order, and `ConPtyHost` high-level API (synchronous stdin `FileStream`, dedicated reader `Task` draining the output pipe into a bounded `Channel<byte array>`). Acceptance test in `Tests.Unit/ConPtyHostTests.fs` proves the chain on `windows-2025`. ConPTY render-cadence quirk documented in [`CONPTY-NOTES.md`](CONPTY-NOTES.md). No WPF surface change yet — same empty-window installer as `v0.0.1-preview.15`. |
 
+## Pending checkpoint tags
+
+Tags listed in the table above that have **not yet been pushed to
+the remote** because tag pushes can't run from the development
+sandbox (the harness's git proxy returns 403 on tag refs). A
+maintainer should push them from a local machine when convenient;
+the rows in "Current checkpoints" already reference them as if they
+exist, since the tag names are deterministic.
+
+After pushing, **delete the matching row from this section** so it
+stays accurate.
+
+| Tag | Push commands |
+|---|---|
+| `baseline/stage-0-ci-release` | <pre>git fetch origin main<br>git tag -a baseline/stage-0-ci-release \\<br>  8c261b75cafffa223af07464b298621d934b4f22 \\<br>  -m "Stage 0 ship: CI + release pipeline working; v0.0.1-preview.15 shipped from this state"<br>git push origin baseline/stage-0-ci-release</pre> |
+| `baseline/stage-1-conpty-hello-world` | <pre>git fetch origin main<br>git tag -a baseline/stage-1-conpty-hello-world \\<br>  c245564469a4f8f2f920ab1ee212b2e2cceac0c3 \\<br>  -m "Stage 1 ship: Terminal.Pty library; ConPtyHost spawns cmd.exe under ConPTY"<br>git push origin baseline/stage-1-conpty-hello-world</pre> |
+
 ## Rolling back to a checkpoint
 
 ### Read-only inspection (browse the tree)
@@ -69,7 +86,8 @@ When a stage's work ships and its validation matrix passes (per
 [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)), mark
 the merge commit as a checkpoint so you can return to it later:
 
-1. **Push an annotated tag** at the merge SHA:
+1. **Push an annotated tag** at the merge SHA. If you have local
+   push access:
    ```bash
    git fetch origin main
    git tag -a baseline/<stage-or-purpose> <merge-sha> \
@@ -78,6 +96,14 @@ the merge commit as a checkpoint so you can return to it later:
    ```
    Tag pushes don't trigger the release workflow (it's keyed on
    `release: published`), so this is safe.
+
+   **If you can't push the tag immediately** (e.g. an automated
+   contributor in a sandbox where tag pushes aren't allowed), add
+   a row to the **"Pending checkpoint tags"** section below with
+   the exact commands so a human maintainer can push it later
+   from their workstation. Don't skip this — orphan baseline rows
+   in the table above with no actual tag are confusing for
+   readers.
 
 2. **Apply the `stable-baseline` label** to the PR that landed the
    checkpoint. PR sidebar → *Labels* → `stable-baseline`. The label
