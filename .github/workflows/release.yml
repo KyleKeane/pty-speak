@@ -2,12 +2,11 @@ name: Release
 
 # Triggered when a release is published via the GitHub UI or API.
 #
-# THIS IS A DEBUG VARIANT. release.yml has been silently
-# rejected (no jobs spawned) for v0.0.1-preview.{1..5} despite
-# every visible config fix. Reduced to a near-minimal shape to
-# verify the workflow can even start. Once a release publish
-# triggers a visibly-running job here, the build/test/publish/
-# Velopack-pack/upload steps will be re-added incrementally.
+# Incremental restoration. v0.0.1-preview.6 confirmed the trigger
+# and basic shape work on ubuntu-latest. v0.0.1-preview.7 confirmed
+# the same on windows-latest. This iteration restores
+# checkout + setup-dotnet + restore + build + test. Next iteration
+# will add publish + vpk pack + softprops/action-gh-release upload.
 on:
   release:
     types: [published]
@@ -24,4 +23,26 @@ jobs:
           echo "Release workflow started"
           echo "Tag: ${{ github.event.release.tag_name }}"
           echo "Release ID: ${{ github.event.release.id }}"
-          echo "Event name: ${{ github.event_name }}"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Show .NET version
+        run: dotnet --version
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build (Release)
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=test-results.trx"
+
+      - name: Confirm pipeline reached end
+        run: echo "Build and test pipeline completed for tag ${{ github.event.release.tag_name }}"
