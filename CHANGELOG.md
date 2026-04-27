@@ -17,6 +17,13 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- [`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md): rollback guide
+  documenting stable development checkpoints. Defines the three
+  durable references for each checkpoint (git tag in `baseline/`
+  namespace, PR label `stable-baseline`, optional GitHub Release),
+  the rollback procedures (read-only inspection, branch-from-baseline,
+  destructive `main` reset), and the procedure for marking new
+  checkpoints. Linked from `README.md`'s Quick links.
 - **Stage 1 — ConPTY host.** `Terminal.Pty` library now contains the
   `Terminal.Pty.Native` P/Invoke surface (`COORD`, `STARTUPINFOEX`,
   `PROCESS_INFORMATION`, etc., and the kernel32 externs for
@@ -33,21 +40,24 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 - Stage 1 acceptance test in `tests/Tests.Unit/ConPtyHostTests.fs`
   spawns `cmd.exe` under ConPTY and asserts the reader pipeline
   delivered at least the 16-byte ConPTY init prologue
-  (`\x1b[?9001h\x1b[?1004h`). This validates the
+  (`\x1b[?9001h\x1b[?1004h`). Validates the
   `CreatePipe → CreatePseudoConsole → CreateProcess → reader thread
   → channel → collectStdout` chain end-to-end. Stronger assertions
   on cmd's actual command output land in Stage 6 once a proper
   input pipeline lets us drive cmd deterministically. Windows-only;
   trivially passes on non-Windows so the suite runs unchanged on
   dev workstations.
-
-- [`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md): rollback guide
-  documenting stable development checkpoints. Defines the three
-  durable references for each checkpoint (git tag in `baseline/`
-  namespace, PR label `stable-baseline`, optional GitHub Release),
-  the rollback procedures (read-only inspection, branch-from-baseline,
-  destructive `main` reset), and the procedure for marking new
-  checkpoints. Linked from `README.md`'s Quick links.
+- [`docs/CONPTY-NOTES.md`](docs/CONPTY-NOTES.md): platform-quirks
+  document for ConPTY behaviour observed in practice. First entry
+  documents the **render-cadence** finding (fast-exit
+  `cmd.exe /c <command>` loses its rendered output because conhost
+  flushes on a timer-driven cadence and tears down before the next
+  tick) plus forward-look items from `spec/overview.md` that haven't
+  been hit in code yet. Linked from `README.md` and
+  `docs/ARCHITECTURE.md`.
+- New row in [`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md) for
+  `baseline/stage-1-conpty-hello-world` covering the `Terminal.Pty`
+  library shape and its acceptance test.
 
 ### Removed
 
@@ -56,8 +66,11 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   workflow-level config issues. Its lessons live in the "Common
   pitfalls" section of [`docs/RELEASE-PROCESS.md`](docs/RELEASE-PROCESS.md);
   the workflow itself is no longer needed.
-
-_(Stage 1 work lands here.)_
+- Unused `write` helper in `tests/Tests.Unit/ConPtyHostTests.fs`.
+  Leftover from an earlier iteration that drove cmd via stdin; the
+  working Stage 1 test asserts only on ConPTY-pipeline output
+  capture, so the helper was dead code. The pattern can be re-added
+  when Stage 6 lands the keyboard-to-PTY input pipeline.
 
 ## [0.0.1-preview.15] — 2026-04-27
 
