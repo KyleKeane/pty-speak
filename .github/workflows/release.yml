@@ -119,6 +119,5 @@ jobs:
           files: |
             releases/*Setup.exe
             releases/*-full.nupkg
-            releases/*-delta.nupkg
             releases/releases.json
             releases/RELEASES
