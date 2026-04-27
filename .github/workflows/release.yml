@@ -95,14 +95,15 @@ jobs:
           } else {
             $body = "Release $version. See CHANGELOG.md for details."
           }
-          $banner = @"
-> [!WARNING]
-> **Unsigned preview build.** Releases tagged before v0.1.0 are not
-> Authenticode-signed and have no Ed25519 manifest signature. Windows
-> SmartScreen will warn on first install. Authenticode + Ed25519
-> signing return before v0.1.0 — see SECURITY.md.
-
-"@
+          $bannerLines = @(
+            "> [!WARNING]",
+            "> **Unsigned preview build.** Releases tagged before v0.1.0 are not",
+            "> Authenticode-signed and have no Ed25519 manifest signature. Windows",
+            "> SmartScreen will warn on first install. Authenticode + Ed25519",
+            "> signing return before v0.1.0 — see SECURITY.md.",
+            ""
+          )
+          $banner = ($bannerLines -join "`n") + "`n"
           $body = $banner + $body
           Set-Content -Path release-body.md -Value $body -Encoding UTF8
           Write-Host "Release body written to release-body.md ($($body.Length) chars)"
