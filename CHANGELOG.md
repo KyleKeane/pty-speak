@@ -31,10 +31,13 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   subclass) ensures `ClosePseudoConsole` runs on disposal. See
   [`spec/tech-plan.md`](spec/tech-plan.md) Stage 1.
 - Stage 1 acceptance test in `tests/Tests.Unit/ConPtyHostTests.fs`
-  spawning `cmd.exe` under ConPTY, sending `dir\r\n` + `exit\r\n`, and
-  asserting the captured stdout contains a directory-listing marker
-  (`<DIR>` or ` bytes`). Windows-only; trivially passes on
-  non-Windows so the suite still runs unchanged on dev workstations.
+  spawning `cmd.exe /c echo <marker>` under ConPTY and asserting the
+  captured stdout contains the marker. Validates the spawn → ConPTY
+  → reader-thread → channel → `collectStdout` pipeline end-to-end.
+  Windows-only; trivially passes on non-Windows so the suite still
+  runs unchanged on dev workstations. (The stdin-write path will be
+  exercised in a separate test once Stage 6 has a proper input
+  pipeline; Stage 1's claim is just process spawn + output capture.)
 
 - [`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md): rollback guide
   documenting stable development checkpoints. Defines the three
