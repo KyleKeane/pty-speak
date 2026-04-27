@@ -15,6 +15,16 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added
+
+- [`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md): rollback guide
+  documenting stable development checkpoints. Defines the three
+  durable references for each checkpoint (git tag in `baseline/`
+  namespace, PR label `stable-baseline`, optional GitHub Release),
+  the rollback procedures (read-only inspection, branch-from-baseline,
+  destructive `main` reset), and the procedure for marking new
+  checkpoints. Linked from `README.md`'s Quick links.
+
 ### Removed
 
 - `.github/workflows/diagnose.yml`. Was added during the Stage 0
