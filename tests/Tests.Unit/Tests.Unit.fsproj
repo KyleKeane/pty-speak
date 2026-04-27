@@ -12,6 +12,7 @@
   <ItemGroup>
     <Compile Include="SmokeTests.fs" />
     <Compile Include="ConPtyHostTests.fs" />
+    <Compile Include="VtParserTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
@@ -27,6 +28,7 @@
     <PackageReference Include="FluentAssertions" />
     <ProjectReference Include="..\..\src\Terminal.Core\Terminal.Core.fsproj" />
     <ProjectReference Include="..\..\src\Terminal.Pty\Terminal.Pty.fsproj" />
+    <ProjectReference Include="..\..\src\Terminal.Parser\Terminal.Parser.fsproj" />
   </ItemGroup>
 
 </Project>
