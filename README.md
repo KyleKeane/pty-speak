@@ -82,6 +82,7 @@ tests/                   xUnit + FsCheck.Xunit + FlaUI placeholder
 - **Architecture map:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - **Build from source:** [`docs/BUILD.md`](docs/BUILD.md)
 - **Release process:** [`docs/RELEASE-PROCESS.md`](docs/RELEASE-PROCESS.md)
+- **Stable checkpoints (rollback guide):** [`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md)
 - **Accessibility test matrix:** [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
 - **Security and trust model:** [`SECURITY.md`](SECURITY.md)
 - **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
