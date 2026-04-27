@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <Compile Include="Types.fs" />
+    <Compile Include="Screen.fs" />
   </ItemGroup>
 
   <ItemGroup>
