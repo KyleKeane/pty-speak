@@ -111,8 +111,10 @@ type StateMachine() =
     /// Print a single Unicode scalar value via the small UTF-8
     /// decoder. ASCII (0x00..0x7F) goes through the trivial path;
     /// multi-byte sequences accumulate in `utf8Buffer` and emit when
-    /// complete. Malformed continuations emit U+FFFD and reset.
-    let emitPrint (b: byte) : VtEvent option =
+    /// complete. Malformed continuations emit U+FFFD and reset, then
+    /// re-process the offending byte as a fresh lead — `let rec` is
+    /// required for that self-call.
+    let rec emitPrint (b: byte) : VtEvent option =
         if utf8Need = 0 then
             // First byte of a (possibly multi-byte) scalar.
             if b < 0x80uy then
