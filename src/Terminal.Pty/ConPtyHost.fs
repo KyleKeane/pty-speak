@@ -20,11 +20,11 @@ open Terminal.Pty.Native
 /// System.IO.Pipelines reader and feed it into the VT parser, but the
 /// outer shape (one ConPtyHost per child process, IDisposable for
 /// cleanup) carries through.
-type ConPtyHost private (session: PtySession,
-                         stdin: FileStream,
-                         stdout: ChannelReader<byte array>,
-                         readerTask: Task,
-                         cts: CancellationTokenSource) =
+type ConPtyHost internal (session: PtySession,
+                          stdin: FileStream,
+                          stdout: ChannelReader<byte array>,
+                          readerTask: Task,
+                          cts: CancellationTokenSource) =
 
     /// Bytes written here go to the child's stdin. The stream is
     /// synchronous because ConPTY forbids OVERLAPPED I/O on its pipe
