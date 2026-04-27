@@ -17,6 +17,30 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Stage 3a — screen model.** `Terminal.Core` gains the data types
+  per spec §3.1 (`ColorSpec` DU, `SgrAttrs` struct, `Cell` struct,
+  `Cursor` mutable record) and a `Screen` class consuming `VtEvent`s
+  via `Apply`. Stage 3a coverage:
+  - **Print**: writes a cell at the cursor with the current SGR
+    attributes, advances Col, auto-wraps to the next row at
+    end-of-line, scrolls when wrapping past the bottom row.
+  - **C0 controls**: BS (cursor left, clamped), HT (next 8-column
+    boundary), LF (cursor down + scroll), CR (cursor to col 0).
+  - **CSI cursor movement**: A/B/C/D (relative, clamped at edges),
+    H/f (CUP/HVP, 1-indexed → 0-indexed).
+  - **CSI erase**: J (display, modes 0/1/2), K (line, modes 0/1/2).
+  - **CSI SGR**: reset (0), bold (1/22), italic (3/23), underline
+    (4/24), inverse (7/27); foreground colours 30-37 + bright
+    90-97 + default 39; background colours 40-47 + bright 100-107
+    + default 49. Empty-param CSI m equivalent to CSI 0m. 256-colour
+    and truecolor sub-parameter forms are deferred (the parser would
+    need to split on `:` vs `;` first).
+  - **DECSET / DECSC / OSC / DCS**: silently ignored at this stage;
+    Stage 4+ adds them as their owners need them.
+- Stage 3a tests in `tests/Tests.Unit/ScreenTests.fs` covering each
+  of the supported behaviours plus boundary clamping (cursor at
+  edges, oversize CSI A movements) and the auto-wrap → scroll
+  invariant.
 - **Stage 2 — VT500 parser.** `Terminal.Parser` now contains a
   pure-F# implementation of Paul Williams' DEC ANSI parser
   ([vt100.net/emu/dec_ansi_parser.html](https://vt100.net/emu/dec_ansi_parser.html)),

@@ -5,11 +5,64 @@ open System.Text
 /// Marker type used by smoke tests to verify the assembly loads.
 type Marker = class end
 
-/// A single screen cell. Stage 3 fills in the real fields.
-type Cell = { Placeholder: unit }
+/// SGR colour for a foreground or background slot. Default tracks the
+/// terminal's current default; Indexed covers the 256-colour palette
+/// (0..15 = ANSI, 16..231 = 6×6×6 cube, 232..255 = grayscale); Rgb
+/// holds a 24-bit truecolor specifier from `\x1b[38;2;r;g;bm`.
+type ColorSpec =
+    | Default
+    | Indexed of byte
+    | Rgb of byte * byte * byte
 
-/// The screen buffer. Stage 3 fills in the real fields.
-type ScreenBuffer = { Placeholder: unit }
+/// SGR attribute set carried per cell. Inverse means foreground and
+/// background should swap at render time. Stage 3a covers the basic
+/// 16-colour set + bold/italic/underline/inverse; truecolor and
+/// 256-colour parsing arrive when the parser learns to handle their
+/// SGR sub-parameter forms (out of scope for this PR — the data
+/// type already supports them via ColorSpec).
+[<Struct>]
+type SgrAttrs =
+    { Fg: ColorSpec
+      Bg: ColorSpec
+      Bold: bool
+      Italic: bool
+      Underline: bool
+      Inverse: bool }
+
+module SgrAttrs =
+    /// Default attributes — reset SGR state.
+    let defaults : SgrAttrs =
+        { Fg = Default
+          Bg = Default
+          Bold = false
+          Italic = false
+          Underline = false
+          Inverse = false }
+
+/// A single screen cell. Empty cells carry a space rune.
+[<Struct>]
+type Cell =
+    { Ch: Rune
+      Attrs: SgrAttrs }
+
+module Cell =
+    /// A blank cell — space character with default SGR.
+    let blank : Cell = { Ch = Rune(int ' '); Attrs = SgrAttrs.defaults }
+
+/// Cursor position and visibility state. Row/Col are 0-indexed
+/// internally even though VT sequences address them 1-indexed.
+type Cursor =
+    { mutable Row: int
+      mutable Col: int
+      mutable Visible: bool
+      mutable SaveStack: (int * int) list }
+
+module Cursor =
+    let create () : Cursor =
+        { Row = 0
+          Col = 0
+          Visible = true
+          SaveStack = [] }
 
 /// Events emitted by the VT500 state machine in `Terminal.Parser`.
 ///
@@ -17,7 +70,7 @@ type ScreenBuffer = { Placeholder: unit }
 /// (https://vt100.net/emu/dec_ansi_parser.html) and alacritty/vte's
 /// `Perform` trait. Each variant captures the parsed structure
 /// without any screen-buffer or rendering interpretation; that work
-/// belongs to `Terminal.Semantics` (Stage 3+).
+/// belongs to `Screen` (Stage 3) and `Terminal.Semantics` (Stage 5+).
 ///
 /// Caps used by the parser (matching alacritty/vte):
 ///   * MAX_INTERMEDIATES = 2   — bytes in the 0x20..0x2F range during
