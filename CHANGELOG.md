@@ -13,23 +13,24 @@ matching tag triggers the Velopack release workflow described in
 
 _(empty — Stage 1 work lands here)_
 
-## [0.0.1-preview.5] — 2026-04-26
+## [0.0.1-preview.6] — 2026-04-26
 
 > **Unsigned preview build.** Authenticode + Ed25519 signing are
 > deferred until before `v0.1.0`; SmartScreen will warn on first run.
 > See [`SECURITY.md`](SECURITY.md).
 
-> Note: `v0.0.1-preview.{1,2,3,4}` were tagged but never shipped
-> artifacts — every run of the `push: tags:`-triggered release
-> workflow hit a silent startup_failure (0s, no steps, no banner)
-> on this repo despite incrementally fixing every visible cause:
-> environment name, workflow permissions, allowed-actions,
-> and finally dropping the `environment:` directive entirely. The
-> `release.yml` trigger has been switched to `release: published`,
-> which fires when a release is published via the website and
-> bypasses whatever tag-trigger gating was biting us. `.5` is the
-> first preview that actually ships artifacts; scope is otherwise
-> identical to what `.1`–`.4` would have shipped.
+> Note: `v0.0.1-preview.{1..5}` were tagged but never shipped
+> artifacts — every release-workflow run on this repo silently
+> failed to spawn any job at all (workflow-level startup rejection
+> with no diagnostic info), despite incrementally fixing every
+> visible cause. A minimal echo-only diagnose workflow runs fine on
+> `workflow_dispatch`, so the issue is specific to release.yml's
+> content. release.yml has been temporarily reduced to a minimal
+> shape to verify it can start at all. The full build/test/publish/
+> Velopack-pack/upload steps will be re-added incrementally once
+> we see a visibly-running job. `.6` is the test publish for that
+> minimal shape; subsequent .7+ will incrementally restore work
+> until we identify the offending construct.
 
 ### Added
 

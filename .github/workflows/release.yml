@@ -1,20 +1,13 @@
 name: Release
 
 # Triggered when a release is published via the GitHub UI or API.
-# We deliberately do NOT trigger on tag pushes — four consecutive
-# `push: tags:` runs on v0.0.1-preview.{1,2,3,4} hit silent
-# startup_failures (0s, no steps, no banner) on this repo even after
-# correcting environment, permissions, allowed-actions, and dropping
-# the env directive. The release-event trigger sidesteps whatever
-# tag-trigger gating is biting us.
 #
-# Workflow:
-# 1. Maintainer publishes a release at v<version> via Releases UI
-#    (leaving title/body blank; a-version-only checkbox for prerelease).
-# 2. This workflow runs, builds + tests + publishes + Velopack-packs.
-# 3. softprops/action-gh-release@v3 *updates* the just-created release
-#    with the proper title, CHANGELOG body, prerelease flag, and
-#    Velopack artifact files.
+# THIS IS A DEBUG VARIANT. release.yml has been silently
+# rejected (no jobs spawned) for v0.0.1-preview.{1..5} despite
+# every visible config fix. Reduced to a near-minimal shape to
+# verify the workflow can even start. Once a release publish
+# triggers a visibly-running job here, the build/test/publish/
+# Velopack-pack/upload steps will be re-added incrementally.
 on:
   release:
     types: [published]
@@ -22,108 +15,13 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: release-${{ github.event.release.tag_name }}
-  cancel-in-progress: false
-
 jobs:
   release:
-    name: Build and publish unsigned preview to GitHub Releases
-    runs-on: windows-latest
-    timeout-minutes: 60
-
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.release.tag_name }}
-
-      - name: Resolve version
-        id: version
-        shell: pwsh
+      - name: Confirm workflow started
         run: |
-          $v = '${{ github.event.release.tag_name }}' -replace '^v',''
-          if ($v -match '-(preview|rc)\.') {
-            $prerelease = 'true'
-          } else {
-            $prerelease = 'false'
-          }
-          "version=$v"            | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "prerelease=$prerelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          Write-Host "Releasing version $v (prerelease=$prerelease)"
-
-      - name: Setup .NET 9
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 9.0.x
-
-      - name: Restore
-        run: dotnet restore
-
-      - name: Build (Release)
-        run: dotnet build --configuration Release --no-restore /p:Version=${{ steps.version.outputs.version }}
-
-      - name: Test
-        run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=test-results.trx"
-
-      - name: Publish (self-contained win-x64)
-        run: dotnet publish src/Terminal.App/Terminal.App.fsproj -c Release -r win-x64 --self-contained -o publish /p:Version=${{ steps.version.outputs.version }}
-
-      - name: Install Velopack CLI
-        run: dotnet tool install -g vpk
-
-      - name: Pack with Velopack
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path releases | Out-Null
-          vpk pack `
-            --packId pty-speak `
-            --packTitle 'pty-speak' `
-            --packAuthors 'pty-speak contributors' `
-            --packVersion ${{ steps.version.outputs.version }} `
-            --packDir publish `
-            --mainExe Terminal.App.exe `
-            --outputDir releases
-
-      - name: Generate release notes from CHANGELOG.md
-        id: notes
-        shell: pwsh
-        run: |
-          $version = '${{ steps.version.outputs.version }}'
-          $content = Get-Content CHANGELOG.md -Raw
-          $pattern = "(?ms)^## \[$version\].*?(?=^## \[|\z)"
-          $match = [regex]::Match($content, $pattern)
-          if ($match.Success) {
-            $body = $match.Value.Trim()
-          } else {
-            $body = "Release $version. See CHANGELOG.md for details."
-          }
-          $banner = @"
-> [!WARNING]
-> **Unsigned preview build.** Releases tagged before v0.1.0 are not
-> Authenticode-signed and have no Ed25519 manifest signature. Windows
-> SmartScreen will warn on first install. Authenticode + Ed25519
-> signing return before v0.1.0 — see SECURITY.md.
-
-"@
-          $body = $banner + $body
-          $delim = "EOF_$([guid]::NewGuid().ToString('N'))"
-          "body<<$delim" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          $body          | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          $delim         | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-
-      - name: Update GitHub Release with body and artifacts
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ github.event.release.tag_name }}
-          name: pty-speak ${{ steps.version.outputs.version }}
-          body: ${{ steps.notes.outputs.body }}
-          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
-          fail_on_unmatched_files: true
-          files: |
-            releases/*Setup.exe
-            releases/*-full.nupkg
-            releases/*-delta.nupkg
-            releases/releases.json
-            releases/RELEASES
+          echo "Release workflow started"
+          echo "Tag: ${{ github.event.release.tag_name }}"
+          echo "Release ID: ${{ github.event.release.id }}"
+          echo "Event name: ${{ github.event_name }}"
