@@ -2,27 +2,15 @@ name: Release
 
 # Triggered when a release is published via the GitHub UI or API.
 #
-# Final restoration. v0.0.1-preview.{6,7,8} confirmed in turn:
-#   - basic shape and release: published trigger work (.6 ubuntu)
-#   - windows-latest is fine (.7)
-#   - checkout + setup-dotnet + restore + build + test work (.8)
+# Bisect of PR #18 changes. v0.0.1-preview.9 silently no-job-spawned,
+# meaning one of the constructs PR #18 added breaks workflow load.
+# Splitting the suspect range into halves:
 #
-# This iteration adds the remaining pipeline:
-#   - Resolve version from the event's tag_name
-#   - dotnet publish (self-contained win-x64)
-#   - Install Velopack CLI (vpk)
-#   - vpk pack (produces Setup.exe, nupkgs, manifests)
-#   - Generate release notes from CHANGELOG.md (with unsigned-preview banner)
-#   - Update GitHub Release with body and attach artifacts via
-#     softprops/action-gh-release@v3
+# THIS HALF: Resolve version, Publish, Install vpk, vpk pack.
+# OMITTED HALF: Generate release notes, Update GitHub Release.
 #
-# Constructs deliberately NOT restored from the original release.yml,
-# which had been failing silently before the strip:
-#   - `concurrency:` block (was a suspect)
-#   - `timeout-minutes: 60` (was a suspect)
-#   - long job `name:` field (was a suspect)
-#   - `actions/checkout@v4` with explicit `ref:` (default checkout
-#     of GITHUB_REF works for release events)
+# If v0.0.1-preview.10 runs, the omitted half is the offender.
+# If .10 also silently fails, this half is the offender.
 on:
   release:
     types: [published]
@@ -90,40 +78,7 @@ jobs:
             --mainExe Terminal.App.exe `
             --outputDir releases
 
-      - name: Generate release notes from CHANGELOG.md
-        shell: pwsh
+      - name: Confirm pack completed
         run: |
-          $version = '${{ steps.version.outputs.version }}'
-          $content = Get-Content CHANGELOG.md -Raw
-          $pattern = "(?ms)^## \[$version\].*?(?=^## \[|\z)"
-          $match = [regex]::Match($content, $pattern)
-          if ($match.Success) {
-            $body = $match.Value.Trim()
-          } else {
-            $body = "Release $version. See CHANGELOG.md for details."
-          }
-          $banner = @"
-> [!WARNING]
-> **Unsigned preview build.** Releases tagged before v0.1.0 are not
-> Authenticode-signed and have no Ed25519 manifest signature. Windows
-> SmartScreen will warn on first install. Authenticode + Ed25519
-> signing return before v0.1.0 — see SECURITY.md.
-
-"@
-          $body = $banner + $body
-          Set-Content -Path release-body.md -Value $body -Encoding UTF8
-
-      - name: Update GitHub Release with body and artifacts
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ github.event.release.tag_name }}
-          name: pty-speak ${{ steps.version.outputs.version }}
-          body_path: release-body.md
-          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
-          fail_on_unmatched_files: true
-          files: |
-            releases/*Setup.exe
-            releases/*-full.nupkg
-            releases/*-delta.nupkg
-            releases/releases.json
-            releases/RELEASES
+          echo "Velopack pack completed for tag ${{ github.event.release.tag_name }}"
+          dir releases
