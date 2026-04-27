@@ -68,21 +68,30 @@ let ``ConPtyHost spawns cmd.exe and captures its stdout`` () =
         ()
     else
         try
-            // Use 'cmd.exe /c echo <marker>' rather than '/K dir' +
-            // stdin write. The /c form runs the given command and
-            // exits — we don't depend on cmd.exe reaching its
-            // interactive REPL state under ConPTY's scheduling, and
-            // the marker is locale-independent. This still validates
-            // the Stage 1 end-to-end claim: ConPtyHost.start, ConPTY
-            // process spawn, child stdout → reader thread → Channel
-            // → collectStdout. (The stdin-write path is exercised in
-            // a separate test once Stage 6 has a proper input
-            // pipeline; for Stage 1, output capture is the proof.)
+            // Use a compound command that echoes a known marker and
+            // then idles for ~1s before exiting. The idle is
+            // necessary because ConPTY's render loop is throttled
+            // (spec/overview.md "lag between input and output from
+            // conpty's double-buffered render cadence"); a child
+            // that writes-and-exits-immediately can have its
+            // rendered output dropped when conhost tears down its
+            // pipe write end. Empirically observed: `cmd.exe /c
+            // echo MARKER` produces only the 16-byte ConPTY init
+            // prologue; adding a `ping -n 2 127.0.0.1 > nul` keeps
+            // the child alive long enough for conhost to flush
+            // MARKER through.
+            //
+            // This still validates the Stage 1 end-to-end claim:
+            // ConPtyHost.start, ConPTY process spawn, child stdout
+            // → reader thread → Channel → collectStdout. The
+            // stdin-write path will be exercised when Stage 6 lands
+            // a proper input pipeline.
             let marker = "PTY_SPEAK_STAGE1_MARKER"
             let cfg =
                 { Cols = 120s
                   Rows = 30s
-                  CommandLine = sprintf "cmd.exe /c echo %s" marker }
+                  CommandLine =
+                    sprintf "cmd.exe /c \"echo %s & ping -n 2 127.0.0.1 > nul\"" marker }
 
             match ConPtyHost.start cfg with
             | Error e ->
