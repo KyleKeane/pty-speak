@@ -15,6 +15,15 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+## [0.0.1-preview.17] — 2026-04-28
+
+First preview cut from the Stage-3b state of `main`. The window now
+shows live `cmd.exe` output (parser → screen → WPF rendering); the
+documentation set, spec, and working conventions all reflect the
+shipped-stage reality. **Unsigned preview build** — Authenticode +
+Ed25519 manifest signing return before `v0.1.0`; SmartScreen will
+warn on first run. See [`SECURITY.md`](SECURITY.md).
+
 ### Changed
 
 - **Documentation audit (post-Stage-3b).** Brought README,
