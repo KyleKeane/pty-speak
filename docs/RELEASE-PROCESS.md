@@ -139,7 +139,18 @@ Triggered by the `release: published` event you just fired. Runs on
 6. `dotnet restore` / `dotnet build -c Release` / `dotnet test`.
 7. `dotnet publish src/Terminal.App/Terminal.App.fsproj -c Release -r win-x64 --self-contained -o publish` (with `/p:Version=...`).
 8. **Install Velopack CLI** (`dotnet tool install -g vpk`).
-9. **`vpk pack`** — wraps `publish/` into a Velopack release at
+9. **Fetch prior release `*-full.nupkg`** — uses `gh release list`
+   to find the most recently published GitHub Release (excluding
+   the one being released right now), then `gh release download
+   --pattern '*-full.nupkg' --dir releases`. Velopack's `vpk
+   pack` only generates a `*-delta.nupkg` if a prior `*-full.nupkg`
+   for the same packId already lives in `--outputDir`; without
+   this step every CI run starts from an empty `releases/` and
+   ships full-only packages, so auto-update clients re-download
+   the whole ~66 MB on every update. Skips silently when no
+   prior release exists (first release on a channel) — that's
+   not an error.
+10. **`vpk pack`** — wraps `publish/` into a Velopack release at
    `releases/`. Per Velopack's docs, the produced files are:
     - `*-Setup.exe` (Windows installer)
     - `*-<version>-full.nupkg` (full update package)
@@ -153,7 +164,17 @@ Triggered by the `release: published` event you just fired. Runs on
       back-compat — new clients use `releases.<channel>.json`)
     The channel suffix is Velopack's runtime identifier. We don't
     pass `--channel` so it defaults to `win` for win-x64 packs.
-10. **Verify required Velopack artifacts exist** — defense-in-depth
+11. **Remove prior-release artifacts staged for delta generation** —
+    PowerShell step that deletes any `*-<ver>-full.nupkg` /
+    `*-<ver>-delta.nupkg` in `releases/` whose `<ver>` doesn't
+    match the current release version. The fetch step in step 9
+    drops the previous version's `*-full.nupkg` into `releases/`
+    so vpk pack can diff against it; vpk leaves it there after
+    packing, and without this cleanup softprops would upload it
+    as a duplicate asset on the current release. Non-versioned
+    files (Setup.exe, RELEASES, manifests) are overwritten by
+    vpk pack so don't need cleanup.
+12. **Verify required Velopack artifacts exist** — defense-in-depth
     PowerShell step that asserts `*Setup.exe`, `*-full.nupkg`,
     `releases.*.json`, and `assets.*.json` are all present in
     `releases/`. Fails the workflow loudly if any are missing,
@@ -162,20 +183,20 @@ Triggered by the `release: published` event you just fired. Runs on
     `releases.win.json` or `assets.win.json` because the upload glob
     was the literal `releases.json`; the gate exists so a future
     Velopack rename or channel change doesn't repeat that failure).
-11. **Generate release notes from `CHANGELOG.md`** — writes
+13. **Generate release notes from `CHANGELOG.md`** — writes
     `release-body.md` by resolving the body via the order in step 2
     above (per-version section → `[Unreleased]` content with rewritten
     heading → generic fallback), then prepends the unsigned-preview
     banner.
-12. **Update GitHub Release** via `softprops/action-gh-release@v3`:
+14. **Update GitHub Release** via `softprops/action-gh-release@v3`:
     sets title to `pty-speak <version>`, replaces the auto-generated
     body with `release-body.md`, sets `prerelease` from the version
     resolution, and attaches the artifact files.
     `fail_on_unmatched_files: false` so the optional `*-delta.nupkg`
-    pattern doesn't fail the upload when absent (first release after
-    a channel change has no delta to diff against). The other
-    patterns are asserted present by step 10 above, so the false
-    setting only ever drops genuinely-optional artifacts.
+    pattern doesn't fail the upload when no prior release exists
+    on the channel (first release after a channel change). The
+    other patterns are asserted present by step 12 above, so the
+    false setting only ever drops genuinely-optional artifacts.
 
 ### 5. Smoke-test the release
 

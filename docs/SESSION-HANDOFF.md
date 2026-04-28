@@ -51,21 +51,24 @@ disconnects mid-session.
    programmatically check PR status, merge PRs, or post issue
    comments — falls back to asking the maintainer.
 
-3. **Cut `v0.0.1-preview.19` to revalidate Stage 3b after the
-   pre-Stage-4 fixes.** Two regressions affecting the last
-   release ([Issue #39](https://github.com/KyleKeane/pty-speak/issues/39)
-   conhost window, and the Velopack-manifest upload gap) merged
-   to `main` after `v0.0.1-preview.18` shipped. A fresh preview
-   confirms both:
-   - **Single window on launch** — only the WPF surface, no empty
-     conhost behind it. Fixed in PR #44 (`OutputType=WinExe`).
-   - **Five release assets attached** — `*-full.nupkg`,
-     `*-Setup.exe`, `releases.win.json`, `assets.win.json`,
-     `RELEASES`. The new artifact-existence gate added in PR #41
-     and refined in PR #43 will fail the workflow loudly if any
-     are missing; if it stays green, the manifest fix is also
-     verified. Auto-update flows now have what they need.
-   Procedure in [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md).
+3. **Visual install smoke of `v0.0.1-preview.19` on Windows.**
+   `v0.0.1-preview.19` was published 2026-04-28 and shipped all
+   five Velopack assets correctly (full nupkg, Setup.exe,
+   `releases.win.json`, `assets.win.json`, `RELEASES`) plus the
+   two GitHub-auto source archives — 7 visible in the release
+   UI, validating the manifest fix from PR #43. The
+   single-window fix from PR #44 still needs an actual Windows
+   install to confirm. Steps:
+   1. Download `pty-speak-win-Setup.exe` from
+      <https://github.com/KyleKeane/pty-speak/releases/tag/v0.0.1-preview.19>.
+   2. Run the installer (SmartScreen will warn — expected for
+      unsigned previews).
+   3. Launch from Start menu.
+   4. **Pass condition**: only one window appears (the WPF
+      surface). No empty console window behind it.
+   If a second window does appear, reopen [Issue #39](https://github.com/KyleKeane/pty-speak/issues/39)
+   with details — the WinExe fix may not have taken effect, or
+   there's a different cause we haven't surfaced yet.
 
 4. **Enable NuGet lock files (deferred from PR #41).** The
    investigation in PR #41 settled on enabling
