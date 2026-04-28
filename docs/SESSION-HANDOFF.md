@@ -21,16 +21,17 @@ A new session should read this **first**, then
 |---|---|
 | **Last merged stage** | Stage 3b (WPF `TerminalView` + end-to-end `ConPtyHost → Parser → Screen → TerminalView`) |
 | **Last shipped release** | [`v0.0.1-preview.18`](https://github.com/KyleKeane/pty-speak/releases/tag/v0.0.1-preview.18) — first preview cut from Stage 3b state. Maintainer has installed the build and confirmed `cmd.exe` runs under ConPTY end-to-end. (`preview.16` and `.17` were burned by the `## [<version>]` CHANGELOG-matching gate before #37 relaxed it; both retag the same `db44d6d` commit and were never shipped artifacts.) |
-| **Stage-3b smoke status** | **Known issue:** the maintainer reports a separate `cmd.exe` console host window appears behind the pty-speak WPF window on launch. ConPTY children should not allocate their own conhost — points at a `STARTUPINFOEX` / `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE` defect in `Terminal.Pty/PseudoConsole.fs` or `ConPtyHost.fs`. Tracked separately from Stage 4; doesn't block UIA work. |
-| **In-flight branch** | None. The pre-Stage-4 audit (PR #35), `preview.18` CHANGELOG (PR #36), and the relaxed CHANGELOG-matching gate (PR #37) all merged in sequence on 2026-04-28. |
-| **Next stage** | **Stage 4** — UIA exposure (first NVDA milestone). See sketch below. The Stage-4-prep PR (this PR) lands `Screen.SequenceNumber` + `Screen.SnapshotRows` so the UIA peer's `ITextRangeProvider` can capture immutable row state across the UIA RPC thread without tearing. |
+| **Stage-3b smoke status** | Resolved on `main` pending visual reverification on the next preview. The "second window" the maintainer saw on `v0.0.1-preview.18` was the parent `Terminal.App.exe` itself (the `OutputType=Exe` setting put it in the Windows console subsystem, so Windows allocated a conhost at startup before any of our code ran). The ConPTY child setup checked out clean against Microsoft's canonical sample — none of the four hypotheses originally listed in [Issue #39](https://github.com/KyleKeane/pty-speak/issues/39) was the actual cause. Fix landed in PR #44 (`OutputType=WinExe`); next preview release is the smoke target. |
+| **In-flight branch** | None. Pre-Stage-4 fixes (#41 test/CI hygiene, #43 Velopack manifest globs, #44 WPF subsystem) and docs (#40 ESC-byte convention) all merged. |
+| **Next stage** | **Stage 4** — UIA exposure (first NVDA milestone). Substrate (`Screen.SequenceNumber` + `Screen.SnapshotRows`) shipped in PR #38; threading boundary is in place; `tests/Tests.Ui/` is reserved for FlaUI integration tests that this stage adds. See sketch below. |
 
 The end-to-end pipeline is wired: launching the app spawns `cmd.exe`
 under ConPTY, parses its output, applies VtEvents to a 30×120
 `Screen`, and renders the buffer in a custom WPF `FrameworkElement`.
 The maintainer has installed `v0.0.1-preview.18` and confirmed text
-appears in the WPF window; the conhost-second-window finding above
-is the only outstanding Stage-3b regression.
+appears in the WPF window. The `OutputType=Exe` defect that produced
+the empty parent-process console is fixed on `main`; visual smoke
+on a fresh preview will confirm a single window at launch.
 
 ## Pending action items (maintainer)
 
@@ -50,16 +51,21 @@ disconnects mid-session.
    programmatically check PR status, merge PRs, or post issue
    comments — falls back to asking the maintainer.
 
-3. **Investigate the Stage-3b conhost-second-window finding.** When
-   the maintainer launched `v0.0.1-preview.18` they observed a
-   separate `cmd.exe` console host window appearing behind the
-   pty-speak WPF window. Under ConPTY the child shell should
-   inherit the pseudo-console; a separate conhost suggests
-   `STARTUPINFOEX.cb` or the `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE`
-   attachment isn't taking effect. Likely sites:
-   `src/Terminal.Pty/PseudoConsole.fs` and `src/Terminal.Pty/Native.fs`.
-   Tracked as its own concern; orthogonal to Stage 4 UIA work.
-   Tracked: [Issue #39](https://github.com/KyleKeane/pty-speak/issues/39).
+3. **Cut `v0.0.1-preview.19` to revalidate Stage 3b after the
+   pre-Stage-4 fixes.** Two regressions affecting the last
+   release ([Issue #39](https://github.com/KyleKeane/pty-speak/issues/39)
+   conhost window, and the Velopack-manifest upload gap) merged
+   to `main` after `v0.0.1-preview.18` shipped. A fresh preview
+   confirms both:
+   - **Single window on launch** — only the WPF surface, no empty
+     conhost behind it. Fixed in PR #44 (`OutputType=WinExe`).
+   - **Five release assets attached** — `*-full.nupkg`,
+     `*-Setup.exe`, `releases.win.json`, `assets.win.json`,
+     `RELEASES`. The new artifact-existence gate added in PR #41
+     and refined in PR #43 will fail the workflow loudly if any
+     are missing; if it stays green, the manifest fix is also
+     verified. Auto-update flows now have what they need.
+   Procedure in [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md).
 
 4. **Enable NuGet lock files (deferred from PR #41).** The
    investigation in PR #41 settled on enabling

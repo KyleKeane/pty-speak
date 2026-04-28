@@ -2,8 +2,25 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0-windows</TargetFramework>
-    <OutputType>Exe</OutputType>
-    <DisableWinExeOutputInference>true</DisableWinExeOutputInference>
+    <!--
+      WinExe puts the produced executable into the Windows GUI
+      subsystem so Windows does NOT allocate a conhost window for
+      Terminal.App.exe at startup. Stage 0 originally shipped with
+      OutputType=Exe + DisableWinExeOutputInference=true, which
+      forced the console subsystem and made an empty console window
+      appear behind the WPF window on every launch (Issue #39).
+      Microsoft.NET.Sdk.WindowsDesktop's auto-inference would set
+      WinExe automatically when UseWPF=true, but we set it
+      explicitly so the choice is auditable in the project file
+      rather than buried in SDK behavior.
+
+      Don't add Console.WriteLine / printfn calls and expect to see
+      output — there is no attached console with WinExe. Diagnostics
+      should go through `System.Diagnostics.Debug.WriteLine` (visible
+      in DebugView / the VS Output window) or a structured logger
+      once one is introduced.
+    -->
+    <OutputType>WinExe</OutputType>
     <UseWPF>true</UseWPF>
     <RootNamespace>PtySpeak.App</RootNamespace>
     <AssemblyName>Terminal.App</AssemblyName>
