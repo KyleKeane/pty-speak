@@ -289,6 +289,12 @@ let ``concurrent snapshots and applies never tear`` () =
         lastSeq <- seq
         Assert.Equal(4, rows.Length)
         for r in rows do Assert.Equal(8, r.Length)
+        // Yield between iterations so a slow CI scheduler doesn't
+        // starve the producer task; .NET's Monitor will yield on
+        // contended Apply/SnapshotRows anyway, but the explicit hint
+        // keeps the loop non-pathological if the lock briefly goes
+        // uncontested.
+        System.Threading.Thread.Yield() |> ignore
     producer.Wait()
     let finalSeq, _ = screen.SnapshotRows(0, screen.Rows)
     Assert.True(finalSeq >= lastSeq)

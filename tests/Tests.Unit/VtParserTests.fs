@@ -133,6 +133,63 @@ let ``CAN cancels in-flight CSI`` () =
     Assert.False(hasCsi, "CSI sequence should have been cancelled by CAN")
 
 [<Fact>]
+let ``SUB cancels in-flight CSI like CAN`` () =
+    // SUB (0x1A) is the CAN counterpart per Williams; the StateMachine
+    // treats them identically inside CSI/DCS/OSC. Mirror the CAN test
+    // so a future change that special-cases one without the other
+    // breaks loudly.
+    let events = parse [| 0x1Buy; byte '['; byte '3'; 0x1Auy; byte 'X' |]
+    Assert.Contains(Execute 0x1Auy, events)
+    let hasCsi = events |> Array.exists (fun e -> match e with CsiDispatch _ -> true | _ -> false)
+    Assert.False(hasCsi, "CSI sequence should have been cancelled by SUB")
+
+[<Fact>]
+let ``OSC: ST-terminated sequence emits OscDispatch with bellTerminated=false`` () =
+    // ST is ESC \ (0x1B 0x5C). OscString on ESC emits OscDispatch with
+    // bellTerminated=false and transitions to Escape; the trailing \
+    // (0x5C) then dispatches as a bare EscDispatch with finalByte='\'.
+    // Verify both events to lock the contract.
+    let events = parse [|
+        0x1Buy; byte ']'; byte '0'; byte ';'
+        byte 'T'; byte 'i'; byte 't'; byte 'l'; byte 'e'
+        0x1Buy; byte '\\'
+    |]
+    Assert.Equal(2, events.Length)
+    match events.[0] with
+    | OscDispatch(_, bellTerminated) ->
+        Assert.False(bellTerminated, "ST-terminated OSC must report bellTerminated=false")
+    | other -> Assert.Fail(sprintf "Expected OscDispatch, got %A" other)
+    match events.[1] with
+    | EscDispatch(intermediates, finalByte) ->
+        Assert.Equal<byte[]>([||], intermediates)
+        Assert.Equal('\\', finalByte)
+    | other -> Assert.Fail(sprintf "Expected EscDispatch, got %A" other)
+
+[<Fact>]
+let ``CAN inside DCS passthrough emits DcsUnhook and returns to Ground`` () =
+    // ESC P 1 $ q (DECRQSS for SGR), then payload bytes 'Z' 'Z' 'Z',
+    // then CAN. DcsPassthrough on CAN emits DcsUnhook (NOT Execute —
+    // that asymmetry with CSI is deliberate; see StateMachine.fs).
+    let parser = Parser.create ()
+    let events = Parser.feedArray parser [|
+        0x1Buy; byte 'P'; byte '1'; byte '$'; byte 'q'
+        byte 'Z'; byte 'Z'; byte 'Z'
+        0x18uy
+    |]
+    Assert.Equal(5, events.Length)
+    match events.[0] with
+    | DcsHook(parms, intermediates, finalByte) ->
+        Assert.Equal<int[]>([| 1 |], parms)
+        Assert.Equal<byte[]>([| 0x24uy |], intermediates)
+        Assert.Equal('q', finalByte)
+    | other -> Assert.Fail(sprintf "Expected DcsHook, got %A" other)
+    Assert.Equal(DcsPut 0x5Auy, events.[1])
+    Assert.Equal(DcsPut 0x5Auy, events.[2])
+    Assert.Equal(DcsPut 0x5Auy, events.[3])
+    Assert.Equal(DcsUnhook, events.[4])
+    Assert.Equal(Ground, parser.State)
+
+[<Fact>]
 let ``UTF-8: multi-byte scalar emits a single Print`` () =
     // U+00E9 'é' in UTF-8 is 0xC3 0xA9 — should emit one Print, not
     // two stray bytes.
@@ -177,3 +234,21 @@ let ``CAN (0x18) anywhere returns parser to Ground`` (prefix: byte[]) =
     let _ = Parser.feedArray parser prefix
     let _ = Parser.feedArray parser [| 0x18uy |]
     parser.State = Ground
+
+[<Property>]
+let ``valid Unicode scalars round-trip through UTF-8 as a single Print``
+        (raw: int) =
+    // Wrap raw into [0, 0x110000) and skip the surrogate range
+    // [0xD800, 0xDFFF]; that leaves a valid scalar value for `Rune`.
+    // Without the wrap most random ints would be out of range and the
+    // property would be vacuously true on almost every run.
+    let candidate = ((raw % 0x110000) + 0x110000) % 0x110000
+    if candidate >= 0xD800 && candidate <= 0xDFFF then true
+    else
+        let r = Rune(candidate)
+        let bytes = Encoding.UTF8.GetBytes(r.ToString())
+        let events = parse bytes
+        events.Length = 1 &&
+        (match events.[0] with
+         | Print decoded -> decoded = r
+         | _ -> false)

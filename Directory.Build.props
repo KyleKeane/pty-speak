@@ -7,6 +7,23 @@
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
     <NeutralLanguage>en-US</NeutralLanguage>
+    <!--
+      NuGet lock files. With this set, `dotnet restore` writes a
+      packages.lock.json next to each project capturing the resolved
+      transitive dependency graph. Lock files should be committed to
+      git; once they are, CI can be switched to use
+      `dotnet restore --locked-mode` (or RestoreLockedMode=true) to
+      refuse restores whenever the lock would change — Dependabot PRs
+      that bump a direct dep regenerate the lock and the maintainer
+      commits the result.
+      Until the lock files are committed, this property is a no-op
+      in CI: the workspace gets fresh lock files per run that aren't
+      picked up by ci.yml's cache key. The companion CI change to
+      enforce locked-mode lands in a follow-up PR once `dotnet
+      restore` has been run locally and the generated *.lock.json
+      files committed to the repo.
+    -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <Version Condition="'$(Version)' == ''">0.0.1-preview.1</Version>
     <Authors>pty-speak contributors</Authors>
     <Company>pty-speak</Company>
