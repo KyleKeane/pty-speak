@@ -49,9 +49,9 @@ This matches the warning in
 
 **Not yet investigated.** Whether the render cadence is configurable,
 whether explicit `ResizePseudoConsole` triggers a flush, or whether
-DCS passthrough behaves differently. Stage 2 (parser) will read the
-captured byte stream and may surface other render-vs-passthrough
-distinctions worth documenting here.
+DCS passthrough behaves differently. Stage 2's parser landed without
+surfacing additional render-vs-passthrough distinctions; this section
+will be updated if Stage 5+'s streaming work reveals new corner cases.
 
 ## Other open ConPTY items (forward-look)
 
@@ -59,6 +59,15 @@ These are documented as forward-looking concerns from
 [`spec/overview.md`](../spec/overview.md); they have not yet been
 encountered in code. Expected resolution stage in parentheses.
 
+- **Job Object lifecycle deferred from Stage 1.** `PseudoConsole.create`
+  spawns the child without wrapping it in a Windows Job Object;
+  `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` was deferred so that Stage 1
+  could land the minimum-viable ConPTY chain. Until added, a host
+  crash leaves the child running. The threat-model document
+  ([`SECURITY.md`](../SECURITY.md)) calls out the same gap. Owner
+  stage TBD — likely Stage 6 alongside the input pipeline, since
+  that's the first stage where stale child processes become
+  user-visible.
 - **No DCS passthrough by default** (issue
   [microsoft/terminal#17313](https://github.com/microsoft/terminal/issues/17313)).
   Sixel and kitty graphics will be approximated. (Stage 3+ if we

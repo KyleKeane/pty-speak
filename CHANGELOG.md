@@ -15,6 +15,39 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed
+
+- **Documentation audit (post-Stage-3b).** Brought README,
+  `docs/ARCHITECTURE.md`, `docs/BUILD.md`, `docs/RELEASE-PROCESS.md`,
+  `docs/ROADMAP.md`, `docs/ACCESSIBILITY-TESTING.md`,
+  `CONTRIBUTING.md`, `SECURITY.md`, `docs/CONPTY-NOTES.md`, and
+  `docs/SESSION-HANDOFF.md` in line with the actual state of `main`
+  at Stage 3b. Highlights:
+  - README status now distinguishes "last shipped preview" (Stage 0)
+    from "on `main`" (Stages 1–3b); license dependency list reflects
+    current vs future direct dependencies.
+  - ARCHITECTURE adds a "current pipeline" diagram alongside the
+    target one, an implementation-status column on the modules
+    table, and a today/target split on the threading model.
+  - CONTRIBUTING captures the F# / WPF gotchas hit during Stages 1–3b
+    (`out SafeFileHandle` byref interop, `let rec` for self-referential
+    class-body bindings, `internal` vs `private` constructors, F# DU
+    C# interop via `IsXxx` / `.Item`, `FrameworkElement` lacking
+    `Background`, `MC1002` / `NETSDK1022` / `NETSDK1047`); Tests
+    section now reflects xUnit + FsCheck.Xunit (the actual frameworks)
+    and the real test-project paths.
+  - SECURITY annotates each "What we defend against" bullet with its
+    current implementation status (most are still planned); Job Object
+    deferral now consistent with `docs/CONPTY-NOTES.md`.
+  - RELEASE-PROCESS workflow-step list now reflects the 12 actual
+    steps in `release.yml`, including the two fail-fast gates added
+    after `v0.0.1-preview.14`.
+  - ROADMAP gains a Status column on the Phase 1 stage table and a
+    cross-link to `docs/CHECKPOINTS.md`.
+  - ACCESSIBILITY-TESTING gains rows for the only two stages with
+    actual user-visible behaviour today (Stage 0 and Stage 3b); test
+    fixtures section flagged as planned tooling.
+
 ### Added
 
 - [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md): handoff

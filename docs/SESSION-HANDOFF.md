@@ -229,9 +229,11 @@ stale ranges.
   verification only; no automation.
 
 **Manual NVDA validation**: documented in
-`docs/ACCESSIBILITY-TESTING.md`. Caps Lock + Numpad 7 (prev line),
-Numpad 8 (current line), Numpad 9 (next line), Numpad 4/5/6 (word),
-Numpad 1/2/3 (character). Should hear the visible terminal text.
+`docs/ACCESSIBILITY-TESTING.md`. NVDA+Numpad 7 (prev line), Numpad 8
+(current line), Numpad 9 (next line), Numpad 4/5/6 (word), Numpad
+1/2/3 (character). The "NVDA" modifier is Caps Lock or Insert
+depending on the user's NVDA layout setting; the canonical notation
+is "NVDA+Numpad N". Should hear the visible terminal text.
 "Broken" sounds like NVDA saying "TerminalView" then nothing
 (no pattern) or "blank" (empty range) or repeating a line forever
 (Move not advancing).
