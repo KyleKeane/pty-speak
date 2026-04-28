@@ -20,6 +20,18 @@ open System.Text
 ///   * CSI K — erase line (modes 0/1/2).
 ///   * CSI m — SGR for the basic 16 ANSI colours plus 0/1/3/4/7/22/23/24/27.
 ///
+/// Stage 4 substrate (no UIA peer yet):
+///   * `SequenceNumber` increments on every Apply call. Stage 4's
+///     `ITextRangeProvider` reads it together with `SnapshotRows`
+///     to detect stale ranges across UIA RPC threads. The counter
+///     bumps for non-mutating events too (e.g. `DcsPut`); that's
+///     intentional — staleness "the buffer might have changed" is
+///     conservative and safe.
+///   * `SnapshotRows(start, count)` returns an immutable copy of
+///     the requested rows plus the sequence number at the moment
+///     of capture, taken under the same gate as Apply so callers
+///     never observe a torn buffer.
+///
 /// Deliberately *not* covered yet (later stages refine):
 ///   * 256-colour and truecolor SGR (38;5;n, 38;2;r;g;b) — needs a
 ///     parser that splits sub-parameters by `;` vs `:`.
@@ -36,6 +48,13 @@ type Screen(rows: int, cols: int) =
     let cells: Cell[,] = Array2D.create rows cols Cell.blank
     let cursor: Cursor = Cursor.create ()
     let mutable currentAttrs: SgrAttrs = SgrAttrs.defaults
+
+    // Mutation gate. Apply takes this lock; SnapshotRows takes it to
+    // capture (sequence, rows) atomically. Stage 3b feeds Apply on the
+    // WPF dispatcher; Stage 4's UIA peer reads snapshots from the UIA
+    // RPC thread, so the lock is the boundary between them.
+    let gate = obj ()
+    let mutable sequenceNumber: int64 = 0L
 
     let clamp lo hi v = max lo (min hi v)
 
@@ -193,20 +212,46 @@ type Screen(rows: int, cols: int) =
     /// Read-only access to a cell. (row, col) are 0-indexed.
     member _.GetCell(row: int, col: int) : Cell = cells.[row, col]
 
+    /// Monotonic counter incremented on every Apply. Stage 4 ranges
+    /// store this at construction; if it has changed when the range
+    /// is later queried, the range is known to be stale. Reads under
+    /// the same lock as Apply / SnapshotRows so that 64-bit loads
+    /// can't tear on architectures without atomic int64 reads.
+    member _.SequenceNumber : int64 = lock gate (fun () -> sequenceNumber)
+
+    /// Atomically capture an immutable copy of `count` rows starting
+    /// at `startRow`, paired with the sequence number at capture
+    /// time. Each returned row is a fresh `Cell[]` of length `Cols`;
+    /// callers may retain it indefinitely.
+    member _.SnapshotRows(startRow: int, count: int) : int64 * Cell[][] =
+        if startRow < 0 || startRow >= rows then
+            invalidArg "startRow" (sprintf "startRow must be in [0, %d); got %d" rows startRow)
+        if count < 0 then
+            invalidArg "count" (sprintf "count must be non-negative; got %d" count)
+        if startRow + count > rows then
+            invalidArg "count" (sprintf "startRow + count must be <= %d; got %d + %d" rows startRow count)
+        lock gate (fun () ->
+            let snapshot = Array.init count (fun i ->
+                let r = startRow + i
+                Array.init cols (fun c -> cells.[r, c]))
+            sequenceNumber, snapshot)
+
     /// Apply a single VT event to the buffer. Stage 3a covers the
     /// minimum needed to render cmd.exe-style output; unsupported
     /// sequences are silently no-ops so the parser can continue
     /// streaming without exceptions.
     member _.Apply(event: VtEvent) =
-        match event with
-        | Print rune -> printRune rune
-        | Execute b -> executeC0 b
-        | CsiDispatch(parms, _, finalByte, _priv) ->
-            // Private-marker sequences (DECSET ?h/?l) are ignored
-            // in Stage 3a; alt-screen and friends arrive later.
-            csiDispatch parms finalByte
-        | EscDispatch _
-        | OscDispatch _
-        | DcsHook _
-        | DcsPut _
-        | DcsUnhook -> ()  // Not yet handled — Stage 4+
+        lock gate (fun () ->
+            sequenceNumber <- sequenceNumber + 1L
+            match event with
+            | Print rune -> printRune rune
+            | Execute b -> executeC0 b
+            | CsiDispatch(parms, _, finalByte, _priv) ->
+                // Private-marker sequences (DECSET ?h/?l) are ignored
+                // in Stage 3a; alt-screen and friends arrive later.
+                csiDispatch parms finalByte
+            | EscDispatch _
+            | OscDispatch _
+            | DcsHook _
+            | DcsPut _
+            | DcsUnhook -> ())  // Not yet handled — Stage 4+
