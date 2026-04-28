@@ -56,17 +56,6 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Changed
 
-- **`Directory.Build.props` enables NuGet lock files
-  (`RestorePackagesWithLockFile=true`).** A no-op until lock files
-  are committed to the repo; the companion CI change to enforce
-  `--locked-mode` lands in a follow-up PR after `dotnet restore`
-  has been run locally and the `packages.lock.json` files
-  committed. Once that follow-up lands, restores become
-  deterministic across CI runs and Dependabot PRs surface as
-  intentional lock-file regenerations rather than silent transitive
-  drift. The `**/packages.lock.json` glob already in `ci.yml`'s
-  cache key is preserved so it picks up the lock files
-  automatically once they exist.
 - **`docs/SESSION-HANDOFF.md` brought up to date.** Replaced the
   out-of-date "in-flight branch" / "last shipped release" rows: the
   `chore/session-handoff-and-final-audit` audit, the `preview.18`

@@ -238,12 +238,18 @@ let ``CAN (0x18) anywhere returns parser to Ground`` (prefix: byte[]) =
 [<Property>]
 let ``valid Unicode scalars round-trip through UTF-8 as a single Print``
         (raw: int) =
-    // Wrap raw into [0, 0x110000) and skip the surrogate range
-    // [0xD800, 0xDFFF]; that leaves a valid scalar value for `Rune`.
-    // Without the wrap most random ints would be out of range and the
-    // property would be vacuously true on almost every run.
+    // Wrap raw into [0, 0x110000) and skip:
+    //   * surrogate range [0xD800, 0xDFFF] — invalid scalars,
+    //   * C0 controls [0x00, 0x1F] — emit Execute, not Print,
+    //   * DEL (0x7F) — silently dropped per Williams.
+    // Without the wrap, most random ints would be out of range and
+    // the property would be vacuously true on almost every run.
+    // FsCheck's int generator biases toward small values, so without
+    // the C0 / DEL skip the property fails on raw=0 (0x00 → Execute).
     let candidate = ((raw % 0x110000) + 0x110000) % 0x110000
     if candidate >= 0xD800 && candidate <= 0xDFFF then true
+    elif candidate < 0x20 then true
+    elif candidate = 0x7F then true
     else
         let r = Rune(candidate)
         let bytes = Encoding.UTF8.GetBytes(r.ToString())
