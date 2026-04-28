@@ -59,6 +59,30 @@ disconnects mid-session.
    attachment isn't taking effect. Likely sites:
    `src/Terminal.Pty/PseudoConsole.fs` and `src/Terminal.Pty/Native.fs`.
    Tracked as its own concern; orthogonal to Stage 4 UIA work.
+   Tracked: [Issue #39](https://github.com/KyleKeane/pty-speak/issues/39).
+
+4. **Enable NuGet lock files (deferred from PR #41).** The
+   investigation in PR #41 settled on enabling
+   `<RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>`
+   in `Directory.Build.props` so `dotnet restore` writes a
+   `packages.lock.json` next to each project; CI then switches to
+   `dotnet restore --locked-mode` (or `RestoreLockedMode=true`)
+   to reject restores whenever the lock would change, surfacing
+   transitive-dep drift as explicit lock-file regenerations.
+   Deferred because the agent sandbox has no `dotnet`, so it
+   can't generate the initial `packages.lock.json` files itself.
+   Maintainer steps to land it in a future session:
+   1. Add `<RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>`
+      to `Directory.Build.props`.
+   2. Run `dotnet restore` from the repo root locally.
+   3. Commit the generated `packages.lock.json` files (one per
+      project under `src/` and `tests/`).
+   4. In `.github/workflows/ci.yml`, change `dotnet restore` to
+      `dotnet restore --locked-mode` so future runs assert the
+      lock files are consistent.
+   The `**/packages.lock.json` glob already in `ci.yml`'s cache
+   key picks up the lock files automatically once they exist —
+   no separate cache-key change needed.
 
 ## Working conventions on this repo
 

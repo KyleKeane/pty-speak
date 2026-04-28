@@ -17,6 +17,25 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Parser test coverage for SUB / OSC ST / DCS CAN / Unicode
+  round-trip.** `tests/Tests.Unit/VtParserTests.fs` gains four new
+  cases: SUB (0x1A) cancellation in CSI mirroring the existing CAN
+  test; ST-terminated OSC asserting `bellTerminated=false` plus the
+  trailing bare `EscDispatch` for the `\` byte; CAN inside DCS
+  passthrough emitting `DcsHook` + `DcsPut`* + `DcsUnhook` (note the
+  asymmetry with CSI — CAN there emits `Execute`, here it emits
+  `DcsUnhook`); and an FsCheck property that any valid Unicode
+  scalar encoded as UTF-8 round-trips through the parser as a
+  single `Print` event with the same rune.
+- **Velopack artifact-existence gate in `release.yml`.** A new
+  PowerShell step after `vpk pack` asserts that `*Setup.exe` and
+  `*-full.nupkg` exist under `releases/`. Defense-in-depth on top
+  of `vpk pack`'s own exit code: a future Velopack version that
+  renames an artifact would otherwise produce a green workflow
+  whose release ships without the file the auto-update client
+  expects (because softprops is configured with
+  `fail_on_unmatched_files: false` so the delta nupkg pattern can
+  legitimately match nothing on first releases).
 - **Stage 4 substrate — `Screen.SequenceNumber` + `Screen.SnapshotRows`
   in `Terminal.Core`.** `Screen` now exposes a monotonic
   `SequenceNumber: int64` (incremented on every `Apply`) and a
@@ -64,6 +83,23 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   publish a release directly off `[Unreleased]` without burning a
   tag. `docs/RELEASE-PROCESS.md` "Cutting a release" updated to
   describe both flows.
+
+### Fixed
+
+- **Yield in concurrent snapshot stress test.** The producer/snapshot
+  test added in #38 now calls `Thread.Yield()` once per snapshot
+  iteration. .NET's `Monitor` already yields on contended
+  Apply/SnapshotRows, but the explicit hint keeps the test thread
+  from starving the producer if the lock briefly goes uncontested
+  on a slow CI scheduler.
+
+### Removed
+
+- **`SmokeTests.fs` "string concat is associative" placeholder.**
+  Was a vestigial FsCheck wire-up assertion from before
+  `VtParserTests.fs` and `ScreenTests.fs` had real property tests.
+  The file's other smoke ("Terminal.Core assembly loads") is
+  preserved as a project-reference / type-loading sanity check.
 
 ## [0.0.1-preview.18] — 2026-04-28
 

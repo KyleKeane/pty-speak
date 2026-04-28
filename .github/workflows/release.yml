@@ -95,6 +95,36 @@ jobs:
           echo "Velopack pack completed for tag ${{ github.event.release.tag_name }}"
           dir releases
 
+      - name: Verify required Velopack artifacts exist
+        shell: pwsh
+        # Defense-in-depth on top of `vpk pack`'s own exit code: if a
+        # future Velopack version renames or moves an artifact (e.g.
+        # Setup.exe → installer.exe), softprops/action-gh-release with
+        # fail_on_unmatched_files=false would silently upload nothing
+        # and the release would ship without the file the auto-update
+        # client expects. Fail the workflow loudly here instead.
+        # Required: *Setup.exe and *-full.nupkg. Delta nupkg, RELEASES,
+        # and releases.json are produced under known conditions but
+        # not on every release (e.g. delta needs a prior release to
+        # diff against), so they are not asserted here.
+        run: |
+          $required = @('*Setup.exe', '*-full.nupkg')
+          $missing = @()
+          foreach ($pattern in $required) {
+            # Avoid the $matches automatic variable name — `Get-ChildItem`
+            # results live in $found, freeing $matches for any future
+            # -match operator the script might use.
+            $found = Get-ChildItem -Path releases -Filter $pattern -ErrorAction SilentlyContinue
+            if ($found.Count -eq 0) {
+              $missing += $pattern
+            }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Error "Velopack pack did not produce required artifact(s) in releases/: $($missing -join ', '). Inspect the previous step's output and check whether vpk pack flags or output paths changed."
+            exit 1
+          }
+          Write-Host "Required Velopack artifacts present: $($required -join ', ')"
+
       - name: Generate release notes from CHANGELOG.md
         shell: pwsh
         # Resolution order:
