@@ -43,27 +43,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate CHANGELOG.md has a matching entry
-        shell: pwsh
-        # The release-notes step further down silently falls back to a
-        # generic "Release X. See CHANGELOG.md for details." body when
-        # CHANGELOG.md has no matching `## [<version>]` section. For
-        # `v0.0.1-preview.{2..5}` we *almost* shipped that fallback
-        # because nobody noticed during a frantic diagnostic loop.
-        # Fail-fast here so a missing CHANGELOG section is loud rather
-        # than a silently-degraded release.
-        run: |
-          $tag = '${{ github.event.release.tag_name }}'
-          $version = $tag -replace '^v',''
-          $escaped = [regex]::Escape($version)
-          $content = Get-Content CHANGELOG.md -Raw
-          $pattern = "(?ms)^## \[$escaped\]"
-          if (-not ([regex]::Match($content, $pattern).Success)) {
-            Write-Error "CHANGELOG.md has no section '## [$version]' matching the release tag. Add one before publishing the release. See docs/RELEASE-PROCESS.md."
-            exit 1
-          }
-          Write-Host "CHANGELOG.md has a section for $version — OK."
-
       - name: Setup .NET 9
         uses: actions/setup-dotnet@v5
         with:
@@ -118,15 +97,41 @@ jobs:
 
       - name: Generate release notes from CHANGELOG.md
         shell: pwsh
+        # Resolution order:
+        #   1. If a per-version section '## [<version>]' exists, use it.
+        #   2. Otherwise, if '## [Unreleased]' has non-empty content,
+        #      use it and rewrite the heading to '## [<version>] — <today>'
+        #      so the release body reads naturally.
+        #   3. Otherwise, fall back to a generic "Release X. See
+        #      CHANGELOG.md for details." body.
+        # The pre-build CHANGELOG-matching gate that used to enforce (1)
+        # was removed in favour of this fallback so a maintainer can
+        # publish a release directly off [Unreleased] without burning a
+        # tag if they forget to rename the section first. See
+        # docs/RELEASE-PROCESS.md "Cutting a release".
         run: |
           $version = '${{ steps.version.outputs.version }}'
           $content = Get-Content CHANGELOG.md -Raw
-          $pattern = "(?ms)^## \[$version\].*?(?=^## \[|\z)"
-          $match = [regex]::Match($content, $pattern)
-          if ($match.Success) {
-            $body = $match.Value.Trim()
+
+          $versionPattern = "(?ms)^## \[$version\].*?(?=^## \[|\z)"
+          $versionMatch = [regex]::Match($content, $versionPattern)
+
+          if ($versionMatch.Success) {
+            $body = $versionMatch.Value.Trim()
+            Write-Host "Using '## [$version]' section from CHANGELOG.md."
           } else {
-            $body = "Release $version. See CHANGELOG.md for details."
+            $unreleasedPattern = "(?ms)^## \[Unreleased\](.*?)(?=^## \[|\z)"
+            $unreleasedMatch = [regex]::Match($content, $unreleasedPattern)
+            $unreleasedBody = if ($unreleasedMatch.Success) { $unreleasedMatch.Groups[1].Value.Trim() } else { "" }
+
+            if ($unreleasedBody.Length -gt 0) {
+              $today = (Get-Date -Format "yyyy-MM-dd")
+              $body = "## [$version] — $today`n`n$unreleasedBody"
+              Write-Host "Using [Unreleased] section from CHANGELOG.md (no per-version section found); rewrote heading to '## [$version] — $today' for the release body."
+            } else {
+              $body = "Release $version. See CHANGELOG.md for details."
+              Write-Warning "Neither '## [$version]' nor a non-empty '## [Unreleased]' section found in CHANGELOG.md; using generic fallback body."
+            }
           }
           $bannerLines = @(
             "> [!WARNING]",
