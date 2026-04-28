@@ -2,13 +2,18 @@
 
 This document is the bridge between Claude Code coding sessions on
 this repo. It captures the things a new session needs that **aren't**
-already in the existing docs — the working conventions, the
-sandbox-specific gotchas, and the "where we left off" pointer.
+already in the existing docs — the sandbox-specific gotchas, the
+"where we left off" pointer, and a pre-digested sketch of the next
+stage. The general working conventions (PR shape, branching,
+CHANGELOG discipline, documentation policy, F# / WPF gotchas) live in
+[`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
-A new session should read this **first**, then move to
+A new session should read this **first**, then
+[`CONTRIBUTING.md`](../CONTRIBUTING.md),
 [`spec/tech-plan.md`](../spec/tech-plan.md),
 [`docs/CHECKPOINTS.md`](CHECKPOINTS.md), and
-[`CHANGELOG.md`](../CHANGELOG.md) in that order.
+[`CHANGELOG.md`](../CHANGELOG.md) in that order — see the full
+"Recommended reading order" at the bottom.
 
 ## Where we left off
 
@@ -50,57 +55,23 @@ disconnects mid-session.
 
 ## Working conventions on this repo
 
-Pulled from observed practice, not just `CONTRIBUTING.md`. The
-written rules in `CONTRIBUTING.md` are still authoritative; this
-list adds the things that come up in agent workflows.
+The written rules live in [`CONTRIBUTING.md`](../CONTRIBUTING.md):
 
-### PR shape
+- **PR shape, body template, branch naming, squash-merge,
+  Conventional Commits** — see CONTRIBUTING.md → "Branching and pull
+  requests".
+- **CHANGELOG `[Unreleased]` discipline + per-release rewrite** —
+  same section.
+- **Checkpoint + rollback contract** — see
+  [`docs/CHECKPOINTS.md`](CHECKPOINTS.md). Sandbox-specific
+  workaround when the agent can't push tags is captured under
+  "Sandbox + tools caveats" below.
+- **Documentation policy** — `spec/` is immutable; observed platform
+  quirks go in `docs/CONPTY-NOTES.md`; CONTRIBUTING.md → "Documentation
+  policy" has the full rule set.
 
-- **One concern per PR.** When tempted to bundle two improvements,
-  split them. Past frustrations on this repo trace back to oversized
-  PRs with multiple moving parts. The user explicitly asked for
-  smaller PRs after the Stage 0 diagnostic loop.
-- **Branch naming**: `feature/<stage-or-feature-slug>`,
-  `fix/<short-slug>`, `chore/<short-slug>`, `docs/<short-slug>`.
-- **PR title in Conventional Commits form**: `feat: …`, `fix(...): …`,
-  `ci: …`, `docs: …`, `chore: …`. There's no automated check yet but
-  the merge history is uniformly conventional and readers expect it.
-- **Squash-merge by default.** All PRs to date have been squashed;
-  the merge commit subject becomes the canonical history line.
-- **PR body**: brief Summary + What changed + Test plan checklist.
-  Stage-implementation PRs also include a "What this PR deliberately
-  omits" section pointing at the next stage(s) for deferred items.
-
-### CHANGELOG
-
-- Every behaviour-changing PR adds a bullet under
-  `## [Unreleased]` → `### Added` / `### Changed` / `### Removed`.
-- When a release is cut, the unreleased entries get rewritten into
-  a clean per-release section with a one-paragraph narrative
-  (template: see the existing `[0.0.1-preview.15]` entry).
-- The release workflow now **gates on a matching
-  `## [<version>]` section** existing before it builds — don't tag
-  a release without updating CHANGELOG first.
-
-### Checkpoints + rollback
-
-- Every shipped stage adds a row to `docs/CHECKPOINTS.md`'s
-  "Current checkpoints" table.
-- If the agent can't push the tag itself (sandbox limitation), it
-  also adds a row under "Pending checkpoint tags" with the exact
-  push commands so the maintainer can sweep them later.
-- The label `stable-baseline` on the merging PR is the
-  searchable filter (`is:pr label:stable-baseline`).
-
-### Documentation
-
-- `spec/` is **immutable** — it's the external research that drove
-  the design. Don't edit it. Discoveries about platform behaviour
-  go to `docs/CONPTY-NOTES.md` (or sibling platform-quirks files
-  as the project grows).
-- `docs/CHECKPOINTS.md` is the rollback contract. `docs/RELEASE-PROCESS.md`
-  has the active release flow and a "Common pitfalls" section that
-  every diagnostic loop's lessons funnel into.
+The handoff-specific addition: the user explicitly asked for **smaller
+PRs** after the Stage 0 diagnostic loop. When in doubt, split.
 
 ## Sandbox + tools caveats
 
@@ -142,16 +113,13 @@ all validation happens in CI on `windows-latest`. Implications:
 
 - The local git proxy returns 403 on **tag pushes** (any ref under
   `refs/tags/`). Branches push fine. The only way to land a tag is
-  for the maintainer to push from their workstation.
-- **Releases are created via the GitHub Releases UI**, not by
-  pushing a `v*` tag directly — that's how the workflow shape ended
-  up triggered by `release: published`. Don't try to push a
-  versioned tag and expect the release pipeline to fire.
-- **Never publish a release with `Target` other than `main`.** A
-  past release (v0.0.1-preview.14) accidentally targeted a stale
-  branch and ran an outdated `release.yml`. The release workflow
-  now fail-fasts in this case but the cure is still to delete the
-  release.
+  for the maintainer to push from their workstation. Hence the
+  "Pending checkpoint tags" table in
+  [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) — the agent stages the
+  exact push commands for the maintainer.
+- General release-flow rules (Releases UI not `git push --tags`,
+  `Target = main`, the two fail-fast gates) live in
+  [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md).
 
 ### GitHub MCP
 
@@ -261,20 +229,23 @@ creep:
 ## Recommended reading order for a new session
 
 1. **This file.**
-2. [`spec/tech-plan.md`](../spec/tech-plan.md) §1–§4 (the stages
+2. [`CONTRIBUTING.md`](../CONTRIBUTING.md) — PR shape, branching,
+   CHANGELOG discipline, F# / WPF gotchas, documentation policy.
+   Working conventions all live here.
+3. [`spec/tech-plan.md`](../spec/tech-plan.md) §1–§4 (the stages
    already shipped + Stage 4) — establishes the architectural
    grain.
-3. [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) — what's stable, what
+4. [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) — what's stable, what
    tags need pushing, how rollback works.
-4. [`docs/CONPTY-NOTES.md`](CONPTY-NOTES.md) — observed platform
+5. [`docs/CONPTY-NOTES.md`](CONPTY-NOTES.md) — observed platform
    quirks. Render-cadence finding is the one most likely to bite
    again.
-5. [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md) "Common pitfalls"
+6. [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md) "Common pitfalls"
    section — every diagnostic loop's lessons end up here.
-6. Skim [`CHANGELOG.md`](../CHANGELOG.md) `[Unreleased]` for
+7. Skim [`CHANGELOG.md`](../CHANGELOG.md) `[Unreleased]` for
    in-flight work and the most recent shipped section for the
    last release narrative shape.
-7. Browse `src/` top-down: `Terminal.Core` (data) → `Terminal.Pty`
+8. Browse `src/` top-down: `Terminal.Core` (data) → `Terminal.Pty`
    (ConPTY) → `Terminal.Parser` (VT500) → `Views` (WPF) →
    `Terminal.App/Program.fs` (composition).
 

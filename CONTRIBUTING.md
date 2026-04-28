@@ -47,9 +47,47 @@ See [`docs/BUILD.md`](docs/BUILD.md) for build instructions.
 - Squash-merge by default. Keep the PR title in
   [Conventional Commits](https://www.conventionalcommits.org/) form
   (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `build:`, `ci:`).
+  All PRs to date have been squashed; the merge commit subject becomes
+  the canonical history line.
+- **One concern per PR.** When tempted to bundle two improvements,
+  split them. Past frustrations on this repo trace back to oversized
+  PRs with multiple moving parts; small focused PRs review faster and
+  bisect cleaner.
+- **PR body**: brief Summary + What changed + Test plan checklist.
+  Stage-implementation PRs also include a "What this PR deliberately
+  omits" section pointing at the stage(s) that own the deferred items,
+  so reviewers don't ask for scope that belongs elsewhere.
 - Every PR must update [`CHANGELOG.md`](CHANGELOG.md) under
   `## [Unreleased]` if it changes behavior, configuration, key bindings,
-  the UIA surface, or anything user-visible.
+  the UIA surface, or anything user-visible. When a release is cut, the
+  unreleased entries are rewritten into a clean per-release section
+  (template: see the existing `[0.0.1-preview.15]` entry). The release
+  workflow gates on a matching `## [<version>]` section existing
+  before it builds — don't tag a release without updating CHANGELOG
+  first.
+
+## Documentation policy
+
+- **`spec/` is immutable.** It captures the external research that
+  drove the design (`overview.md`) and the stage-by-stage plan
+  (`tech-plan.md`). Don't edit it. Architectural changes that
+  contradict the spec need an explicit ADR-style PR updating the spec
+  with an issue and discussion preceding it.
+- **Observed platform quirks** (things we learn by running the code,
+  not from external research) go in [`docs/CONPTY-NOTES.md`](docs/CONPTY-NOTES.md)
+  or sibling platform-quirks files as the project grows. Keep
+  `spec/overview.md` for the planned design and `docs/CONPTY-NOTES.md`
+  for what we actually saw.
+- **[`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md) is the rollback
+  contract.** Every shipped stage adds a row to its "Current
+  checkpoints" table; if you can't push the tag yourself, also add a
+  row under "Pending checkpoint tags" with the exact push commands so
+  a maintainer can sweep them later. The PR that lands a checkpoint
+  gets the `stable-baseline` label.
+- **[`docs/RELEASE-PROCESS.md`](docs/RELEASE-PROCESS.md) "Common
+  pitfalls" is the funnel** for every diagnostic-loop lesson. If you
+  hit something nasty in CI or a release, the fix is half the patch
+  and the entry under "Common pitfalls" is the other half.
 
 ## The non-negotiable accessibility rules
 
