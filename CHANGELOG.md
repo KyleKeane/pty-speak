@@ -17,6 +17,25 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Fixed
 
+- **`Terminal.App.exe` no longer allocates a console window at
+  startup.** `Terminal.App.fsproj` previously set
+  `OutputType=Exe` + `DisableWinExeOutputInference=true`, which
+  forced the produced executable into the Windows console
+  subsystem; Windows allocated a conhost for the parent process
+  before any of our code ran, and that empty console window
+  appeared behind the WPF window on every launch
+  ([Issue #39](https://github.com/KyleKeane/pty-speak/issues/39)).
+  Investigation ruled out the four ConPTY-side hypotheses
+  originally listed (`STARTUPINFOEX.cb`, attribute attachment,
+  `STARTF_USESTDHANDLES`, `CREATE_NEW_CONSOLE`) — the ConPTY
+  setup matches Microsoft's canonical sample exactly. Switched
+  the executable to `OutputType=WinExe` (Windows GUI subsystem,
+  matching what the WPF SDK would auto-infer) and dropped the
+  `DisableWinExeOutputInference` opt-out. No source changes
+  needed; `grep` confirms zero `Console.WriteLine`/`printfn`
+  calls in `src/`, so nothing was relying on an attached
+  console. Visual smoke verification needs a Windows install of
+  the next preview release.
 - **`release.yml` now uploads Velopack's channel-suffixed manifest
   files.** `v0.0.1-preview.18` shipped with only three release
   assets (`*-full.nupkg`, `*-Setup.exe`, `RELEASES`) instead of the
