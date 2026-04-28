@@ -20,7 +20,14 @@ enough that we cannot replace one with the other.
 
 ## Test data
 
-Reusable fixtures live in `tests/fixtures/`:
+> **Status (Stage 3b on `main`):** the `tests/fixtures/` directory and
+> the `Terminal.App --replay` flag below are **planned tooling** — they
+> do not yet exist. They land alongside the stage that first needs
+> them (the spinner fixture lands with Stage 5, the selection-list
+> fixture with Stage 8, etc.). Listed here so the canonical filenames
+> are reserved.
+
+Planned reusable fixtures under `tests/fixtures/`:
 
 - `dir-output.txt` — raw byte capture of `cmd.exe /c dir`.
 - `claude-thinking.txt` — captured Ink spinner sequence for the
@@ -30,8 +37,8 @@ Reusable fixtures live in `tests/fixtures/`:
 - `truecolor-rainbow.txt` — sweep of `\x1b[38;2;r;g;bm` colors.
 - `python-traceback.txt` — multi-line red traceback for review-mode `e`.
 
-Replay these by piping into the terminal's stdin via the developer-mode
-replay tool (`Terminal.App --replay tests/fixtures/...`).
+Once the developer-mode replay tool ships, replay these by piping
+into the terminal's stdin: `Terminal.App --replay tests/fixtures/...`.
 
 ## Stage validation matrix
 
@@ -39,7 +46,28 @@ For every release, run the rows that correspond to stages already
 shipped. A row is **PASS** only if the screen reader behaviour matches
 the expected column verbatim.
 
-### Stage 4 — text exposure
+### Stage 0 — empty window (currently shipped: `v0.0.1-preview.15`)
+
+| Test                              | Procedure                                       | Expected NVDA behaviour                                          |
+|-----------------------------------|-------------------------------------------------|------------------------------------------------------------------|
+| Window opens                      | Launch app                                      | "pty-speak terminal, window" (from `AutomationProperties.Name`)  |
+| Window title                      | Press Insert+T                                  | NVDA announces "pty-speak"                                       |
+| Inspect.exe shows correct surface | Open Inspect.exe, hover over the window         | `AutomationId="pty-speak.MainWindow"`, `ControlType=Window`      |
+
+### Stage 3b — first visible terminal surface (next preview)
+
+This row applies to any preview cut from `main` between Stage 3b and
+Stage 4. UIA exposure of the buffer is not yet present; NVDA reads
+the WPF `TextBlock`-equivalent output via its fallback diff path.
+
+| Test                              | Procedure                                       | Expected behaviour                                               |
+|-----------------------------------|-------------------------------------------------|------------------------------------------------------------------|
+| `cmd.exe` startup is visible      | Launch app                                      | The window shows live `cmd.exe` startup output (banner + prompt) |
+| Output renders without flicker    | Watch the buffer for ~5 seconds                 | Text remains stable; no obvious tear/blink                       |
+| ANSI 16 colours render            | Run `dir /a` (cmd colourises filenames)         | Different file types render in different foreground colours      |
+| Window closes cleanly             | Close the window                                | Process exits; no orphan `cmd.exe` (verify via Task Manager)     |
+
+### Stage 4 — text exposure (planned)
 
 | Test                              | Procedure                                       | Expected NVDA behaviour                                          |
 |-----------------------------------|-------------------------------------------------|------------------------------------------------------------------|
@@ -49,7 +77,7 @@ the expected column verbatim.
 | Review cursor moves by word       | NVDA+Numpad4 / NVDA+Numpad6                     | NVDA reads previous / next word                                  |
 | Review cursor moves by character  | NVDA+Numpad1 / NVDA+Numpad3                     | NVDA reads previous / next character                             |
 | Empty line is announced           | Move review cursor to a blank row               | NVDA says "blank" — *not* the previous row, *not* silence        |
-| Inspect.exe shows correct surface | Open Inspect.exe, hover over the terminal       | ControlType=Document, ClassName=`TerminalView`, Text pattern present |
+| Inspect.exe shows correct surface | Open Inspect.exe, hover over the terminal       | ControlType=Document, ClassName=`TerminalView` (set explicitly by the Stage 4 automation peer; today's element inherits a generated WPF class name), Text pattern present |
 
 ### Stage 5 — streaming output
 

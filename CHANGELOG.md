@@ -15,7 +15,103 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed
+
+- **Documentation audit (post-Stage-3b).** Brought README,
+  `docs/ARCHITECTURE.md`, `docs/BUILD.md`, `docs/RELEASE-PROCESS.md`,
+  `docs/ROADMAP.md`, `docs/ACCESSIBILITY-TESTING.md`,
+  `CONTRIBUTING.md`, `SECURITY.md`, `docs/CONPTY-NOTES.md`, and
+  `docs/SESSION-HANDOFF.md` in line with the actual state of `main`
+  at Stage 3b. Highlights:
+  - README status now distinguishes "last shipped preview" (Stage 0)
+    from "on `main`" (Stages 1–3b); license dependency list reflects
+    current vs future direct dependencies.
+  - ARCHITECTURE adds a "current pipeline" diagram alongside the
+    target one, an implementation-status column on the modules
+    table, and a today/target split on the threading model.
+  - CONTRIBUTING captures the F# / WPF gotchas hit during Stages 1–3b
+    (`out SafeFileHandle` byref interop, `let rec` for self-referential
+    class-body bindings, `internal` vs `private` constructors, F# DU
+    C# interop via `IsXxx` / `.Item`, `FrameworkElement` lacking
+    `Background`, `MC1002` / `NETSDK1022` / `NETSDK1047`); Tests
+    section now reflects xUnit + FsCheck.Xunit (the actual frameworks)
+    and the real test-project paths.
+  - SECURITY annotates each "What we defend against" bullet with its
+    current implementation status (most are still planned); Job Object
+    deferral now consistent with `docs/CONPTY-NOTES.md`.
+  - RELEASE-PROCESS workflow-step list now reflects the 12 actual
+    steps in `release.yml`, including the two fail-fast gates added
+    after `v0.0.1-preview.14`.
+  - ROADMAP gains a Status column on the Phase 1 stage table and a
+    cross-link to `docs/CHECKPOINTS.md`.
+  - ACCESSIBILITY-TESTING gains rows for the only two stages with
+    actual user-visible behaviour today (Stage 0 and Stage 3b); test
+    fixtures section flagged as planned tooling.
+- **Working conventions extracted from SESSION-HANDOFF into
+  CONTRIBUTING.** SESSION-HANDOFF was carrying policy that binds every
+  contributor (PR shape, CHANGELOG discipline, "`spec/` is immutable",
+  "platform quirks go in `docs/CONPTY-NOTES.md`"), not just an
+  inter-thread handoff. Moved those into CONTRIBUTING's "Branching and
+  pull requests" section and a new "Documentation policy" section;
+  SESSION-HANDOFF now points at them and keeps only the
+  session-specific content (sandbox caveats, pending action items,
+  Stage 4 sketch, reading order). Reading order updated so a new
+  session reads SESSION-HANDOFF first, then CONTRIBUTING, then the
+  rest.
+- **Spec rewrite (post-Stage-3b).** Per the user's authorisation,
+  applied an in-place ADR-style update to `spec/overview.md` and
+  `spec/tech-plan.md` so the design contract reads true to what
+  actually shipped, rather than retaining superseded choices that
+  could mislead future contributors. Highlights:
+  - **Elmish.WPF removed throughout.** Investigated and dropped (no
+    stable .NET 9 build on nuget at the time we needed it). Replaced
+    with the actual two-project F# / C# split: F# `Terminal.App`
+    owns `[<EntryPoint>][<STAThread>] main`, C# `Views` library
+    hosts `MainWindow.xaml` + `App.cs : Application` +
+    `TerminalView.cs`.
+  - **Module layout in overview.md** rewritten to match the real
+    `src/` tree (`Terminal.Core`, `Terminal.Pty`, `Terminal.Parser`,
+    `Terminal.Audio`, `Terminal.Accessibility`, `Views`,
+    `Terminal.App`); future modules clearly marked as reserved
+    names.
+  - **Test framework** corrected: Expecto + FsCheck → xUnit +
+    FsCheck.Xunit; per-module test projects → single `Tests.Unit/`.
+  - **Stage 1 P/Invoke surface** rewritten with `nativeint&` for
+    out-handle parameters; the silent `out SafeFileHandle&` byref
+    bug now documented inline as a comment in the spec.
+  - **Stage 1 validation criteria** rewritten around the ≥16-byte
+    ConPTY init prologue (the "see directory listing" assertion the
+    spec previously called for is unreliable due to the
+    render-cadence finding in `docs/CONPTY-NOTES.md`).
+  - **Stage 2 vs Stage 3a deferral split** clarified — the parser
+    emits dispatches for everything, but `Screen.Apply` handles only
+    basic-16 SGR + cursor + erase today; 256-color, truecolor, and
+    DECSET are deferred with their owner-stages noted.
+  - **Stage 3** annotated as having shipped split into 3a (screen
+    model) + 3b (WPF rendering), with validation criteria trimmed
+    to what Stage 3 alone demonstrates (cmd.exe startup banner
+    renders); 256-color, resize, and typing pushed to their owner
+    stages. Reference Code Map cleaned (Elmish.WPF link dropped, the
+    bare FsCheck entry merged into a combined xUnit + FsCheck.Xunit
+    entry).
+
 ### Added
+
+- [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md): handoff
+  document for picking up between Claude Code sessions on this
+  repo. Captures the things that aren't already in other docs:
+  the working conventions observed in practice (small focused
+  PRs, Conventional Commits, CHANGELOG-first releases), the
+  sandbox / tools caveats (no `dotnet` locally, blocked Azure
+  Blob URLs, tag-push 403, GitHub MCP disconnects), the
+  pre-digested Stage 4 implementation sketch, and a recommended
+  reading order for new sessions. Linked from `README.md`'s
+  Quick links.
+- New rows in [`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md) for
+  `baseline/stage-2-vt-parser`, `baseline/stage-3a-screen-model`,
+  and `baseline/stage-3b-wpf-rendering`, each with a corresponding
+  entry in the "Pending checkpoint tags" section so the maintainer
+  can sweep all four pending tags in one batch from a workstation.
 
 - **CI hygiene gates** preventing two specific bug classes that bit
   us during Stage 0 ↔ Stage 3 iteration:

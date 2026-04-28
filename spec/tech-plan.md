@@ -1,6 +1,6 @@
 # Phase 1 (MVP) Implementation Specification: Accessible F# Windows Terminal for Claude Code with NVDA
 
-This document is an implementation-focused specification for Phase 1 of an accessible Windows terminal built in F#/.NET 9, WPF/Elmish.WPF, ConPTY (P/Invoke), a custom WPF UI Automation provider, TPL Dataflow + Channels, NAudio earcons, and Velopack distribution. The MVP target is: **a blind user can run Claude Code (Ink-based React TUI) inside the terminal, hear all output via NVDA, navigate output as a structured document, interact with selection lists via NVDA-friendly listbox semantics, and get earcons for ANSI color/style changes.** Phase 1 succeeds when “Claude Code can drive its own further development inside our terminal.”
+This document is an implementation-focused specification for Phase 1 of an accessible Windows terminal built in F#/.NET 9, WPF (with a thin C# XAML library and an F# composition root — Elmish.WPF was investigated and dropped, see `spec/overview.md`), ConPTY (P/Invoke), a custom WPF UI Automation provider, TPL Dataflow + Channels, NAudio earcons, and Velopack distribution. The MVP target is: **a blind user can run Claude Code (Ink-based React TUI) inside the terminal, hear all output via NVDA, navigate output as a structured document, interact with selection lists via NVDA-friendly listbox semantics, and get earcons for ANSI color/style changes.** Phase 1 succeeds when "Claude Code can drive its own further development inside our terminal."
 
 The structure below follows a **walking-skeleton / tracer-bullet** sequencing (each stage produces production-quality code in a thin, observable, end-to-end slice that the user can validate independently before adding more) — see Cockburn / Hunt & Thomas on this pattern ([Code Climate](https://codeclimate.com/blog/kickstart-your-next-project-with-a-walking-skeleton), [Henrico Dolfing](https://www.henricodolfing.com/2018/04/start-your-project-with-walking-skeleton.html), [Built In on Tracer Bullets](https://builtin.com/software-engineering-perspectives/what-are-tracer-bullets)). Microsoft’s own ConPTY samples (`EchoCon` then `MiniTerm`) show the same incremental progression: pipes → ConPTY → STARTUPINFOEX → CreateProcess → I/O loop ([microsoft/terminal samples](https://learn.microsoft.com/tr-tr/windows/terminal/samples)).
 
@@ -8,24 +8,24 @@ The structure below follows a **walking-skeleton / tracer-bullet** sequencing (e
 
 ## Stage 0 — Solution skeleton, CI, and “Hello WPF” baseline
 
-**Goal.** A buildable, signed-able F#/WPF solution that launches an empty window, with CI green, before any terminal logic exists. This is the “shipping skeleton” that lets every subsequent stage ship to GitHub Releases.
+**Goal.** A buildable F#/WPF solution that launches an empty window, with CI green, before any terminal logic exists. This is the "shipping skeleton" that lets every subsequent stage ship to GitHub Releases.
 
-**Layout (recommended F# projects):**
+**Layout (F# projects + one C# WPF library + one F# executable):**
 
-- `Terminal.Core` (F# class lib, `net9.0-windows`, `<UseWpf>true</UseWpf>`) — pure types: `Cell`, `ScreenBuffer`, `VtEvent`, `BusMessage`, `Earcon`, etc.
+- `Terminal.Core` (F# class lib, `net9.0-windows`) — pure types: `ColorSpec`, `SgrAttrs`, `Cell`, `Cursor`, `Screen`, `VtEvent`. (Reserved placeholder DUs for `BusMessage` and `Earcon` land in their owner stages.)
 - `Terminal.Pty` (F# class lib) — ConPTY P/Invoke and process lifecycle.
 - `Terminal.Parser` (F# class lib) — Paul Williams VT500 state machine.
-- `Terminal.Audio` (F# class lib) — NAudio earcon player.
-- `Terminal.Accessibility` (F# class lib) — WPF AutomationPeer + UIA providers.
-- `Terminal.App` (F# WPF entry — uses `Microsoft.NET.Sdk` not `Microsoft.NET.Sdk.WindowsDesktop`, with `OutputType=Exe`, `DisableWinExeOutputInference=true` per Elmish.WPF docs ([elmish/Elmish.WPF README](https://github.com/elmish/Elmish.WPF))). 
-- `Views` (C# WPF Custom Control Library `net9.0-windows`) — XAML only. F# can’t declare XAML; you reference this from F# (this is the standard Elmish.WPF setup [Kill All Defects walkthrough](https://killalldefects.com/2019/12/30/getting-elmish-in-net-with-elmish-wpf-walkthrough/)). 
-- `Tests.Unit` (xUnit + FsCheck) and `Tests.Ui` (FlaUI UIA3).
+- `Terminal.Audio` (F# class lib, placeholder until Stage 9) — NAudio earcon player.
+- `Terminal.Accessibility` (F# class lib, placeholder until Stage 4) — WPF AutomationPeer + UIA providers.
+- `Views` (C# WPF Custom Control Library `net9.0-windows`, `<UseWPF>true</UseWPF>`, `OutputType=Library`) — `MainWindow.xaml` + a plain `App.cs : Application` (do NOT include `App.xaml` — the WPF SDK auto-classifies it as `ApplicationDefinition` which is invalid in a Library project, error `MC1002`). The custom `TerminalView : FrameworkElement` lives here too because XAML-adjacent C# is the cleanest place for `OnRender` over UIA-friendly text glyphs.
+- `Terminal.App` (F# executable, `Microsoft.NET.Sdk`, `OutputType=Exe`, `<UseWPF>true</UseWPF>`, `DisableWinExeOutputInference=true`) — owns `[<EntryPoint>][<STAThread>] main`. References `Views`, `Terminal.Core`, `Terminal.Pty`, `Terminal.Parser`. The composition root.
+- `Tests.Unit` (F# xUnit + FsCheck.Xunit) and `Tests.Ui` (placeholder; FlaUI UIA3 work begins in Stage 4).
 
-**WPF entry-point pattern (so Velopack can run before WPF starts):** define a custom `[STAThread] static Main` in `App.xaml.cs` that calls `VelopackApp.Build().Run()` first, then constructs the WPF Application — this matches Velopack’s official WPF guidance and avoids WPF overhead during update apply  ([Velopack docs csharp.mdx](https://github.com/velopack/velopack.docs/blob/master/docs/getting-started/csharp.mdx)).
+**WPF entry-point pattern (so Velopack can run before WPF starts):** in `Terminal.App/Program.fs`, declare `[<EntryPoint; STAThread>] let main argv = VelopackApp.Build().Run(); ...` then construct the `Application` and run. The Velopack call must happen before any WPF type loads (Velopack issue #195). The earlier draft of this plan put the entry point in `App.xaml.cs` of the C# library, but `App.xaml` in `OutputType=Library` is invalid — keep entry in the F# executable instead.
 
-**Validation (Stage 0).** Solution builds. `vpk pack`/`vpk upload github` succeeds. App launches an empty window. NVDA announces a window with our class name. CI green. This proves the deployment pipe before any features land — the explicit recommendation of “shipping skeleton” patterns  ([Roy Osherove](https://osherove.com/blog/2013/1/7/build-pattern-shipping-skeleton.html)).
+**Validation (Stage 0).** Solution builds with `TreatWarningsAsErrors=true`. `vpk pack` succeeds against the publish output (`dotnet publish src/Terminal.App/Terminal.App.fsproj -c Release -r win-x64 --self-contained -o publish` — note: do NOT pass `--no-restore` after a platform-default restore; produces `NETSDK1047`). The packed `pty-speak-Setup.exe` installs to `%LocalAppData%\pty-speak\current\` without UAC. App launches an empty window. NVDA announces "pty-speak terminal, window" via `AutomationProperties.Name`. CI green. The Stage 0 baseline shipped as `v0.0.1-preview.15` (after a 14-attempt diagnostic loop — see "Common pitfalls" in `docs/RELEASE-PROCESS.md`).
 
-**Failure modes.** WPF reference missing (`UseWpf` not set on F# project); Velopack’s `VelopackApp.Build().Run()` not called first (causes infinite re-launch loop on update — confirmed in [Velopack issue #195](https://github.com/velopack/velopack/issues/195)).
+**Failure modes.** WPF reference missing (`UseWPF` not set on the F# executable); Velopack's `VelopackApp.Build().Run()` not called first (causes infinite re-launch loop on update — Velopack issue #195); `App.xaml` shipped in the Library project (`MC1002`); explicit `<Page>` / `<ApplicationDefinition>` items duplicating the WPF SDK auto-glob (`NETSDK1022`); PowerShell heredocs at column 0 inside indented YAML `run: |` blocks silently terminating the literal block and producing zero-second `startup_failure` runs (this was the root cause of the 14-attempt diagnostic loop; the `actionlint` workflow-lint job in CI now catches it).
 
 -----
 
@@ -92,41 +92,49 @@ module PseudoConsole =
     [<DllImport("kernel32.dll", SetLastError = true)>]
     extern int CreatePseudoConsole(
         COORD size, SafeFileHandle hInput, SafeFileHandle hOutput,
-        uint32 dwFlags, IntPtr& phPC)
+        uint32 dwFlags, nativeint& phPC)
 
     [<DllImport("kernel32.dll", SetLastError = true)>]
-    extern int ResizePseudoConsole(IntPtr hPC, COORD size)
+    extern int ResizePseudoConsole(nativeint hPC, COORD size)
 
     [<DllImport("kernel32.dll", SetLastError = true)>]
-    extern int ClosePseudoConsole(IntPtr hPC)
+    extern int ClosePseudoConsole(nativeint hPC)
 
+    // Note: hReadPipe and hWritePipe are out-parameters. Declaring them
+    // as `SafeFileHandle&` is the natural choice but is *silently
+    // broken* on the F# / Win32 boundary — the call succeeds and
+    // returns sensible-looking handles but every subsequent operation
+    // throws NullReferenceException. Declare as `nativeint&` and wrap
+    // manually: `new SafeFileHandle(p, ownsHandle = true)`. The same
+    // workaround applies to any kernel32 export with multiple
+    // SafeFileHandle out-parameters; `Native.fs` is the reference.
     [<DllImport("kernel32.dll", SetLastError = true)>]
     extern bool CreatePipe(
-        SafeFileHandle& hReadPipe, SafeFileHandle& hWritePipe,
-        IntPtr lpPipeAttributes, uint32 nSize)
+        nativeint& hReadPipe, nativeint& hWritePipe,
+        nativeint lpPipeAttributes, uint32 nSize)
 
     [<DllImport("kernel32.dll", SetLastError = true)>]
     extern bool InitializeProcThreadAttributeList(
-        IntPtr lpAttributeList, int dwAttributeCount, int dwFlags, IntPtr& lpSize)
+        nativeint lpAttributeList, int dwAttributeCount, int dwFlags, nativeint& lpSize)
 
     [<DllImport("kernel32.dll", SetLastError = true)>]
     extern bool UpdateProcThreadAttribute(
-        IntPtr lpAttributeList, uint32 dwFlags, IntPtr Attribute,
-        IntPtr lpValue, IntPtr cbSize, IntPtr lpPreviousValue, IntPtr lpReturnSize)
+        nativeint lpAttributeList, uint32 dwFlags, nativeint Attribute,
+        nativeint lpValue, nativeint cbSize, nativeint lpPreviousValue, nativeint lpReturnSize)
 
     [<DllImport("kernel32.dll", SetLastError = true)>]
-    extern bool DeleteProcThreadAttributeList(IntPtr lpAttributeList)
+    extern bool DeleteProcThreadAttributeList(nativeint lpAttributeList)
 
     [<DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)>]
     extern bool CreateProcess(
         string lpApplicationName, string lpCommandLine,
-        IntPtr lpProcessAttributes, IntPtr lpThreadAttributes,
+        nativeint lpProcessAttributes, nativeint lpThreadAttributes,
         bool bInheritHandles, uint32 dwCreationFlags,
-        IntPtr lpEnvironment, string lpCurrentDirectory,
+        nativeint lpEnvironment, string lpCurrentDirectory,
         STARTUPINFOEX& lpStartupInfo, PROCESS_INFORMATION& lpProcessInformation)
 ```
 
-These signatures mirror Microsoft’s `PseudoConsoleApi.cs` exactly ([MiniTerm Native/PseudoConsoleApi.cs](https://github.com/microsoft/terminal/blob/main/samples/ConPTY/MiniTerm/MiniTerm/Native/PseudoConsoleApi.cs)) and the official `0x00020016` constant  ([UpdateProcThreadAttribute docs](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute), [creating-a-pseudoconsole-session](https://learn.microsoft.com/en-us/windows/console/creating-a-pseudoconsole-session)).
+These signatures track Microsoft's `PseudoConsoleApi.cs` ([MiniTerm Native/PseudoConsoleApi.cs](https://github.com/microsoft/terminal/blob/main/samples/ConPTY/MiniTerm/MiniTerm/Native/PseudoConsoleApi.cs)) and the official `0x00020016` constant  ([UpdateProcThreadAttribute docs](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute), [creating-a-pseudoconsole-session](https://learn.microsoft.com/en-us/windows/console/creating-a-pseudoconsole-session)) with two F#-specific deviations: `nativeint` instead of `IntPtr` everywhere (just an alias) and the `nativeint&` workaround for SafeFileHandle out-parameters described above.
 
 ### 1.2 The exact lifecycle (must follow this order)
 
@@ -145,14 +153,16 @@ These signatures mirror Microsoft’s `PseudoConsoleApi.cs` exactly ([MiniTerm N
 ### 1.3 Common F#/ConPTY pitfalls
 
 - **STARTUPINFOEX size**: must use `sizeof<STARTUPINFOEX>` not `sizeof<STARTUPINFO>`. F# struct layout must be `LayoutKind.Sequential` with all fields `mutable` and exactly the Win32 layout — F# field ordering preserves declaration order which matches the C struct.
-- **`SafeFileHandle` vs `IntPtr`**: use `SafeFileHandle` for pipe ends so the GC/finalizer doesn’t leak; that’s how MiniTerm does it ([PseudoConsoleApi.cs](https://github.com/microsoft/terminal/blob/main/samples/ConPTY/MiniTerm/MiniTerm/Native/PseudoConsoleApi.cs)).
+- **`out SafeFileHandle&` is silently broken**: declared P/Invoke parameters of type `SafeFileHandle&` for out-handles compile, the call succeeds, but the wrapped handle throws `NullReferenceException` on first use. Declare as `nativeint&` and wrap manually with `new SafeFileHandle(p, ownsHandle = true)`. See `Terminal.Pty.Native` for the canonical pattern.
 - **Don’t pass `CREATE_NEW_PROCESS_GROUP`**: it isolates the child from ConPTY’s Ctrl+C delivery  (documented gotcha at [MS Q&A](https://learn.microsoft.com/en-ca/answers/questions/5832200/c-sent-to-the-stdin-of-a-program-running-under-a-p)). For Phase 1 we want Ctrl+C to interrupt Claude Code.
 - **Pipe deadlocks**: if you only read or only write you can deadlock; interleave on separate threads  (Raymond Chen, [Old New Thing](https://devblogs.microsoft.com/oldnewthing/20110707-00/?p=10223)).
-- **Environment**: pass `NULL` for `lpEnvironment` to inherit; for Stage 7 we will explicitly compose `TERM=xterm-256color` and `COLORTERM=truecolor` env block.
+- **Environment**: pass `NULL` (or in F# `0n`) for `lpEnvironment` to inherit; for Stage 7 we will explicitly compose `TERM=xterm-256color` and `COLORTERM=truecolor` env block.
+- **Job Object lifecycle deferred from Stage 1.** The original spec called for wrapping the child in a Windows Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`; we deferred this so Stage 1 could land the minimum-viable ConPTY chain. Until added, a host crash leaves the child running. See `docs/CONPTY-NOTES.md` for the deferral note. Likely lands in Stage 6 alongside the input pipeline.
 
 ### 1.4 Validation criteria (Stage 1)
 
-- Run a console F# program that spawns `cmd.exe`, writes `dir\r\n`, and prints raw bytes to stdout for 2 seconds. **Good:** you see the directory listing including ANSI escapes from cmd’s prompt. **Broken:** hang on read = handle inheritance / drain bug; access violation = `cb` field wrong; `0x57` (ERROR_INVALID_PARAMETER) from CreateProcess = STARTUPINFOEX layout wrong.
+- Run a console F# program (or the Stage 1 acceptance test) that spawns `cmd.exe` under ConPTY and reads bytes from the output pipe via the dedicated reader Task into a bounded `Channel<byte array>`. **Good:** you capture at least the 16-byte ConPTY init prologue (`\x1b[?9001h\x1b[?1004h`). Spawning interactive `cmd.exe` for ~3 seconds also produces ~130 bytes of cmd's startup ANSI (cursor mode, alt-screen entry, OSC 0 title). **Broken:** hang on read = handle inheritance / drain bug; access violation = `cb` field wrong; `0x57` (ERROR_INVALID_PARAMETER) from CreateProcess = STARTUPINFOEX layout wrong; `NullReferenceException` on the first pipe read = the `out SafeFileHandle&` byref bug above.
+- **Do NOT use fast-exit `cmd.exe /c <command>` to verify round-trip output.** ConPTY's conhost renders to the parent pipe on a timer-driven cadence (~16–32 ms); a child that produces output and exits before the next render tick has its output torn down with the HPCON. The 16-byte init prologue is reliable; round-trip output proofs require an interactive shell driven via stdin (Stage 6). See `docs/CONPTY-NOTES.md` for the full finding.
 - Reference C# implementations to cross-check: [waf/MiniTerm](https://github.com/microsoft/Terminal/issues/251), [akobr/ConPty.Sample](https://github.com/akobr/ConPty.Sample), [nishang Invoke-ConPtyShell](https://github.com/samratashok/nishang/blob/master/Shells/Invoke-ConPtyShell.ps1).
 - No NVDA involvement at this stage — pure byte-level proof.
 
@@ -192,14 +202,16 @@ Implement `advance: byte[] -> seq<VtEvent>` with an internal `Parser` record hol
 
 ### 2.3 Minimum sequence support for Phase 1
 
-Keep this *small* — Claude Code uses a narrow surface:
+Keep this *small* — Claude Code uses a narrow surface. The Stage 2 parser is generic: it emits `CsiDispatch` / `OscDispatch` / `EscDispatch` for **any** legal sequence regardless of whether the screen model interprets it yet. The split below tracks what Stage 3a's `Screen.Apply` actually consumes today vs what's deferred to a later stage.
 
-- **C0**: BS (0x08), HT (0x09), LF (0x0A), CR (0x0D), BEL (0x07), ESC (0x1B).
-- **CSI**: `CUU/CUD/CUF/CUB` (A/B/C/D), `CUP` (`H` row;col), `ED` (`J` 0/1/2/3), `EL` (`K` 0/1/2), `SGR` (`m` — full 16-color, 256-color via `38;5;n`/`48;5;n`, truecolor via `38;2;r;g;b`/`48;2;r;g;b`,  attributes 0/1/2/3/4/7/22/23/24/27 — see the canonical mapping at [chadaustin’s Truecolor narrative](https://chadaustin.me/2024/01/truecolor-terminal-emacs/) and [termstandard/colors](https://github.com/termstandard/colors)), `DECSET/DECRST` (`?h/?l`) for modes 1 (DECCKM), 25 (DECTCEM cursor visibility), 1049 (alt screen + save cursor), 2004 (bracketed paste), 1004 (focus events).  
-- **OSC**: 0/2 (window title), 7 (working dir notification, optional).
-- **ESC**: `ESC =`/`ESC >` (DECKPAM/DECKPNM), `ESC 7`/`ESC 8` (DECSC/DECRC). 
+- **C0** (parser → Execute; Screen.Apply handles all of these in Stage 3a): BS (0x08), HT (0x09), LF (0x0A), CR (0x0D), BEL (0x07), ESC (0x1B).
+- **CSI cursor + erase** (Stage 3a): `CUU/CUD/CUF/CUB` (A/B/C/D, relative + clamped at edges), `CUP`/`HVP` (`H`/`f`, 1-indexed → 0-indexed), `ED` (`J` modes 0/1/2 — display erase), `EL` (`K` modes 0/1/2 — line erase).
+- **CSI SGR** (`m`): the parser emits the full parameter list; Stage 3a's `Apply` handles **basic-16**: reset (0), bold (1/22), italic (3/23), underline (4/24), inverse (7/27), foreground 30-37 + bright 90-97 + default 39, background 40-47 + bright 100-107 + default 49. **256-colour (`38;5;n`/`48;5;n`) and truecolor (`38;2;r;g;b`/`48;2;r;g;b`) sub-parameter handling are deferred** — the parser would need to split on `:` vs `;` first, and the WPF renderer has no truecolor brush palette yet. Ship in a later stage. See [chadaustin's Truecolor narrative](https://chadaustin.me/2024/01/truecolor-terminal-emacs/) and [termstandard/colors](https://github.com/termstandard/colors) for what we will eventually implement.
+- **CSI DEC private modes** (`?h`/`?l` — DECSET / DECRST): the parser emits `CsiDispatch` with `priv = Some '?'`; **`Screen.Apply` silently ignores all of them in Stage 3a**. Stage 4+ adds them as their owners need them: 1 (DECCKM, owned by the input layer in Stage 6), 25 (DECTCEM cursor visibility, Stage 4), 1049 (alt screen + save cursor, when an Ink TUI lands in Stage 7), 2004 (bracketed paste, Stage 6), 1004 (focus events, Stage 6).
+- **OSC** (parser-side only in Stage 2): 0/2 (window title), 7 (working dir notification, optional). UIA exposure of OSC 0/2 happens in Stage 4; OSC 8 hyperlink lookup is Stage 4+.
+- **ESC**: `ESC =`/`ESC >` (DECKPAM/DECKPNM), `ESC 7`/`ESC 8` (DECSC/DECRC). Parser-side only.
 
-xterm’s full reference for these is at [invisible-island ctlseqs](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html). Don’t implement DCS Sixel, ReGIS, or device-attributes responses in Phase 1.
+xterm's full reference is at [invisible-island ctlseqs](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html). Don't implement DCS Sixel, ReGIS, or device-attributes responses in Phase 1.
 
 ### 2.4 Validation (Stage 2)
 
@@ -218,6 +230,8 @@ xterm’s full reference for these is at [invisible-island ctlseqs](https://www.
 ## Stage 3 — Screen model + WPF rendering
 
 **Goal.** A terminal screen buffer wired to a WPF custom control such that running `cmd.exe` inside the app shows correct text. Still no accessibility, still no earcons.
+
+> **As shipped, Stage 3 split into two checkpoints** for review and rollback ergonomics — `baseline/stage-3a-screen-model` (`Terminal.Core` gains the data types and `Screen.Apply` for the basic-16 SGR + cursor + erase subset) and `baseline/stage-3b-wpf-rendering` (`Views/TerminalView.cs` overrides `OnRender(DrawingContext)` and `Terminal.App/Program.fs` wires the full pipeline). See `docs/CHECKPOINTS.md`. The substages share validation criteria; only Stage 3b's end-to-end pipe is end-user observable.
 
 ### 3.1 Screen buffer data structure
 
@@ -250,9 +264,11 @@ The control layout: a host `Canvas` containing a single `TerminalView : Framewor
 
 ### 3.4 Validation (Stage 3)
 
-- Type characters into the WPF window, see them appear. Run `dir`, `cls`, `echo Hello`, see correct output.
-- Run a 256-color test (`for /l %i in (0,1,255) do @echo on \x1b[38;5;%iml...`) and verify color rendering.
-- Resize the window; PTY resizes; cmd’s prompt redraws correctly.
+Stage 3 has no keyboard-input pipeline (Stage 6) and no `ResizePseudoConsole` wiring yet (planned with the input pipeline so resize and key events share the same dispatcher). The validation here focuses on what `cmd.exe` produces *unprompted* on startup.
+
+- Launch `Terminal.App.exe` (or `dotnet run --project src/Terminal.App`); a 30×120 terminal surface opens with `cmd.exe` running underneath. Wait ~1 s; cmd's startup banner and first prompt render in the WPF window.
+- Stage 3a unit tests (`tests/Tests.Unit/ScreenTests.fs`) cover Print + auto-wrap + scroll, BS/HT/LF/CR, CSI A/B/C/D/H/f, J/K erase, and basic-16 SGR.
+- 256-color tests, resize behaviour, and "type characters into the WPF window, see them appear" all belong to the stages that ship the corresponding plumbing — 256-color in a parser/screen colour-handling pass, resize + typing in Stage 6.
 - Still no NVDA.
 
 -----
@@ -726,12 +742,11 @@ When Claude Code implements this, point it at these specific files:
 - UIA peer for terminal: [microsoft/terminal TermControlAutomationPeer.cpp](https://github.com/microsoft/terminal/blob/main/src/cascadia/TerminalControl/TermControlAutomationPeer.cpp); WPF variant in PR [#14097](https://github.com/microsoft/terminal/pull/14097).
 - NVDA terminal handling: [nvaccess/nvda winConsoleUIA.py](https://github.com/nvaccess/nvda/blob/master/source/NVDAObjects/UIA/winConsoleUIA.py); Notification migration [PR #14047](https://github.com/nvaccess/nvda/pull/14047).
 - Input translation: [microsoft/terminal terminalInput.cpp](https://github.com/microsoft/terminal/blob/main/src/terminal/input/terminalInput.cpp); xterm canonical [invisible-island ctlseqs](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html).
-- Elmish.WPF: [README and tutorial](https://github.com/elmish/Elmish.WPF/blob/master/TUTORIAL.md).
 - NAudio: [WasapiOut docs](https://github.com/naudio/NAudio/blob/master/Docs/WasapiOut.md); Mark Heath’s [sine wave generator](https://markheath.net/post/playback-of-sine-wave-in-naudio).
 - Velopack: [velopack/velopack](https://github.com/velopack/velopack); [docs csharp.mdx](https://github.com/velopack/velopack.docs/blob/master/docs/getting-started/csharp.mdx).
 - FlaUI: [FlaUI/FlaUI](https://github.com/FlaUI/FlaUI); [Gu.Wpf.UiAutomation](https://github.com/GuOrg/Gu.Wpf.UiAutomation).
-- Tomlyn: [xoofx/Tomlyn](https://github.com/xoofx/Tomlyn).
-- FsCheck: [fscheck/FsCheck](https://github.com/fscheck/FsCheck); [intro on F# for fun and profit](https://swlaschin.gitbooks.io/fsharpforfunandprofit/content/posts/property-based-testing.html).
+- xUnit + FsCheck.Xunit: [xunit/xunit](https://github.com/xunit/xunit); [fscheck/FsCheck](https://github.com/fscheck/FsCheck); [`[<Property>]` attribute docs](https://fscheck.github.io/FsCheck/RunningTests.html#Using-FsCheck-Xunit); [intro on F# for fun and profit](https://swlaschin.gitbooks.io/fsharpforfunandprofit/content/posts/property-based-testing.html).
+- Tomlyn (future, Phase 2 verbosity profiles): [xoofx/Tomlyn](https://github.com/xoofx/Tomlyn).
 
 -----
 

@@ -12,12 +12,17 @@ together to make a "bigger" release.
 
 ## Versioning
 
-| Tag           | Stage gate                              | Public artifact            |
-|---------------|-----------------------------------------|----------------------------|
-| `v0.0.x`      | Internal pre-alpha; no installer        | None (source only)         |
-| `v0.1.0`      | Stage 11 (Velopack auto-update works)   | Signed Velopack installer  |
-| `v0.2.0`–`v0.9.x` | Phase 2 features (see below)        | Signed installer + delta   |
-| `v1.0.0`      | "Claude Code can drive its own further development inside our terminal" — the spec's Phase 1 success criterion verified by an external blind reviewer | Signed installer + delta |
+| Tag           | Stage gate                              | Public artifact                            |
+|---------------|-----------------------------------------|--------------------------------------------|
+| `v0.0.x`      | Internal pre-alpha                      | Unsigned Velopack installer (preview only) |
+| `v0.1.0`      | Stage 11 (Velopack auto-update works)   | Signed Velopack installer ¹                |
+| `v0.2.0`–`v0.9.x` | Phase 2 features (see below)        | Signed installer + delta ¹                 |
+| `v1.0.0`      | "Claude Code can drive its own further development inside our terminal" — the spec's Phase 1 success criterion verified by an external blind reviewer | Signed installer + delta ¹ |
+
+¹ Signing (Authenticode + Ed25519 manifest) is currently deferred for
+the `v0.0.x-preview.N` line; see
+[`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md#re-enabling-signing-deferred)
+for the procedure that returns it before `v0.1.0`.
 
 ## Phase 1 — MVP (toward v0.1.0)
 
@@ -27,24 +32,27 @@ via NVDA, navigate output as a structured document, interact with
 selection lists via NVDA-friendly listbox semantics, and get earcons
 for ANSI color/style changes.*
 
-| Stage | Title                                  | Validation                                      |
-|-------|----------------------------------------|-------------------------------------------------|
-| 0     | Solution skeleton + CI + Hello WPF     | `vpk pack` succeeds; empty window opens         |
-| 1     | ConPTY hello world                     | `dir` bytes returned from cmd.exe via PTY       |
-| 2     | VT500 parser                           | Golden tests + FsCheck never-throws property    |
-| 3     | Screen model + WPF rendering           | `cmd` runs visibly inside the WPF window        |
-| 4     | First UIA provider (text exposure)     | NVDA review cursor reads the buffer             |
-| 5     | Streaming output notifications         | NVDA reads `dir` line by line; spinner doesn't flood |
-| 6     | Keyboard input to PTY                  | PowerShell, vim, Ctrl+C all work; NVDA keys still work |
-| 7     | Run Claude Code end-to-end             | Roundtrip prompt → response, NVDA reads it      |
-| 8     | Interactive list detection + UIA list  | Selection prompt announced as listbox           |
-| 9     | Earcons (NAudio) + color announcement  | Red plays alarm; Ctrl+Shift+M mutes             |
-| 10    | Review mode + structured navigation    | `e` jumps to next error in scrollback           |
-| 11    | Velopack auto-update                   | `Ctrl+Shift+U` updates from GitHub Releases     |
+| Stage | Title                                  | Validation                                      | Status |
+|-------|----------------------------------------|-------------------------------------------------|--------|
+| 0     | Solution skeleton + CI + Hello WPF     | `vpk pack` succeeds; empty window opens         | shipped (`v0.0.1-preview.15`) |
+| 1     | ConPTY hello world                     | `dir` bytes returned from cmd.exe via PTY       | merged on `main` |
+| 2     | VT500 parser                           | Golden tests + FsCheck never-throws property    | merged on `main` |
+| 3     | Screen model + WPF rendering           | `cmd` runs visibly inside the WPF window        | merged on `main` (split as 3a + 3b — see [`docs/CHECKPOINTS.md`](CHECKPOINTS.md)) |
+| 4     | First UIA provider (text exposure)     | NVDA review cursor reads the buffer             | next |
+| 5     | Streaming output notifications         | NVDA reads `dir` line by line; spinner doesn't flood | pending |
+| 6     | Keyboard input to PTY                  | PowerShell, vim, Ctrl+C all work; NVDA keys still work | pending |
+| 7     | Run Claude Code end-to-end             | Roundtrip prompt → response, NVDA reads it      | pending |
+| 8     | Interactive list detection + UIA list  | Selection prompt announced as listbox           | pending |
+| 9     | Earcons (NAudio) + color announcement  | Red plays alarm; Ctrl+Shift+M mutes             | pending |
+| 10    | Review mode + structured navigation    | `e` jumps to next error in scrollback           | pending |
+| 11    | Velopack auto-update                   | `Ctrl+Shift+U` updates from GitHub Releases     | pending |
 
 A stage in CI green and an internal test pass earns a `vX.Y.Z-preview.N`
 prerelease. A stage with a successful external NVDA validation pass
 earns a non-prerelease tag.
+
+For the canonical list of stable rollback points (one per shipped
+stage), see [`docs/CHECKPOINTS.md`](CHECKPOINTS.md).
 
 ## Phase 2 — accessibility depth (v0.2.0 onward)
 

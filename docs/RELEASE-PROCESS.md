@@ -105,28 +105,36 @@ Triggered by the `release: published` event you just fired. Runs on
 1. **Confirm workflow started** — echo step that prints the release's
    tag, ID, and event name. Belt-and-suspenders so the run shows
    meaningful output even if a later step crashes.
-2. **Checkout** with default `ref` — release events set `GITHUB_REF`
+2. **Validate release target branch** — fails the workflow with a
+   clear error if `target_commitish != 'main'`. Added after
+   `v0.0.1-preview.14` accidentally targeted a stale branch and ran
+   an outdated `release.yml`.
+3. **Checkout** with default `ref` — release events set `GITHUB_REF`
    to `refs/tags/<tag_name>` so the source at the tag is checked out.
-3. **Setup .NET 9** via `actions/setup-dotnet@v5`.
-4. **Resolve version** — strips the leading `v` from
+4. **Validate `CHANGELOG.md` has a matching entry** — fails with a
+   clear error if no `## [<version>]` section exists. Without this
+   gate, the release-notes step further down silently falls back to a
+   generic "Release X. See CHANGELOG.md for details." body.
+5. **Setup .NET 9** via `actions/setup-dotnet@v5`.
+6. **Resolve version** — strips the leading `v` from
    `github.event.release.tag_name`, detects prerelease from the
    `-preview.N` / `-rc.N` suffix.
-5. `dotnet restore` / `dotnet build -c Release` / `dotnet test`.
-6. `dotnet publish src/Terminal.App/Terminal.App.fsproj -c Release -r win-x64 --self-contained -o publish` (with `/p:Version=...`).
-7. **Install Velopack CLI** (`dotnet tool install -g vpk`).
-8. **`vpk pack`** — wraps `publish/` into a Velopack release at
-   `releases/`: `*Setup.exe`, full nupkg, `RELEASES`. (No
-   `*-delta.nupkg` on the first release; `releases.json` is not
-   produced by our `vpk pack` config.)
-9. **Generate release notes from `CHANGELOG.md`** — writes
-   `release-body.md` with the unsigned-preview banner prepended to the
-   matching `## [<version>]` section.
-10. **Update GitHub Release** via `softprops/action-gh-release@v3`:
+7. `dotnet restore` / `dotnet build -c Release` / `dotnet test`.
+8. `dotnet publish src/Terminal.App/Terminal.App.fsproj -c Release -r win-x64 --self-contained -o publish` (with `/p:Version=...`).
+9. **Install Velopack CLI** (`dotnet tool install -g vpk`).
+10. **`vpk pack`** — wraps `publish/` into a Velopack release at
+    `releases/`: `*Setup.exe`, full nupkg, `RELEASES`. (No
+    `*-delta.nupkg` on the first release; `releases.json` is not
+    produced by our `vpk pack` config.)
+11. **Generate release notes from `CHANGELOG.md`** — writes
+    `release-body.md` with the unsigned-preview banner prepended to
+    the matching `## [<version>]` section.
+12. **Update GitHub Release** via `softprops/action-gh-release@v3`:
     sets title to `pty-speak <version>`, replaces the auto-generated
-    body with `release-body.md`, sets `prerelease` from step 4, and
-    attaches the artifact files. `fail_on_unmatched_files: false` so
-    the optional `*-delta.nupkg` and `releases.json` patterns don't
-    fail the upload when they're absent.
+    body with `release-body.md`, sets `prerelease` from the version
+    resolution, and attaches the artifact files.
+    `fail_on_unmatched_files: false` so the optional `*-delta.nupkg`
+    and `releases.json` patterns don't fail the upload when absent.
 
 ### 5. Smoke-test the release
 
@@ -141,8 +149,10 @@ On a clean VM:
    `Status` is `NotSigned`; `StatusMessage` confirms no signature.
    SmartScreen will prompt; choose "More info → Run anyway" or use
    `Unblock-File` first.
-3. Run the installer; for the Stage 0 preview, confirm an empty
-   window titled "pty-speak" opens with no errors.
+3. Run the installer. For the historic Stage 0 preview the window
+   was empty; for previews built from `main` at Stage 3b+ the window
+   shows live `cmd.exe` output. Confirm no errors and that the
+   window titled "pty-speak" opens.
 4. Launch the app from the Start menu; confirm the same window opens
    from the installed location (`%LocalAppData%\pty-speak\current\`).
 5. Once Stage 11 lands, trigger the auto-update path from a previously
@@ -221,6 +231,22 @@ they aren't re-discovered.
 - **Velopack `--packVersion` minimum.** `vpk pack` rejects versions
   below `0.0.1`. Our CI smoke uses `0.0.1-ci.<run_number>`; SemVer
   prerelease ordering keeps it strictly less than any real preview.
+- **WPF library projects must not contain `App.xaml`.** The WPF SDK
+  auto-classifies any file named `App.xaml` as
+  `ApplicationDefinition`, which is invalid in `OutputType=Library`
+  (build error `MC1002`). Use a plain `App.cs : Application` in the
+  library, or move the WPF entry to the executable project. Hit
+  during the Stage 0 skeleton build.
+- **`dotnet publish -r win-x64 --self-contained --no-restore`
+  produces `NETSDK1047`** when the upstream `dotnet restore` was
+  RID-less. The published workflow restores once at the platform
+  default and then publishes for `win-x64`; either restore with the
+  RID or drop `--no-restore`. We drop it.
+- **Velopack `--packDir` must be the publish output, not `bin/`.**
+  Running `vpk pack` against `src/Terminal.App/bin/Release/...`
+  produces a broken installer that runs but is missing assets. The
+  workflow always points at the `dotnet publish -o publish/`
+  directory.
 
 ---
 
@@ -253,9 +279,11 @@ research.
    - `MINISIGN_SECRET_KEY` — base64-encoded private key for the
      manifest signature. **Use a separate organization secret with
      manual-approval environment protection.**
-4. The `release` GitHub Environment with required reviewers (already
-   set up for the unsigned line) gates SignPath signing and Ed25519
-   manifest signing on human approval.
+4. Create a `release` GitHub Environment with required reviewers (the
+   unsigned-preview line does not use one — see "One-time setup
+   (current, unsigned line)" above). The environment gates SignPath
+   signing and Ed25519 manifest signing on human approval. Apply it
+   to the release job in `release.yml` via `environment: release`.
 
 ### Workflow changes when signing returns
 

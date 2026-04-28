@@ -34,11 +34,11 @@ The recommended F# architecture is a five-stage pipeline: `ConPtyHost → PipeRe
 
 The fan-out uses **TPL Dataflow `BroadcastBlock<SemanticEvent>` linked to one bounded `ActionBlock<SemanticEvent>` per consumer** with `MaxDegreeOfParallelism=1`  for per-consumer FIFO. Use `BoundedCapacity=256` on earcon and TTS consumers  so a slow sink never backpressures the parser. `BroadcastBlock` can drop for slow targets — for UIA and logging where drops are unacceptable, substitute `System.Threading.Channels.Channel<T>.CreateUnbounded` per consumer. F# discriminated unions give exhaustive pattern-match safety when new event variants are added; keep `Unknown of byte[]` as the **only** catch-all in the parser so ignored sequences are explicit and auditable.
 
-P/Invoke wraps in a private `Terminal.Native` module: `SafeHandle` subclasses (`SafePseudoConsoleHandle : SafeHandleZeroOrMinusOneIsInvalid`) for HPCON and SafeFileHandle for pipe endpoints; `CharSet=CharSet.Unicode` explicit on every string-bearing API; `Result<_, PtyCreateError>`-returning facade functions. The external API never throws from interop.
+P/Invoke wraps in a private `Terminal.Pty.Native` module: `SafeHandle` subclasses (`SafePseudoConsoleHandle : SafeHandleZeroOrMinusOneIsInvalid`) for HPCON and `SafeFileHandle` for pipe endpoints; `CharSet=CharSet.Unicode` explicit on every string-bearing API; `Result<_, PtyCreateError>`-returning facade functions. **`out SafeFileHandle`-style byref parameters are silently broken across the F# / Win32 P/Invoke boundary** (calls succeed but the wrapped handle is a `NullReferenceException` on first use); `Native.fs` declares those as `nativeint&` and the lifecycle wrapper constructs the `SafeFileHandle` manually with `ownsHandle = true`. The external API never throws from interop.
 
-### Why WPF + Elmish.WPF wins the GUI-framework comparison
+### Why WPF wins the GUI-framework comparison
 
-**WPF with Elmish.WPF on .NET 9** is the clear choice. The reasoning: UIA is the central concern; WPF has the most mature `ITextProvider`/`ITextRangeProvider`/`IInvokeProvider`/`IValueProvider` story of any .NET framework, reliable `RaiseNotificationEvent` plumbing via `AutomationPeer`, and copious community examples of custom text-rendering controls with AutomationPeer peers. Windows-only is not a downside — we’ve already accepted that constraint and get no benefit from cross-platform frameworks. **WinUI 3 is disqualified**: Microsoft’s tracking issue `microsoft-ui-xaml#740` confirms F# support remains absent,  and UWP explicitly dropped F#.  Avalonia’s UIA story is an MVP (PR #5177)  with **incomplete TextPattern support on Windows** — a fatal gap for a product whose central control is a rich text surface. Terminal.Gui is a TUI framework inheriting the very accessibility failures we’re solving. Elmish.WPF (github.com/elmish/Elmish.WPF) gives idiomatic F# MVU  with no ViewModel boilerplate;  XAML becomes a thin binding layer. Testing uses **Expecto + FsCheck** for the parser (property-based, "streaming in chunks equals single feed", "never throws on arbitrary bytes") and **FlaUI** for UIA integration (registers notification events, asserts ControlType, drives keyboard input). NVDA-specific automation is **explicitly avoided** — test at the UIA producer level so the product remains screen-reader-agnostic; reserve NVDA/Narrator for manual release acceptance.
+**WPF on .NET 9** is the clear choice. The reasoning: UIA is the central concern; WPF has the most mature `ITextProvider`/`ITextRangeProvider`/`IInvokeProvider`/`IValueProvider` story of any .NET framework, reliable `RaiseNotificationEvent` plumbing via `AutomationPeer`, and copious community examples of custom text-rendering controls with AutomationPeer peers. Windows-only is not a downside — we’ve already accepted that constraint and get no benefit from cross-platform frameworks. **WinUI 3 is disqualified**: Microsoft’s tracking issue `microsoft-ui-xaml#740` confirms F# support remains absent,  and UWP explicitly dropped F#.  Avalonia’s UIA story is an MVP (PR #5177)  with **incomplete TextPattern support on Windows** — a fatal gap for a product whose central control is a rich text surface. Terminal.Gui is a TUI framework inheriting the very accessibility failures we’re solving. **Elmish.WPF was investigated and dropped** (no stable .NET 9 build on nuget at the time we needed it); the project uses a thin two-project F#/C# split — the C# `Views` library hosts `MainWindow.xaml` and a custom `TerminalView : FrameworkElement` that overrides `OnRender(DrawingContext)`, and the F# `Terminal.App` executable owns `[<EntryPoint>][<STAThread>] main`, calls `VelopackApp.Build().Run()` first, then constructs the `Application` and composes the pipeline. F# can author the rendering F# logic and the composition root; XAML stays in its native C# project. Testing uses **xUnit + FsCheck.Xunit** for the parser (property-based, "streaming in chunks equals single feed", "never throws on arbitrary bytes") and **FlaUI** for UIA integration (registers notification events, asserts ControlType, drives keyboard input). NVDA-specific automation is **explicitly avoided** — test at the UIA producer level so the product remains screen-reader-agnostic; reserve NVDA/Narrator for manual release acceptance.
 
 ## The audio layer is a generalized sink abstraction from day one
 
@@ -82,29 +82,32 @@ Distribution uses **Velopack + GitHub Releases + SignPath Foundation**. Velopack
 
 ## Recommended F# module layout and build posture
 
+The layout collapses some of the early-design splits (`Terminal.Native` and `Terminal.ConPtyHost` merged into one `Terminal.Pty`; `Terminal.Ui.Wpf` and `Terminal.Uia` split between a C# `Views` library and an F# `Terminal.Accessibility` library) and groups all xUnit/FsCheck.Xunit tests in a single `Tests.Unit` project for IDE-runner ergonomics. Future modules (`Terminal.Semantics`, `Terminal.EventBus`, `Terminal.Tts`, `Terminal.Osc`, `Terminal.Update`) are reserved names — they land in the stages that need them.
+
 ```
 src/
-  Terminal.Domain/          ─ DUs, records, pure (VtEvent, SemanticEvent, PtyEvent, UiState)
-  Terminal.Native/          ─ P/Invoke + SafeHandles, Result<_,_> facade
-  Terminal.ConPtyHost/      ─ CreatePseudoConsole + CreateProcess + Job Object + pipe mgmt
-  Terminal.VtParser/        ─ ReadOnlySequence<byte> → VtEvent[], Williams state machine
-  Terminal.Semantics/       ─ Screen model, VtEvent → SemanticEvent, interpreters
-  Terminal.EventBus/        ─ BroadcastBlock fan-out + per-consumer Channels
-  Terminal.Ui.Wpf/          ─ Elmish.WPF host + TerminalSurface custom FrameworkElement
-  Terminal.Uia/             ─ TerminalAutomationPeer + ITextProvider2 + ITextRangeProvider
-  Terminal.Earcons/         ─ NAudio WasapiOut + synthesized tone renderer
-  Terminal.Audio/           ─ IAudioSink abstraction + CompositeSink
-  Terminal.Tts/             ─ (future) Piper/SAPI5/WinRT SpeechSynthesis sinks
-  Terminal.Osc/             ─ (future) Rug.Osc SuperCollider sink
-  Terminal.Update/          ─ Velopack wrapper + Ed25519 manifest verification
-  Terminal.App/             ─ composition root, keyboard router, config
+  Terminal.Core/            ─ DUs, records, screen model (VtEvent, ColorSpec, SgrAttrs, Cell, Cursor, Screen)
+  Terminal.Pty/             ─ P/Invoke + SafeHandles + CreatePseudoConsole + CreateProcess + pipe mgmt
+                              (Job Object lifecycle deferred from Stage 1; see docs/CONPTY-NOTES.md)
+  Terminal.Parser/          ─ ReadOnlySequence<byte> → VtEvent[], Williams state machine
+  Terminal.Audio/           ─ (placeholder) IAudioSink abstraction + WasapiSink + EnvelopedSampleProvider
+  Terminal.Accessibility/   ─ (placeholder) TerminalAutomationPeer + ITextProvider2 + ITextRangeProvider + list peers
+  Terminal.Semantics/       ─ (future) Screen model + VtEvent → SemanticEvent + interpreters (Stage 5+)
+  Terminal.EventBus/        ─ (future) BroadcastBlock fan-out + per-consumer Channels (Stage 5+)
+  Terminal.Tts/             ─ (future) Piper/SAPI5/WinRT SpeechSynthesis sinks (Phase 2)
+  Terminal.Osc/             ─ (future) Rug.Osc SuperCollider sink (Phase 3)
+  Terminal.Update/          ─ (future) Velopack wrapper + Ed25519 manifest verification (Stage 11)
+  Views/                    ─ C# WPF library (XAML host): MainWindow.xaml + App.cs + TerminalView.cs
+  Terminal.App/             ─ F# executable: [<EntryPoint>][<STAThread>] main, VelopackApp first,
+                              composition root (ConPtyHost → Parser → Screen → TerminalView), keyboard
+                              router, config
 tests/
-  Terminal.VtParser.Tests/  ─ Expecto + FsCheck property tests, golden files
-  Terminal.Semantics.Tests/ ─ Ink/Claude Code replay fixtures
-  Terminal.Uia.Tests/       ─ FlaUI integration
+  Tests.Unit/               ─ xUnit + FsCheck.Xunit (parser fixtures + properties, screen tests,
+                              ConPtyHostTests, future Semantics tests)
+  Tests.Ui/                 ─ (placeholder) FlaUI integration; populated in Stage 4 alongside the UIA peer
 ```
 
-CI runs on GitHub Actions `windows-latest` runners (interactive desktop present, UIA tests work). Signing integrates in a release-only job via SignPath’s GitHub Actions plugin with manual approval. NVDA is **not** installed in CI — assert at the UIA producer level so tests are screen-reader-agnostic; NVDA and Narrator acceptance is manual against each release.
+CI runs on GitHub Actions `windows-latest` runners (interactive desktop present, UIA tests work). An `actionlint` workflow-lint job catches the YAML / shell / expression mistakes that produce silent workflow `startup_failures`. The release pipeline is keyed on `release: published` rather than `push: tags:` because tag-pushes silently failed during the Stage 0 diagnostic loop. Signing returns before `v0.1.0` via SignPath's GitHub Actions plugin with manual approval — the `v0.0.x-preview.N` line is intentionally unsigned. NVDA is **not** installed in CI — assert at the UIA producer level so tests are screen-reader-agnostic; NVDA and Narrator acceptance is manual against each release.
 
 ## Risks, open questions, and what to prove first
 

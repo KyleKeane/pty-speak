@@ -39,16 +39,55 @@ See [`docs/BUILD.md`](docs/BUILD.md) for build instructions.
 ## Branching and pull requests
 
 - Default branch: `main`.
-- Feature branches: `feature/<short-slug>`; bugfix branches:
-  `fix/<short-slug>`; documentation-only: `docs/<short-slug>`.
+- Branch naming follows the Conventional Commits prefix: `feat/<slug>`
+  (or `feature/<slug>`), `fix/<slug>`, `chore/<slug>`, `docs/<slug>`,
+  `ci/<slug>`. Automated contributors may use `claude/<slug>`.
 - Open a draft PR early. Mark ready for review when CI is green and you
   have run the manual NVDA test for the stage your change touches.
 - Squash-merge by default. Keep the PR title in
   [Conventional Commits](https://www.conventionalcommits.org/) form
   (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `build:`, `ci:`).
+  All PRs to date have been squashed; the merge commit subject becomes
+  the canonical history line.
+- **One concern per PR.** When tempted to bundle two improvements,
+  split them. Past frustrations on this repo trace back to oversized
+  PRs with multiple moving parts; small focused PRs review faster and
+  bisect cleaner.
+- **PR body**: brief Summary + What changed + Test plan checklist.
+  Stage-implementation PRs also include a "What this PR deliberately
+  omits" section pointing at the stage(s) that own the deferred items,
+  so reviewers don't ask for scope that belongs elsewhere.
 - Every PR must update [`CHANGELOG.md`](CHANGELOG.md) under
   `## [Unreleased]` if it changes behavior, configuration, key bindings,
-  the UIA surface, or anything user-visible.
+  the UIA surface, or anything user-visible. When a release is cut, the
+  unreleased entries are rewritten into a clean per-release section
+  (template: see the existing `[0.0.1-preview.15]` entry). The release
+  workflow gates on a matching `## [<version>]` section existing
+  before it builds — don't tag a release without updating CHANGELOG
+  first.
+
+## Documentation policy
+
+- **`spec/` is immutable.** It captures the external research that
+  drove the design (`overview.md`) and the stage-by-stage plan
+  (`tech-plan.md`). Don't edit it. Architectural changes that
+  contradict the spec need an explicit ADR-style PR updating the spec
+  with an issue and discussion preceding it.
+- **Observed platform quirks** (things we learn by running the code,
+  not from external research) go in [`docs/CONPTY-NOTES.md`](docs/CONPTY-NOTES.md)
+  or sibling platform-quirks files as the project grows. Keep
+  `spec/overview.md` for the planned design and `docs/CONPTY-NOTES.md`
+  for what we actually saw.
+- **[`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md) is the rollback
+  contract.** Every shipped stage adds a row to its "Current
+  checkpoints" table; if you can't push the tag yourself, also add a
+  row under "Pending checkpoint tags" with the exact push commands so
+  a maintainer can sweep them later. The PR that lands a checkpoint
+  gets the `stable-baseline` label.
+- **[`docs/RELEASE-PROCESS.md`](docs/RELEASE-PROCESS.md) "Common
+  pitfalls" is the funnel** for every diagnostic-loop lesson. If you
+  hit something nasty in CI or a release, the fix is half the patch
+  and the entry under "Common pitfalls" is the other half.
 
 ## The non-negotiable accessibility rules
 
@@ -63,7 +102,8 @@ block PRs that violate them.
    must `return` (not set `e.Handled = true`) for those keys.
 3. **All UIA events must be raised on the WPF Dispatcher thread.**
    `RaiseNotificationEvent` silently no-ops off-thread. Marshal via
-   `Dispatcher.BeginInvoke` or `Async.SwitchToContext`.
+   `Dispatcher.InvokeAsync` (preferred), `Dispatcher.BeginInvoke`, or
+   `Async.SwitchToContext`.
 4. **Spinners must be deduplicated.** A row whose content hash equals
    the previous flush's hash is dropped. Same-row updates ≥5/sec for
    ≥1s are classified as a spinner and suppressed.
@@ -100,18 +140,73 @@ block PRs that violate them.
 - Set `CharSet = CharSet.Unicode` on every string-bearing API.
 - The external API never throws from interop. Errors become DU cases.
 
+### F# gotchas learned in practice
+
+These are mistakes the project has actually made; keep them out of
+new code.
+
+- **`out SafeFileHandle` byref interop is silently broken.** Declaring
+  a P/Invoke `out` parameter as `SafeFileHandle&` produces a
+  `NullReferenceException` at the call site even when the kernel
+  writes the handle correctly. Use `nativeint&` and wrap manually:
+  `new SafeFileHandle(p, ownsHandle = true)`. See
+  `src/Terminal.Pty/Native.fs` for the canonical pattern.
+- **`let rec` for self-referencing class-body bindings.** A `let`
+  inside a class body that calls itself produces `error FS0039: 'X'
+  is not defined`. Add the `rec` keyword. The compiler does not
+  suggest this fix.
+- **F# `internal` (not `private`) on members companion modules need.**
+  A companion `module` is in a different IL scope from its `type`'s
+  `private` members, so a `private` constructor breaks the
+  `Foo.create` pattern. Use `internal`.
+- **Discriminated-union access from C# uses `IsXxx` predicates and
+  `.Item` / `.Item1` / `.Item2` payload accessors.** Stage 3b's
+  `Views/TerminalView.cs` reads `Cell.Attrs.Fg.IsDefaultFg` and
+  `Cell.Attrs.Fg.Item` (the `int` payload of the `Indexed` case).
+  Worth knowing before the Stage-4 UIA peer crosses the boundary.
+
+### WPF gotchas learned in practice
+
+- **`FrameworkElement` does NOT have a `Background` property.** Only
+  `Control` and `Panel` do. A custom-render `FrameworkElement` needs
+  its own private brush field. See `Views/TerminalView.cs`.
+- **WPF SDK auto-classifies `App.xaml` as `ApplicationDefinition`**
+  based on filename, which is invalid in `OutputType=Library`
+  projects (build error `MC1002`). Either remove `App.xaml` and use
+  a plain `App.cs : Application`, or move the WPF entry to the
+  executable project. We do the former.
+- **Don't add explicit `<Page>` / `<ApplicationDefinition>` items to
+  a `Microsoft.NET.Sdk` project with `<UseWPF>true</UseWPF>`.** The
+  SDK auto-globs them and explicit items produce `NETSDK1022`.
+- **`dotnet publish -r win-x64 --self-contained` after a
+  platform-default `dotnet restore` fails with `NETSDK1047`** because
+  the earlier restore didn't generate RID-specific assets. Drop
+  `--no-restore` from the publish step (or restore with the RID).
+
 ## Tests
 
-- **Parser:** Expecto + FsCheck property tests
-  (`tests/Terminal.VtParser.Tests`). The minimum bar is "never throws on
-  arbitrary bytes" and "feeding bytes one at a time produces the same
-  events as feeding them in chunks".
-- **Semantic mapper:** Replay golden Claude Code session captures and
-  assert the produced `SemanticEvent` sequence
-  (`tests/Terminal.Semantics.Tests`).
-- **UIA:** FlaUI integration tests
-  (`tests/Terminal.Uia.Tests`). They run on `windows-latest` GitHub
-  runners which expose a real interactive desktop.
+The project uses **xUnit + FsCheck.Xunit**, pinned to FsCheck.Xunit 3.x
+because the `[<Property>]` attribute integrates cleanly with
+`xunit.runner.visualstudio` (Expecto was considered but never adopted).
+All current tests live in a single `tests/Tests.Unit/` project; the
+empty `tests/Tests.Ui/` project reserves the path for FlaUI work.
+
+- **Parser:** fixture tests + FsCheck property tests in
+  `tests/Tests.Unit/VtParserTests.fs`. The minimum bar is "never
+  throws on arbitrary bytes" and "feeding bytes one at a time produces
+  the same events as feeding them in chunks".
+- **Screen model:** fixture tests in
+  `tests/Tests.Unit/ScreenTests.fs` covering Print + auto-wrap +
+  scroll, BS/HT/LF/CR, CSI cursor moves and erases, basic-16 SGR.
+- **ConPTY host:** Windows-only acceptance test in
+  `tests/Tests.Unit/ConPtyHostTests.fs` (runtime-skipped elsewhere).
+- **UIA (Stage 4+):** FlaUI integration tests will land in
+  `tests/Tests.Ui/`. They run on `windows-latest` GitHub runners which
+  expose a real interactive desktop.
+- **Semantic mapper (Stage 5+):** golden Claude Code session captures
+  asserting the produced `SemanticEvent` sequence will live in
+  `tests/Tests.Unit/SemanticsTests.fs` (or its own project once the
+  module is carved out).
 - **NVDA:** **manual** for each release. We deliberately avoid
   scripted NVDA testing — assert at the UIA producer level so the
   product stays screen-reader-agnostic, then confirm with a real screen

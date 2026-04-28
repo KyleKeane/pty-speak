@@ -6,7 +6,27 @@ prior-art survey, and tradeoff analysis live in
 map: how data flows, which module owns which concern, and where the
 thread boundaries are.
 
+> **Currency note.** The diagrams and module table below are the
+> *target* architecture from `spec/overview.md`. As of `main` at
+> Stage 3b, only the rows annotated **(implemented)** are in code; the
+> rest land in the stages noted in parentheses. See
+> [`docs/ROADMAP.md`](ROADMAP.md) and
+> [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) for what has actually shipped.
+
 ## High-level data flow
+
+### Current pipeline (Stage 3b on `main`)
+
+```
+cmd.exe → ConPTY → Terminal.Pty (ConPtyHost) → Terminal.Parser
+                                               → Terminal.Core.Screen
+                                               → Views.TerminalView (WPF)
+```
+
+Mutation happens on the WPF Dispatcher thread for now (Stage 3b);
+Stage 5 carves the parser/screen ownership onto a dedicated thread.
+
+### Target pipeline (post-Stage 5)
 
 ```
 +-----------------------------+
@@ -64,43 +84,55 @@ thread boundaries are.
 
 ## Modules
 
-| Project                         | Layer        | Owns                                                                              |
-|---------------------------------|--------------|-----------------------------------------------------------------------------------|
-| `Terminal.Core`                 | Domain       | Pure types: `Cell`, `SgrAttrs`, `VtEvent`, `SemanticEvent`, `Earcon`, `BusMessage` |
-| `Terminal.Pty.Native`           | Interop      | `[<DllImport>]` signatures, `SafeHandle` subclasses, struct layouts                |
-| `Terminal.Pty`                  | Host         | `CreatePseudoConsole` lifecycle, Job Object, child env block                       |
-| `Terminal.Parser`               | Stateful     | Williams VT500 state machine; emits `VtEvent`                                      |
-| `Terminal.Semantics`            | Stateful     | `ScreenBuffer` (primary + alt + scrollback ring), `VtEvent → SemanticEvent`        |
-| `Terminal.EventBus`             | Plumbing     | `BroadcastBlock<SemanticEvent>` + per-consumer `Channel<T>`                        |
-| `Terminal.Ui.Wpf`               | UI           | `TerminalView : FrameworkElement`, `OnRender` with `FormattedText`/`GlyphRun`      |
-| `Views` (C# WPF)                | UI           | XAML — Elmish.WPF binding layer                                                    |
-| `Terminal.Accessibility`        | UIA          | `TerminalAutomationPeer`, `ITextProvider`, `ITextRangeProvider`, list peers        |
-| `Terminal.Audio`                | Audio        | `IAudioSink`, `WasapiSink`, `EnvelopedSampleProvider`                              |
-| `Terminal.Tts` *(future)*       | Audio        | Piper subprocess sink, SAPI5 sink                                                  |
-| `Terminal.Osc` *(future)*       | Audio        | Rug.Osc → SuperCollider sink                                                       |
-| `Terminal.Update`               | Distribution | Velopack `UpdateManager` wrapper; Ed25519 manifest verification                    |
-| `Terminal.App`                  | Composition  | `Main`, keyboard router, config (Tomlyn), DI graph                                 |
+`(implemented)` rows have code on `main` today; other rows land in the
+stage shown in parentheses.
+
+| Project                         | Layer        | Owns                                                                                 | Status                |
+|---------------------------------|--------------|--------------------------------------------------------------------------------------|-----------------------|
+| `Terminal.Core`                 | Domain       | Pure types: `ColorSpec`, `SgrAttrs`, `Cell`, `Cursor`, `VtEvent`, plus `Screen` (mutable buffer) | implemented (3a)      |
+| `Terminal.Pty.Native`           | Interop      | `[<DllImport>]` signatures, `SafeHandle` subclasses, struct layouts                  | implemented (1)       |
+| `Terminal.Pty`                  | Host         | `CreatePseudoConsole` lifecycle, `ConPtyHost`, stdin `FileStream`, `Channel<byte[]>` reader | implemented (1); Job Object lifecycle deferred |
+| `Terminal.Parser`               | Stateful     | Williams VT500 state machine; emits `VtEvent`                                        | implemented (2)       |
+| `Terminal.Audio`                | Audio        | Placeholder; `IAudioSink`, `WasapiSink` arrive in Stage 9                            | placeholder           |
+| `Terminal.Accessibility`        | UIA          | Placeholder; `TerminalAutomationPeer`, `ITextProvider`, `ITextRangeProvider` in Stage 4 | placeholder           |
+| `Views` (C# WPF library)        | UI           | `MainWindow.xaml`, `App.cs : Application`, `TerminalView : FrameworkElement` (custom `OnRender` over `Screen`) | implemented (0, 3b) |
+| `Terminal.App` (F# EXE)         | Composition  | `[<EntryPoint>]`, `VelopackApp.Build().Run()`, `ConPtyHost → Parser → Screen → TerminalView` wiring | implemented (0, 3b) |
+| `Terminal.Semantics` *(future)* | Stateful     | `VtEvent → SemanticEvent` (spinner detection, list detection, OSC sanitisation)      | Stage 5+              |
+| `Terminal.EventBus` *(future)*  | Plumbing     | `BroadcastBlock<SemanticEvent>` + per-consumer `Channel<T>`                          | Stage 5+              |
+| `Terminal.Tts` *(future)*       | Audio        | Piper subprocess sink, SAPI5 sink                                                    | Phase 2               |
+| `Terminal.Osc` *(future)*       | Audio        | Rug.Osc → SuperCollider sink                                                         | Phase 3               |
+| `Terminal.Update` *(future)*    | Distribution | Velopack `UpdateManager` wrapper; Ed25519 manifest verification                      | Stage 11              |
 
 ## Threading model
 
 The threading rules below are non-negotiable. Violations cause hangs
 (ConPTY) or silent no-ops (UIA).
 
+### Today (Stage 3b on `main`)
+
 | Thread                    | Owns                                                                                         |
 |---------------------------|----------------------------------------------------------------------------------------------|
-| ConPTY read thread        | `ReadFile` from `outputReadSide` into a `Channel<byte[]>`. Synchronous I/O only — ConPTY forbids `OVERLAPPED`. |
-| ConPTY write thread       | Drains a write channel into `WriteFile` on `inputWriteSide`.                                 |
-| Parser / semantics thread | Single thread that owns the screen buffer and parser state; mutates the buffer; emits events. |
-| Earcon thread (NAudio)    | NAudio's own playback thread; receives `AudioEvent` over a bounded channel.                  |
+| ConPTY read thread        | `ConPtyHost`'s dedicated reader `Task`: `ReadFile` from `outputReadSide` into a bounded `Channel<byte array>`. Synchronous I/O only — ConPTY forbids `OVERLAPPED`. |
+| WPF Dispatcher (UI)       | Reads chunks from the channel via `Dispatcher.InvokeAsync`, feeds them through the `Parser`, applies `VtEvent`s to the `Screen`, and invalidates the `TerminalView` for repaint. Mutation and rendering both run here for now. |
+
+### Target (post-Stage 5)
+
+| Thread                    | Owns                                                                                         |
+|---------------------------|----------------------------------------------------------------------------------------------|
+| ConPTY read thread        | Unchanged — produces bytes into a channel.                                                   |
+| ConPTY write thread       | Drains a write channel into `WriteFile` on `inputWriteSide` (Stage 6).                       |
+| Parser / semantics thread | Single thread that owns the screen buffer and parser state; mutates the buffer; emits `SemanticEvent`s. |
+| Earcon thread (NAudio)    | NAudio's own playback thread; receives `AudioEvent` over a bounded channel (Stage 9).         |
 | TPL Dataflow consumers    | One `ActionBlock` per consumer with `MaxDegreeOfParallelism = 1` for FIFO order.             |
-| WPF Dispatcher (UI)       | Renders the `TerminalView`; **all** `RaiseNotificationEvent` and `RaiseAutomationEvent` calls. |
-| UIA RPC thread            | Microsoft-owned; calls into our `ITextRangeProvider` from outside the Dispatcher. **Snapshots only**, no mutation. |
+| WPF Dispatcher (UI)       | Renders the `TerminalView` from immutable snapshots; **all** `RaiseNotificationEvent` and `RaiseAutomationEvent` calls (Stage 4+). |
+| UIA RPC thread            | Microsoft-owned; calls into our `ITextRangeProvider` from outside the Dispatcher. **Snapshots only**, no mutation (Stage 4+). |
 
 Marshalling rules:
 
-- Parser thread to UI: `Dispatcher.BeginInvoke` or `Async.SwitchToContext`.
-  Heed Windows Terminal's warning that `RunAsync(...).get()` deadlocks
-  NVDA's `SignalTextChanged`.
+- Parser/semantics thread to UI: `Dispatcher.InvokeAsync` (preferred),
+  `Dispatcher.BeginInvoke`, or `Async.SwitchToContext`. Heed Windows
+  Terminal's warning that `RunAsync(...).get()` deadlocks NVDA's
+  `SignalTextChanged`.
 - UIA RPC to anywhere: don't. UIA hands you a snapshot range request;
   return a snapshot. The snapshot is an immutable array of rows — cheap
   to keep around, safe to read off-thread.
@@ -139,11 +171,22 @@ If you only have time to read three files when you start contributing:
   The cleanest reference is `alacritty/vte`; the F# DU port keeps the
   same caps (`MAX_INTERMEDIATES = 2`, `MAX_OSC_PARAMS = 16`,
   `MAX_OSC_RAW = 1024`).
-- `Terminal.Accessibility/TerminalAutomationPeer.fs` — the UIA peer.
-  Mimic `TermControlAutomationPeer.cpp` from microsoft/terminal.
-- `Terminal.Semantics/SpinnerDetector.fs` — the row-hash / 5-Hz / 1-s
-  rule that prevents Claude Code's spinner from freezing NVDA. This is
-  the single biggest accessibility win in Phase 1.
+- `Terminal.Core/Screen.fs` — the screen model. Mutable buffer with
+  `Apply(VtEvent)` covering Print + auto-wrap + scroll, BS/HT/LF/CR,
+  CSI cursor moves and erases, and basic-16 SGR.
+- `Views/TerminalView.cs` — the WPF custom `FrameworkElement` that
+  renders the buffer. `OnRender` coalesces same-attr cell runs into
+  single `FormattedText`s; backgrounds drawn first, text on top,
+  manual underline at baseline.
+
+Coming attractions worth knowing about in advance:
+
+- `Terminal.Accessibility/TerminalAutomationPeer.fs` (Stage 4) — the
+  UIA peer. Mimic `TermControlAutomationPeer.cpp` from
+  microsoft/terminal.
+- `Terminal.Semantics/SpinnerDetector.fs` (Stage 5+) — the row-hash /
+  5-Hz / 1-s rule that prevents Claude Code's spinner from freezing
+  NVDA. This is the single biggest accessibility win in Phase 1.
 
 ## See also
 
