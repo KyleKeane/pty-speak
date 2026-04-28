@@ -47,6 +47,53 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   - ACCESSIBILITY-TESTING gains rows for the only two stages with
     actual user-visible behaviour today (Stage 0 and Stage 3b); test
     fixtures section flagged as planned tooling.
+- **Working conventions extracted from SESSION-HANDOFF into
+  CONTRIBUTING.** SESSION-HANDOFF was carrying policy that binds every
+  contributor (PR shape, CHANGELOG discipline, "`spec/` is immutable",
+  "platform quirks go in `docs/CONPTY-NOTES.md`"), not just an
+  inter-thread handoff. Moved those into CONTRIBUTING's "Branching and
+  pull requests" section and a new "Documentation policy" section;
+  SESSION-HANDOFF now points at them and keeps only the
+  session-specific content (sandbox caveats, pending action items,
+  Stage 4 sketch, reading order). Reading order updated so a new
+  session reads SESSION-HANDOFF first, then CONTRIBUTING, then the
+  rest.
+- **Spec rewrite (post-Stage-3b).** Per the user's authorisation,
+  applied an in-place ADR-style update to `spec/overview.md` and
+  `spec/tech-plan.md` so the design contract reads true to what
+  actually shipped, rather than retaining superseded choices that
+  could mislead future contributors. Highlights:
+  - **Elmish.WPF removed throughout.** Investigated and dropped (no
+    stable .NET 9 build on nuget at the time we needed it). Replaced
+    with the actual two-project F# / C# split: F# `Terminal.App`
+    owns `[<EntryPoint>][<STAThread>] main`, C# `Views` library
+    hosts `MainWindow.xaml` + `App.cs : Application` +
+    `TerminalView.cs`.
+  - **Module layout in overview.md** rewritten to match the real
+    `src/` tree (`Terminal.Core`, `Terminal.Pty`, `Terminal.Parser`,
+    `Terminal.Audio`, `Terminal.Accessibility`, `Views`,
+    `Terminal.App`); future modules clearly marked as reserved
+    names.
+  - **Test framework** corrected: Expecto + FsCheck → xUnit +
+    FsCheck.Xunit; per-module test projects → single `Tests.Unit/`.
+  - **Stage 1 P/Invoke surface** rewritten with `nativeint&` for
+    out-handle parameters; the silent `out SafeFileHandle&` byref
+    bug now documented inline as a comment in the spec.
+  - **Stage 1 validation criteria** rewritten around the ≥16-byte
+    ConPTY init prologue (the "see directory listing" assertion the
+    spec previously called for is unreliable due to the
+    render-cadence finding in `docs/CONPTY-NOTES.md`).
+  - **Stage 2 vs Stage 3a deferral split** clarified — the parser
+    emits dispatches for everything, but `Screen.Apply` handles only
+    basic-16 SGR + cursor + erase today; 256-color, truecolor, and
+    DECSET are deferred with their owner-stages noted.
+  - **Stage 3** annotated as having shipped split into 3a (screen
+    model) + 3b (WPF rendering), with validation criteria trimmed
+    to what Stage 3 alone demonstrates (cmd.exe startup banner
+    renders); 256-color, resize, and typing pushed to their owner
+    stages. Reference Code Map cleaned (Elmish.WPF link dropped, the
+    bare FsCheck entry merged into a combined xUnit + FsCheck.Xunit
+    entry).
 
 ### Added
 

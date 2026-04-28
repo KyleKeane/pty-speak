@@ -22,6 +22,7 @@ A new session should read this **first**, then
 | **Last merged stage** | Stage 3b (WPF `TerminalView` + end-to-end `ConPtyHost → Parser → Screen → TerminalView`) |
 | **Last shipped release** | [`v0.0.1-preview.15`](https://github.com/KyleKeane/pty-speak/releases/tag/v0.0.1-preview.15) — Stage 0 (empty-window installer, NVDA-validated) |
 | **Released since** | Nothing. Stages 1, 2, 3a, 3b are on `main` but not yet shipped as a preview. The Stage-3b installer is the next natural smoke target. |
+| **In-flight branch** | `chore/session-handoff-and-final-audit` — documentation audit + spec rewrite + extraction of working conventions into CONTRIBUTING. **Must be reviewed and merged before any Stage 4 work**, otherwise Stage 4 lands on top of an unreviewed audit branch and the histories tangle. See `CHANGELOG.md` `[Unreleased]` for the bullet-by-bullet scope. |
 | **Next stage** | **Stage 4** — UIA exposure (first NVDA milestone). See sketch below. |
 
 The end-to-end pipeline is wired: launching the app spawns `cmd.exe`
@@ -37,18 +38,27 @@ GitHub-website access. They've accumulated because the development
 sandbox can't push tags and the GitHub MCP server occasionally
 disconnects mid-session.
 
-1. **Push the four pending baseline tags.** Exact commands are in
+1. **Review and merge the audit branch
+   `chore/session-handoff-and-final-audit`.** It carries the
+   documentation audit, the spec rewrite, and the
+   SESSION-HANDOFF→CONTRIBUTING extraction described in the
+   `CHANGELOG.md` `[Unreleased]` section. **Do this before starting
+   Stage 4** so Stage 4 doesn't sit on top of an unreviewed audit
+   stack. If a PR isn't already open, create one at
+   `https://github.com/KyleKeane/pty-speak/pull/new/chore/session-handoff-and-final-audit`.
+
+2. **Push the four pending baseline tags.** Exact commands are in
    [`docs/CHECKPOINTS.md`](CHECKPOINTS.md#pending-checkpoint-tags).
    Tags don't trigger any workflow; they're rollback handles only.
 
-2. **Optional: cut a `v0.0.1-preview.16` release.** Validates Stage 3b
+3. **Optional: cut a `v0.0.1-preview.16` release.** Validates Stage 3b
    visually (cmd.exe text appearing in the WPF window) and gives you
    an installer to run NVDA against. Procedure in
    [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md#cutting-a-release);
    make sure to add a `## [0.0.1-preview.16]` section to
    `CHANGELOG.md` first or the new release-time gate will refuse it.
 
-3. **Re-enable the GitHub MCP server** in the next Claude Code thread
+4. **Re-enable the GitHub MCP server** in the next Claude Code thread
    if it's not auto-reconnected. Without it the agent can't
    programmatically check PR status, merge PRs, or post issue
    comments — falls back to asking the maintainer.
