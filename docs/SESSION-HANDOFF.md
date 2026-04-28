@@ -20,16 +20,17 @@ A new session should read this **first**, then
 | | |
 |---|---|
 | **Last merged stage** | Stage 3b (WPF `TerminalView` + end-to-end `ConPtyHost → Parser → Screen → TerminalView`) |
-| **Last shipped release** | [`v0.0.1-preview.15`](https://github.com/KyleKeane/pty-speak/releases/tag/v0.0.1-preview.15) — Stage 0 (empty-window installer, NVDA-validated) |
-| **Released since** | Nothing. Stages 1, 2, 3a, 3b are on `main` but not yet shipped as a preview. The Stage-3b installer is the next natural smoke target. |
-| **In-flight branch** | `chore/session-handoff-and-final-audit` — documentation audit + spec rewrite + extraction of working conventions into CONTRIBUTING. **Must be reviewed and merged before any Stage 4 work**, otherwise Stage 4 lands on top of an unreviewed audit branch and the histories tangle. See `CHANGELOG.md` `[Unreleased]` for the bullet-by-bullet scope. |
-| **Next stage** | **Stage 4** — UIA exposure (first NVDA milestone). See sketch below. |
+| **Last shipped release** | [`v0.0.1-preview.18`](https://github.com/KyleKeane/pty-speak/releases/tag/v0.0.1-preview.18) — first preview cut from Stage 3b state. Maintainer has installed the build and confirmed `cmd.exe` runs under ConPTY end-to-end. (`preview.16` and `.17` were burned by the `## [<version>]` CHANGELOG-matching gate before #37 relaxed it; both retag the same `db44d6d` commit and were never shipped artifacts.) |
+| **Stage-3b smoke status** | **Known issue:** the maintainer reports a separate `cmd.exe` console host window appears behind the pty-speak WPF window on launch. ConPTY children should not allocate their own conhost — points at a `STARTUPINFOEX` / `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE` defect in `Terminal.Pty/PseudoConsole.fs` or `ConPtyHost.fs`. Tracked separately from Stage 4; doesn't block UIA work. |
+| **In-flight branch** | None. The pre-Stage-4 audit (PR #35), `preview.18` CHANGELOG (PR #36), and the relaxed CHANGELOG-matching gate (PR #37) all merged in sequence on 2026-04-28. |
+| **Next stage** | **Stage 4** — UIA exposure (first NVDA milestone). See sketch below. The Stage-4-prep PR (this PR) lands `Screen.SequenceNumber` + `Screen.SnapshotRows` so the UIA peer's `ITextRangeProvider` can capture immutable row state across the UIA RPC thread without tearing. |
 
 The end-to-end pipeline is wired: launching the app spawns `cmd.exe`
 under ConPTY, parses its output, applies VtEvents to a 30×120
 `Screen`, and renders the buffer in a custom WPF `FrameworkElement`.
-Visual smoke on Windows is **pending** — the maintainer hasn't
-installed the post-Stage-3 build yet.
+The maintainer has installed `v0.0.1-preview.18` and confirmed text
+appears in the WPF window; the conhost-second-window finding above
+is the only outstanding Stage-3b regression.
 
 ## Pending action items (maintainer)
 
@@ -38,30 +39,26 @@ GitHub-website access. They've accumulated because the development
 sandbox can't push tags and the GitHub MCP server occasionally
 disconnects mid-session.
 
-1. **Review and merge the audit branch
-   `chore/session-handoff-and-final-audit`.** It carries the
-   documentation audit, the spec rewrite, and the
-   SESSION-HANDOFF→CONTRIBUTING extraction described in the
-   `CHANGELOG.md` `[Unreleased]` section. **Do this before starting
-   Stage 4** so Stage 4 doesn't sit on top of an unreviewed audit
-   stack. If a PR isn't already open, create one at
-   `https://github.com/KyleKeane/pty-speak/pull/new/chore/session-handoff-and-final-audit`.
+1. **Push the five pending baseline tags.** Exact commands are in
+   [`docs/CHECKPOINTS.md`](CHECKPOINTS.md#pending-checkpoint-tags):
+   `baseline/stage-{0-ci-release, 1-conpty-hello-world, 2-vt-parser,
+   3a-screen-model, 3b-wpf-rendering}`. Tags don't trigger any
+   workflow; they're rollback handles only.
 
-2. **Push the four pending baseline tags.** Exact commands are in
-   [`docs/CHECKPOINTS.md`](CHECKPOINTS.md#pending-checkpoint-tags).
-   Tags don't trigger any workflow; they're rollback handles only.
-
-3. **Optional: cut a `v0.0.1-preview.16` release.** Validates Stage 3b
-   visually (cmd.exe text appearing in the WPF window) and gives you
-   an installer to run NVDA against. Procedure in
-   [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md#cutting-a-release);
-   make sure to add a `## [0.0.1-preview.16]` section to
-   `CHANGELOG.md` first or the new release-time gate will refuse it.
-
-4. **Re-enable the GitHub MCP server** in the next Claude Code thread
+2. **Re-enable the GitHub MCP server** in the next Claude Code thread
    if it's not auto-reconnected. Without it the agent can't
    programmatically check PR status, merge PRs, or post issue
    comments — falls back to asking the maintainer.
+
+3. **Investigate the Stage-3b conhost-second-window finding.** When
+   the maintainer launched `v0.0.1-preview.18` they observed a
+   separate `cmd.exe` console host window appearing behind the
+   pty-speak WPF window. Under ConPTY the child shell should
+   inherit the pseudo-console; a separate conhost suggests
+   `STARTUPINFOEX.cb` or the `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE`
+   attachment isn't taking effect. Likely sites:
+   `src/Terminal.Pty/PseudoConsole.fs` and `src/Terminal.Pty/Native.fs`.
+   Tracked as its own concern; orthogonal to Stage 4 UIA work.
 
 ## Working conventions on this repo
 
@@ -191,10 +188,13 @@ reference to the `Screen` — pass it via `TerminalView.SetScreen`
 **Snapshot rule**: UIA calls into the provider on a different thread
 from the WPF Dispatcher. Mutating the buffer while UIA reads = crash
 (see `Terminal.Accessibility` design notes in `spec/overview.md`).
-For Stage 4 the simplest approach is: every `ITextRangeProvider`
-holds an immutable copy of the rows it spans, taken at construction.
-A buffer-modify counter (sequence number) lets the peer invalidate
-stale ranges.
+The Stage-4-prep PR landed the substrate for this:
+`Screen.SnapshotRows(startRow, count)` returns `(int64 * Cell[][])`
+under the same lock as `Screen.Apply`, and `Screen.SequenceNumber`
+exposes the monotonic counter. Each `ITextRangeProvider` constructor
+should take a `(sequence, snapshot)` tuple and compare against
+`screen.SequenceNumber` later to detect staleness. No additional
+locking is required in `Terminal.Accessibility`.
 
 **Testing without NVDA**:
 - **FlaUI** integration tests in `tests/Tests.Ui/` (currently

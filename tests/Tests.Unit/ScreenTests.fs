@@ -197,3 +197,98 @@ let ``CSI m with no params is equivalent to CSI 0m`` () =
     feed screen (ascii "[1mA[mB")
     Assert.True(screen.GetCell(0, 0).Attrs.Bold)
     Assert.False(screen.GetCell(0, 1).Attrs.Bold)
+
+// ---------------------------------------------------------------------
+// Stage 4 substrate: SequenceNumber + SnapshotRows
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``fresh screen has SequenceNumber 0`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    Assert.Equal(0L, screen.SequenceNumber)
+
+[<Fact>]
+let ``Apply increments SequenceNumber once per event`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    let parser = Parser.create ()
+    let events = Parser.feedArray parser (ascii "abc")
+    let before = screen.SequenceNumber
+    for e in events do screen.Apply(e)
+    Assert.Equal(before + int64 events.Length, screen.SequenceNumber)
+
+[<Fact>]
+let ``SnapshotRows returns an immutable copy of the requested rows`` () =
+    let screen = Screen(rows = 3, cols = 4)
+    feed screen (ascii "ab\ncd")
+    let _seq, rows = screen.SnapshotRows(0, 2)
+    Assert.Equal(2, rows.Length)
+    Assert.Equal(4, rows.[0].Length)
+    Assert.Equal('a', rows.[0].[0].Ch.ToString().[0])
+    Assert.Equal('b', rows.[0].[1].Ch.ToString().[0])
+
+    // Mutating the screen after the snapshot must not affect the
+    // returned rows — the snapshot is a deep copy. The
+    // ESC (0x1B) byte before the [ is what makes the parser
+    // recognize CSI; without it "[1;1H" parses as five Print
+    // events and the cursor never returns to (0,0).
+    feed screen (ascii "[1;1HZ")
+    Assert.Equal('Z', screen.GetCell(0, 0).Ch.ToString().[0])
+    Assert.Equal('a', rows.[0].[0].Ch.ToString().[0])
+
+[<Fact>]
+let ``SnapshotRows pairs the snapshot with the sequence number at capture time`` () =
+    let screen = Screen(rows = 2, cols = 3)
+    feed screen (ascii "ab")
+    let seq1, _ = screen.SnapshotRows(0, screen.Rows)
+    feed screen (ascii "c")
+    let seq2, _ = screen.SnapshotRows(0, screen.Rows)
+    Assert.True(seq2 > seq1, sprintf "expected %d > %d" seq2 seq1)
+
+[<Fact>]
+let ``SnapshotRows rejects out-of-range arguments`` () =
+    let screen = Screen(rows = 3, cols = 3)
+    Assert.Throws<System.ArgumentException>(fun () ->
+        screen.SnapshotRows(-1, 1) |> ignore) |> ignore
+    Assert.Throws<System.ArgumentException>(fun () ->
+        screen.SnapshotRows(0, -1) |> ignore) |> ignore
+    Assert.Throws<System.ArgumentException>(fun () ->
+        screen.SnapshotRows(0, 4) |> ignore) |> ignore
+    Assert.Throws<System.ArgumentException>(fun () ->
+        screen.SnapshotRows(2, 2) |> ignore) |> ignore
+
+[<Fact>]
+let ``SnapshotRows with count=0 returns an empty array without affecting the sequence`` () =
+    let screen = Screen(rows = 3, cols = 3)
+    feed screen (ascii "ab")
+    let before = screen.SequenceNumber
+    let _seq, rows = screen.SnapshotRows(1, 0)
+    Assert.Empty(rows)
+    Assert.Equal(before, screen.SequenceNumber)
+
+[<Fact>]
+let ``concurrent snapshots and applies never tear`` () =
+    // Producer thread feeds bytes through the parser and applies
+    // them; the test thread continuously snapshots rows. Snapshots
+    // must be well-shaped and SequenceNumber monotonic — the lock
+    // around Apply / SnapshotRows is what guarantees both.
+    let screen = Screen(rows = 4, cols = 8)
+    let parser = Parser.create ()
+    let producer = System.Threading.Tasks.Task.Run(fun () ->
+        let payload = ascii "Hello World!\n"
+        for _ in 1 .. 1000 do
+            let events = Parser.feedArray parser payload
+            for e in events do screen.Apply(e))
+    // At least one snapshot before the producer's exit so the test
+    // can't degenerate to zero iterations on a fast machine.
+    let firstSeq, firstRows = screen.SnapshotRows(0, screen.Rows)
+    Assert.Equal(4, firstRows.Length)
+    let mutable lastSeq = firstSeq
+    while not producer.IsCompleted do
+        let seq, rows = screen.SnapshotRows(0, screen.Rows)
+        Assert.True(seq >= lastSeq, sprintf "sequence regressed: %d < %d" seq lastSeq)
+        lastSeq <- seq
+        Assert.Equal(4, rows.Length)
+        for r in rows do Assert.Equal(8, r.Length)
+    producer.Wait()
+    let finalSeq, _ = screen.SnapshotRows(0, screen.Rows)
+    Assert.True(finalSeq >= lastSeq)

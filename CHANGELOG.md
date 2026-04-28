@@ -15,8 +15,40 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added
+
+- **Stage 4 substrate — `Screen.SequenceNumber` + `Screen.SnapshotRows`
+  in `Terminal.Core`.** `Screen` now exposes a monotonic
+  `SequenceNumber: int64` (incremented on every `Apply`) and a
+  `SnapshotRows(startRow, count): int64 * Cell[][]` method that
+  atomically captures an immutable copy of the requested rows
+  paired with the sequence number at capture time. Both `Apply` and
+  `SnapshotRows` serialize on a private gate object, which is the
+  boundary between the WPF Dispatcher (where the parser feeds
+  events) and the UIA RPC thread (where Stage 4's
+  `ITextRangeProvider` will read snapshots from). This is the
+  thread-safety primitive that spec §4.3's snapshot-on-construction
+  rule depends on; landing it ahead of the UIA peer keeps the
+  Stage 4 PR focused on the peer + provider implementation.
+  `tests/Tests.Unit/ScreenTests.fs` covers fresh-screen baseline,
+  per-event sequence increments, deep-copy independence, sequence-
+  pairing, argument validation, the `count = 0` degenerate, and a
+  concurrent producer / snapshot stress test.
+
 ### Changed
 
+- **`docs/SESSION-HANDOFF.md` brought up to date.** Replaced the
+  out-of-date "in-flight branch" / "last shipped release" rows: the
+  `chore/session-handoff-and-final-audit` audit, the `preview.18`
+  CHANGELOG, and the relaxed CHANGELOG-matching gate (PRs #35-#37)
+  all merged on 2026-04-28; `v0.0.1-preview.18` is now the last
+  shipped preview. Recorded the maintainer-reported Stage-3b
+  finding that a separate `cmd.exe` console-host window appears
+  behind the WPF window on launch, and tracked the conhost
+  defect under "Pending action items" as orthogonal to Stage 4.
+  Updated the Stage 4 sketch to reference the new
+  `Screen.SnapshotRows` / `Screen.SequenceNumber` primitives so the
+  snapshot rule is implementable without further substrate work.
 - **Release-time `CHANGELOG.md` matching gate relaxed.** The pre-build
   step in `.github/workflows/release.yml` that failed the workflow
   when no `## [<version>]` section existed has been removed.
