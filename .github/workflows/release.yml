@@ -1,16 +1,10 @@
 name: Release
 
 # Triggered when a release is published via the GitHub UI or API.
-#
-# Bisect of PR #18 changes. v0.0.1-preview.9 silently no-job-spawned,
-# meaning one of the constructs PR #18 added breaks workflow load.
-# Splitting the suspect range into halves:
-#
-# THIS HALF: Resolve version, Publish, Install vpk, vpk pack.
-# OMITTED HALF: Generate release notes, Update GitHub Release.
-#
-# If v0.0.1-preview.10 runs, the omitted half is the offender.
-# If .10 also silently fails, this half is the offender.
+# Workflow shape and Stage 0 history are documented in
+# docs/RELEASE-PROCESS.md; the file's git log is the canonical record
+# of how we arrived at this layout (search for "Stage 0 release-pipeline
+# diagnostic loop" if you need the story).
 on:
   release:
     types: [published]
@@ -27,9 +21,48 @@ jobs:
           echo "Release workflow started"
           echo "Tag: ${{ github.event.release.tag_name }}"
           echo "Release ID: ${{ github.event.release.id }}"
+          echo "Target: ${{ github.event.release.target_commitish }}"
+
+      - name: Validate release target branch
+        shell: pwsh
+        # Belt-and-suspenders against v0.0.1-preview.14's failure mode:
+        # a release accidentally published with target_commitish set to
+        # the old Stage 0 branch (claude/create-project-docs-xVA6n)
+        # ran an outdated release.yml from that branch and hit the
+        # YAML-heredoc bug. Fail loudly here if Target != 'main' so the
+        # underlying tag/release can be deleted before the workflow
+        # wastes runner minutes building the wrong code.
+        run: |
+          $target = '${{ github.event.release.target_commitish }}'
+          if ($target -ne 'main') {
+            Write-Error "Release was published with target_commitish='$target', but releases must target 'main'. Delete the release and the underlying tag, then re-publish with Target=main in the GitHub Releases UI."
+            exit 1
+          }
+          Write-Host "Release target branch is 'main' — OK."
 
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate CHANGELOG.md has a matching entry
+        shell: pwsh
+        # The release-notes step further down silently falls back to a
+        # generic "Release X. See CHANGELOG.md for details." body when
+        # CHANGELOG.md has no matching `## [<version>]` section. For
+        # `v0.0.1-preview.{2..5}` we *almost* shipped that fallback
+        # because nobody noticed during a frantic diagnostic loop.
+        # Fail-fast here so a missing CHANGELOG section is loud rather
+        # than a silently-degraded release.
+        run: |
+          $tag = '${{ github.event.release.tag_name }}'
+          $version = $tag -replace '^v',''
+          $escaped = [regex]::Escape($version)
+          $content = Get-Content CHANGELOG.md -Raw
+          $pattern = "(?ms)^## \[$escaped\]"
+          if (-not ([regex]::Match($content, $pattern).Success)) {
+            Write-Error "CHANGELOG.md has no section '## [$version]' matching the release tag. Add one before publishing the release. See docs/RELEASE-PROCESS.md."
+            exit 1
+          }
+          Write-Host "CHANGELOG.md has a section for $version — OK."
 
       - name: Setup .NET 9
         uses: actions/setup-dotnet@v5

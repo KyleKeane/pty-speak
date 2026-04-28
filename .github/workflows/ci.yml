@@ -80,6 +80,28 @@ jobs:
           path: releases/
           retention-days: 7
 
+  workflow-lint:
+    name: Workflow lint (actionlint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Catches the class of YAML / shell / expression bugs that bit us
+    # repeatedly during the Stage 0 release-pipeline diagnostic loop —
+    # most notably the PowerShell `@"..."@` heredoc whose body lines
+    # were column-0 inside a 10-space-indented `run: |` block, which
+    # silently produced a malformed workflow file (workflow runs with
+    # 0 jobs spawned and no diagnostic banner). actionlint catches
+    # that shape directly.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run actionlint
+        uses: raven-actions/actionlint@v2
+        with:
+          # Treat warnings as errors — the things actionlint warns on
+          # have all been "actually a bug we missed" in our history.
+          fail-on-error: 'true'
+
   docs-lint:
     name: Markdown link check
     runs-on: ubuntu-latest
