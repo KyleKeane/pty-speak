@@ -15,6 +15,24 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed
+
+- **Release-time `CHANGELOG.md` matching gate relaxed.** The pre-build
+  step in `.github/workflows/release.yml` that failed the workflow
+  when no `## [<version>]` section existed has been removed.
+  `v0.0.1-preview.{16,17}` were burned by exactly that gate (publish a
+  release without remembering to rename the section first → workflow
+  fails → `release: published` won't refire for the same tag, so the
+  next attempt has to bump). The `Generate release notes from
+  CHANGELOG.md` step now resolves the body in this order: per-version
+  `## [<version>]` section if present → `## [Unreleased]` content
+  with the heading rewritten to `## [<version>] — <today>` for the
+  release body → generic `"Release X. See CHANGELOG.md for details."`
+  fallback (warned-on, not failed). Net effect: a maintainer can
+  publish a release directly off `[Unreleased]` without burning a
+  tag. `docs/RELEASE-PROCESS.md` "Cutting a release" updated to
+  describe both flows.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

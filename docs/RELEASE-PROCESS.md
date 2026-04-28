@@ -72,11 +72,32 @@ that updates `CHANGELOG.md`.
 
 ### 2. Update the changelog and version
 
-Move the `## [Unreleased]` items into a new `## [X.Y.Z]` section in
-[`CHANGELOG.md`](../CHANGELOG.md) with today's date. Bump the
-`<Version>` property in `Directory.Build.props` (or the equivalent in
-each `.fsproj`) to match. Open a PR titled `release: vX.Y.Z`. Merge
-when CI is green.
+The release-notes step in `release.yml` resolves the body in this
+order:
+
+1. If [`CHANGELOG.md`](../CHANGELOG.md) has a `## [X.Y.Z]` section
+   matching the release tag, use it verbatim.
+2. Otherwise, if `## [Unreleased]` has non-empty content, use it as
+   the body — the workflow rewrites the heading to
+   `## [X.Y.Z] — <today>` so the final release reads naturally.
+3. Otherwise, fall back to a generic `"Release X.Y.Z. See
+   CHANGELOG.md for details."` body. This is the silent-degradation
+   path; we warn loudly in the workflow log when it's used.
+
+The lightest-touch flow is **(2)**: leave the bullets under
+`## [Unreleased]`, publish the release, and let the workflow promote
+them. After the release publishes, you can optionally open a small
+PR that renames `## [Unreleased]` to `## [X.Y.Z] — <date>` in the
+file itself and re-adds an empty `[Unreleased]` — that keeps
+`CHANGELOG.md` matching what the release page shows long-term. **(1)**
+is appropriate when you want a curated narrative committed to `main`
+before publishing (e.g. a stable `vX.Y.Z` release that benefits from
+review).
+
+Bump the `<Version>` property in `Directory.Build.props` (or the
+equivalent in each `.fsproj`) to match the release tag. If you went
+the (1) route, your PR title is `release: vX.Y.Z`; if you're using
+the (2) flow you don't need a separate changelog PR.
 
 ### 3. Publish the release
 
@@ -111,25 +132,23 @@ Triggered by the `release: published` event you just fired. Runs on
    an outdated `release.yml`.
 3. **Checkout** with default `ref` — release events set `GITHUB_REF`
    to `refs/tags/<tag_name>` so the source at the tag is checked out.
-4. **Validate `CHANGELOG.md` has a matching entry** — fails with a
-   clear error if no `## [<version>]` section exists. Without this
-   gate, the release-notes step further down silently falls back to a
-   generic "Release X. See CHANGELOG.md for details." body.
-5. **Setup .NET 9** via `actions/setup-dotnet@v5`.
-6. **Resolve version** — strips the leading `v` from
+4. **Setup .NET 9** via `actions/setup-dotnet@v5`.
+5. **Resolve version** — strips the leading `v` from
    `github.event.release.tag_name`, detects prerelease from the
    `-preview.N` / `-rc.N` suffix.
-7. `dotnet restore` / `dotnet build -c Release` / `dotnet test`.
-8. `dotnet publish src/Terminal.App/Terminal.App.fsproj -c Release -r win-x64 --self-contained -o publish` (with `/p:Version=...`).
-9. **Install Velopack CLI** (`dotnet tool install -g vpk`).
-10. **`vpk pack`** — wraps `publish/` into a Velopack release at
-    `releases/`: `*Setup.exe`, full nupkg, `RELEASES`. (No
-    `*-delta.nupkg` on the first release; `releases.json` is not
-    produced by our `vpk pack` config.)
-11. **Generate release notes from `CHANGELOG.md`** — writes
-    `release-body.md` with the unsigned-preview banner prepended to
-    the matching `## [<version>]` section.
-12. **Update GitHub Release** via `softprops/action-gh-release@v3`:
+6. `dotnet restore` / `dotnet build -c Release` / `dotnet test`.
+7. `dotnet publish src/Terminal.App/Terminal.App.fsproj -c Release -r win-x64 --self-contained -o publish` (with `/p:Version=...`).
+8. **Install Velopack CLI** (`dotnet tool install -g vpk`).
+9. **`vpk pack`** — wraps `publish/` into a Velopack release at
+   `releases/`: `*Setup.exe`, full nupkg, `RELEASES`. (No
+   `*-delta.nupkg` on the first release; `releases.json` is not
+   produced by our `vpk pack` config.)
+10. **Generate release notes from `CHANGELOG.md`** — writes
+    `release-body.md` by resolving the body via the order in step 2
+    above (per-version section → `[Unreleased]` content with rewritten
+    heading → generic fallback), then prepends the unsigned-preview
+    banner.
+11. **Update GitHub Release** via `softprops/action-gh-release@v3`:
     sets title to `pty-speak <version>`, replaces the auto-generated
     body with `release-body.md`, sets `prerelease` from the version
     resolution, and attaches the artifact files.
