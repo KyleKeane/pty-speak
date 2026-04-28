@@ -1,6 +1,6 @@
 # Phase 1 (MVP) Implementation Specification: Accessible F# Windows Terminal for Claude Code with NVDA
 
-This document is an implementation-focused specification for Phase 1 of an accessible Windows terminal built in F#/.NET 9, WPF/Elmish.WPF, ConPTY (P/Invoke), a custom WPF UI Automation provider, TPL Dataflow + Channels, NAudio earcons, and Velopack distribution. The MVP target is: **a blind user can run Claude Code (Ink-based React TUI) inside the terminal, hear all output via NVDA, navigate output as a structured document, interact with selection lists via NVDA-friendly listbox semantics, and get earcons for ANSI color/style changes.** Phase 1 succeeds when “Claude Code can drive its own further development inside our terminal.”
+This document is an implementation-focused specification for Phase 1 of an accessible Windows terminal built in F#/.NET 9, WPF (with a thin C# XAML library and an F# composition root — Elmish.WPF was investigated and dropped, see `spec/overview.md`), ConPTY (P/Invoke), a custom WPF UI Automation provider, TPL Dataflow + Channels, NAudio earcons, and Velopack distribution. The MVP target is: **a blind user can run Claude Code (Ink-based React TUI) inside the terminal, hear all output via NVDA, navigate output as a structured document, interact with selection lists via NVDA-friendly listbox semantics, and get earcons for ANSI color/style changes.** Phase 1 succeeds when "Claude Code can drive its own further development inside our terminal."
 
 The structure below follows a **walking-skeleton / tracer-bullet** sequencing (each stage produces production-quality code in a thin, observable, end-to-end slice that the user can validate independently before adding more) — see Cockburn / Hunt & Thomas on this pattern ([Code Climate](https://codeclimate.com/blog/kickstart-your-next-project-with-a-walking-skeleton), [Henrico Dolfing](https://www.henricodolfing.com/2018/04/start-your-project-with-walking-skeleton.html), [Built In on Tracer Bullets](https://builtin.com/software-engineering-perspectives/what-are-tracer-bullets)). Microsoft’s own ConPTY samples (`EchoCon` then `MiniTerm`) show the same incremental progression: pipes → ConPTY → STARTUPINFOEX → CreateProcess → I/O loop ([microsoft/terminal samples](https://learn.microsoft.com/tr-tr/windows/terminal/samples)).
 
@@ -742,12 +742,11 @@ When Claude Code implements this, point it at these specific files:
 - UIA peer for terminal: [microsoft/terminal TermControlAutomationPeer.cpp](https://github.com/microsoft/terminal/blob/main/src/cascadia/TerminalControl/TermControlAutomationPeer.cpp); WPF variant in PR [#14097](https://github.com/microsoft/terminal/pull/14097).
 - NVDA terminal handling: [nvaccess/nvda winConsoleUIA.py](https://github.com/nvaccess/nvda/blob/master/source/NVDAObjects/UIA/winConsoleUIA.py); Notification migration [PR #14047](https://github.com/nvaccess/nvda/pull/14047).
 - Input translation: [microsoft/terminal terminalInput.cpp](https://github.com/microsoft/terminal/blob/main/src/terminal/input/terminalInput.cpp); xterm canonical [invisible-island ctlseqs](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html).
-- Elmish.WPF: [README and tutorial](https://github.com/elmish/Elmish.WPF/blob/master/TUTORIAL.md).
 - NAudio: [WasapiOut docs](https://github.com/naudio/NAudio/blob/master/Docs/WasapiOut.md); Mark Heath’s [sine wave generator](https://markheath.net/post/playback-of-sine-wave-in-naudio).
 - Velopack: [velopack/velopack](https://github.com/velopack/velopack); [docs csharp.mdx](https://github.com/velopack/velopack.docs/blob/master/docs/getting-started/csharp.mdx).
 - FlaUI: [FlaUI/FlaUI](https://github.com/FlaUI/FlaUI); [Gu.Wpf.UiAutomation](https://github.com/GuOrg/Gu.Wpf.UiAutomation).
-- Tomlyn: [xoofx/Tomlyn](https://github.com/xoofx/Tomlyn).
-- FsCheck: [fscheck/FsCheck](https://github.com/fscheck/FsCheck); [intro on F# for fun and profit](https://swlaschin.gitbooks.io/fsharpforfunandprofit/content/posts/property-based-testing.html).
+- xUnit + FsCheck.Xunit: [xunit/xunit](https://github.com/xunit/xunit); [fscheck/FsCheck](https://github.com/fscheck/FsCheck); [`[<Property>]` attribute docs](https://fscheck.github.io/FsCheck/RunningTests.html#Using-FsCheck-Xunit); [intro on F# for fun and profit](https://swlaschin.gitbooks.io/fsharpforfunandprofit/content/posts/property-based-testing.html).
+- Tomlyn (future, Phase 2 verbosity profiles): [xoofx/Tomlyn](https://github.com/xoofx/Tomlyn).
 
 -----
 
