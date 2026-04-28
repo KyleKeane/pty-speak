@@ -5,11 +5,15 @@ from the ground up for blind developers using NVDA, JAWS, or Narrator —
 with Anthropic's Claude Code (and other Ink/React TUIs) as the primary
 target workload.
 
-> Status: **pre-alpha, Stage 0 shipped.** The first preview build,
-> `v0.0.1-preview.15`, is an empty WPF window with the deployment
-> pipe (build → Velopack pack → GitHub Releases) validated end to
-> end. NVDA announces the window title. Follow
-> [Releases](../../releases) for new builds.
+> Status: **pre-alpha.** Last shipped preview is
+> [`v0.0.1-preview.15`](../../releases/tag/v0.0.1-preview.15) — Stage 0,
+> an empty WPF window proving the deployment pipe (build → Velopack pack →
+> GitHub Releases). On `main` since: Stage 1 (ConPTY host),
+> Stage 2 (Williams VT500 parser), and Stage 3 (screen model + WPF
+> rendering); the next preview will show live `cmd.exe` output in the
+> window. See [`docs/ROADMAP.md`](docs/ROADMAP.md) and
+> [`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md) for the per-stage state.
+> Follow [Releases](../../releases) for new builds.
 
 ## Why this exists
 
@@ -67,6 +71,9 @@ docs/                    Living developer documentation
   BUILD.md               Build from source
   RELEASE-PROCESS.md     Cutting a Velopack release to GitHub Releases
   ACCESSIBILITY-TESTING.md   NVDA / Narrator / JAWS validation matrix
+  CHECKPOINTS.md         Stable-baseline tags per shipped stage
+  CONPTY-NOTES.md        Observed Windows ConPTY platform quirks
+  SESSION-HANDOFF.md     Bridge between Claude Code coding sessions
 .github/
   workflows/             CI and release automation
   ISSUE_TEMPLATE/        Bug, feature, accessibility-issue templates
@@ -109,9 +116,11 @@ Once Stage 11 (Velopack auto-update) lands, the GA flow is:
 4. Self-update from inside the app with `Ctrl+Shift+U` (this checks GitHub
    Releases and applies the delta in ~2 seconds).
 
-For the Stage 0 preview the installer opens an empty window — there is
-no terminal surface yet. Until Stage 11 ships, follow
-[`docs/BUILD.md`](docs/BUILD.md) to build locally.
+The historical Stage 0 preview installer opens an empty window. Once
+the next preview is cut from the current `main`, the installer launches
+`cmd.exe` under ConPTY and renders its output in the window — input
+to the PTY arrives in Stage 6. Until Stage 11 (auto-update) ships,
+follow [`docs/BUILD.md`](docs/BUILD.md) to build locally.
 
 ## System requirements
 
@@ -141,7 +150,10 @@ log if possible, and the exact steps.
 
 MIT — see [`LICENSE`](LICENSE).
 
-This project depends on Velopack (MIT), NAudio (MIT), Elmish.WPF
-(MIT), Tomlyn (BSD-2), and FsCheck / Expecto / FlaUI (MIT). Optional
+Current direct dependencies: Velopack (MIT) and FSharp.Core (MIT).
+Test dependencies: xUnit (Apache-2), FsCheck.Xunit (BSD-3), and
+Microsoft.NET.Test.Sdk (MIT). Future stages add: NAudio (MIT) for
+earcons (Stage 9), FlaUI (MIT) for UIA integration tests (Stage 4),
+and Tomlyn (BSD-2) for verbosity-profile config (Phase 2). Optional
 runtime dependencies (Piper TTS GPL-3 fork, SuperCollider GPL-3) are
 invoked as separate subprocesses and are not statically linked.
