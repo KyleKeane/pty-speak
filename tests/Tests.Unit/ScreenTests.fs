@@ -227,8 +227,11 @@ let ``SnapshotRows returns an immutable copy of the requested rows`` () =
     Assert.Equal('b', rows.[0].[1].Ch.ToString().[0])
 
     // Mutating the screen after the snapshot must not affect the
-    // returned rows — the snapshot is a deep copy.
-    feed screen (ascii "[1;1HZ")
+    // returned rows — the snapshot is a deep copy. The
+    // ESC (0x1B) byte before the [ is what makes the parser
+    // recognize CSI; without it "[1;1H" parses as five Print
+    // events and the cursor never returns to (0,0).
+    feed screen (ascii "[1;1HZ")
     Assert.Equal('Z', screen.GetCell(0, 0).Ch.ToString().[0])
     Assert.Equal('a', rows.[0].[0].Ch.ToString().[0])
 
