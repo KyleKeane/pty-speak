@@ -17,6 +17,24 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **CI hygiene gates** preventing two specific bug classes that bit
+  us during Stage 0 ↔ Stage 3 iteration:
+  - **`actionlint` job** in `ci.yml` lints `.github/workflows/*.yml`
+    on every PR. Catches the YAML / shell / expression mistakes
+    that produced the silent workflow startup_failures during the
+    `v0.0.1-preview.{1..5}` diagnostic loop (PowerShell heredoc body
+    lines at column 0 inside an indented `run: |` block, etc.).
+  - **Release-time gates in `release.yml`** running before any
+    build:
+    - **Target-branch gate**: fails the workflow with a clear error
+      if the release was published with `target_commitish` other
+      than `main`. Prevents `v0.0.1-preview.14`'s failure mode where
+      the release picked up an old branch's `release.yml`.
+    - **CHANGELOG gate**: fails the workflow if `CHANGELOG.md` has
+      no `## [<version>]` section matching the release tag. The
+      release-notes step further down silently falls back to
+      `"Release X. See CHANGELOG.md for details."` otherwise; we
+      almost shipped that fallback on `.2..5`.
 - **Stage 3b — WPF rendering + end-to-end wiring.** First visible
   terminal surface. New `TerminalView : FrameworkElement` in
   `src/Views/TerminalView.cs` overrides `OnRender(DrawingContext)`
