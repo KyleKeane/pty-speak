@@ -212,6 +212,39 @@ empty `tests/Tests.Ui/` project reserves the path for FlaUI work.
   product stays screen-reader-agnostic, then confirm with a real screen
   reader.
 
+### Test fixtures: CSI / OSC / DCS sequences
+
+Existing tests in `VtParserTests.fs` and `ScreenTests.fs` embed a
+**literal 0x1B byte** (ESC) directly in the F# source. The byte
+is invisible in most editors but appears as `\033` under `od -c`.
+The test reads `feed screen (ascii "[5;3H")` to the eye, but the
+real bytes between `"` and `[` are `0x1B 0x5B`, so the parser
+recognizes CSI CUP. This is the pre-existing convention.
+
+**It is also a foot-gun.** Any edit that round-trips through plain
+text — including most agent edit tools, plain-text patches, and
+some web-editor copy-paste — silently strips the 0x1B byte. The
+test then literally reads `"[5;3H"` (no ESC), the parser emits
+five Print events, and the assertion fails (or worse, passes
+vacuously if it only checks something the Prints happen to
+satisfy). PR #38 burned one CI cycle on exactly this; the fix
+landed in `4c9c0d6`.
+
+For new test fixtures, prefer the explicit F# Unicode escape so
+the dependency on the parser's CSI handling is visible in source:
+
+```fsharp
+feed screen (ascii "\u001b[5;3H")           // CUP
+feed screen (ascii "\u001b[31m")            // SGR red
+feed screen (ascii "\u001b]0;Title\u0007")  // OSC 0; bell-terminated
+```
+
+Both forms compile to the same bytes at runtime; `\u001b` survives
+text-only edits. When touching a test that already uses the
+raw-byte form, leave it as-is rather than rewriting — but if a
+diff would land on that line for any other reason, take the
+opportunity to migrate it.
+
 CI runs `dotnet test` and `dotnet build -c Release` on `windows-latest`.
 Local pre-PR checklist:
 
