@@ -77,6 +77,39 @@ jobs:
       - name: Install Velopack CLI
         run: dotnet tool install -g vpk
 
+      - name: Fetch prior release full nupkg for delta generation
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Velopack's `vpk pack` only generates a *-delta.nupkg when a
+        # prior *-full.nupkg for the same packId exists in --outputDir
+        # at pack time. CI starts from a fresh runner each release, so
+        # without this step the releases/ directory is empty and every
+        # build ships full-only — auto-update clients fall back to
+        # downloading the entire ~66 MB package every time.
+        #
+        # Find the most recently published GitHub Release that isn't
+        # the one currently being released, download its
+        # `*-full.nupkg` into releases/, and let the next step pick it
+        # up. Skips silently if no prior release exists (first release
+        # on the channel) — that's not an error.
+        run: |
+          New-Item -ItemType Directory -Force -Path releases | Out-Null
+          $currentTag = '${{ github.event.release.tag_name }}'
+          $priorTag = gh release list --limit 100 --json tagName,publishedAt `
+            | ConvertFrom-Json `
+            | Where-Object { $_.tagName -ne $currentTag } `
+            | Sort-Object publishedAt -Descending `
+            | Select-Object -First 1 -ExpandProperty tagName
+          if (-not $priorTag) {
+            Write-Host 'No prior release found; vpk pack will produce a full nupkg only (no delta).'
+          } else {
+            Write-Host "Prior release: $priorTag. Downloading *-full.nupkg into releases/ for delta generation."
+            gh release download $priorTag --pattern '*-full.nupkg' --dir releases --clobber
+            Write-Host 'Prior nupkg present:'
+            Get-ChildItem -Path releases -Filter '*-full.nupkg' | Format-Table Name, Length
+          }
+
       - name: Pack with Velopack
         shell: pwsh
         run: |
@@ -94,6 +127,36 @@ jobs:
         run: |
           echo "Velopack pack completed for tag ${{ github.event.release.tag_name }}"
           dir releases
+
+      - name: Remove prior-release artifacts staged for delta generation
+        shell: pwsh
+        # The "Fetch prior release full nupkg for delta generation"
+        # step earlier dropped the previous version's *-full.nupkg
+        # into releases/ so vpk pack could diff against it. vpk pack
+        # leaves it there. softprops/action-gh-release would then
+        # upload it as a duplicate asset on the current release.
+        # Remove versioned nupkgs that don't match the current
+        # version. Non-versioned files (Setup.exe, RELEASES,
+        # releases.<channel>.json, assets.<channel>.json) are
+        # overwritten by vpk pack so don't need cleanup.
+        run: |
+          $ver = '${{ steps.version.outputs.version }}'
+          $fullPattern  = "*-$ver-full.nupkg"
+          $deltaPattern = "*-$ver-delta.nupkg"
+          $stale = Get-ChildItem -Path releases -File `
+            | Where-Object {
+                ($_.Name -like '*-full.nupkg' -and $_.Name -notlike $fullPattern) -or
+                ($_.Name -like '*-delta.nupkg' -and $_.Name -notlike $deltaPattern)
+              }
+          if ($stale) {
+            Write-Host 'Removing stale prior-version nupkgs:'
+            $stale | Format-Table Name, Length
+            $stale | Remove-Item -Force
+          } else {
+            Write-Host 'No stale prior-version nupkgs to remove.'
+          }
+          Write-Host 'releases/ after cleanup:'
+          Get-ChildItem -Path releases | Format-Table Name, Length
 
       - name: Verify required Velopack artifacts exist
         shell: pwsh

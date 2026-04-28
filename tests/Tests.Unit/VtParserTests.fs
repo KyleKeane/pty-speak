@@ -167,22 +167,19 @@ let ``OSC: ST-terminated sequence emits OscDispatch with bellTerminated=false`` 
 
 [<Fact>]
 let ``CAN inside DCS passthrough emits DcsUnhook and returns to Ground`` () =
-    // ESC P 1 q (one-param DCS, no intermediate), then payload bytes
-    // 'Z' 'Z' 'Z', then CAN. DcsPassthrough on CAN emits DcsUnhook
-    // (NOT Execute — that asymmetry with CSI is deliberate; see
-    // StateMachine.fs).
-    //
-    // The test deliberately omits the `$` intermediate byte that a
-    // real DECRQSS would carry. Adding `$` between '1' and 'q' would
-    // exercise the DcsParam → DcsIntermediate transition, where the
-    // parser drops the in-flight digit param (no `pushParam ()` on
-    // that edge in StateMachine.fs:370-373); the result is parms=[||]
-    // instead of [|1|]. That's arguably a parser bug, but this test
-    // is about CAN-in-DCS, not param-pushing semantics — keep the
-    // input simple.
+    // ESC P 1 $ q (DECRQSS-shape: one-param DCS with intermediate),
+    // then payload bytes 'Z' 'Z' 'Z', then CAN. Two invariants
+    // exercised at once:
+    //   1. DcsParam → DcsIntermediate transition pushes the in-flight
+    //      digit (was Issue #42; fixed in this PR by adding pushParam
+    //      to that edge in StateMachine.fs). parms must be [|1|], not
+    //      [||] as it was pre-fix.
+    //   2. DcsPassthrough on CAN emits DcsUnhook (NOT Execute —
+    //      asymmetry with CSI's CAN-during-CSI is deliberate; see
+    //      StateMachine.fs).
     let parser = Parser.create ()
     let events = Parser.feedArray parser [|
-        0x1Buy; byte 'P'; byte '1'; byte 'q'
+        0x1Buy; byte 'P'; byte '1'; byte '$'; byte 'q'
         byte 'Z'; byte 'Z'; byte 'Z'
         0x18uy
     |]
@@ -190,7 +187,7 @@ let ``CAN inside DCS passthrough emits DcsUnhook and returns to Ground`` () =
     match events.[0] with
     | DcsHook(parms, intermediates, finalByte) ->
         Assert.Equal<int[]>([| 1 |], parms)
-        Assert.Equal<byte[]>([||], intermediates)
+        Assert.Equal<byte[]>([| 0x24uy |], intermediates)
         Assert.Equal('q', finalByte)
     | other -> Assert.Fail(sprintf "Expected DcsHook, got %A" other)
     Assert.Equal(DcsPut 0x5Auy, events.[1])
@@ -198,6 +195,25 @@ let ``CAN inside DCS passthrough emits DcsUnhook and returns to Ground`` () =
     Assert.Equal(DcsPut 0x5Auy, events.[3])
     Assert.Equal(DcsUnhook, events.[4])
     Assert.Equal(Ground, parser.State)
+
+[<Fact>]
+let ``CSI with param + intermediate preserves the in-flight digit`` () =
+    // CSI 1 $ q is the DECRQSS counterpart for SGR queries. The
+    // parallel transition CsiParam → CsiIntermediate had the same
+    // missing-pushParam bug as DcsParam → DcsIntermediate (Issue #42).
+    // Pinning both with this test means a regression in either edge
+    // breaks loudly.
+    let events = parse [|
+        0x1Buy; byte '['; byte '1'; byte '$'; byte 'q'
+    |]
+    Assert.Equal(1, events.Length)
+    match events.[0] with
+    | CsiDispatch(parms, intermediates, finalByte, priv) ->
+        Assert.Equal<int[]>([| 1 |], parms)
+        Assert.Equal<byte[]>([| 0x24uy |], intermediates)
+        Assert.Equal('q', finalByte)
+        Assert.Equal<char option>(None, priv)
+    | other -> Assert.Fail(sprintf "Expected CsiDispatch, got %A" other)
 
 [<Fact>]
 let ``UTF-8: multi-byte scalar emits a single Print`` () =

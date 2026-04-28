@@ -17,6 +17,40 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Fixed
 
+- **Parser preserves the in-flight digit param across the
+  Param → Intermediate transition (closes
+  [Issue #42](https://github.com/KyleKeane/pty-speak/issues/42)).**
+  `StateMachine.fs`'s `CsiParam → CsiIntermediate` and
+  `DcsParam → DcsIntermediate` edges previously called
+  `collectIntermediate` without first calling `pushParam`, so
+  inputs like `\x1b[1$q` (CSI param + intermediate) or
+  `\x1bP1$q...` (DECRQSS-shape DCS) emitted dispatch events
+  with `parms = [||]` instead of `[|1|]`. Both edges now push
+  the in-flight digit before transitioning, matching Williams'
+  canonical `param;collect` action and alacritty/vte. The
+  `CAN inside DCS passthrough emits DcsUnhook` test was
+  re-augmented with the `$` byte (which used to be deliberately
+  removed in #41 to dodge this bug); a new
+  `CSI with param + intermediate preserves the in-flight digit`
+  test pins the parallel CSI invariant so a future regression
+  in either edge fails loudly.
+- **CI release workflow now fetches the prior release `*-full.nupkg`
+  before `vpk pack`, so deltas are produced for every non-first
+  release.** `v0.0.1-preview.18` and `v0.0.1-preview.19` both
+  shipped full-only — Velopack only generates a `*-delta.nupkg`
+  when a prior `*-full.nupkg` exists in `--outputDir` at pack
+  time, and CI starts from a fresh runner each release. New
+  step uses `gh release list` + `gh release download
+  --pattern '*-full.nupkg'` to drop the previous release's full
+  package into `releases/` before `vpk pack`. A subsequent
+  cleanup step removes the prior nupkg before the softprops
+  upload so it doesn't get re-attached to the current release as
+  a duplicate. First release on a channel (no prior to diff
+  against) is handled silently — `gh release list` returns
+  empty and the step logs and skips. Auto-update clients on
+  the next release will fetch ~KB-sized delta packages instead
+  of ~66 MB full nupkgs. `docs/RELEASE-PROCESS.md` updated to
+  describe both new steps and the renumbered downstream steps.
 - **`Terminal.App.exe` no longer allocates a console window at
   startup.** `Terminal.App.fsproj` previously set
   `OutputType=Exe` + `DisableWinExeOutputInference=true`, which

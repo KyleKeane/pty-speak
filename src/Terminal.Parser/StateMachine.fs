@@ -269,6 +269,14 @@ type StateMachine() =
                 pushParam ()
                 None
             elif b >= 0x20uy && b <= 0x2Fuy then
+                // Commit the in-flight digit before transitioning to
+                // CsiIntermediate. Without this `pushParam ()`, an
+                // input like `\x1b[1$q` would lose the `1` because
+                // the dispatch in CsiIntermediate snapshots
+                // `parameters` directly without pushing first
+                // (Williams' canonical table runs `param;collect`
+                // on this edge, alacritty/vte runs the same).
+                pushParam ()
                 collectIntermediate b
                 state <- CsiIntermediate
                 None
@@ -368,6 +376,11 @@ type StateMachine() =
                 pushParam ()
                 None
             elif b >= 0x20uy && b <= 0x2Fuy then
+                // Same fix as CsiParam → CsiIntermediate: commit the
+                // in-flight digit before transitioning so a DCS like
+                // `\x1bP1$q` (DECRQSS-shape) keeps its `1` param.
+                // Tracked under #42 before the fix.
+                pushParam ()
                 collectIntermediate b
                 state <- DcsIntermediate
                 None
