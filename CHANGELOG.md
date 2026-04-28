@@ -15,6 +15,26 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`release.yml` now uploads Velopack's channel-suffixed manifest
+  files.** `v0.0.1-preview.18` shipped with only three release
+  assets (`*-full.nupkg`, `*-Setup.exe`, `RELEASES`) instead of the
+  five Velopack produces. Root cause: the `softprops/action-gh-release`
+  upload pattern was the literal `releases/releases.json`, but
+  Velopack outputs `releases.<channel>.json` (we get `releases.win.json`
+  for win-x64 packs since we don't pass `--channel`). With
+  `fail_on_unmatched_files: false` the literal pattern matched
+  nothing and the manifest was silently skipped — auto-update flows
+  would have broken for any user installing from the release.
+  Patterns updated to channel-agnostic globs:
+  `releases/releases.*.json` and `releases/assets.*.json`. The
+  artifact-existence gate added in PR #41 now also asserts both
+  manifests are present, so the next release fails loudly if
+  Velopack's naming changes again. `docs/RELEASE-PROCESS.md`
+  refreshed with the actual `vpk pack` output set per
+  Velopack's [packaging docs](https://docs.velopack.io/packaging/overview).
+
 ### Added
 
 - **Parser test coverage for SUB / OSC ST / DCS CAN / Unicode

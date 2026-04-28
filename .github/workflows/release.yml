@@ -103,12 +103,39 @@ jobs:
         # fail_on_unmatched_files=false would silently upload nothing
         # and the release would ship without the file the auto-update
         # client expects. Fail the workflow loudly here instead.
-        # Required: *Setup.exe and *-full.nupkg. Delta nupkg, RELEASES,
-        # and releases.json are produced under known conditions but
-        # not on every release (e.g. delta needs a prior release to
-        # diff against), so they are not asserted here.
+        #
+        # Required artifacts (per Velopack's vpk pack docs):
+        #   * <id>-Setup.exe         — Windows installer
+        #   * <id>-<ver>-full.nupkg  — full update package
+        #   * releases.<channel>.json — releases index for auto-update
+        #   * assets.<channel>.json   — asset manifest used by deployment
+        # The channel suffix is Velopack's runtime identifier (we get
+        # "win" by default since we don't pass `--channel`); use a glob
+        # so this stays robust if we add channel routing later.
+        #
+        # Optional / not asserted:
+        #   * <id>-<ver>-delta.nupkg — only when a prior release exists
+        #     to diff against; v0.0.1-preview.18 (the first release
+        #     since CI was overhauled) had no prior release so no delta
+        #     was produced. Asserting it would fail the first release
+        #     after every channel change.
+        #   * RELEASES — legacy Squirrel-migration index; vpk produces
+        #     it for back-compat but new clients use releases.*.json.
+        #   * <id>-Portable.zip — opt-in flag we don't pass.
+        #
+        # Background: this gate was scoped to *Setup.exe + *-full.nupkg
+        # in PR #41, missing the manifest gap. v0.0.1-preview.18 shipped
+        # WITHOUT releases.win.json or assets.win.json because the
+        # softprops upload pattern was the literal `releases.json`
+        # (no channel) which didn't match Velopack's channel-suffixed
+        # output. Asserting them here closes the loop.
         run: |
-          $required = @('*Setup.exe', '*-full.nupkg')
+          $required = @(
+            '*Setup.exe',
+            '*-full.nupkg',
+            'releases.*.json',
+            'assets.*.json'
+          )
           $missing = @()
           foreach ($pattern in $required) {
             # Avoid the $matches automatic variable name — `Get-ChildItem`
@@ -120,7 +147,7 @@ jobs:
             }
           }
           if ($missing.Count -gt 0) {
-            Write-Error "Velopack pack did not produce required artifact(s) in releases/: $($missing -join ', '). Inspect the previous step's output and check whether vpk pack flags or output paths changed."
+            Write-Error "Velopack pack did not produce required artifact(s) in releases/: $($missing -join ', '). Inspect the previous step's `dir releases` output and check whether vpk pack flags or output paths changed (Velopack's channel-suffix convention is documented at https://docs.velopack.io/packaging/overview)."
             exit 1
           }
           Write-Host "Required Velopack artifacts present: $($required -join ', ')"
@@ -186,14 +213,24 @@ jobs:
           # fail_on_unmatched_files: false — vpk pack only produces a
           # *-delta.nupkg when there's a previous release to diff
           # against, so the delta pattern legitimately matches no files
-          # on the very first release. Required artifacts (Setup.exe,
-          # full nupkg, releases.json, RELEASES) are always produced
-          # by vpk pack; if any of them are missing, the prior vpk
-          # pack step would have failed already.
+          # on the very first release after a channel change. The
+          # earlier "Verify required Velopack artifacts exist" step
+          # asserts the non-optional patterns (*Setup.exe, *-full.nupkg,
+          # releases.*.json, assets.*.json) BEFORE this upload runs,
+          # so a silent skip here only ever drops genuinely-optional
+          # artifacts.
+          #
+          # File-naming notes (see https://docs.velopack.io/packaging/overview):
+          # vpk pack writes channel-suffixed manifests like
+          # releases.win.json / assets.win.json — the literal
+          # "releases.json" pattern used pre-fix didn't match those,
+          # which is why v0.0.1-preview.18 shipped without them. The
+          # globs below are channel-agnostic.
           fail_on_unmatched_files: false
           files: |
             releases/*Setup.exe
             releases/*-full.nupkg
             releases/*-delta.nupkg
-            releases/releases.json
+            releases/releases.*.json
+            releases/assets.*.json
             releases/RELEASES

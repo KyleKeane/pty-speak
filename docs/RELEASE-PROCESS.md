@@ -140,20 +140,42 @@ Triggered by the `release: published` event you just fired. Runs on
 7. `dotnet publish src/Terminal.App/Terminal.App.fsproj -c Release -r win-x64 --self-contained -o publish` (with `/p:Version=...`).
 8. **Install Velopack CLI** (`dotnet tool install -g vpk`).
 9. **`vpk pack`** — wraps `publish/` into a Velopack release at
-   `releases/`: `*Setup.exe`, full nupkg, `RELEASES`. (No
-   `*-delta.nupkg` on the first release; `releases.json` is not
-   produced by our `vpk pack` config.)
-10. **Generate release notes from `CHANGELOG.md`** — writes
+   `releases/`. Per Velopack's docs, the produced files are:
+    - `*-Setup.exe` (Windows installer)
+    - `*-<version>-full.nupkg` (full update package)
+    - `*-<version>-delta.nupkg` (delta — only when a prior release
+      exists for the same channel)
+    - `releases.<channel>.json` (releases index used by auto-update
+      clients to discover new versions)
+    - `assets.<channel>.json` (asset manifest used by Velopack
+      deployment commands)
+    - `RELEASES` (legacy Squirrel-migration index; produced for
+      back-compat — new clients use `releases.<channel>.json`)
+    The channel suffix is Velopack's runtime identifier. We don't
+    pass `--channel` so it defaults to `win` for win-x64 packs.
+10. **Verify required Velopack artifacts exist** — defense-in-depth
+    PowerShell step that asserts `*Setup.exe`, `*-full.nupkg`,
+    `releases.*.json`, and `assets.*.json` are all present in
+    `releases/`. Fails the workflow loudly if any are missing,
+    rather than letting the next softprops upload silently skip them
+    (the `v0.0.1-preview.18` release shipped without
+    `releases.win.json` or `assets.win.json` because the upload glob
+    was the literal `releases.json`; the gate exists so a future
+    Velopack rename or channel change doesn't repeat that failure).
+11. **Generate release notes from `CHANGELOG.md`** — writes
     `release-body.md` by resolving the body via the order in step 2
     above (per-version section → `[Unreleased]` content with rewritten
     heading → generic fallback), then prepends the unsigned-preview
     banner.
-11. **Update GitHub Release** via `softprops/action-gh-release@v3`:
+12. **Update GitHub Release** via `softprops/action-gh-release@v3`:
     sets title to `pty-speak <version>`, replaces the auto-generated
     body with `release-body.md`, sets `prerelease` from the version
     resolution, and attaches the artifact files.
     `fail_on_unmatched_files: false` so the optional `*-delta.nupkg`
-    and `releases.json` patterns don't fail the upload when absent.
+    pattern doesn't fail the upload when absent (first release after
+    a channel change has no delta to diff against). The other
+    patterns are asserted present by step 10 above, so the false
+    setting only ever drops genuinely-optional artifacts.
 
 ### 5. Smoke-test the release
 
