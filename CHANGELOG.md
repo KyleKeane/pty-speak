@@ -17,6 +17,22 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md): handoff
+  document for picking up between Claude Code sessions on this
+  repo. Captures the things that aren't already in other docs:
+  the working conventions observed in practice (small focused
+  PRs, Conventional Commits, CHANGELOG-first releases), the
+  sandbox / tools caveats (no `dotnet` locally, blocked Azure
+  Blob URLs, tag-push 403, GitHub MCP disconnects), the
+  pre-digested Stage 4 implementation sketch, and a recommended
+  reading order for new sessions. Linked from `README.md`'s
+  Quick links.
+- New rows in [`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md) for
+  `baseline/stage-2-vt-parser`, `baseline/stage-3a-screen-model`,
+  and `baseline/stage-3b-wpf-rendering`, each with a corresponding
+  entry in the "Pending checkpoint tags" section so the maintainer
+  can sweep all four pending tags in one batch from a workstation.
+
 - **CI hygiene gates** preventing two specific bug classes that bit
   us during Stage 0 ↔ Stage 3 iteration:
   - **`actionlint` job** in `ci.yml` lints `.github/workflows/*.yml`

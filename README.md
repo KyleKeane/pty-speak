@@ -84,6 +84,7 @@ tests/                   xUnit + FsCheck.Xunit + FlaUI placeholder
 - **Release process:** [`docs/RELEASE-PROCESS.md`](docs/RELEASE-PROCESS.md)
 - **Stable checkpoints (rollback guide):** [`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md)
 - **ConPTY platform notes:** [`docs/CONPTY-NOTES.md`](docs/CONPTY-NOTES.md)
+- **Session handoff (for picking up between Claude Code sessions):** [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)
 - **Accessibility test matrix:** [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
 - **Security and trust model:** [`SECURITY.md`](SECURITY.md)
 - **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
