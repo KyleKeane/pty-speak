@@ -1,16 +1,19 @@
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Windows.Automation.Provider;
 
 namespace PtySpeak.Views;
 
 /// <summary>
 /// Win32 window-subclass infrastructure for intercepting messages
-/// destined for the WPF main window. Stage-4 follow-up spike (PR
-/// after the foundation arc #51/#52/#53) verifies that
-/// <c>WM_GETOBJECT</c> is reachable from a subclass proc under
-/// WPF's message pump on <c>windows-latest</c> CI runners — the
-/// pre-condition for Issue #49 option 1's
-/// <c>IRawElementProviderSimple</c> exposure path.
+/// destined for the WPF main window. Stage 4 host point for the
+/// Text-pattern raw provider: when a UIA client sends
+/// <c>WM_GETOBJECT</c> with <c>lParam == OBJID_CLIENT</c> we hand
+/// back our <see cref="TerminalRawProvider"/> via
+/// <c>UiaReturnRawElementProvider</c>; for every other object id
+/// (and for clients that don't bind a raw provider), the hook
+/// calls <c>DefSubclassProc</c> so WPF's existing peer tree
+/// continues to work.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -23,21 +26,27 @@ namespace PtySpeak.Views;
 /// the rest of the chain.
 /// </para>
 /// <para>
-/// For the spike, the hook only observes <c>WM_GETOBJECT</c> and
-/// writes a side-channel entry to a temp file so the FlaUI test
-/// can verify the hook fired. The hook returns
-/// <c>DefSubclassProc</c> for everything (no message override),
-/// so WPF's existing UIA tree continues to work unchanged.
-/// PR B (raw-provider implementation) replaces the
-/// <c>WM_GETOBJECT</c> handler with one that returns our own
-/// <c>IRawElementProviderSimple</c> via
-/// <c>UiaReturnRawElementProvider</c>; until then this is purely
-/// a "did the message reach our hook?" probe.
+/// Logging: the side-channel temp file written from PR A
+/// (`%TEMP%/ptyspeak-wm-getobject-&lt;pid&gt;.log`) is preserved
+/// so the existing
+/// <c>tests/Tests.Ui/WindowSubclassTests.fs</c> regression test
+/// keeps passing. Every <c>WM_GETOBJECT</c> still appends an
+/// entry; the difference is that for OBJID_CLIENT we now also
+/// return a real provider rather than just deferring.
 /// </para>
 /// </remarks>
 internal static class WindowSubclassNative
 {
     private const uint WM_GETOBJECT = 0x003D;
+
+    /// <summary>
+    /// UIA object id for the client area of a window. Stable
+    /// Microsoft constant from <c>winuser.h</c>. UIA queries
+    /// arrive as <c>WM_GETOBJECT</c> with <c>lParam</c> set to
+    /// this value when a client wants the provider for the
+    /// window's content.
+    /// </summary>
+    private const int OBJID_CLIENT = unchecked((int)0xFFFFFFFC);
 
     /// <summary>
     /// Stable id used to identify this subclass on the chain;
@@ -64,6 +73,14 @@ internal static class WindowSubclassNative
     /// the FlaUI test can read it back.
     /// </summary>
     private static string? _logPath;
+
+    /// <summary>
+    /// Raw provider returned for OBJID_CLIENT. Set by
+    /// <see cref="InstallHook"/>; left null when the hook is
+    /// installed without a provider (e.g. early-startup tests
+    /// that exercise the spike path only).
+    /// </summary>
+    private static IRawElementProviderSimple? _rawProvider;
 
     /// <summary>
     /// Subclass procedure signature per
@@ -112,8 +129,14 @@ internal static class WindowSubclassNative
     /// any prior log file from earlier runs so the FlaUI test
     /// only sees entries from this process.
     /// </summary>
-    public static void InstallHook(nint hwnd)
+    /// <param name="rawProvider">
+    /// Provider returned to UIA when <c>WM_GETOBJECT</c> arrives
+    /// with <c>lParam == OBJID_CLIENT</c>. Pass <c>null</c> to
+    /// keep the spike-only behaviour (log entry, then defer).
+    /// </param>
+    public static void InstallHook(nint hwnd, IRawElementProviderSimple? rawProvider = null)
     {
+        _rawProvider = rawProvider;
         _logPath = LogPathForProcess(System.Environment.ProcessId);
 
         // Best-effort log truncation. Failure is not fatal — the
@@ -138,7 +161,15 @@ internal static class WindowSubclassNative
             RemoveWindowSubclass(hwnd, _retainedProc, SubclassId);
             _retainedProc = null;
         }
+        _rawProvider = null;
     }
+
+    [DllImport("UIAutomationCore.dll", CharSet = CharSet.Unicode)]
+    private static extern nint UiaReturnRawElementProvider(
+        nint hwnd,
+        nint wParam,
+        nint lParam,
+        IRawElementProviderSimple el);
 
     private static nint SubclassProcImpl(
         nint hWnd,
@@ -160,6 +191,16 @@ internal static class WindowSubclassNative
                     $"WM_GETOBJECT lParam=0x{lParam.ToInt64():X16} at {System.DateTime.UtcNow:O}\n");
             }
             catch { /* swallowed by design */ }
+
+            // OBJID_CLIENT requests are how UIA asks "give me the
+            // provider for this window's content." If we have a
+            // raw provider, hand it back; otherwise fall through
+            // to DefSubclassProc and let WPF's standard handling
+            // run.
+            if (_rawProvider is not null && lParam.ToInt64() == OBJID_CLIENT)
+            {
+                return UiaReturnRawElementProvider(hWnd, wParam, lParam, _rawProvider);
+            }
         }
         return DefSubclassProc(hWnd, uMsg, wParam, lParam);
     }

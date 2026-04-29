@@ -21,7 +21,10 @@ public partial class MainWindow : Window
         SourceInitialized += (_, _) =>
         {
             var hwnd = new WindowInteropHelper(this).Handle;
-            WindowSubclassNative.InstallHook(hwnd);
+            var rawProvider = new TerminalRawProvider(
+                hwnd,
+                TerminalSurface.TextProvider);
+            WindowSubclassNative.InstallHook(hwnd, rawProvider);
         };
 
         Closed += (_, _) =>
