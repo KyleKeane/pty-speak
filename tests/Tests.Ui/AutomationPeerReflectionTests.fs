@@ -1,9 +1,26 @@
 module PtySpeak.Tests.Ui.AutomationPeerReflectionTests
 
+open System
 open System.Reflection
 open System.Windows.Automation.Peers
 open Xunit
 open Xunit.Abstractions
+
+/// Narrow a `Type | null` to a string. `MethodInfo.DeclaringType`
+/// returns nullable per docs (dynamic methods can have no
+/// declaring type), and F# 9's nullability checker rightly
+/// rejects direct member access on the nullable. The helper
+/// returns a marker for the null case so the diagnostic output
+/// stays informative without crashing.
+let private declaringTypeName (m: MemberInfo) : string =
+    match m.DeclaringType with
+    | null -> "<no declaring type>"
+    | dt -> dt.FullName
+
+let private declaringAssemblyName (m: MemberInfo) : string =
+    match m.DeclaringType with
+    | null -> "<no declaring type>"
+    | dt -> dt.Assembly.GetName().Name
 
 /// Spike #2 from the Stage 4 follow-up plan: probe whether
 /// `FrameworkElementAutomationPeer.GetPatternCore` is reachable
@@ -63,7 +80,7 @@ type AutomationPeerReflectionTests(output: ITestOutputHelper) =
                     (if found.IsPublic then "public " else "")
                     (if found.IsFamily then "protected " else "")
                     (if found.IsAssembly then "internal " else "")
-                    found.DeclaringType.FullName
+                    (declaringTypeName found)
                     found.ReturnType.FullName)
 
     /// The actual question. Probes for `GetPatternCore` on
@@ -116,11 +133,11 @@ type AutomationPeerReflectionTests(output: ITestOutputHelper) =
                         "Found: %s %s %s.%s(%s) -> %s [DeclaringType assembly: %s]"
                         access
                         modifiers
-                        m.DeclaringType.FullName
+                        (declaringTypeName m)
                         m.Name
                         parameters
                         m.ReturnType.FullName
-                        (m.DeclaringType.Assembly.GetName().Name))
+                        (declaringAssemblyName m))
             output.WriteLine(
                 sprintf
                     "GetPatternCore IS findable via reflection (%d match%s). The runtime metadata has the method even though the public reference assembly strips it. Reflection-based binding is viable as a Text-pattern exposure path; option 1 (raw IRawElementProviderSimple) and option 3 (reflection hook) are both architecturally available."
