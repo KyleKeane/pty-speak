@@ -17,6 +17,27 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Stage 4 PR C — FlaUI integration test for the UIA Text
+  pattern (`tests/Tests.Ui/TextPatternTests.fs`).** Pins the
+  end-to-end chain installed by PR A (#54, `WM_GETOBJECT` hook)
+  + PR B (#55, raw provider + F# `TerminalTextProvider`):
+  launches `Terminal.App.exe`, attaches via `UIA3Automation`,
+  walks the tree searching for the first element that exposes
+  the Text pattern, calls `DocumentRange.GetText(-1)`, and
+  asserts the returned string has the expected minimum length
+  (30 rows × 120 cols + 29 row-joining newlines = 3629 chars
+  for the `Program.compose` default screen size) and contains
+  at least one `\n`. The length floor catches both "snapshot
+  source not wired" (returns 0) and "snapshot machinery firing
+  but rows don't match composition" failure modes; the newline
+  check verifies `SnapshotText.render`'s row-join rule.
+  Specific cell content from cmd.exe's banner is deliberately
+  not asserted — banner wording isn't deterministic across
+  Windows builds — but with this test in place, any future
+  regression in the hook installation, raw-provider pattern
+  routing, or text-range rendering fails CI loudly with a
+  diagnostic that points at the responsible link in the chain.
+
 - **Stage 4 PR B — UIA Text-pattern raw provider (NVDA can read
   the terminal buffer).** `Terminal.Accessibility` gains real
   `TerminalTextProvider` and `TerminalTextRange` types whose
