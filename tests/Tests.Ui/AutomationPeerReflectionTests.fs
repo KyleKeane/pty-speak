@@ -7,20 +7,22 @@ open Xunit
 open Xunit.Abstractions
 
 /// Narrow a `Type | null` to a string. `MethodInfo.DeclaringType`
-/// returns nullable per docs (dynamic methods can have no
-/// declaring type), and F# 9's nullability checker rightly
-/// rejects direct member access on the nullable. The helper
-/// returns a marker for the null case so the diagnostic output
-/// stays informative without crashing.
+/// is `Type | null` per .NET 9 docs (dynamic methods can have no
+/// declaring type), AND `Type.FullName` / `AssemblyName.Name` are
+/// each `string | null` (open generics; unnamed assemblies). Both
+/// nullables are handled here so the diagnostic stays informative
+/// across all the nullable layers without a nested match cascade.
 let private declaringTypeName (m: MemberInfo) : string =
-    match m.DeclaringType with
-    | null -> "<no declaring type>"
-    | dt -> dt.FullName
+    m.DeclaringType
+    |> Option.ofObj
+    |> Option.bind (fun dt -> Option.ofObj dt.FullName)
+    |> Option.defaultValue "<no declaring type>"
 
 let private declaringAssemblyName (m: MemberInfo) : string =
-    match m.DeclaringType with
-    | null -> "<no declaring type>"
-    | dt -> dt.Assembly.GetName().Name
+    m.DeclaringType
+    |> Option.ofObj
+    |> Option.bind (fun dt -> Option.ofObj (dt.Assembly.GetName().Name))
+    |> Option.defaultValue "<no declaring type>"
 
 /// Spike #2 from the Stage 4 follow-up plan: probe whether
 /// `FrameworkElementAutomationPeer.GetPatternCore` is reachable
