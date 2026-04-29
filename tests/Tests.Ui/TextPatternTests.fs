@@ -95,20 +95,20 @@ let ``UIA Text pattern is reachable and DocumentRange.GetText reflects the scree
             failwith "Text pattern not found anywhere in the UIA tree. The TerminalRawProvider's GetPatternProvider should return a TerminalTextProvider for UIA_TextPatternId (10024); if this fails, either the WM_GETOBJECT hook isn't installing the provider, or UIA isn't fusing the raw provider's patterns with the WPF host fragment."
         | Some tp -> tp
 
-    let docRange =
-        match textPattern.DocumentRange with
-        | null ->
-            failwith "TextPattern.DocumentRange returned null. The TerminalTextProvider.DocumentRange property should always return a TerminalTextRange — even when _screen is null it returns a zero-row range, never null."
-        | r -> r
+    // FlaUI annotates `ITextPattern.DocumentRange` and
+    // `ITextRange.GetText` as non-nullable, so F# 9's
+    // Nullable=enable rejects defensive `match | null` patterns
+    // here (FS3261). If either ever does return null at runtime
+    // it'll be a `NullReferenceException` from the next call —
+    // a noisy failure that points at the FlaUI surface, which
+    // is the right place for the diagnostic since our F# side
+    // never returns null for either value.
+    let docRange = textPattern.DocumentRange
 
     // GetText(-1) returns the whole document; FlaUI / UIA pass
     // through the maxLength as-is, so the F# side's
     // "negative length means everything" branch handles this.
-    let text =
-        match docRange.GetText(-1) with
-        | null ->
-            failwith "DocumentRange.GetText(-1) returned null. SnapshotText.render should always return a string (possibly empty); a null return indicates a marshalling regression."
-        | s -> s
+    let text = docRange.GetText(-1)
 
     // Stage 3b composes Screen(rows=30, cols=120) before the
     // window becomes visible to UIA, so the snapshot has every
