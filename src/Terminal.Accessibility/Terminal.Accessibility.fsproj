@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <Compile Include="TerminalAutomationPeer.fs" />
+    <Compile Include="TextBlockPeerSpike.fs" />
   </ItemGroup>
 
   <ItemGroup>
