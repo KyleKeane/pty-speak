@@ -92,7 +92,56 @@ let ``UIA Text pattern is reachable and DocumentRange.GetText reflects the scree
     let textPattern =
         match findTextPattern mainWindow with
         | None ->
-            failwith "Text pattern not found anywhere in the UIA tree. The TerminalRawProvider's GetPatternProvider should return a TerminalTextProvider for UIA_TextPatternId (10014); if this fails, either the WM_GETOBJECT hook isn't installing the provider, or UIA isn't fusing the raw provider's patterns with the WPF host fragment."
+            // Diagnostic: read the WM_GETOBJECT log the hook
+            // writes to and dump it into the failure message so
+            // we can see exactly which OBJID values UIA queries
+            // with — separates "hook never fired" from "fired
+            // but our OBJID_CLIENT branch didn't match" from
+            // "fired and matched but UIA didn't surface our
+            // patterns." Also surfaces what patterns FlaUI does
+            // see on the main window so we can tell if the
+            // host-fragment fusion is happening at all.
+            let logPath =
+                Path.Combine(
+                    Path.GetTempPath(),
+                    sprintf "ptyspeak-wm-getobject-%d.log" app.ProcessId)
+            let logContent =
+                if File.Exists logPath then
+                    try File.ReadAllText(logPath)
+                    with ex -> sprintf "<read error: %s>" ex.Message
+                else
+                    "<log file does not exist>"
+
+            let mainWindowPatternNames =
+                let p = mainWindow.Patterns
+                let pairs : (string * bool) list = [
+                    "Text", p.Text.IsSupported
+                    "Value", p.Value.IsSupported
+                    "LegacyIAccessible", p.LegacyIAccessible.IsSupported
+                    "Window", p.Window.IsSupported
+                    "Transform", p.Transform.IsSupported
+                ]
+                pairs
+                |> List.map (fun (n, s) -> sprintf "%s=%b" n s)
+                |> String.concat ", "
+
+            failwithf
+                "Text pattern not found anywhere in the UIA tree.\n\
+                \n\
+                MainWindow class=%s, name=%s\n\
+                MainWindow.Patterns: %s\n\
+                \n\
+                WM_GETOBJECT hook log (%s):\n\
+                %s\n\
+                \n\
+                If the log is empty the hook never fired (regression in MainWindow.SourceInitialized).\n\
+                If the log has entries but none with lParam=0xFFFFFFFFFFFFFFFC or 0x00000000FFFFFFFC the OBJID_CLIENT branch never matched (likely a sign-extension issue in the lParam comparison).\n\
+                If the log has OBJID_CLIENT entries but the Text pattern still isn't surfaced, UIA isn't fusing the raw provider's patterns with the host fragment."
+                mainWindow.ClassName
+                mainWindow.Name
+                mainWindowPatternNames
+                logPath
+                logContent
         | Some tp -> tp
 
     // FlaUI annotates `ITextPattern.DocumentRange` and
