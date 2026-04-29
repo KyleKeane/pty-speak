@@ -46,13 +46,28 @@ public abstract class FSharpAutomationPeerBase : FrameworkElementAutomationPeer
     /// it — they should override <see cref="GetPatternForFsharp"/>
     /// instead.
     /// </summary>
-    protected sealed override object? GetPatternCore(PatternInterface patternInterface)
-        => GetPatternForFsharp(patternInterface);
+    /// <remarks>
+    /// The return type is non-nullable <c>object</c> because the
+    /// .NET 9 WPF SDK's <see cref="UIElementAutomationPeer"/>
+    /// (which <see cref="FrameworkElementAutomationPeer"/> inherits
+    /// the method from) is not nullably-annotated for this signature.
+    /// Declaring <c>object?</c> here triggers CS0115 "no suitable
+    /// method found to override" — the same root cause behind the
+    /// F# spike's FS0855 (WPF UIA isn't nullable-aware in .NET 9).
+    /// At runtime UIA still expects <c>null</c> to mean "pattern not
+    /// implemented," so the <c>!</c> suppresses the nullability
+    /// warning without changing the runtime contract.
+    /// </remarks>
+    protected sealed override object GetPatternCore(PatternInterface patternInterface)
+        => GetPatternForFsharp(patternInterface)!;
 
     /// <summary>
     /// Returns the provider for the requested UIA pattern, or
     /// <c>null</c> if the pattern is not implemented. Called by
-    /// <see cref="GetPatternCore"/>.
+    /// <see cref="GetPatternCore"/>; F# subclasses override this
+    /// because the parent <see cref="FrameworkElementAutomationPeer.GetPatternCore"/>
+    /// can't be overridden from F# under <c>Nullable=enable</c>
+    /// (see PR #47 spike).
     /// </summary>
     protected abstract object? GetPatternForFsharp(PatternInterface patternInterface);
 }
