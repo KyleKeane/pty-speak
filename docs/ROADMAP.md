@@ -38,7 +38,7 @@ for ANSI color/style changes.*
 | 1     | ConPTY hello world                     | `dir` bytes returned from cmd.exe via PTY       | merged on `main` |
 | 2     | VT500 parser                           | Golden tests + FsCheck never-throws property    | merged on `main` |
 | 3     | Screen model + WPF rendering           | `cmd` runs visibly inside the WPF window        | merged on `main` (split as 3a + 3b — see [`docs/CHECKPOINTS.md`](CHECKPOINTS.md)) |
-| 4     | First UIA provider (text exposure)     | NVDA review cursor reads the buffer             | next |
+| 4     | First UIA provider (text exposure)     | NVDA review cursor reads the buffer             | next — split into spike + 4a/4b/4c per [`docs/SESSION-HANDOFF.md`](SESSION-HANDOFF.md#stage-4-implementation-sketch) |
 | 5     | Streaming output notifications         | NVDA reads `dir` line by line; spinner doesn't flood | pending |
 | 6     | Keyboard input to PTY                  | PowerShell, vim, Ctrl+C all work; NVDA keys still work | pending |
 | 7     | Run Claude Code end-to-end             | Roundtrip prompt → response, NVDA reads it      | pending |

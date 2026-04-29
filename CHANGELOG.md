@@ -15,6 +15,40 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed
+
+- **Stage 4 implementation plan revised: spike + three small PRs
+  instead of one big PR.** After completing the pre-Stage-4
+  cleanup pass and re-reading the `ITextProvider` /
+  `ITextRangeProvider` interfaces, the original "single PR,
+  ~250-400 lines" estimate looked low by ~2x and bundled three
+  independent review concerns (F#-meets-C# interop, navigation
+  semantics, integration testing). New plan:
+  1. **Spike** — 30-line throwaway proving F# can subclass WPF's
+     `FrameworkElementAutomationPeer` and implement
+     `ITextProvider` without an interop foot-gun on the order of
+     the `out SafeFileHandle&` bug from Stage 1.
+  2. **PR 4a — Minimal UIA surface.** `TerminalAutomationPeer`
+     + `TerminalTextProvider` with `DocumentRange` / `GetText`
+     working; every other `ITextRangeProvider` method stubbed to
+     compile. Wires `TerminalView.OnCreateAutomationPeer`. Manual
+     smoke via Inspect.exe + NVDA "current line".
+  3. **PR 4b — Navigation semantics.** `Move` /
+     `MoveEndpointByUnit` for Character/Word/Line/Paragraph/Document;
+     `Compare` / `Clone` / `ExpandToEnclosingUnit` go from stubs
+     to real implementations.
+  4. **PR 4c — FlaUI integration test.** First test in
+     `tests/Tests.Ui/`; adds FlaUI package references and asserts
+     `ControlType=Document`, `Text` pattern present, non-empty
+     `DocumentRange.GetText`. Also the de facto check that FlaUI
+     works on the `windows-latest` GitHub Actions runner.
+  Updated in `docs/SESSION-HANDOFF.md` (Stage 4 sketch),
+  `docs/ROADMAP.md` (Stage 4 row), `docs/ARCHITECTURE.md` (Stage 4
+  pointer), `docs/ACCESSIBILITY-TESTING.md` (Stage 4 matrix
+  header note about which row lands in which PR). The spec
+  (`spec/tech-plan.md` §4) is unchanged per the immutable-spec
+  policy — this revision is purely about implementation order.
+
 ### Fixed
 
 - **Parser preserves the in-flight digit param across the
