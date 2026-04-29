@@ -17,6 +17,35 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Stage 4 PR B — UIA Text-pattern raw provider (NVDA can read
+  the terminal buffer).** `Terminal.Accessibility` gains real
+  `TerminalTextProvider` and `TerminalTextRange` types whose
+  `DocumentRange.GetText` returns a `\n`-joined render of the
+  current `Screen.SnapshotRows` capture. `TerminalView` exposes
+  the provider as a public `TextProvider` property, and a new
+  `Views/TerminalRawProvider.cs` implements
+  `IRawElementProviderSimple` — its `GetPatternProvider` returns
+  the F# text provider for `UIA_TextPatternId` (10024) and
+  `HostRawElementProvider` delegates everything else to the WPF
+  peer via `AutomationInteropProvider.HostProviderFromHandle` so
+  PR #51's `Document` role / `ClassName` / `Name` keep working.
+  The `WindowSubclassNative` hook from PR A (#54) gains a second
+  parameter on `InstallHook` that accepts the raw provider; when
+  `WM_GETOBJECT` arrives with `lParam == OBJID_CLIENT` the hook
+  calls `UiaReturnRawElementProvider` with our provider, and
+  defers to `DefSubclassProc` for every other object id (and for
+  every other message). `MainWindow.SourceInitialized` now
+  constructs a `TerminalRawProvider` over the `TerminalView`'s
+  `TextProvider` and passes it through. Stage 4 navigation
+  (`Move`, `MoveEndpointByUnit`, attribute exposure) is still
+  stubbed; PR C adds the FlaUI Text-pattern integration test
+  that pins this behaviour against a real UIA client.
+
+  The previously throwaway `Terminal.Accessibility/RawProviderSpike.fs`
+  is removed — the foundation finding it captured (F# can
+  implement `IRawElementProviderSimple`) is now demonstrated by
+  the production code.
+
 - **FlaUI integration test infrastructure
   (`tests/Tests.Ui/AutomationPeerTests.fs`).** First UIA test in
   the project: launches `Terminal.App.exe` from the build

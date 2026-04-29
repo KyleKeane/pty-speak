@@ -1,7 +1,13 @@
 namespace Terminal.Accessibility
 
+open System
+open System.Text
 open System.Windows
+open System.Windows.Automation
 open System.Windows.Automation.Peers
+open System.Windows.Automation.Provider
+open System.Windows.Automation.Text
+open Terminal.Core
 
 /// Stage 4a (reduced scope) — UIA peer that exposes
 /// `TerminalView` to the WPF Automation tree as a Document with
@@ -23,12 +29,15 @@ open System.Windows.Automation.Peers
 /// the public reference assemblies surface the type without the
 /// overridable protected member.
 ///
-/// Text-pattern exposure is therefore deferred to a follow-up
-/// (tracked in `docs/SESSION-HANDOFF.md` Stage 4 sketch). The
-/// likely path is implementing `IRawElementProviderSimple`
-/// directly on `TerminalView`, bypassing the `AutomationPeer`
-/// hierarchy that wraps the protected metadata. That work
-/// happens with focused investigation rather than CI iteration.
+/// Text-pattern exposure is handled by the raw-provider path
+/// instead: `TerminalRawProvider` (in `PtySpeak.Views`)
+/// implements `IRawElementProviderSimple` and returns a
+/// `TerminalTextProvider` for `UIA_TextPatternId`. The
+/// `WindowSubclassNative` hook installed in `MainWindow`
+/// intercepts `WM_GETOBJECT` for `OBJID_CLIENT` and hands UIA the
+/// raw provider; for every other object id the hook calls
+/// `DefSubclassProc` so the existing peer-based tree (the four
+/// Core overrides below) stays intact.
 ///
 /// The five Core overrides below DO compile cleanly — proven by
 /// the spike PR #47. They give the peer everything Stage 4a's
@@ -43,3 +52,145 @@ type TerminalAutomationPeer(owner: FrameworkElement) =
     override _.GetNameCore() = "Terminal"
     override _.IsControlElementCore() = true
     override _.IsContentElementCore() = true
+
+/// Snapshot-rendering helpers shared by `TerminalTextRange`.
+/// Kept module-level so test code (and any future range types)
+/// can reuse the row-flattening rule without going through the
+/// range API.
+module SnapshotText =
+
+    /// Flatten a `Cell[][]` snapshot into a single string with
+    /// `\n` between rows. Trailing whitespace inside a row is
+    /// preserved — UIA Text-pattern semantics treat each cell as
+    /// a content position regardless of whether it currently
+    /// holds a printable rune. NVDA's "say all" gracefully
+    /// handles the trailing spaces.
+    let render (rows: Cell[][]) : string =
+        if rows.Length = 0 then
+            ""
+        else
+            let sb = StringBuilder()
+            for r in 0 .. rows.Length - 1 do
+                if r > 0 then sb.Append('\n') |> ignore
+                let row = rows.[r]
+                for c in 0 .. row.Length - 1 do
+                    sb.Append(row.[c].Ch.ToString()) |> ignore
+            sb.ToString()
+
+/// UIA `ITextRangeProvider` over an immutable row snapshot.
+///
+/// Stage 4 (this PR) ships only `GetText`, `Clone`, and
+/// `Compare` with real behaviour — those three are what NVDA
+/// calls during initial document read-out. Navigation
+/// (`Move`, `MoveEndpointByUnit`), endpoint manipulation,
+/// selection, and attribute queries are stubbed to satisfy the
+/// interface so UIA marshalling doesn't fault, but they don't
+/// influence what NVDA reads in this PR. PR C (the FlaUI
+/// Text-pattern integration test) verifies that `GetText`
+/// returns the expected snapshot under a real UIA client; the
+/// stubbed methods are exercised in later stages when caret
+/// movement / SGR exposure work begins.
+///
+/// `Sequence` records the `Screen.SequenceNumber` at capture
+/// time so a future stale-detection check can compare against
+/// the current screen state. Stage 4 doesn't use it yet — the
+/// snapshot is materialised once per UIA query and discarded —
+/// but storing it now keeps the range structure aligned with
+/// the substrate that Screen.fs already exposes.
+type TerminalTextRange(sequence: int64, rows: Cell[][]) =
+
+    member _.Sequence = sequence
+    member _.Rows = rows
+
+    interface ITextRangeProvider with
+
+        member _.Clone() =
+            TerminalTextRange(sequence, rows) :> ITextRangeProvider
+
+        member _.Compare(other: ITextRangeProvider) : bool =
+            // Two ranges are equal when they wrap the same
+            // snapshot identity. Reference equality is enough
+            // for Stage 4 because each `DocumentRange` call
+            // returns a freshly captured snapshot — clones
+            // share the underlying `rows` reference.
+            match other with
+            | :? TerminalTextRange as r ->
+                obj.ReferenceEquals(r.Rows, rows)
+            | _ -> false
+
+        member _.CompareEndpoints(_: TextPatternRangeEndpoint, _: ITextRangeProvider, _: TextPatternRangeEndpoint) = 0
+        member _.ExpandToEnclosingUnit(_: TextUnit) = ()
+        member _.FindAttribute(_: int, _: obj, _: bool) =
+            Unchecked.defaultof<ITextRangeProvider>
+        member _.FindText(_: string, _: bool, _: bool) =
+            Unchecked.defaultof<ITextRangeProvider>
+        member _.GetAttributeValue(_: int) =
+            // UIA convention: NotSupported sentinel for any
+            // attribute we don't expose. Stage 4 doesn't expose
+            // SGR yet — that's a later milestone.
+            AutomationElementIdentifiers.NotSupported
+
+        member _.GetBoundingRectangles() = Array.empty<double>
+        member _.GetEnclosingElement() = Unchecked.defaultof<IRawElementProviderSimple>
+
+        member _.GetText(maxLength: int) =
+            let rendered = SnapshotText.render rows
+            if maxLength < 0 || maxLength >= rendered.Length then
+                rendered
+            else
+                rendered.Substring(0, maxLength)
+
+        member _.Move(_: TextUnit, _: int) = 0
+        member _.MoveEndpointByUnit(_: TextPatternRangeEndpoint, _: TextUnit, _: int) = 0
+        member _.MoveEndpointByRange(_: TextPatternRangeEndpoint, _: ITextRangeProvider, _: TextPatternRangeEndpoint) = ()
+        member _.Select() = ()
+        member _.AddToSelection() = ()
+        member _.RemoveFromSelection() = ()
+        member _.ScrollIntoView(_: bool) = ()
+        member _.GetChildren() = Array.empty<IRawElementProviderSimple>
+
+/// UIA `ITextProvider` whose `DocumentRange` returns the entire
+/// terminal buffer as a single text range.
+///
+/// `screenSource` is a delegate (rather than a direct `Screen`
+/// reference) so the WPF view can lazily resolve the screen at
+/// each UIA call — Stage 3b attaches the screen after the view
+/// is constructed, so a captured-at-construction reference would
+/// be `null` for early UIA queries. The delegate is invoked on
+/// the UIA RPC thread; `Screen.SnapshotRows` takes the screen's
+/// internal lock so the read is safe across threads.
+type TerminalTextProvider(screenSource: Func<Screen | null>) =
+
+    /// Build a range that covers every cell currently in the
+    /// screen. Returns an empty range when `screenSource`
+    /// resolves to `null` (the early-startup case).
+    member private _.CaptureFullRange() : ITextRangeProvider =
+        match screenSource.Invoke() with
+        | null ->
+            TerminalTextRange(0L, Array.empty<Cell[]>) :> ITextRangeProvider
+        | screen ->
+            let seqNum, rows = screen.SnapshotRows(0, screen.Rows)
+            TerminalTextRange(seqNum, rows) :> ITextRangeProvider
+
+    interface ITextProvider with
+
+        member this.DocumentRange = this.CaptureFullRange()
+
+        member _.SupportedTextSelection = SupportedTextSelection.None
+
+        member _.GetSelection() =
+            // No selection model in Stage 4 yet; UIA convention
+            // is to return an empty array rather than null.
+            Array.empty<ITextRangeProvider>
+
+        member _.GetVisibleRanges() =
+            // Stage 4 treats the whole buffer as visible — there
+            // is no scrollback yet and the view always renders
+            // every row.
+            Array.empty<ITextRangeProvider>
+
+        member _.RangeFromChild(_: IRawElementProviderSimple) =
+            Unchecked.defaultof<ITextRangeProvider>
+
+        member _.RangeFromPoint(_: System.Windows.Point) =
+            Unchecked.defaultof<ITextRangeProvider>

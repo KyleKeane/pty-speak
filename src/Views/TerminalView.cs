@@ -41,6 +41,21 @@ public class TerminalView : FrameworkElement
 
     private Screen? _screen;
 
+    /// <summary>
+    /// UIA Text-pattern provider that exposes the current
+    /// <see cref="Screen"/> contents as a single document-range
+    /// string. Constructed once per view; the closure captures
+    /// <c>this</c> so it sees screen attachments that happen
+    /// after construction.
+    ///
+    /// Consumed by <c>TerminalRawProvider</c> when WM_GETOBJECT
+    /// asks for OBJID_CLIENT — the Win32 subclass hook installed
+    /// in <see cref="MainWindow"/> hands UIA the raw provider,
+    /// which in turn returns this provider for
+    /// UIA_TextPatternId.
+    /// </summary>
+    public TerminalTextProvider TextProvider { get; }
+
     /// <summary>Default background fill for the terminal grid.
     /// FrameworkElement (unlike Control / Panel) does not expose
     /// `Background` itself, so we keep our own.</summary>
@@ -60,6 +75,8 @@ public class TerminalView : FrameworkElement
         var sample = MakeFormattedText("M", Brushes.White);
         _cellWidth = sample.WidthIncludingTrailingWhitespace;
         _cellHeight = sample.Height;
+
+        TextProvider = new TerminalTextProvider(() => _screen);
     }
 
     /// <summary>
@@ -85,11 +102,13 @@ public class TerminalView : FrameworkElement
     /// <summary>
     /// Returns the F# <see cref="TerminalAutomationPeer"/> so UIA
     /// clients (NVDA, Inspect.exe, FlaUI tests) see this element
-    /// as a Document with the right ClassName and Name. Stage 4a
-    /// ships this reduced peer; the Text-pattern exposure that
-    /// would let NVDA read the buffer contents is deferred until
-    /// the GetPatternCore-not-reachable investigation in
-    /// <c>docs/SESSION-HANDOFF.md</c> Stage 4 sketch concludes.
+    /// as a Document with the right ClassName and Name. The
+    /// Text-pattern exposure that lets NVDA read buffer contents
+    /// runs through a separate path: <see cref="TextProvider"/>
+    /// is hosted by <c>TerminalRawProvider</c>, which the
+    /// <c>WM_GETOBJECT</c> subclass hook in
+    /// <see cref="WindowSubclassNative"/> hands UIA when an
+    /// OBJID_CLIENT request arrives.
     ///
     /// WPF caches the returned peer per element and reuses it for
     /// the element's lifetime — there's no need to memoize here.
