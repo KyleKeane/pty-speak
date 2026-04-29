@@ -186,8 +186,10 @@ all validation happens in CI on `windows-latest`. Implications:
 
 ## Stage 4 implementation sketch
 
-`spec/tech-plan.md` §4 has the full spec. This is a pre-digested
-plan so the next session doesn't have to re-derive scope.
+`spec/tech-plan.md` §4 has the full spec; the spec is immutable per
+the documentation policy. This sketch is the pre-digested
+implementation plan that captures decisions made *during execution*
+without contradicting the spec.
 
 **Goal**: NVDA's review cursor (Caps Lock + Numpad 7/8/9) reads the
 terminal content character / word / line at a time. No streaming
@@ -195,62 +197,174 @@ announcements yet — just static text exposure. Validation tools:
 Inspect.exe, Accessibility Insights, FlaUI for unit tests, NVDA for
 manual sign-off.
 
-**Where it lives**: `src/Terminal.Accessibility/` — currently just
-`Placeholder.fs`. Replace with:
+### Why split Stage 4 into a spike plus three PRs
 
-- `TerminalAutomationPeer.fs` — `FrameworkElementAutomationPeer`
-  subclass. Override `GetAutomationControlTypeCore` (Document),
-  `GetClassNameCore` (`"TerminalView"`), `GetNameCore` (`"Terminal"`),
-  `IsControlElementCore = true`, `IsContentElementCore = true`,
-  `GetPatternCore(PatternInterface.Text)` returning `ITextProvider`.
-- `TerminalTextProvider.fs` — `ITextProvider` + `ITextRangeProvider`
-  implementations. `DocumentRange` covers all rows; ranges hold an
-  immutable snapshot of affected rows; `GetText`, `Move`,
-  `MoveEndpointByUnit` for Character/Word/Line/Paragraph/Document
-  units; `Compare`, `Clone`, `ExpandToEnclosingUnit` etc. Stub
-  `GetAttributeValue` to return `NotSupported` initially — Stage 5
-  fills in the SGR-attribute exposure (foreground colour,
-  font-weight, etc.) which is the project's biggest accessibility
-  differentiator.
+The original sketch (pre-this-revision) called for one PR delivering
+the peer + provider + FlaUI test together at "~250-400 lines." On
+re-reading the `ITextProvider` / `ITextRangeProvider` interfaces and
+weighing what this session learned about the codebase's CI iteration
+cost, that's roughly half the realistic line count and bundles
+three review concerns (interop, navigation, integration tests) into
+one PR. The split below keeps each PR small, reviewable, and
+independently revertible.
 
-**Wiring**: `TerminalView` (in `src/Views/`) overrides
-`OnCreateAutomationPeer` to return the new peer. The peer needs a
-reference to the `Screen` — pass it via `TerminalView.SetScreen`
-(already exists) and have the peer read snapshots from there.
+### Spike: F# WPF AutomationPeer + C# interface implementation
 
-**Snapshot rule**: UIA calls into the provider on a different thread
-from the WPF Dispatcher. Mutating the buffer while UIA reads = crash
-(see `Terminal.Accessibility` design notes in `spec/overview.md`).
-The Stage-4-prep PR landed the substrate for this:
-`Screen.SnapshotRows(startRow, count)` returns `(int64 * Cell[][])`
-under the same lock as `Screen.Apply`, and `Screen.SequenceNumber`
-exposes the monotonic counter. Each `ITextRangeProvider` constructor
-should take a `(sequence, snapshot)` tuple and compare against
-`screen.SequenceNumber` later to detect staleness. No additional
-locking is required in `Terminal.Accessibility`.
+**Risk being settled.** The codebase has a documented F#-interop
+foot-gun (`out SafeFileHandle&` byref silently produces a runtime
+`NullReferenceException`; see `Terminal.Pty/Native.fs`). Stage 4
+introduces two more F#-meets-C# boundaries the project has never
+exercised:
 
-**Testing without NVDA**:
-- **FlaUI** integration tests in `tests/Tests.Ui/` (currently
-  placeholder). Launch `Terminal.App.exe` from the publish output,
-  attach via `UIA3Automation`, find the element by ClassName, assert
-  ControlType=Document and `Text` pattern is supported, call
-  `DocumentRange.GetText(int.MaxValue)` and compare to the input
-  fed to ConPTY.
-- **Inspect.exe / Accessibility Insights for Windows**: visual
-  verification only; no automation.
+1. F# class subclassing `System.Windows.Automation.Peers.FrameworkElementAutomationPeer`
+   (a C# class with `protected virtual` overrides).
+2. F# class implementing `System.Windows.Automation.Provider.ITextProvider`
+   (a C# interface with `[Variant]` / `[CLSCompliant]` attributes).
 
-**Manual NVDA validation**: documented in
-`docs/ACCESSIBILITY-TESTING.md`. NVDA+Numpad 7 (prev line), Numpad 8
-(current line), Numpad 9 (next line), Numpad 4/5/6 (word), Numpad
-1/2/3 (character). The "NVDA" modifier is Caps Lock or Insert
-depending on the user's NVDA layout setting; the canonical notation
-is "NVDA+Numpad N". Should hear the visible terminal text.
+A 30-line throwaway PR proves the interop compiles before we build
+250+ lines on top. Discard or absorb into PR 4a depending on outcome.
+
+**Scope**: replace `Terminal.Accessibility/Placeholder.fs` with a
+minimal `TerminalAutomationPeer.fs` that subclasses
+`FrameworkElementAutomationPeer`, overrides
+`GetAutomationControlTypeCore` returning `Document`, implements
+`ITextProvider` with all methods returning `null` / no-ops. Push,
+verify CI is green. **Don't wire it into `TerminalView` yet.**
+
+**Pass condition**: build green, no F# interop errors, no
+`TreatWarningsAsErrors` failures.
+
+### PR 4a — Minimal UIA surface
+
+Builds on the spike. Goal: NVDA can announce the element and read
+*something* from `DocumentRange.GetText`.
+
+- `TerminalAutomationPeer.fs` — fill in the remaining Core overrides:
+  `GetClassNameCore` (`"TerminalView"`),
+  `GetNameCore` (`"Terminal"`),
+  `IsControlElementCore = true`,
+  `IsContentElementCore = true`,
+  `GetPatternCore(PatternInterface.Text)` returns the
+  `TerminalTextProvider`. Other patterns return `null`.
+- `TerminalTextProvider.fs` — implements `ITextProvider`
+  (`DocumentRange`, `SupportedTextSelection.None`, `GetSelection`,
+  `GetVisibleRanges`, `RangeFromChild`, `RangeFromPoint`) and
+  `ITextRangeProvider` with **`GetText` working** for the document
+  range. Every other `ITextRangeProvider` method (`Move`,
+  `MoveEndpointByUnit`, `Compare`, `Clone`, `ExpandToEnclosingUnit`,
+  `FindAttribute`, `FindText`, `GetAttributeValue`,
+  `GetBoundingRectangles`, `GetEnclosingElement`,
+  `MoveEndpointByRange`, `Select`, `AddToSelection`,
+  `RemoveFromSelection`, `ScrollIntoView`, `GetChildren`) returns
+  `NotSupported` / no-op stubs. They have to compile, not work.
+- Wire `TerminalView.OnCreateAutomationPeer` (in `src/Views/`) to
+  return the new peer. Pass the `Screen` reference into the peer's
+  constructor so it can call `Screen.SnapshotRows`.
+- Snapshot rule: each `ITextRangeProvider` instance holds an
+  immutable `(int64 sequence, Cell[][] rows)` taken at construction
+  via `Screen.SnapshotRows`. Stale-detection compares
+  `screen.SequenceNumber` against the captured sequence — Stage 5+
+  uses the result to invalidate ranges. Stage 4 just captures and
+  reads.
+- **Document-text encoding**: rows joined with `\n`. Each row's
+  cells emit their `Ch.ToString()` directly; trailing blanks are
+  preserved so character offsets are stable across calls.
+- Manual smoke: Inspect.exe shows `ControlType=Document`,
+  `ClassName=TerminalView`. NVDA review-cursor "current line"
+  (NVDA+Numpad 8) reads visible text; navigation across rows
+  (Numpad 7/9) doesn't crash even though `Move` is a stub.
+- **No FlaUI test in 4a.** Inspect.exe + manual NVDA only.
+
+**Pass condition**: NVDA reads at least the first line of cmd.exe's
+startup banner. The "Broken" failure modes flagged in the spec
+(NVDA says "TerminalView" then nothing, or "blank", or repeats a
+line forever) are all out of scope here because Move is stubbed.
+
+### PR 4b — Navigation semantics
+
+Implements the `ITextRangeProvider` methods that Stage 4 actually
+needs for review-cursor navigation, against the contract NVDA tests
+in practice.
+
+- `Move(unit: TextUnit, count: int)` — moves both endpoints by N
+  units of the requested kind.
+- `MoveEndpointByUnit(endpoint, unit, count)` — moves one endpoint.
+- Units to support: `Character`, `Word`, `Line`, `Paragraph`,
+  `Document`. `Format` falls through to `Character`.
+- Word boundaries follow the simple convention: a "word" is a
+  contiguous run of non-whitespace cells. Whitespace boundaries are
+  not announced; that matches NVDA's expectations for terminals.
+- `Paragraph` and `Document` are functionally equivalent at this
+  stage (no scrollback yet); both expand to the full grid.
+- `Compare`, `CompareEndpoints`, `Clone`, `ExpandToEnclosingUnit`
+  go from no-op stubs to real implementations.
+- Manual smoke: NVDA Numpad 1/2/3 (char), 4/5/6 (word), 7/8/9
+  (line) all announce the right thing. No infinite loops.
+
+**Pass condition**: NVDA review-cursor navigation on the cmd.exe
+startup banner reads each row's visible text, word-by-word and
+character-by-character, without repeating or skipping.
+
+### PR 4c — FlaUI integration test
+
+First UIA test in `tests/Tests.Ui/`. Validates the producer-side
+contract (what we expose) without depending on a real screen reader.
+
+- Add `FlaUI.Core` and `FlaUI.UIA3` PackageReferences to
+  `tests/Tests.Ui/Tests.Ui.fsproj`. Both are already pinned in
+  `Directory.Packages.props`.
+- New test: `Application.Launch` against
+  `src/Terminal.App/bin/Release/net9.0-windows/Terminal.App.exe`
+  (the framework-dependent build output, *not* the published
+  self-contained binary — `dotnet test` runs before the publish
+  step in `ci.yml`). Wait for the main window. Attach via
+  `UIA3Automation`. Find the descendant by `ClassName=TerminalView`.
+- Assertions:
+  - `ControlType = Document`.
+  - `Patterns.Text.IsSupported = true`.
+  - `Patterns.Text.Pattern.DocumentRange.GetText(int.MaxValue)` is
+    non-empty (cmd.exe will have produced its prologue by the
+    time the test polls).
+- Tear down: kill the spawned process; FlaUI handles UIA cleanup.
+- Risk: FlaUI on `windows-latest` requires the interactive desktop
+  session. GitHub Actions runs the build job on an interactive
+  session by default but this PR is the first time the project
+  actually uses it. If 4c's CI fails for desktop-session reasons,
+  the fallback is to run the FlaUI test only via
+  `workflow_dispatch` until we can validate it under
+  `actions/runner` configurations.
+
+**Pass condition**: green CI on `windows-latest`; the test runs
+the actual app, attaches via UIA, and reads non-empty document
+text.
+
+### Snapshot rule (already in place)
+
+UIA calls into the provider on a different thread from the WPF
+Dispatcher. Mutating the buffer while UIA reads = crash (see
+`Terminal.Accessibility` design notes in `spec/overview.md`). The
+substrate landed in PR #38: `Screen.SnapshotRows(startRow, count)`
+returns `(int64 * Cell[][])` under the same lock as `Screen.Apply`,
+and `Screen.SequenceNumber` exposes the monotonic counter. Each
+`ITextRangeProvider` constructor takes a `(sequence, snapshot)`
+tuple and compares against `screen.SequenceNumber` later to detect
+staleness. No additional locking is required in
+`Terminal.Accessibility`.
+
+### Manual NVDA validation (Stage 4 acceptance)
+
+Documented in `docs/ACCESSIBILITY-TESTING.md`. NVDA+Numpad 7 (prev
+line), Numpad 8 (current line), Numpad 9 (next line), Numpad 4/5/6
+(word), Numpad 1/2/3 (character). The "NVDA" modifier is Caps Lock
+or Insert depending on the user's NVDA layout setting; the canonical
+notation is "NVDA+Numpad N". Should hear the visible terminal text.
 "Broken" sounds like NVDA saying "TerminalView" then nothing
 (no pattern) or "blank" (empty range) or repeating a line forever
 (Move not advancing).
 
-**What Stage 4 deliberately does NOT do** — guard against scope
-creep:
+### What Stage 4 deliberately does NOT do
+
+Guard against scope creep:
 
 - **No streaming announcements** — that's Stage 5
   (`UiaRaiseNotificationEvent`).
@@ -259,14 +373,12 @@ creep:
   up `UIA_ForegroundColorAttributeId` etc.
 - **No selection lists / list provider** — Stage 8.
 - **No keyboard input → PTY** — Stage 6.
-
-**Risk areas worth flagging in the PR body**:
-- Thread affinity: any `RaiseNotificationEvent` call (none in
-  Stage 4 but eventually) must run on the Dispatcher thread.
-  `TermControlAutomationPeer.cpp` in microsoft/terminal is the
-  reference; F# has the same constraint.
-- `IsContentElement = true` on all rows for now; will likely need
-  to be `false` on rows that are part of a List subtree once
+- **No `RaiseNotificationEvent` calls** — Stage 5. (Threading
+  reminder for then: any `RaiseNotificationEvent` call must run on
+  the Dispatcher thread. `TermControlAutomationPeer.cpp` in
+  microsoft/terminal is the reference; F# has the same constraint.)
+- **`IsContentElement = true` on all rows for now** — will likely
+  need to be `false` on rows that are part of a List subtree once
   Stage 8 lands.
 
 ## Recommended reading order for a new session

@@ -183,7 +183,11 @@ Coming attractions worth knowing about in advance:
 
 - `Terminal.Accessibility/TerminalAutomationPeer.fs` (Stage 4) — the
   UIA peer. Mimic `TermControlAutomationPeer.cpp` from
-  microsoft/terminal.
+  microsoft/terminal. Implementation order is documented in
+  [`SESSION-HANDOFF.md`](SESSION-HANDOFF.md#stage-4-implementation-sketch):
+  a one-shot interop spike, then PR 4a (minimal UIA surface +
+  `GetText`), PR 4b (review-cursor navigation), PR 4c (FlaUI
+  integration test).
 - `Terminal.Semantics/SpinnerDetector.fs` (Stage 5+) — the row-hash /
   5-Hz / 1-s rule that prevents Claude Code's spinner from freezing
   NVDA. This is the single biggest accessibility win in Phase 1.

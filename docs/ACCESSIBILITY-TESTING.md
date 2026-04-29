@@ -69,6 +69,14 @@ the WPF `TextBlock`-equivalent output via its fallback diff path.
 
 ### Stage 4 — text exposure (planned)
 
+The matrix below describes the full Stage 4 acceptance set. Stage 4
+ships in three PRs (spike + 4a + 4b + 4c, see
+[`SESSION-HANDOFF.md`](SESSION-HANDOFF.md#stage-4-implementation-sketch));
+the first three rows ("Window opens", "Review cursor reads current
+line", "Inspect.exe shows correct surface") become testable after
+PR 4a, the navigation rows after PR 4b, and the Inspect.exe row is
+also the manual-smoke gate before PR 4c's FlaUI test exists.
+
 | Test                              | Procedure                                       | Expected NVDA behaviour                                          |
 |-----------------------------------|-------------------------------------------------|------------------------------------------------------------------|
 | Window opens                      | Launch app                                      | "pty-speak, document"                                            |
