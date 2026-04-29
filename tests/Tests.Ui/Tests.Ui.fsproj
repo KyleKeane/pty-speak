@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <Compile Include="Placeholder.fs" />
+    <Compile Include="AutomationPeerTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
@@ -22,6 +23,21 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="FlaUI.Core" />
+    <PackageReference Include="FlaUI.UIA3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Force build-order dependency on Terminal.App so the exe
+      exists at AutomationPeerTests' expected path when `dotnet
+      test` runs. ReferenceOutputAssembly=false avoids linking
+      the app's outputs into the test bin (the test launches the
+      app as a separate process).
+    -->
+    <ProjectReference
+        Include="..\..\src\Terminal.App\Terminal.App.fsproj"
+        ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>
