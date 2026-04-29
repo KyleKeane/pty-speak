@@ -15,6 +15,29 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added
+
+- **Stage 4 spike — F# AutomationPeer + ITextProvider /
+  ITextRangeProvider interop probe.** `Terminal.Accessibility`
+  gains `TerminalAutomationPeer.fs` replacing the empty
+  `Placeholder.fs`. The spike subclasses
+  `FrameworkElementAutomationPeer`, defines stub
+  `TerminalTextProvider` and `TerminalTextRange` types
+  implementing the C# UIA provider interfaces, and overrides the
+  five Core methods (`GetAutomationControlTypeCore`,
+  `GetClassNameCore`, `GetNameCore`, `IsControlElementCore`,
+  `IsContentElementCore`). Every method is a no-op; PR 4a wires
+  `GetText` to the real `Screen` snapshot and PR 4b implements
+  navigation. The fsproj gains `<UseWPF>true</UseWPF>` so
+  WindowsBase / PresentationCore / UIAutomationProvider /
+  UIAutomationTypes are resolvable. **No source-level wiring**:
+  `TerminalView.OnCreateAutomationPeer` is unchanged in this PR;
+  the peer is reachable as a type but never instantiated yet, so
+  there's no behavior change for the running app. The spike's
+  purpose is to surface F#-meets-C# interop foot-guns (analogous
+  to the `out SafeFileHandle&` byref bug from Stage 1) before
+  building 250+ lines of dependent code on top.
+
 ### Changed
 
 - **Stage 4 implementation plan revised: spike + three small PRs
