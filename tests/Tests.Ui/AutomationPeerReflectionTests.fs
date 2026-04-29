@@ -120,7 +120,7 @@ type AutomationPeerReflectionTests(output: ITestOutputHelper) =
                         m.Name
                         parameters
                         m.ReturnType.FullName
-                        m.DeclaringType.Assembly.GetName().Name)
+                        (m.DeclaringType.Assembly.GetName().Name))
             output.WriteLine(
                 sprintf
                     "GetPatternCore IS findable via reflection (%d match%s). The runtime metadata has the method even though the public reference assembly strips it. Reflection-based binding is viable as a Text-pattern exposure path; option 1 (raw IRawElementProviderSimple) and option 3 (reflection hook) are both architecturally available."
