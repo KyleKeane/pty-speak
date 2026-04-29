@@ -17,6 +17,24 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **FlaUI integration test infrastructure
+  (`tests/Tests.Ui/AutomationPeerTests.fs`).** First UIA test in
+  the project: launches `Terminal.App.exe` from the build
+  output, attaches via `UIA3Automation`, finds the `TerminalView`
+  descendant by `ClassName`, and asserts `ControlType=Document`
+  and `Name="Terminal"`. `Tests.Ui.fsproj` gains
+  `FlaUI.Core` / `FlaUI.UIA3` package references and a
+  `ReferenceOutputAssembly="false"` ProjectReference to
+  `Terminal.App` so MSBuild builds the app before the test runs
+  without linking its outputs into the test bin. The test is
+  scoped to validate that PR #48's reduced-scope peer actually
+  works at runtime (the `TerminalView` element is reachable via
+  UIA with the expected role and identity) and to give any
+  future Text-pattern attempt an automated verification harness
+  before merging. This is the foundation piece that any further
+  Stage 4 work — raw `IRawElementProviderSimple` provider,
+  reflection-based binding, or anything else — needs in place.
+
 - **Stage 4a (reduced scope) — UIA Document role + identity.**
   `TerminalView` now exposes a `TerminalAutomationPeer` via
   `OnCreateAutomationPeer`. UIA clients (NVDA, Inspect.exe) find
