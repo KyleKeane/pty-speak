@@ -17,40 +17,54 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
-- **Stage 4a — minimal UIA surface.** `TerminalView` now exposes
-  a `TerminalAutomationPeer` via `OnCreateAutomationPeer`, so UIA
-  clients (NVDA, Inspect.exe) see the terminal element as
+- **Stage 4a (reduced scope) — UIA Document role + identity.**
+  `TerminalView` now exposes a `TerminalAutomationPeer` via
+  `OnCreateAutomationPeer`. UIA clients (NVDA, Inspect.exe) find
+  the terminal element in the automation tree with
   `ControlType=Document`, `ClassName="TerminalView"`,
-  `Name="Terminal"`, with a `Text` pattern whose `DocumentRange`
-  returns the live cmd.exe output as plain text. The peer reads
-  the screen via `Screen.SnapshotRows` so each UIA call sees a
-  consistent point-in-time view of the buffer captured under the
-  same lock the parser feeds the Dispatcher through. The peer is
-  threaded into the WPF tree lazily — `TerminalView` passes a
-  `() => _screen` closure to the peer's constructor, so a UIA
-  query that arrives before `SetScreen` has run returns an empty
-  document instead of crashing.
-  - **`Terminal.Accessibility.Interop` is a new C# project** that
-    hosts a tiny shim class (`FSharpAutomationPeerBase`) taking
-    the `protected sealed override object? GetPatternCore(...)`
-    hit on F#'s behalf and exposing a new abstract
-    `GetPatternForFsharp` for F# subclasses. The spike (PR #47)
-    discovered F# under `Nullable=enable` couldn't override
-    `GetPatternCore` directly (FS0855); routing through the C#
-    shim is the cleanest alternative — separate project to avoid
-    a `Views ↔ Terminal.Accessibility` dependency cycle.
-  - **Navigation (`Move`, `MoveEndpointByUnit`, `Compare`,
-    `Clone`, `ExpandToEnclosingUnit`) remains stubbed.** PR 4b
-    implements them. NVDA "current line" should read; per-unit
-    navigation across rows / words / characters lands in 4b.
-  - **`GetAttributeValue` returns `NotSupported` for all
-    attributes.** Stage 5 wires SGR-attribute exposure
-    (`UIA_ForegroundColorAttributeId`, `UIA_FontWeightAttributeId`,
-    etc.) — the project's biggest accessibility differentiator.
-  - **`TerminalView.SetScreen` and `InvalidateScreen` unchanged.**
-    The peer registration happens through WPF's standard
-    `OnCreateAutomationPeer` hook; nothing in the existing render
-    path changes. PR 4c adds the FlaUI integration test.
+  `Name="Terminal"`, `IsControlElement=true`, and
+  `IsContentElement=true`. The peer subclasses
+  `FrameworkElementAutomationPeer` and overrides only the five
+  parameterless `*Core` methods that the spike (PR #47) confirmed
+  compile cleanly from F# under `Nullable=enable`.
+
+  **What this PR deliberately does NOT ship:** the Text pattern
+  (`ITextProvider` / `ITextRangeProvider`), navigation (`Move`,
+  `MoveEndpointByUnit`), and SGR attribute exposure
+  (`GetAttributeValue`). All three depended on overriding
+  `AutomationPeer.GetPatternCore`, which CI iteration on this PR
+  established is not reachable from any external assembly in the
+  .NET 9 WPF reference assembly set. C# CS0117 fires on
+  `base.GetPatternCore(...)` with "FrameworkElementAutomationPeer
+  does not contain a definition for 'GetPatternCore'"; F# FS0855
+  on `override _.GetPatternCore(...)` is the same finding via a
+  different error code. Microsoft's documented examples that
+  override `GetPatternCore` evidently compile only against
+  internal Microsoft assemblies where the protected member is
+  visible; the public reference assembly surfaces the type
+  without the override target.
+
+  Text-pattern exposure is therefore deferred to a follow-up
+  Stage 4 PR. The likely path is implementing
+  `IRawElementProviderSimple` directly on `TerminalView`,
+  bypassing the `AutomationPeer` hierarchy that wraps the
+  unreachable protected metadata. Investigation continues with
+  focused effort rather than CI iteration; tracked in
+  `docs/SESSION-HANDOFF.md` Stage 4 sketch.
+
+- **README addition: "The complexities of trying to work with
+  technology as a blind developer."** Records the maintainer's
+  account of why this project exists, the iOS Claude Code
+  workaround (disable VoiceOver, place finger by remembered
+  pixel location, re-enable VoiceOver) used to interact with
+  Claude on every message of this session, and an idiom
+  (`blindly iterating`) the model produced in this session that
+  is not literally accurate and casually demeans the people whose
+  working conditions this project is being built to improve. The
+  preferred phrasing is the literal one — `iterating without
+  information`, `speculative iteration`, `guessing without
+  evidence` — because it communicates more precisely and removes
+  the sight-as-knowledge metaphor.
 
 - **Stage 4 spike — F# AutomationPeer + ITextProvider /
   ITextRangeProvider interop probe.** `Terminal.Accessibility`

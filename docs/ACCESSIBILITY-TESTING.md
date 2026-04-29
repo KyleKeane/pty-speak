@@ -67,25 +67,36 @@ the WPF `TextBlock`-equivalent output via its fallback diff path.
 | ANSI 16 colours render            | Run `dir /a` (cmd colourises filenames)         | Different file types render in different foreground colours      |
 | Window closes cleanly             | Close the window                                | Process exits; no orphan `cmd.exe` (verify via Task Manager)     |
 
-### Stage 4 — text exposure (planned)
+### Stage 4 — text exposure (split into 4a-shipped + Text-pattern-deferred)
 
-The matrix below describes the full Stage 4 acceptance set. Stage 4
-ships in three PRs (spike + 4a + 4b + 4c, see
-[`SESSION-HANDOFF.md`](SESSION-HANDOFF.md#stage-4-implementation-sketch));
-the first three rows ("Window opens", "Review cursor reads current
-line", "Inspect.exe shows correct surface") become testable after
-PR 4a, the navigation rows after PR 4b, and the Inspect.exe row is
-also the manual-smoke gate before PR 4c's FlaUI test exists.
+PR #48 (Stage 4a, reduced scope) ships a UIA peer that exposes
+the terminal element with the right role and identity but
+**without the Text pattern**. The investigation that drove the
+reduced scope is in
+[`SESSION-HANDOFF.md`](SESSION-HANDOFF.md#stage-4-implementation-sketch);
+the short version is `AutomationPeer.GetPatternCore` is not
+reachable from any external assembly in the .NET 9 WPF reference
+assembly set, so the Text pattern needs a different exposure
+mechanism (likely `IRawElementProviderSimple` directly on
+`TerminalView`) tracked as a Stage 4 follow-up.
+
+**Testable after PR #48 (Stage 4a, reduced scope)**:
 
 | Test                              | Procedure                                       | Expected NVDA behaviour                                          |
 |-----------------------------------|-------------------------------------------------|------------------------------------------------------------------|
 | Window opens                      | Launch app                                      | "pty-speak, document"                                            |
+| Inspect.exe shows correct surface | Open Inspect.exe, hover over the terminal       | ControlType=Document, ClassName=`TerminalView`, Name=`Terminal`. Text pattern is **NOT** present at this stage — its absence is itself the gate that says "the Text-pattern follow-up still needs to land." |
+
+**Deferred to the Text-pattern follow-up PR**:
+
+| Test                              | Procedure                                       | Expected NVDA behaviour                                          |
+|-----------------------------------|-------------------------------------------------|------------------------------------------------------------------|
 | Review cursor reads current line  | NVDA+Numpad8                                    | NVDA reads the prompt line                                       |
 | Review cursor moves by line       | NVDA+Numpad7 / NVDA+Numpad9                     | NVDA reads previous / next line of the buffer                    |
 | Review cursor moves by word       | NVDA+Numpad4 / NVDA+Numpad6                     | NVDA reads previous / next word                                  |
 | Review cursor moves by character  | NVDA+Numpad1 / NVDA+Numpad3                     | NVDA reads previous / next character                             |
 | Empty line is announced           | Move review cursor to a blank row               | NVDA says "blank" — *not* the previous row, *not* silence        |
-| Inspect.exe shows correct surface | Open Inspect.exe, hover over the terminal       | ControlType=Document, ClassName=`TerminalView` (set explicitly by the Stage 4 automation peer; today's element inherits a generated WPF class name), Text pattern present |
+| Inspect.exe shows Text pattern    | Open Inspect.exe, hover over the terminal       | Text pattern present; `DocumentRange.GetText(int.MaxValue)` returns non-empty cmd.exe output |
 
 ### Stage 5 — streaming output
 

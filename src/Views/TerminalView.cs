@@ -85,16 +85,17 @@ public class TerminalView : FrameworkElement
     /// <summary>
     /// Returns the F# <see cref="TerminalAutomationPeer"/> so UIA
     /// clients (NVDA, Inspect.exe, FlaUI tests) see this element
-    /// as a Document with a Text pattern. The peer reads the
-    /// screen lazily via the <c>() =&gt; _screen</c> closure: if
-    /// UIA queries before <see cref="SetScreen"/> has run, the
-    /// peer returns an empty document rather than crashing.
+    /// as a Document with the right ClassName and Name. Stage 4a
+    /// ships this reduced peer; the Text-pattern exposure that
+    /// would let NVDA read the buffer contents is deferred until
+    /// the GetPatternCore-not-reachable investigation in
+    /// <c>docs/SESSION-HANDOFF.md</c> Stage 4 sketch concludes.
     ///
     /// WPF caches the returned peer per element and reuses it for
     /// the element's lifetime — there's no need to memoize here.
     /// </summary>
     protected override AutomationPeer OnCreateAutomationPeer()
-        => new TerminalAutomationPeer(this, () => _screen);
+        => new TerminalAutomationPeer(this);
 
     protected override Size MeasureOverride(Size availableSize)
     {

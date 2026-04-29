@@ -249,73 +249,93 @@ F# can:
   to bring in `WindowsBase` / `PresentationCore` /
   `UIAutomationProvider` / `UIAutomationTypes`.
 
-**Open question for PR 4a — overriding `GetPatternCore`.** Two
-attempts on the spike (`Unchecked.defaultof<obj>` with no
-return-type annotation, and explicit `: obj | null = null`) both
-failed with FS0855 "No abstract or interface member was found that
-corresponds to this override." The shared characteristic is
-`GetPatternCore` is the only override with a parameter, and its
-base return type may or may not be nullably-annotated in the .NET
-9 WPF SDK. Candidate fixes to investigate in PR 4a (in source code
-comment in `TerminalAutomationPeer.fs`):
-1. `<LangVersion>8.0</LangVersion>` scoped to
-   `Terminal.Accessibility` (Nullable=enable behaves differently
-   in F# 9).
-2. Move the peer to a C# file under `Views/`; F# keeps the
-   provider/range types.
-3. `default _.GetPatternCore` syntax.
-4. `member val GetPatternCore = ...` with explicit return-type
-   annotation.
+**Resolved during PR #48 (Stage 4a) — `GetPatternCore` is not
+reachable from external assemblies.** What looked like an F#-only
+nullability puzzle in the spike turned out to be a more
+fundamental visibility problem affecting every external caller,
+F# and C# alike.
 
-PR 4a needs `GetPatternCore` to wire `PatternInterface.Text` to
-the `TerminalTextProvider`, so this is the first thing to solve
-there with focused attention rather than blind CI iteration.
+The decisive evidence came from a diagnostic in PR #48 that
+removed the override entirely and replaced it with a non-override
+method calling `base.GetPatternCore(...)` from within a subclass
+of `FrameworkElementAutomationPeer`. CI failed with C# **CS0117**
+("'FrameworkElementAutomationPeer' does not contain a definition
+for 'GetPatternCore'"). C#'s view of the type via the public
+.NET 9 reference assembly does not expose the protected
+`GetPatternCore` member. The earlier CS0115 / FS0855 errors were
+both surface expressions of the same underlying fact: there is
+no method on `FrameworkElementAutomationPeer` (as visible from
+this build environment) for any subclass to override.
 
-### PR 4a — Minimal UIA surface
+Microsoft's documented examples that override `GetPatternCore`
+appear to compile against internal Microsoft assemblies where
+the protected metadata is visible. The public reference assembly
+ships the type without the override target.
 
-Builds on the spike. Goal: NVDA can announce the element and read
-*something* from `DocumentRange.GetText`.
+Implication: any path to exposing the Text pattern from this
+project has to bypass the `AutomationPeer.GetPatternCore`
+extension point. The `Terminal.Accessibility.Interop` C# shim
+project that PR 4a originally built was deleted as part of the
+reduced-scope cleanup — it doesn't help, because the same
+visibility limit applies regardless of which language hosts the
+override attempt.
 
-- `TerminalAutomationPeer.fs` — fill in the remaining Core overrides:
-  `GetClassNameCore` (`"TerminalView"`),
-  `GetNameCore` (`"Terminal"`),
-  `IsControlElementCore = true`,
-  `IsContentElementCore = true`,
-  `GetPatternCore(PatternInterface.Text)` returns the
-  `TerminalTextProvider`. Other patterns return `null`.
-- `TerminalTextProvider.fs` — implements `ITextProvider`
-  (`DocumentRange`, `SupportedTextSelection.None`, `GetSelection`,
-  `GetVisibleRanges`, `RangeFromChild`, `RangeFromPoint`) and
-  `ITextRangeProvider` with **`GetText` working** for the document
-  range. Every other `ITextRangeProvider` method (`Move`,
-  `MoveEndpointByUnit`, `Compare`, `Clone`, `ExpandToEnclosingUnit`,
-  `FindAttribute`, `FindText`, `GetAttributeValue`,
-  `GetBoundingRectangles`, `GetEnclosingElement`,
-  `MoveEndpointByRange`, `Select`, `AddToSelection`,
-  `RemoveFromSelection`, `ScrollIntoView`, `GetChildren`) returns
-  `NotSupported` / no-op stubs. They have to compile, not work.
-- Wire `TerminalView.OnCreateAutomationPeer` (in `src/Views/`) to
-  return the new peer. Pass the `Screen` reference into the peer's
-  constructor so it can call `Screen.SnapshotRows`.
-- Snapshot rule: each `ITextRangeProvider` instance holds an
-  immutable `(int64 sequence, Cell[][] rows)` taken at construction
-  via `Screen.SnapshotRows`. Stale-detection compares
-  `screen.SequenceNumber` against the captured sequence — Stage 5+
-  uses the result to invalidate ranges. Stage 4 just captures and
-  reads.
-- **Document-text encoding**: rows joined with `\n`. Each row's
-  cells emit their `Ch.ToString()` directly; trailing blanks are
-  preserved so character offsets are stable across calls.
-- Manual smoke: Inspect.exe shows `ControlType=Document`,
-  `ClassName=TerminalView`. NVDA review-cursor "current line"
-  (NVDA+Numpad 8) reads visible text; navigation across rows
-  (Numpad 7/9) doesn't crash even though `Move` is a stub.
-- **No FlaUI test in 4a.** Inspect.exe + manual NVDA only.
+### PR 4a (reduced scope) — UIA Document role + identity
 
-**Pass condition**: NVDA reads at least the first line of cmd.exe's
-startup banner. The "Broken" failure modes flagged in the spec
-(NVDA says "TerminalView" then nothing, or "blank", or repeats a
-line forever) are all out of scope here because Move is stubbed.
+Shipped a peer that exposes the terminal element with the right
+role and name, without the Text pattern.
+
+- `TerminalAutomationPeer.fs` extends `FrameworkElementAutomationPeer`
+  and overrides only the five parameterless `*Core` methods:
+  - `GetAutomationControlTypeCore` returns `Document`
+  - `GetClassNameCore` returns `"TerminalView"`
+  - `GetNameCore` returns `"Terminal"`
+  - `IsControlElementCore` returns `true`
+  - `IsContentElementCore` returns `true`
+- `TerminalView.OnCreateAutomationPeer` returns the peer.
+- No `ITextProvider` / `ITextRangeProvider` implementation
+  (unreachable without `GetPatternCore`).
+- No `Screen` reference passed to the peer (no `GetText` to
+  feed yet).
+
+**What this gives NVDA**: the element appears in the UIA tree,
+NVDA announces "Terminal, document" when focus reaches the
+window, and Inspect.exe / FlaUI can find the element by
+`ClassName="TerminalView"`. NVDA review-cursor reads on the
+element will produce no text — the Text pattern isn't there.
+
+### Stage 4 follow-up — Text-pattern exposure (deferred)
+
+The Text pattern is the actual user-visible win — without it
+NVDA can't read the buffer contents. Investigation paths to
+explore with focused effort (not CI iteration):
+
+1. **TerminalView implements `IRawElementProviderSimple`
+   directly.** The COM-style raw UIA provider interface lives in
+   `System.Windows.Automation.Provider` and IS visible to
+   external assemblies (the spike's interface implementations
+   compiled cleanly). TerminalView would expose patterns via the
+   `IRawElementProviderSimple.GetPatternProvider(int)` method,
+   which takes a UIA pattern ID instead of the F#-unfriendly
+   `PatternInterface` enum. Routes around the protected-member
+   visibility limit entirely. Likely the right answer; the cost
+   is hand-wiring some plumbing that `AutomationPeer` provides
+   automatically.
+2. **Subclass a more specialized AutomationPeer that already
+   exposes Text.** `TextBlockAutomationPeer` is the WPF built-in
+   that handles Text. If its visibility surface differs from
+   `FrameworkElementAutomationPeer`'s, subclassing it (even on
+   a non-`TextBlock` element) might give us the Text pattern
+   without re-overriding `GetPatternCore`. Worth a small spike.
+3. **Reflection-based override registration.** If the runtime
+   metadata has `GetPatternCore` (which it must, since
+   Microsoft's own peer types use it), reflection could install
+   our override at startup. Last-resort hack; brittle.
+
+Track the investigation in a follow-up issue. The reduced 4a
+peer that ships in PR #48 is a foundation that any of these
+paths can build on without conflict — the Document role and
+identity stay; the path adds Text on top.
 
 ### PR 4b — Navigation semantics
 
