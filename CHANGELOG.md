@@ -52,10 +52,21 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   PR #51's `Document` role / `ClassName` / `Name` keep working.
   The `WindowSubclassNative` hook from PR A (#54) gains a second
   parameter on `InstallHook` that accepts the raw provider; when
-  `WM_GETOBJECT` arrives with `lParam == OBJID_CLIENT` the hook
-  calls `UiaReturnRawElementProvider` with our provider, and
-  defers to `DefSubclassProc` for every other object id (and for
-  every other message). `MainWindow.SourceInitialized` now
+  `WM_GETOBJECT` arrives with `lParam` equal to either
+  `UiaRootObjectId` (-25, the modern UIA3 query) or
+  `OBJID_CLIENT` (-4, the legacy MSAA query) the hook calls
+  `UiaReturnRawElementProvider` with our provider, and defers
+  to `DefSubclassProc` for every other object id (and for
+  every other message). The two-id match was established by PR
+  C's diagnostic dump on `windows-latest`: UIA3 dispatches with
+  `UiaRootObjectId` only, never `OBJID_CLIENT`, so handling just
+  the latter (as the original PR-B code did) caused UIA to
+  never see our patterns. PR C also showed Windows passes the
+  id sign-extended (`0xFFFFFFFFFFFFFFE7` for -25) for UIA3 vs
+  zero-extended (`0x00000000FFFFFFFC` for -4) for MSAA, so the
+  comparison casts `lParam` to `int` first to recover the
+  negative integer regardless of extension form.
+  `MainWindow.SourceInitialized` now
   constructs a `TerminalRawProvider` over the `TerminalView`'s
   `TextProvider` and passes it through. Stage 4 navigation
   (`Move`, `MoveEndpointByUnit`, attribute exposure) is still
