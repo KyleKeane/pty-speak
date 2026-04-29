@@ -61,13 +61,41 @@ type TerminalAutomationPeer(owner: FrameworkElement) =
     override _.GetNameCore() = "Terminal"
     override _.IsControlElementCore() = true
     override _.IsContentElementCore() = true
-    // F# 9's `obj | null` matches the C# nullable-annotated base
-    // signature `protected override object? GetPatternCore(...)`. The
-    // first attempt at this spike used `Unchecked.defaultof<obj>` with
-    // no return-type annotation and got FS0855 "no abstract member
-    // found that corresponds to this override" — F# couldn't unify
-    // a non-nullable `obj` return with the base's nullable signature,
-    // and reported it as a missing override target rather than a
-    // nullability error.
-    override _.GetPatternCore(patternInterface: PatternInterface) : obj | null =
-        null
+
+    // GetPatternCore deliberately not overridden in the spike.
+    //
+    // Two F# attempts on this spike (`Unchecked.defaultof<obj>` and
+    // explicit `: obj | null = null`) both failed with FS0855
+    // "No abstract or interface member was found that corresponds
+    // to this override" while the other five Core overrides above
+    // compiled cleanly. The shared characteristic of GetPatternCore
+    // is (a) it has a parameter and (b) its base return type
+    // (`AutomationPeer.GetPatternCore(PatternInterface) : object`)
+    // may or may not be nullably-annotated in the .NET 9 WPF SDK —
+    // F# can't unify either signature variant with what it sees on
+    // the base, and reports the mismatch as a missing override
+    // target rather than a more specific signature error.
+    //
+    // PR 4a needs this override to return the TerminalTextProvider
+    // when `patternInterface = PatternInterface.Text`. Several
+    // candidate fixes to investigate there with dedicated time
+    // rather than blind CI iteration:
+    //
+    //   1. Try LangVersion=8.0 on Terminal.Accessibility specifically
+    //      (Nullable=enable behaves differently in F# 9).
+    //   2. Move the peer to a C# file under Views/ and let F# only
+    //      own the provider/range types (which compiled cleanly).
+    //   3. Override via `default _.GetPatternCore` instead of
+    //      `override _.GetPatternCore` — F# allows both syntaxes
+    //      for inherited members in some versions.
+    //   4. Use the `member val` form with explicit return-type
+    //      annotation matching exactly what F# resolves the base
+    //      signature to.
+    //
+    // The spike's pass condition was always "verify F# can subclass
+    // FrameworkElementAutomationPeer and implement the C# UIA
+    // provider interfaces," and the surviving 5 overrides plus
+    // TerminalTextProvider/TerminalTextRange's ~23 interface members
+    // demonstrate exactly that. The unresolved override is itself
+    // the spike's discovery — exactly the class of foot-gun the
+    // spike was built to surface.

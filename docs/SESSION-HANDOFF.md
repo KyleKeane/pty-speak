@@ -234,6 +234,43 @@ verify CI is green. **Don't wire it into `TerminalView` yet.**
 **Pass condition**: build green, no F# interop errors, no
 `TreatWarningsAsErrors` failures.
 
+**Outcome (PR #47, merged 2026-04-29).** The spike validated that
+F# can:
+- Subclass `FrameworkElementAutomationPeer` and override the five
+  parameterless `*Core` methods (`GetAutomationControlTypeCore`,
+  `GetClassNameCore`, `GetNameCore`, `IsControlElementCore`,
+  `IsContentElementCore`) with no nullability or interop friction.
+- Implement `ITextProvider` (6 members) and `ITextRangeProvider`
+  (17 members) cleanly via `interface ... with` syntax. Empty
+  arrays via `Array.empty<_>` and null returns via
+  `Unchecked.defaultof<_>` both work for these interface
+  implementations.
+- Add `<UseWPF>true</UseWPF>` to `Terminal.Accessibility.fsproj`
+  to bring in `WindowsBase` / `PresentationCore` /
+  `UIAutomationProvider` / `UIAutomationTypes`.
+
+**Open question for PR 4a — overriding `GetPatternCore`.** Two
+attempts on the spike (`Unchecked.defaultof<obj>` with no
+return-type annotation, and explicit `: obj | null = null`) both
+failed with FS0855 "No abstract or interface member was found that
+corresponds to this override." The shared characteristic is
+`GetPatternCore` is the only override with a parameter, and its
+base return type may or may not be nullably-annotated in the .NET
+9 WPF SDK. Candidate fixes to investigate in PR 4a (in source code
+comment in `TerminalAutomationPeer.fs`):
+1. `<LangVersion>8.0</LangVersion>` scoped to
+   `Terminal.Accessibility` (Nullable=enable behaves differently
+   in F# 9).
+2. Move the peer to a C# file under `Views/`; F# keeps the
+   provider/range types.
+3. `default _.GetPatternCore` syntax.
+4. `member val GetPatternCore = ...` with explicit return-type
+   annotation.
+
+PR 4a needs `GetPatternCore` to wire `PatternInterface.Text` to
+the `TerminalTextProvider`, so this is the first thing to solve
+there with focused attention rather than blind CI iteration.
+
 ### PR 4a — Minimal UIA surface
 
 Builds on the spike. Goal: NVDA can announce the element and read
