@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <Compile Include="TerminalAutomationPeer.fs" />
+    <Compile Include="RawProviderSpike.fs" />
   </ItemGroup>
 
   <ItemGroup>
