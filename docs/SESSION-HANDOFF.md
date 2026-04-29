@@ -70,7 +70,35 @@ disconnects mid-session.
    with details — the WinExe fix may not have taken effect, or
    there's a different cause we haven't surfaced yet.
 
-4. **Enable NuGet lock files (deferred from PR #41).** The
+4. **Small CI / release timing optimisation pass** (low priority,
+   pure cleanup). Current CI per-PR job times are reasonable but
+   not tight: actionlint ~12 s, markdown link check ~56 s,
+   Build+test (windows-latest) ~2 min. Candidate trims that don't
+   compromise the utility of any check:
+
+   - Merge the two sequential `gaurav-nelson/github-action-markdown-link-check`
+     steps in `markdown-link-check` into one invocation that
+     covers both `docs/` and the root markdown files. Saves one
+     Node container start (~15–20 s) without changing what's
+     checked.
+   - Cache the `dotnet tool install -g vpk` step in the build
+     job (the Velopack CLI is stable across runs). Today it
+     re-downloads on every CI run; ~10 s saved with a global
+     tools cache or by pinning vpk into a `dotnet-tools.json`
+     manifest restored under `~/.nuget/packages` cache.
+   - Audit `.github/workflows/release.yml` for the same kinds of
+     wins (e.g. is the `vpk pack` step's input directory
+     restored from cache? Does the prior-release nupkg fetch
+     from PR #45 retry on transient `gh` 5xx?).
+
+   Constraint: do not weaken any check's effectiveness. Keep
+   `continue-on-error: true` on the link checks (they're
+   advisory by design); keep `--locked-mode` once NuGet lock
+   files land (item 5); keep the Velopack pack smoke step
+   (it's the only thing that catches packaging regressions
+   before release day).
+
+5. **Enable NuGet lock files (deferred from PR #41).** The
    investigation in PR #41 settled on enabling
    `<RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>`
    in `Directory.Build.props` so `dotnet restore` writes a
