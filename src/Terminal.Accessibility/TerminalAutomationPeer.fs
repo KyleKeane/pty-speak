@@ -55,18 +55,25 @@ type TerminalAutomationPeer(owner: FrameworkElement, textProvider: ITextProvider
     /// preserved. Return type matches
     /// `AutomationPeer.GetPattern`'s annotation (`object?`) so
     /// F# 9 nullability accepts the base call's possibly-null
-    /// return. The Text branch pattern-matches the constructor
-    /// parameter on null so the upcast to non-nullable `obj` is
-    /// narrowed safely — `textProvider` is `ITextProvider` from
-    /// an externally-annotated assembly and F# treats the
-    /// upcast source as nullable by default, which conflicts
-    /// with `:> obj` (non-nullable target) without the match.
+    /// return.
+    ///
+    /// The Text branch uses an explicit `obj | null` type
+    /// annotation on a temporary binding so F# 9's nullability
+    /// analysis widens `textProvider`'s declared
+    /// `ITextProvider` (currently treated as non-nullable in
+    /// the WPF reference assembly's annotation set) to the
+    /// nullable return type of the override. Without the
+    /// annotation, F# rejects both the bare upcast `:> obj`
+    /// (FS3261, "this expression is nullable") and the
+    /// pattern-match-on-null form (FS3261, "the type does
+    /// not support null"). The annotation form sidesteps
+    /// both: it's a widening assignment, not a narrowing
+    /// pattern match.
     override _.GetPattern(patternInterface: PatternInterface) : obj | null =
         match patternInterface with
         | PatternInterface.Text ->
-            match textProvider with
-            | null -> null
-            | tp -> tp :> obj
+            let result : obj | null = textProvider
+            result
         | _ -> base.GetPattern(patternInterface)
 
 /// Snapshot-rendering helpers shared by `TerminalTextRange`.
