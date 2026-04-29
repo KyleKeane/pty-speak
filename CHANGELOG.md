@@ -17,61 +17,88 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
-- **Stage 4 PR C — FlaUI integration test for the UIA Text
-  pattern (`tests/Tests.Ui/TextPatternTests.fs`).** Pins the
-  end-to-end chain installed by PR A (#54, `WM_GETOBJECT` hook)
-  + PR B (#55, raw provider + F# `TerminalTextProvider`):
-  launches `Terminal.App.exe`, attaches via `UIA3Automation`,
-  walks the tree searching for the first element that exposes
-  the Text pattern, calls `DocumentRange.GetText(-1)`, and
-  asserts the returned string has the expected minimum length
-  (30 rows × 120 cols + 29 row-joining newlines = 3629 chars
-  for the `Program.compose` default screen size) and contains
-  at least one `\n`. The length floor catches both "snapshot
-  source not wired" (returns 0) and "snapshot machinery firing
-  but rows don't match composition" failure modes; the newline
-  check verifies `SnapshotText.render`'s row-join rule.
-  Specific cell content from cmd.exe's banner is deliberately
-  not asserted — banner wording isn't deterministic across
-  Windows builds — but with this test in place, any future
-  regression in the hook installation, raw-provider pattern
-  routing, or text-range rendering fails CI loudly with a
-  diagnostic that points at the responsible link in the chain.
+- **Stage 4 PR C — UIA Text pattern via `AutomationPeer.GetPattern`
+  override + FlaUI verification test
+  (`tests/Tests.Ui/TextPatternTests.fs`).** PR C started as a
+  pure verification test for PR B's WM_GETOBJECT raw-provider
+  path, but two CI iterations on `windows-latest` revealed an
+  architectural finding that changed the path entirely:
 
-- **Stage 4 PR B — UIA Text-pattern raw provider (NVDA can read
-  the terminal buffer).** `Terminal.Accessibility` gains real
-  `TerminalTextProvider` and `TerminalTextRange` types whose
-  `DocumentRange.GetText` returns a `\n`-joined render of the
-  current `Screen.SnapshotRows` capture. `TerminalView` exposes
-  the provider as a public `TextProvider` property, and a new
-  `Views/TerminalRawProvider.cs` implements
-  `IRawElementProviderSimple` — its `GetPatternProvider` returns
-  the F# text provider for `UIA_TextPatternId` (10014) and
-  `HostRawElementProvider` delegates everything else to the WPF
-  peer via `AutomationInteropProvider.HostProviderFromHandle` so
-  PR #51's `Document` role / `ClassName` / `Name` keep working.
-  The `WindowSubclassNative` hook from PR A (#54) gains a second
-  parameter on `InstallHook` that accepts the raw provider; when
-  `WM_GETOBJECT` arrives with `lParam` equal to either
-  `UiaRootObjectId` (-25, the modern UIA3 query) or
-  `OBJID_CLIENT` (-4, the legacy MSAA query) the hook calls
-  `UiaReturnRawElementProvider` with our provider, and defers
-  to `DefSubclassProc` for every other object id (and for
-  every other message). The two-id match was established by PR
-  C's diagnostic dump on `windows-latest`: UIA3 dispatches with
-  `UiaRootObjectId` only, never `OBJID_CLIENT`, so handling just
-  the latter (as the original PR-B code did) caused UIA to
-  never see our patterns. PR C also showed Windows passes the
-  id sign-extended (`0xFFFFFFFFFFFFFFE7` for -25) for UIA3 vs
-  zero-extended (`0x00000000FFFFFFFC` for -4) for MSAA, so the
-  comparison casts `lParam` to `int` first to recover the
-  negative integer regardless of extension form.
-  `MainWindow.SourceInitialized` now
-  constructs a `TerminalRawProvider` over the `TerminalView`'s
-  `TextProvider` and passes it through. Stage 4 navigation
-  (`Move`, `MoveEndpointByUnit`, attribute exposure) is still
-  stubbed; PR C adds the FlaUI Text-pattern integration test
-  that pins this behaviour against a real UIA client.
+  - The first iteration showed UIA3 (which NVDA / Inspect.exe
+    / FlaUI.UIA3 use) dispatches `WM_GETOBJECT` with
+    `UiaRootObjectId` (-25), never `OBJID_CLIENT` (-4), so
+    PR B's `OBJID_CLIENT`-only match never surfaced any
+    patterns to UIA3 clients. Diagnostic from a 29-line
+    log dump.
+  - The second iteration extended the match to also handle
+    `UiaRootObjectId`. That broke the entire UIA tree: every
+    UI test regressed with either an HRESULT failure on
+    `UIA3Automation.FromHandle` or "TerminalView descendant
+    not found in the UIA tree." The root cause is that
+    `WM_GETOBJECT(UiaRootObjectId)` expects a provider
+    implementing `IRawElementProviderFragmentRoot` — UIA
+    needs the fragment-navigation surface to traverse from
+    the returned root into descendants, and our simple
+    provider can't supply that even with
+    `HostRawElementProvider` wired.
+  - The third iteration found the actual right path:
+    `AutomationPeer.GetPattern` is `public virtual` (unlike
+    the unreachable `protected virtual GetPatternCore` that
+    bit PR #48), so external assemblies CAN override it. The
+    override adds the Text pattern to the SAME peer that's
+    already in WPF's tree, leaving WPF's fragment navigation
+    untouched. No `WM_GETOBJECT` interception of UIA3
+    messages needed.
+
+  What ships in PR C:
+
+  - `TerminalAutomationPeer` gains an `ITextProvider`
+    constructor parameter and a `GetPattern` override that
+    returns it for `PatternInterface.Text`, deferring to
+    `base.GetPattern` for every other interface.
+  - `TerminalView.OnCreateAutomationPeer` passes the
+    `TextProvider` it constructed in PR B through to the
+    peer.
+  - `WindowSubclassNative` reverts to matching `OBJID_CLIENT`
+    only — kept as a defensive MSAA fallback rather than the
+    primary UIA path. The `UiaRootObjectId` constant is
+    documented in the source as the discovery that drove the
+    pivot.
+  - `tests/Tests.Ui/TextPatternTests.fs` walks the UIA tree
+    for the first element exposing the Text pattern, calls
+    `DocumentRange.GetText(-1)`, and asserts the result has
+    the expected minimum length (30 rows × 120 cols + 29
+    row-joining newlines = 3629 chars for the
+    `Program.compose` default screen size) plus at least one
+    `\n`. Specific cell content from cmd.exe's banner is
+    deliberately not asserted — banner wording isn't
+    deterministic across Windows builds.
+  - Test failure messages dump the WM_GETOBJECT log and the
+    visible pattern flags so a future regression diagnoses
+    itself without further iteration. That diagnostic
+    machinery is what made the architectural finding
+    tractable in the first place; it stays in place.
+
+- **Stage 4 PR B — Text-pattern provider scaffolding +
+  WM_GETOBJECT raw-provider path (legacy MSAA fallback).**
+  `Terminal.Accessibility` gains real `TerminalTextProvider`
+  and `TerminalTextRange` types whose `DocumentRange.GetText`
+  returns a `\n`-joined render of the current
+  `Screen.SnapshotRows` capture. `TerminalView` exposes the
+  provider as a public `TextProvider` property; PR C wires it
+  into the UIA peer's `GetPattern` override (the actual UIA3
+  surface). The PR also ships a `Views/TerminalRawProvider.cs`
+  implementing `IRawElementProviderSimple` and extends the
+  `WindowSubclassNative` hook from PR A (#54) to return that
+  provider for `WM_GETOBJECT(OBJID_CLIENT)` queries. PR C's
+  CI iteration revealed UIA3 never queries `OBJID_CLIENT` —
+  it uses `UiaRootObjectId` instead, which can't be
+  intercepted with a simple provider — so the raw-provider
+  path is kept as a defensive fallback for legacy MSAA
+  clients only, not as the primary UIA path. Stage 4
+  navigation (`Move`, `MoveEndpointByUnit`, attribute
+  exposure) is still stubbed; the per-cell SGR exposure
+  arrives in a later stage.
 
   The previously throwaway `Terminal.Accessibility/RawProviderSpike.fs`
   is removed — the foundation finding it captured (F# can

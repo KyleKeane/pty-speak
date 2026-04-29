@@ -7,15 +7,16 @@ namespace PtySpeak.Views;
 /// <summary>
 /// Win32 window-subclass infrastructure for intercepting messages
 /// destined for the WPF main window. Stage 4 host point for the
-/// Text-pattern raw provider: when a UIA client sends
-/// <c>WM_GETOBJECT</c> with <c>lParam</c> equal to
-/// <c>UiaRootObjectId</c> (-25, used by UIA3 / Inspect.exe / NVDA)
-/// or <c>OBJID_CLIENT</c> (-4, used by legacy MSAA clients), we
-/// hand back our <see cref="TerminalRawProvider"/> via
-/// <c>UiaReturnRawElementProvider</c>. For every other object id
-/// (and for clients that don't bind a raw provider), the hook
-/// calls <c>DefSubclassProc</c> so WPF's existing peer tree
-/// continues to work.
+/// MSAA-side Text-pattern path: when a legacy MSAA client sends
+/// <c>WM_GETOBJECT</c> with <c>lParam == OBJID_CLIENT</c> we hand
+/// back our <see cref="TerminalRawProvider"/> via
+/// <c>UiaReturnRawElementProvider</c>. UIA3 / NVDA arrive via
+/// <c>UiaRootObjectId</c> instead, which we deliberately do
+/// <em>not</em> intercept here — see the <see cref="OBJID_CLIENT"/>
+/// docstring and <c>TerminalAutomationPeer</c> for the UIA3 path.
+/// For every other message, the hook calls
+/// <c>DefSubclassProc</c> so WPF's existing peer tree continues
+/// to work.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -42,23 +43,32 @@ internal static class WindowSubclassNative
     private const uint WM_GETOBJECT = 0x003D;
 
     /// <summary>
-    /// UIA object id (<c>UiaRootObjectId</c>) used by modern UIA
-    /// clients (UIA3 / Inspect.exe / NVDA / FlaUI's UIA3 binding)
-    /// to query for an <c>IRawElementProviderSimple</c>. From
-    /// <c>UIAutomationCore.h</c>: <c>#define UiaRootObjectId -25</c>.
-    /// CI iteration on PR #56 established this is the id UIA3
-    /// actually uses; MSAA-style clients use <see cref="OBJID_CLIENT"/>
-    /// (-4) instead, which UIA3 never queries here.
-    /// </summary>
-    private const int UiaRootObjectId = -25;
-
-    /// <summary>
     /// Legacy MSAA client-area object id from <c>winuser.h</c>:
-    /// <c>OBJID_CLIENT</c> = <c>(LONG)0xFFFFFFFC</c> = -4.
-    /// Kept in the matched set so MSAA-only screen readers
-    /// (older NVDA / JAWS legacy mode) still get our provider
-    /// even though UIA3 uses <see cref="UiaRootObjectId"/>.
+    /// <c>OBJID_CLIENT</c> = <c>(LONG)0xFFFFFFFC</c> = -4. Some
+    /// MSAA-only screen-reader paths still query with this id.
     /// </summary>
+    /// <remarks>
+    /// PR #56 originally also matched <c>UiaRootObjectId</c> (-25,
+    /// the modern UIA3 client query) and returned our provider
+    /// for it. CI proved that approach broke the entire UIA tree:
+    /// <c>UIA3Automation.FromHandle</c> returned an unexpected
+    /// COM HRESULT, and the peer-tree tests
+    /// (<c>AutomationPeerTests</c>, <c>WindowSubclassTests</c>)
+    /// regressed. The root cause is that
+    /// <c>WM_GETOBJECT(UiaRootObjectId)</c> expects a provider
+    /// implementing <c>IRawElementProviderFragmentRoot</c> with a
+    /// real navigation surface — <c>IRawElementProviderSimple</c>
+    /// alone is insufficient because UIA can't traverse from it
+    /// into the WPF host tree even when
+    /// <c>HostRawElementProvider</c> is wired up.
+    ///
+    /// The proper Stage 4 path therefore goes through the WPF
+    /// peer tree instead of intercepting <c>UiaRootObjectId</c>:
+    /// see the <c>GetPattern</c>-override exploration in
+    /// <see cref="TerminalAutomationPeer"/>. This hook is kept
+    /// for the legacy MSAA path only, which is a strict
+    /// improvement (no regression) over the no-hook baseline.
+    /// </remarks>
     private const int OBJID_CLIENT = -4;
 
     /// <summary>
@@ -205,24 +215,18 @@ internal static class WindowSubclassNative
             }
             catch { /* swallowed by design */ }
 
-            // Object-id matching: UIA3 dispatches with
-            // UiaRootObjectId (-25), MSAA dispatches with
-            // OBJID_CLIENT (-4), and Windows extends each
-            // differently into the 64-bit LPARAM:
-            //
-            //   UiaRootObjectId from UIA3 → 0xFFFFFFFFFFFFFFE7 (sign-extended -25)
-            //   OBJID_CLIENT from MSAA  → 0x00000000FFFFFFFC (zero-extended)
-            //
-            // PR #56's diagnostic dump established the
-            // sign/zero-extension discrepancy on a real
-            // windows-latest runner. Casting `lParam.ToInt64()`
-            // through `(int)` truncates to the low 32 bits and
-            // recovers the same negative integer regardless of
-            // how Windows extended it; comparing that against
-            // the int-typed constants is then trivially correct.
+            // Object-id matching: only OBJID_CLIENT (-4) is
+            // safe to intercept — the modern UIA3 query
+            // (UiaRootObjectId, -25) requires a provider
+            // implementing IRawElementProviderFragmentRoot, and
+            // returning a simple provider for it breaks UIA's
+            // tree navigation entirely (CI confirmed). Casting
+            // `lParam.ToInt64()` through `(int)` truncates to
+            // the low 32 bits and recovers the negative
+            // integer regardless of how Windows extended it
+            // (sign- vs zero-extended LPARAM).
             int objId = unchecked((int)lParam.ToInt64());
-            if (_rawProvider is not null
-                && (objId == UiaRootObjectId || objId == OBJID_CLIENT))
+            if (_rawProvider is not null && objId == OBJID_CLIENT)
             {
                 return UiaReturnRawElementProvider(hWnd, wParam, lParam, _rawProvider);
             }
