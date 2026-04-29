@@ -7,11 +7,20 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <GenerateProgramFile>false</GenerateProgramFile>
+    <!--
+      UseWPF brings in PresentationCore / PresentationFramework
+      so the AutomationPeerReflectionTests can reference
+      `System.Windows.Automation.Peers.FrameworkElementAutomationPeer`
+      directly via `typeof<>`. FlaUI alone doesn't pull these in
+      because it's UI-framework-agnostic at the UIA layer.
+    -->
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="Placeholder.fs" />
     <Compile Include="AutomationPeerTests.fs" />
+    <Compile Include="AutomationPeerReflectionTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
