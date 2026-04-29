@@ -347,8 +347,19 @@ NVDA can't read the buffer contents. Investigation status:
       compiled cleanly.
   Tracked in [Issue #49](https://github.com/KyleKeane/pty-speak/issues/49).
 
-- **Option 3 (last resort): reflection-based override
-  registration.** Not pursuing unless option 1 also fails.
+- **Option 3 ruled out (PR #52 reflection probe).** The runtime
+  metadata strips `GetPatternCore` the same way the public
+  reference assembly does — a reflection probe via
+  `BindingFlags.Instance | NonPublic | Public | FlattenHierarchy`
+  on `FrameworkElementAutomationPeer` finds zero matches for
+  `GetPatternCore`. Sanity baseline (`GetClassNameCore` IS
+  findable via the same probe) confirms the test infrastructure
+  isn't the cause. Reflection-based binding is therefore not a
+  viable architectural path. The probe is preserved as a
+  regression sentinel in
+  `tests/Tests.Ui/AutomationPeerReflectionTests.fs`; if a future
+  .NET update exposes `GetPatternCore` in runtime metadata,
+  the sentinel test fails and we know to re-evaluate.
 
 The reduced PR #48 peer that ships the Document role + identity
 stays; the IRawElementProviderSimple path adds Text on top

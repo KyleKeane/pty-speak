@@ -85,12 +85,22 @@ type AutomationPeerReflectionTests(output: ITestOutputHelper) =
                     (declaringTypeName found)
                     found.ReturnType.FullName)
 
-    /// The actual question. Probes for `GetPatternCore` on
-    /// `FrameworkElementAutomationPeer` and its base types using
-    /// `BindingFlags.FlattenHierarchy` so an inherited method
-    /// counts.
+    /// PR #52's CI run gave the architectural answer:
+    /// `GetPatternCore` is NOT reachable via runtime reflection
+    /// either. The runtime metadata strips it the same way the
+    /// public reference assembly does (proven by the same
+    /// reflection probe finding `GetClassNameCore` cleanly above).
+    ///
+    /// This test now asserts that finding as a SENTINEL — if a
+    /// future .NET update exposes `GetPatternCore` in runtime
+    /// metadata, this test fails and we know to re-evaluate the
+    /// architectural commitment to option 1 (raw
+    /// `IRawElementProviderSimple` via `WM_GETOBJECT`) over
+    /// option 3 (reflection-based binding) from
+    /// [Issue #49](https://github.com/KyleKeane/pty-speak/issues/49).
+    /// Until then, option 3 is decisively ruled out.
     [<Fact>]
-    member _.``GetPatternCore reflection probe (the architectural question)`` () =
+    member _.``GetPatternCore is unreachable via runtime reflection (sentinel for Issue 49 architectural decision)`` () =
         let t = typeof<FrameworkElementAutomationPeer>
         let flags =
             BindingFlags.Instance
@@ -107,9 +117,7 @@ type AutomationPeerReflectionTests(output: ITestOutputHelper) =
 
         if candidates.Length = 0 then
             output.WriteLine(
-                "GetPatternCore is NOT findable via reflection on FrameworkElementAutomationPeer (or its bases). The runtime metadata strips it the same way the public reference assembly does. Reflection-based binding is not viable; option 1 (raw IRawElementProviderSimple via WM_GETOBJECT) is the only remaining Text-pattern exposure path.")
-            Assert.Fail(
-                "GetPatternCore not findable via reflection — see test output for architectural implication.")
+                "Confirmed: GetPatternCore is NOT findable via reflection on FrameworkElementAutomationPeer (or its bases). Matches PR #52's original finding; option 1 (raw IRawElementProviderSimple via WM_GETOBJECT) remains the committed Text-pattern exposure path. Issue #49 option 3 stays ruled out.")
         else
             for m in candidates do
                 let access =
@@ -142,6 +150,11 @@ type AutomationPeerReflectionTests(output: ITestOutputHelper) =
                         (declaringAssemblyName m))
             output.WriteLine(
                 sprintf
-                    "GetPatternCore IS findable via reflection (%d match%s). The runtime metadata has the method even though the public reference assembly strips it. Reflection-based binding is viable as a Text-pattern exposure path; option 1 (raw IRawElementProviderSimple) and option 3 (reflection hook) are both architecturally available."
+                    "REGRESSION: GetPatternCore is now findable via reflection (%d match%s). The runtime metadata exposes the method that PR #52 confirmed was hidden in this .NET version. Re-evaluate Issue #49: option 3 (reflection-based binding) may now be viable; the architectural commitment to option 1 may need revisiting."
                     candidates.Length
                     (if candidates.Length = 1 then "" else "es"))
+
+        // Sentinel: assert the architectural reality. If this ever
+        // becomes non-empty, the test fails and the ABOVE diagnostic
+        // names what changed.
+        Assert.Empty(candidates)
