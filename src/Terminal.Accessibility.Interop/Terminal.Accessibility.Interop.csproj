@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Terminal.Accessibility.Interop</RootNamespace>
+    <AssemblyName>Terminal.Accessibility.Interop</AssemblyName>
+    <!--
+      UseWPF brings in the WPF SDK so this project sees
+      FrameworkElementAutomationPeer (PresentationFramework.dll) and
+      the System.Windows.Automation.* types it overrides.
+    -->
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <!--
+    No project references. This project exists ONLY to host C# shim
+    classes that work around F#-meets-C# interop edges (see
+    docs/SESSION-HANDOFF.md "Stage 4 implementation sketch" → spike
+    outcome). Adding logic here that isn't a thin C# adapter for an
+    F# consumer is a layering smell — most accessibility logic
+    belongs in the F# Terminal.Accessibility project.
+  -->
+
+</Project>

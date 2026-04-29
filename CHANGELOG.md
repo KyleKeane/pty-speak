@@ -17,6 +17,41 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Stage 4a — minimal UIA surface.** `TerminalView` now exposes
+  a `TerminalAutomationPeer` via `OnCreateAutomationPeer`, so UIA
+  clients (NVDA, Inspect.exe) see the terminal element as
+  `ControlType=Document`, `ClassName="TerminalView"`,
+  `Name="Terminal"`, with a `Text` pattern whose `DocumentRange`
+  returns the live cmd.exe output as plain text. The peer reads
+  the screen via `Screen.SnapshotRows` so each UIA call sees a
+  consistent point-in-time view of the buffer captured under the
+  same lock the parser feeds the Dispatcher through. The peer is
+  threaded into the WPF tree lazily — `TerminalView` passes a
+  `() => _screen` closure to the peer's constructor, so a UIA
+  query that arrives before `SetScreen` has run returns an empty
+  document instead of crashing.
+  - **`Terminal.Accessibility.Interop` is a new C# project** that
+    hosts a tiny shim class (`FSharpAutomationPeerBase`) taking
+    the `protected sealed override object? GetPatternCore(...)`
+    hit on F#'s behalf and exposing a new abstract
+    `GetPatternForFsharp` for F# subclasses. The spike (PR #47)
+    discovered F# under `Nullable=enable` couldn't override
+    `GetPatternCore` directly (FS0855); routing through the C#
+    shim is the cleanest alternative — separate project to avoid
+    a `Views ↔ Terminal.Accessibility` dependency cycle.
+  - **Navigation (`Move`, `MoveEndpointByUnit`, `Compare`,
+    `Clone`, `ExpandToEnclosingUnit`) remains stubbed.** PR 4b
+    implements them. NVDA "current line" should read; per-unit
+    navigation across rows / words / characters lands in 4b.
+  - **`GetAttributeValue` returns `NotSupported` for all
+    attributes.** Stage 5 wires SGR-attribute exposure
+    (`UIA_ForegroundColorAttributeId`, `UIA_FontWeightAttributeId`,
+    etc.) — the project's biggest accessibility differentiator.
+  - **`TerminalView.SetScreen` and `InvalidateScreen` unchanged.**
+    The peer registration happens through WPF's standard
+    `OnCreateAutomationPeer` hook; nothing in the existing render
+    path changes. PR 4c adds the FlaUI integration test.
+
 - **Stage 4 spike — F# AutomationPeer + ITextProvider /
   ITextRangeProvider interop probe.** `Terminal.Accessibility`
   gains `TerminalAutomationPeer.fs` replacing the empty

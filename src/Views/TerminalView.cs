@@ -1,7 +1,9 @@
 using System;
 using System.Globalization;
 using System.Windows;
+using System.Windows.Automation.Peers;
 using System.Windows.Media;
+using Terminal.Accessibility;
 using Terminal.Core;
 
 namespace PtySpeak.Views;
@@ -79,6 +81,20 @@ public class TerminalView : FrameworkElement
     {
         InvalidateVisual();
     }
+
+    /// <summary>
+    /// Returns the F# <see cref="TerminalAutomationPeer"/> so UIA
+    /// clients (NVDA, Inspect.exe, FlaUI tests) see this element
+    /// as a Document with a Text pattern. The peer reads the
+    /// screen lazily via the <c>() =&gt; _screen</c> closure: if
+    /// UIA queries before <see cref="SetScreen"/> has run, the
+    /// peer returns an empty document rather than crashing.
+    ///
+    /// WPF caches the returned peer per element and reuses it for
+    /// the element's lifetime — there's no need to memoize here.
+    /// </summary>
+    protected override AutomationPeer OnCreateAutomationPeer()
+        => new TerminalAutomationPeer(this, () => _screen);
 
     protected override Size MeasureOverride(Size availableSize)
     {

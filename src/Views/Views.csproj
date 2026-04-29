@@ -10,6 +10,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Terminal.Core\Terminal.Core.fsproj" />
+    <!--
+      Stage 4a: TerminalView.OnCreateAutomationPeer constructs a
+      Terminal.Accessibility.TerminalAutomationPeer so NVDA / UIA
+      clients see this element as a Document with a Text pattern.
+    -->
+    <ProjectReference Include="..\Terminal.Accessibility\Terminal.Accessibility.fsproj" />
   </ItemGroup>
 
 </Project>
