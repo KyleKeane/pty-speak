@@ -58,7 +58,7 @@ public abstract class FSharpAutomationPeerBase : FrameworkElementAutomationPeer
     /// implemented," so the <c>!</c> suppresses the nullability
     /// warning without changing the runtime contract.
     /// </remarks>
-    protected sealed override object GetPatternCore(PatternInterface patternInterface)
+    protected override object GetPatternCore(PatternInterface patternInterface)
         => GetPatternForFsharp(patternInterface)!;
 
     /// <summary>

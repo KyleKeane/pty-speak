@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
 
   <PropertyGroup>
     <TargetFramework>net9.0-windows</TargetFramework>
@@ -6,9 +6,13 @@
     <RootNamespace>Terminal.Accessibility.Interop</RootNamespace>
     <AssemblyName>Terminal.Accessibility.Interop</AssemblyName>
     <!--
-      UseWPF brings in the WPF SDK so this project sees
-      FrameworkElementAutomationPeer (PresentationFramework.dll) and
-      the System.Windows.Automation.* types it overrides.
+      Microsoft.NET.Sdk.WindowsDesktop is the explicit WPF/WinForms
+      SDK; it pulls in the full WPF reference assembly set including
+      the System.Windows.Automation.Peers types this project needs.
+      The simpler `Microsoft.NET.Sdk + <UseWPF>true</UseWPF>` form
+      that Views.csproj uses didn't resolve `GetPatternCore` for
+      override (CS0115); Views never tried to override an
+      AutomationPeer method, so the gap didn't surface there.
     -->
     <UseWPF>true</UseWPF>
   </PropertyGroup>
