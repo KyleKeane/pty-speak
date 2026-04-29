@@ -46,7 +46,7 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   the provider as a public `TextProvider` property, and a new
   `Views/TerminalRawProvider.cs` implements
   `IRawElementProviderSimple` — its `GetPatternProvider` returns
-  the F# text provider for `UIA_TextPatternId` (10024) and
+  the F# text provider for `UIA_TextPatternId` (10014) and
   `HostRawElementProvider` delegates everything else to the WPF
   peer via `AutomationInteropProvider.HostProviderFromHandle` so
   PR #51's `Document` role / `ClassName` / `Name` keep working.

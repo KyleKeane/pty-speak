@@ -61,7 +61,7 @@ let rec private findTextPattern
 ///      `WM_GETOBJECT(OBJID_CLIENT)`, which our subclass hook
 ///      intercepts; `UiaReturnRawElementProvider` hands UIA our
 ///      `TerminalRawProvider`, which advertises Text pattern
-///      support through `GetPatternProvider(10024)`.
+///      support through `GetPatternProvider(10014)`.
 ///   3. Walk the tree searching for any element that exposes the
 ///      Text pattern. The Text pattern lands at whichever node
 ///      UIA chooses to attach our raw provider's patterns to —
@@ -92,7 +92,7 @@ let ``UIA Text pattern is reachable and DocumentRange.GetText reflects the scree
     let textPattern =
         match findTextPattern mainWindow with
         | None ->
-            failwith "Text pattern not found anywhere in the UIA tree. The TerminalRawProvider's GetPatternProvider should return a TerminalTextProvider for UIA_TextPatternId (10024); if this fails, either the WM_GETOBJECT hook isn't installing the provider, or UIA isn't fusing the raw provider's patterns with the WPF host fragment."
+            failwith "Text pattern not found anywhere in the UIA tree. The TerminalRawProvider's GetPatternProvider should return a TerminalTextProvider for UIA_TextPatternId (10014); if this fails, either the WM_GETOBJECT hook isn't installing the provider, or UIA isn't fusing the raw provider's patterns with the WPF host fragment."
         | Some tp -> tp
 
     // FlaUI annotates `ITextPattern.DocumentRange` and
