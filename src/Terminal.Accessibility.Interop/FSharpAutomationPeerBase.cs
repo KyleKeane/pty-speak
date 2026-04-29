@@ -41,33 +41,33 @@ public abstract class FSharpAutomationPeerBase : FrameworkElementAutomationPeer
     {
     }
 
-    /// <summary>
-    /// Sealed so F# subclasses can't try (and fail) to re-override
-    /// it — they should override <see cref="GetPatternForFsharp"/>
-    /// instead.
-    /// </summary>
-    /// <remarks>
-    /// The return type is non-nullable <c>object</c> because the
-    /// .NET 9 WPF SDK's <see cref="UIElementAutomationPeer"/>
-    /// (which <see cref="FrameworkElementAutomationPeer"/> inherits
-    /// the method from) is not nullably-annotated for this signature.
-    /// Declaring <c>object?</c> here triggers CS0115 "no suitable
-    /// method found to override" — the same root cause behind the
-    /// F# spike's FS0855 (WPF UIA isn't nullable-aware in .NET 9).
-    /// At runtime UIA still expects <c>null</c> to mean "pattern not
-    /// implemented," so the <c>!</c> suppresses the nullability
-    /// warning without changing the runtime contract.
-    /// </remarks>
-    protected override object GetPatternCore(PatternInterface patternInterface)
-        => GetPatternForFsharp(patternInterface)!;
+    // === DIAGNOSTIC ===
+    // Three CI iterations have failed with CS0115 "no suitable
+    // method found to override" on `protected override object
+    // GetPatternCore(PatternInterface)`, despite Microsoft Learn
+    // examples showing this exact override syntax for WPF custom
+    // peers. The hypothesis to settle: is the base method even
+    // visible to a subclass in a separate assembly?
+    //
+    // This method calls `base.GetPatternCore(...)` from a regular
+    // (non-override) instance method. If the build succeeds with
+    // this code present, the base method IS reachable and the
+    // override syntax must be wrong somehow. If the build fails
+    // with a DIFFERENT error here (e.g. "no method named
+    // GetPatternCore" or "inaccessible due to its protection
+    // level"), we know the base method isn't reachable from this
+    // assembly — and we pivot to a non-AutomationPeer exposure
+    // mechanism (IRawElementProviderSimple via raw UIA).
+    public object DiagnosticCallBase(PatternInterface patternInterface)
+    {
+        return base.GetPatternCore(patternInterface);
+    }
 
     /// <summary>
     /// Returns the provider for the requested UIA pattern, or
-    /// <c>null</c> if the pattern is not implemented. Called by
-    /// <see cref="GetPatternCore"/>; F# subclasses override this
-    /// because the parent <see cref="FrameworkElementAutomationPeer.GetPatternCore"/>
-    /// can't be overridden from F# under <c>Nullable=enable</c>
-    /// (see PR #47 spike).
+    /// <c>null</c> if the pattern is not implemented. Stage 4
+    /// subclasses override this; PR 4a wires it to a
+    /// <c>TerminalTextProvider</c> for <c>PatternInterface.Text</c>.
     /// </summary>
     protected abstract object? GetPatternForFsharp(PatternInterface patternInterface);
 }
