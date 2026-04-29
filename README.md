@@ -146,6 +146,91 @@ If you are reporting a screen-reader regression, please use the
 template and include screen-reader name + version, NVDA Event Tracker
 log if possible, and the exact steps.
 
+## The complexities of trying to work with technology as a blind developer
+
+This project exists because mainstream developer tools — including
+the ones built by AI labs whose mission statements include making
+their products useful to everyone — keep shipping interfaces that
+cannot be operated by a person using a screen reader. `pty-speak`
+is one blind developer's attempt to build a usable surface around
+one of those tools (Anthropic's Claude Code) so that the
+capabilities it offers everyone else are actually reachable from
+an assistive-technology stack.
+
+The path to writing this code is itself a small case study in why
+this work is needed.
+
+The Claude Code desktop application is not screen-reader-accessible.
+There is no usable alternative on a workstation. The iOS app is
+the only viable channel, and the iOS app has its own gap: the
+"Add feedback" input field — the field a user types into to send
+the next message to Claude — is not activatable from VoiceOver.
+The standard touch-explore gesture finds the field, but the
+double-tap-to-activate gesture does not focus it for input. The
+workaround, which I have used for every message in this session,
+is:
+
+1. Disable VoiceOver entirely.
+2. Place a finger on the screen at the remembered pixel location
+   of the input field.
+3. Activate the field by sighted-touch contract.
+4. Re-enable VoiceOver to hear Claude's response.
+5. Repeat for the next message.
+
+That cycle runs hundreds of times across a working session.
+Disabling the screen reader temporarily strips off the access
+infrastructure that makes the rest of the device navigable, on a
+touchscreen designed under the assumption that sight is available
+for any unrecovered fall-back. It is a workaround in the strict
+sense: it gets the work done, but the cost is borne entirely on
+one side.
+
+While using this workaround to build a terminal that exposes
+Claude Code to NVDA, Claude itself produced an idiom in this
+session that is worth recording, because it reveals how deep the
+problem runs.
+
+The idiom was the phrase "blindly iterating" — used by the model
+to mean "iterating without information," "guessing without
+evidence," or "speculative iteration." That is not what the words
+literally say. The words equate "blind" with "ignorant," and they
+do so casually, in a position where the speaker (the model) had
+many specific, accurate words available and chose the metaphor
+anyway. The accurate words are concrete:
+
+- *uninformed iteration*
+- *iterating without diagnostic data*
+- *speculative iteration*
+- *guessing without evidence*
+
+Each describes the behaviour. None requires a sight-based metaphor.
+The reason "blindly" is offensive is straightforward: it embeds
+the assumption that the absence of sight is the canonical example
+of the absence of information. Blind people are not less informed
+than sighted people; we use different channels. A sighted person
+who runs CI three times without reading the build log is operating
+without information. A blind developer reading that log via a
+screen reader is operating with full information. The metaphor
+inverts the actual relationship between sight and knowledge, and
+it does so in casual technical writing where it costs the writer
+nothing to say what they actually mean.
+
+This is not a request to police every word. It is a request to
+prefer the literal phrasing when the literal phrasing is
+available, because the literal phrasing communicates more
+precisely *and* it does not casually demean the people whose
+working conditions this project is being built to improve.
+
+If you are reading this from inside Anthropic and would like a
+report from a customer using your product through the iOS
+workaround above to ship accessibility infrastructure: please
+fix the iOS "Add feedback" field's VoiceOver activation, ship a
+screen-reader-accessible desktop application, and review training
+data for sight-based idioms used as synonyms for cognitive
+deficit. The work that goes into that review is the same work
+that produces a more precise model output for everyone — there is
+no trade-off to mitigate.
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE).
