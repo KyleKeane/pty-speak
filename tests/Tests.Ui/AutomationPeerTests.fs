@@ -53,13 +53,24 @@ let ``TerminalView is exposed as a UIA Document with the correct ClassName and N
     use app = Application.Launch(exePath)
 
     use automation = new UIA3Automation()
-    let mainWindow = app.GetMainWindow(automation, TimeSpan.FromSeconds(10.0))
-    Assert.NotNull(mainWindow)
+    let mainWindow =
+        // FlaUI declares GetMainWindow's return as
+        // `AutomationElement | null`; F# 9's Nullable=enable rightly
+        // refuses to let us call methods on it without an explicit
+        // null check. Pattern-match for null AND give a useful
+        // failure message in one step — beats Assert.NotNull both
+        // for nullability narrowing and for diagnostic value.
+        match app.GetMainWindow(automation, TimeSpan.FromSeconds(10.0)) with
+        | null ->
+            failwith "Main window did not appear within 10 seconds. Possible causes: Velopack startup hang, WPF subsystem misconfiguration, or runner desktop session not available."
+        | mw -> mw
 
     let cf = automation.ConditionFactory
     let terminalView =
-        mainWindow.FindFirstDescendant(cf.ByClassName("TerminalView"))
-    Assert.NotNull(terminalView)
+        match mainWindow.FindFirstDescendant(cf.ByClassName("TerminalView")) with
+        | null ->
+            failwith "TerminalView descendant not found in the UIA tree. PR #48's TerminalAutomationPeer should set ClassName=TerminalView via GetClassNameCore; check that OnCreateAutomationPeer is still wired and the peer is reaching the tree."
+        | tv -> tv
 
     Assert.Equal(
         FlaUI.Core.Definitions.ControlType.Document,
