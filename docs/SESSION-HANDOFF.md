@@ -304,38 +304,55 @@ window, and Inspect.exe / FlaUI can find the element by
 `ClassName="TerminalView"`. NVDA review-cursor reads on the
 element will produce no text — the Text pattern isn't there.
 
-### Stage 4 follow-up — Text-pattern exposure (deferred)
+### Stage 4 follow-up — Text-pattern exposure (in flight)
 
 The Text pattern is the actual user-visible win — without it
-NVDA can't read the buffer contents. Investigation paths to
-explore with focused effort (not CI iteration):
+NVDA can't read the buffer contents. Investigation status:
 
-1. **TerminalView implements `IRawElementProviderSimple`
-   directly.** The COM-style raw UIA provider interface lives in
-   `System.Windows.Automation.Provider` and IS visible to
-   external assemblies (the spike's interface implementations
-   compiled cleanly). TerminalView would expose patterns via the
-   `IRawElementProviderSimple.GetPatternProvider(int)` method,
-   which takes a UIA pattern ID instead of the F#-unfriendly
-   `PatternInterface` enum. Routes around the protected-member
-   visibility limit entirely. Likely the right answer; the cost
-   is hand-wiring some plumbing that `AutomationPeer` provides
-   automatically.
-2. **Subclass a more specialized AutomationPeer that already
-   exposes Text.** `TextBlockAutomationPeer` is the WPF built-in
-   that handles Text. If its visibility surface differs from
-   `FrameworkElementAutomationPeer`'s, subclassing it (even on
-   a non-`TextBlock` element) might give us the Text pattern
-   without re-overriding `GetPatternCore`. Worth a small spike.
-3. **Reflection-based override registration.** If the runtime
-   metadata has `GetPatternCore` (which it must, since
-   Microsoft's own peer types use it), reflection could install
-   our override at startup. Last-resort hack; brittle.
+- **Option 2 ruled out (PR #50, FS0855).** `TextBlockAutomationPeer`
+  has the same `GetPatternCore` visibility limit as
+  `FrameworkElementAutomationPeer`. The AutomationPeer extension
+  point for `GetPatternCore` is closed across all subclasses in
+  the .NET 9 WPF reference assembly set, not just one specific
+  parent class. There is no specialized `*AutomationPeer` to
+  subclass that opens up the override.
 
-Track the investigation in a follow-up issue. The reduced 4a
-peer that ships in PR #48 is a foundation that any of these
-paths can build on without conflict — the Document role and
-identity stay; the path adds Text on top.
+- **Option 1 (current path): `TerminalView` implements
+  `IRawElementProviderSimple` directly.** The COM-style raw UIA
+  provider interface lives in `System.Windows.Automation.Provider`
+  and IS visible to external assemblies (the PR #47 spike's
+  interface implementations compiled cleanly there). The
+  interface exposes patterns via
+  `IRawElementProviderSimple.GetPatternProvider(int)` — taking a
+  UIA pattern ID (an int constant) instead of the
+  `PatternInterface` enum that the AutomationPeer override path
+  required. Routes around the protected-member visibility limit
+  entirely.
+
+  Implementation shape for the next PR:
+    * `TerminalView : FrameworkElement` (C#) implements
+      `IRawElementProviderSimple` directly: the four interface
+      members are `ProviderOptions`, `GetPatternProvider(int)`,
+      `GetPropertyValue(int)`, and `HostRawElementProvider`.
+    * `GetPatternProvider(UIA_TextPatternId /* 10014 */)` returns
+      a `TerminalTextProvider` instance from F#.
+    * `GetPropertyValue(int)` returns Document role / ClassName /
+      Name properties — the same identity the
+      `TerminalAutomationPeer` already reports, but on a
+      different code path.
+    * `HostRawElementProvider` returns the AutomationPeer's host
+      provider so WPF's standard tree integration still works.
+    * The F# `TerminalTextProvider` and `TerminalTextRange` types
+      from the deleted PR #48 attempt can be revived; they
+      compiled cleanly.
+  Tracked in [Issue #49](https://github.com/KyleKeane/pty-speak/issues/49).
+
+- **Option 3 (last resort): reflection-based override
+  registration.** Not pursuing unless option 1 also fails.
+
+The reduced PR #48 peer that ships the Document role + identity
+stays; the IRawElementProviderSimple path adds Text on top
+without removing what's already working.
 
 ### PR 4b — Navigation semantics
 
