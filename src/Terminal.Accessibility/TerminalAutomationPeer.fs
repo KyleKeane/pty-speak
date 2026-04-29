@@ -9,42 +9,37 @@ open System.Windows.Automation.Provider
 open System.Windows.Automation.Text
 open Terminal.Core
 
-/// Stage 4a (reduced scope) — UIA peer that exposes
-/// `TerminalView` to the WPF Automation tree as a Document with
-/// the right ClassName and Name. NVDA / Inspect.exe will find the
-/// element, see its role, and read the static identity.
+/// Stage 4 — UIA peer that exposes `TerminalView` to the WPF
+/// Automation tree as a Document with the Text pattern.
 ///
-/// Stage 4a originally aimed to also expose the Text pattern by
-/// overriding `AutomationPeer.GetPatternCore`. Investigation in
-/// PR #48 (and the spike that preceded it) showed that
-/// `AutomationPeer.GetPatternCore` is not reachable from any
-/// external assembly in the .NET 9 WPF reference assembly set —
-/// the C# compiler reports CS0117 "FrameworkElementAutomationPeer
-/// does not contain a definition for 'GetPatternCore'" when an
-/// override or even a `base.GetPatternCore(...)` call is
-/// attempted, and the F# spike's FS0855 was the same finding via
-/// a different error code. Microsoft's documented examples that
-/// override the method appear to compile only inside Microsoft's
-/// own WPF assemblies (where the protected members are visible);
-/// the public reference assemblies surface the type without the
-/// overridable protected member.
+/// The architectural path was settled by PR #56:
 ///
-/// Text-pattern exposure is handled by the raw-provider path
-/// instead: `TerminalRawProvider` (in `PtySpeak.Views`)
-/// implements `IRawElementProviderSimple` and returns a
-/// `TerminalTextProvider` for `UIA_TextPatternId`. The
-/// `WindowSubclassNative` hook installed in `MainWindow`
-/// intercepts `WM_GETOBJECT` for `OBJID_CLIENT` and hands UIA the
-/// raw provider; for every other object id the hook calls
-/// `DefSubclassProc` so the existing peer-based tree (the four
-/// Core overrides below) stays intact.
+///   * `protected virtual GetPatternCore` is unreachable from
+///     external assemblies in the .NET 9 WPF reference set
+///     (CS0117 / FS0855), so the spike-era plan to add patterns
+///     by overriding it was a dead end.
+///   * `WM_GETOBJECT` interception with a custom
+///     `IRawElementProviderSimple` works for legacy MSAA
+///     (`OBJID_CLIENT`) but breaks UIA3 (`UiaRootObjectId`):
+///     UIA3 expects an `IRawElementProviderFragmentRoot` there,
+///     and a simple provider can't supply the fragment-root
+///     navigation surface — CI's `AutomationPeerTests` and
+///     `WindowSubclassTests` regressed when we matched
+///     `UiaRootObjectId`.
+///   * `public virtual GetPattern(PatternInterface)` IS
+///     reachable from external assemblies (it's the public
+///     entry point that calls `GetPatternCore` internally).
+///     Overriding it lets us add patterns without ever
+///     touching the unreachable protected member, and the
+///     pattern is added to the SAME peer that's already in
+///     WPF's tree, so navigation, focus, and properties keep
+///     working unchanged.
 ///
-/// The five Core overrides below DO compile cleanly — proven by
-/// the spike PR #47. They give the peer everything Stage 4a's
-/// reduced scope needs: a Document role, a stable ClassName for
-/// FlaUI lookup, a meaningful Name, and visibility in the
-/// control + content trees.
-type TerminalAutomationPeer(owner: FrameworkElement) =
+/// `textProvider` is supplied by the owner (`TerminalView`) so
+/// the peer doesn't have to know about the screen-snapshot
+/// machinery; the view holds the closure over its own `_screen`
+/// field and the peer just hands the provider through to UIA.
+type TerminalAutomationPeer(owner: FrameworkElement, textProvider: ITextProvider) =
     inherit FrameworkElementAutomationPeer(owner)
 
     override _.GetAutomationControlTypeCore() = AutomationControlType.Document
@@ -52,6 +47,34 @@ type TerminalAutomationPeer(owner: FrameworkElement) =
     override _.GetNameCore() = "Terminal"
     override _.IsControlElementCore() = true
     override _.IsContentElementCore() = true
+
+    /// Add the Text pattern to this peer. For every other
+    /// pattern interface we defer to the base implementation
+    /// so the inherited behaviour (LegacyIAccessible, Window,
+    /// etc. coming from `FrameworkElementAutomationPeer`) is
+    /// preserved. Return type matches
+    /// `AutomationPeer.GetPattern`'s annotation (`object?`) so
+    /// F# 9 nullability accepts the base call's possibly-null
+    /// return.
+    ///
+    /// The Text branch uses an explicit `obj | null` type
+    /// annotation on a temporary binding so F# 9's nullability
+    /// analysis widens `textProvider`'s declared
+    /// `ITextProvider` (currently treated as non-nullable in
+    /// the WPF reference assembly's annotation set) to the
+    /// nullable return type of the override. Without the
+    /// annotation, F# rejects both the bare upcast `:> obj`
+    /// (FS3261, "this expression is nullable") and the
+    /// pattern-match-on-null form (FS3261, "the type does
+    /// not support null"). The annotation form sidesteps
+    /// both: it's a widening assignment, not a narrowing
+    /// pattern match.
+    override _.GetPattern(patternInterface: PatternInterface) : obj | null =
+        match patternInterface with
+        | PatternInterface.Text ->
+            let result : obj | null = textProvider
+            result
+        | _ -> base.GetPattern(patternInterface)
 
 /// Snapshot-rendering helpers shared by `TerminalTextRange`.
 /// Kept module-level so test code (and any future range types)

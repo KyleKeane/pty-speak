@@ -22,6 +22,7 @@
     <Compile Include="AutomationPeerTests.fs" />
     <Compile Include="AutomationPeerReflectionTests.fs" />
     <Compile Include="WindowSubclassTests.fs" />
+    <Compile Include="TextPatternTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

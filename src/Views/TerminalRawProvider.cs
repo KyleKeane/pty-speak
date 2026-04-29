@@ -27,22 +27,26 @@ namespace PtySpeak.Views;
 /// <c>Document</c> role from PR #51 keeps working.
 /// </para>
 /// <para>
-/// PR scope: only <c>UIA_TextPatternId</c> (10024) is exposed
-/// here. The constants come from the Win32
-/// <c>UIAutomationCore.h</c> pattern-id table; we hard-code
-/// rather than referencing the WinForms-only
-/// <c>System.Windows.Automation.TextPattern.Pattern.Id</c>
-/// to keep this assembly free of WinForms dependencies.
+/// PR scope: only <c>UIA_TextPatternId</c> (10014) is exposed
+/// here. The constant comes from the Win32
+/// <c>UIAutomationClient.h</c> pattern-id table — the standard
+/// pattern ids start at 10000 (Invoke) and TextPattern is the
+/// 15th pattern at 10014. We hard-code rather than referencing
+/// <c>System.Windows.Automation.TextPattern.Pattern.Id</c> to
+/// keep this assembly's references minimal.
 /// </para>
 /// </remarks>
 internal sealed class TerminalRawProvider : IRawElementProviderSimple
 {
     /// <summary>
     /// UIA pattern id for <c>TextPattern</c>. Stable Microsoft
-    /// constant from the UIA pattern-id enumeration; safe to
-    /// hard-code.
+    /// constant from the UIA pattern-id enumeration. (The
+    /// initial PR-C run advertised 10024 instead, which is why
+    /// the FlaUI Text-pattern test failed — UIA never matched
+    /// the pattern query because no pattern with that id
+    /// exists. The correct id is 10014.)
     /// </summary>
-    private const int UIA_TextPatternId = 10024;
+    private const int UIA_TextPatternId = 10014;
 
     private readonly TerminalTextProvider _textProvider;
     private readonly nint _hwnd;

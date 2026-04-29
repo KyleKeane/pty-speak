@@ -102,19 +102,19 @@ public class TerminalView : FrameworkElement
     /// <summary>
     /// Returns the F# <see cref="TerminalAutomationPeer"/> so UIA
     /// clients (NVDA, Inspect.exe, FlaUI tests) see this element
-    /// as a Document with the right ClassName and Name. The
-    /// Text-pattern exposure that lets NVDA read buffer contents
-    /// runs through a separate path: <see cref="TextProvider"/>
-    /// is hosted by <c>TerminalRawProvider</c>, which the
-    /// <c>WM_GETOBJECT</c> subclass hook in
-    /// <see cref="WindowSubclassNative"/> hands UIA when an
-    /// OBJID_CLIENT request arrives.
+    /// as a Document with the right ClassName, Name, and Text
+    /// pattern. The peer's `GetPattern` override returns
+    /// <see cref="TextProvider"/> for `PatternInterface.Text`,
+    /// which lets NVDA / UIA3 read the buffer contents directly
+    /// through WPF's existing peer tree — no
+    /// <c>WM_GETOBJECT</c> interception or fragment-root
+    /// implementation needed.
     ///
     /// WPF caches the returned peer per element and reuses it for
     /// the element's lifetime — there's no need to memoize here.
     /// </summary>
     protected override AutomationPeer OnCreateAutomationPeer()
-        => new TerminalAutomationPeer(this);
+        => new TerminalAutomationPeer(this, TextProvider);
 
     protected override Size MeasureOverride(Size availableSize)
     {
