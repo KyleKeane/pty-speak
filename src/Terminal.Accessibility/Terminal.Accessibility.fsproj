@@ -4,10 +4,19 @@
     <TargetFramework>net9.0-windows</TargetFramework>
     <RootNamespace>Terminal.Accessibility</RootNamespace>
     <AssemblyName>Terminal.Accessibility</AssemblyName>
+    <!--
+      UseWPF brings in WindowsBase / PresentationCore /
+      UIAutomationProvider / UIAutomationTypes — the assemblies that
+      define FrameworkElementAutomationPeer and the
+      System.Windows.Automation.Provider.* interfaces this module
+      subclasses and implements. Same flag the Views C# project sets
+      (src/Views/Views.csproj) for the WPF FrameworkElement subclass.
+    -->
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Placeholder.fs" />
+    <Compile Include="TerminalAutomationPeer.fs" />
   </ItemGroup>
 
   <ItemGroup>
