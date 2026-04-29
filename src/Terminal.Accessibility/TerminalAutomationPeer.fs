@@ -61,4 +61,13 @@ type TerminalAutomationPeer(owner: FrameworkElement) =
     override _.GetNameCore() = "Terminal"
     override _.IsControlElementCore() = true
     override _.IsContentElementCore() = true
-    override _.GetPatternCore(_: PatternInterface) = Unchecked.defaultof<obj>
+    // F# 9's `obj | null` matches the C# nullable-annotated base
+    // signature `protected override object? GetPatternCore(...)`. The
+    // first attempt at this spike used `Unchecked.defaultof<obj>` with
+    // no return-type annotation and got FS0855 "no abstract member
+    // found that corresponds to this override" — F# couldn't unify
+    // a non-nullable `obj` return with the base's nullable signature,
+    // and reported it as a missing override target rather than a
+    // nullability error.
+    override _.GetPatternCore(patternInterface: PatternInterface) : obj | null =
+        null
