@@ -15,6 +15,31 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed
+
+- **Stage 11 (Velopack auto-update) re-prioritised to land
+  immediately after Stage 4, ahead of Stages 5-10.** The original
+  ordering put Stage 11 last because auto-update is feature
+  completeness rather than core functionality. Stage 4's manual
+  NVDA verification cycle made the recurring cost of install
+  friction visible — each iterative preview is download →
+  SmartScreen prompts → install, several screen-reader steps per
+  loop. Stage 11 has no architectural dependency on Stages 5-10
+  (`UpdateManager` is independent of streaming notifications,
+  keyboard input routing, list detection, earcons, and review
+  mode), so moving it forward amortises the friction across all
+  remaining stages. `docs/ROADMAP.md`'s Phase 1 table now lists
+  Stage 11 as "next" with a "Stage ordering" subsection capturing
+  the rationale; `docs/SESSION-HANDOFF.md` "Where we left off"
+  and a new "Stage 11 implementation sketch" replace the old
+  Stage 4 next-pointer (Stage 4 is fully merged on `main` as of
+  PR #60); `spec/tech-plan.md` §11 gains an implementation-order
+  note at the top (the spec content itself is unchanged — only
+  the order of execution shifts). The standalone
+  `scripts/install-latest-preview.ps1` (PR #61) is the bridge
+  until Stage 11 lands and is documented as deprecated for
+  in-place updates once it does.
+
 ### Added
 
 - **`scripts/install-latest-preview.ps1` — one-command preview

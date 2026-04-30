@@ -19,19 +19,19 @@ A new session should read this **first**, then
 
 | | |
 |---|---|
-| **Last merged stage** | Stage 3b (WPF `TerminalView` + end-to-end `ConPtyHost → Parser → Screen → TerminalView`) |
-| **Last shipped release** | [`v0.0.1-preview.18`](https://github.com/KyleKeane/pty-speak/releases/tag/v0.0.1-preview.18) — first preview cut from Stage 3b state. Maintainer has installed the build and confirmed `cmd.exe` runs under ConPTY end-to-end. (`preview.16` and `.17` were burned by the `## [<version>]` CHANGELOG-matching gate before #37 relaxed it; both retag the same `db44d6d` commit and were never shipped artifacts.) |
-| **Stage-3b smoke status** | Resolved on `main` pending visual reverification on the next preview. The "second window" the maintainer saw on `v0.0.1-preview.18` was the parent `Terminal.App.exe` itself (the `OutputType=Exe` setting put it in the Windows console subsystem, so Windows allocated a conhost at startup before any of our code ran). The ConPTY child setup checked out clean against Microsoft's canonical sample — none of the four hypotheses originally listed in [Issue #39](https://github.com/KyleKeane/pty-speak/issues/39) was the actual cause. Fix landed in PR #44 (`OutputType=WinExe`); next preview release is the smoke target. |
-| **In-flight branch** | None. Pre-Stage-4 fixes (#41 test/CI hygiene, #43 Velopack manifest globs, #44 WPF subsystem) and docs (#40 ESC-byte convention) all merged. |
-| **Next stage** | **Stage 4** — UIA exposure (first NVDA milestone). Substrate (`Screen.SequenceNumber` + `Screen.SnapshotRows`) shipped in PR #38; threading boundary is in place; `tests/Tests.Ui/` is reserved for FlaUI integration tests that this stage adds. See sketch below. |
+| **Last merged stage** | Stage 4 — UIA exposure: `TerminalAutomationPeer` Document role + Text pattern via `AutomationPeer.GetPattern` override + Line/Character review-cursor navigation + `MainWindow.Loaded` focuses `TerminalSurface` (PRs #54-#56, #59, #60). |
+| **Last shipped release** | `v0.0.1-preview.22` (the build the maintainer is testing now). Earlier preview.21 install smoke surfaced the focus-on-Window bug fixed in PR #60; preview.22 is the verification target. |
+| **In-flight branch** | None. Stage 4 fully merged on `main`; Stage-4 NVDA verification is happening on preview.22 in parallel with Stage-11 prep. |
+| **Next stage** | **Stage 11 (re-prioritised) — Velopack auto-update.** The original ordering put Stage 11 last, but Stage 4's NVDA verification cycle made the install friction's recurring cost visible (each iterative preview is download → SmartScreen prompts → install, several screen-reader steps per loop). Stage 11 has no architectural dependency on Stages 5-10, so it's been moved forward to amortise the install-friction tax across all remaining stages. See `docs/ROADMAP.md` "Stage ordering" for the rationale; the implementation sketch is the existing `spec/tech-plan.md` §11. The standalone `scripts/install-latest-preview.ps1` (PR #61) is the bridge until Stage 11 lands. |
 
-The end-to-end pipeline is wired: launching the app spawns `cmd.exe`
-under ConPTY, parses its output, applies VtEvents to a 30×120
-`Screen`, and renders the buffer in a custom WPF `FrameworkElement`.
-The maintainer has installed `v0.0.1-preview.18` and confirmed text
-appears in the WPF window. The `OutputType=Exe` defect that produced
-the empty parent-process console is fixed on `main`; visual smoke
-on a fresh preview will confirm a single window at launch.
+The end-to-end pipeline is wired through Stage 4: launching the app
+spawns `cmd.exe` under ConPTY, parses its output, applies VtEvents
+to a 30×120 `Screen`, renders the buffer in a custom WPF
+`FrameworkElement`, and exposes that buffer to NVDA via UIA Document
+role + Text pattern with working Line / Character / Document review-
+cursor navigation. The maintainer has installed `v0.0.1-preview.22`
+and is running the manual smoke matrix Stage-4 rows in parallel
+with Stage-11 implementation prep.
 
 ## Pending action items (maintainer)
 
@@ -221,7 +221,85 @@ all validation happens in CI on `windows-latest`. Implications:
   aware of this and will say "try smaller actions" if a long write
   hangs.
 
-## Stage 4 implementation sketch
+## Stage 11 implementation sketch (next)
+
+Stage 11 was re-prioritised to land next — see "Where we left off"
+and `docs/ROADMAP.md` "Stage ordering" for the rationale.
+`spec/tech-plan.md` §11 has the full spec; this sketch is the
+pre-digested implementation plan.
+
+**Goal:** `Ctrl+Shift+U` from inside the running app downloads the
+next preview's delta nupkg and restarts within ~2 seconds, with
+NVDA progress announcements throughout. Replaces the standalone
+`scripts/install-latest-preview.ps1` for in-place updates.
+
+**Implementation outline:**
+
+1. Add `Velopack` NuGet reference to `Terminal.App.fsproj`
+   (already in scope per `spec/tech-plan.md` §0; the reference may
+   already be transitive through the Velopack tooling, verify
+   first).
+
+2. In `Terminal.App/Program.fs`, replace the existing bare
+   `VelopackApp.Build().Run()` with the full update protocol:
+   - `VelopackApp.Build().Run()` stays first (must run before any
+     WPF type loads — Velopack issue #195).
+   - After WPF startup, construct `UpdateManager` pointing at the
+     GitHub Releases source for our channel.
+   - On `Ctrl+Shift+U`, kick a background task that calls
+     `CheckForUpdatesAsync` → `DownloadUpdatesAsync` (with progress
+     callback) → `ApplyUpdatesAndRestart`.
+
+3. Wire the keybinding via `MainWindow.xaml`'s `InputBindings`
+   (a `KeyBinding` with `Modifiers="Control+Shift"` and `Key="U"`).
+   Or in code-behind on `MainWindow.xaml.cs`. The keybinding must
+   not pass through to the PTY (Stage 6's input pipeline isn't
+   shipped yet but design for forward compat).
+
+4. NVDA progress announcements: each phase ("Checking for
+   updates", "Downloading X.Y.Z", "X% downloaded", "Restarting")
+   raises a UIA Notification event with `displayString` set. The
+   Stage 4 `TerminalAutomationPeer` is the natural raise point —
+   it's already focused per PR #60.
+
+5. Failure surfaces (no update available, network failure,
+   signature mismatch once signing returns): each becomes a
+   distinct NVDA announcement, never a silent failure. Use
+   structured error matching on Velopack's exceptions, not
+   string contains.
+
+6. FlaUI integration test in `tests/Tests.Ui/`: launch the app,
+   send Ctrl+Shift+U via UIA `IInvokeProvider` or keyboard
+   simulation, assert the Notification event fires. Don't
+   assert actual download/restart in CI (that needs a real
+   GitHub release to exist) — file as a manual smoke row.
+
+7. Manual smoke matrix row in `docs/ACCESSIBILITY-TESTING.md`
+   Stage 11 section already exists; the diagnostic decoder I
+   added in PR #58 covers the failure modes.
+
+**Pitfalls already captured in `spec/tech-plan.md` §11.5:**
+- Don't request elevation (Velopack discussion #8 — manifest must
+  be `asInvoker`).
+- `VelopackApp.Build().Run()` MUST be first, or you get the
+  endless restart loop from Velopack issue #195.
+- Test installer flow on a clean VM (the Stage-4 manual matrix
+  installer pass already does this).
+
+**Scope discipline:** Stage 11 is one PR. If during implementation
+we discover Velopack's API needs more glue than expected, that's
+a sign to spike first (the same Stage-4 spike-then-PR pattern
+that worked for PRs #51-#56). Don't combine Stage 11 with Stage 5
+or any other stage.
+
+## Stage 4 implementation sketch (shipped — retained as reference)
+
+> **Status:** all of Stage 4 has merged on `main` as of PR #60.
+> The sketch below is the pre-digested execution plan that drove
+> PRs #54-#56 + #59 + #60; it's preserved as reference for the
+> architectural reasoning (especially the WM_GETOBJECT vs
+> AutomationPeer.GetPattern pivot in PR #56) but is no longer the
+> active plan.
 
 `spec/tech-plan.md` §4 has the full spec; the spec is immutable per
 the documentation policy. This sketch is the pre-digested
