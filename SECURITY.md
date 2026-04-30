@@ -24,12 +24,16 @@ This document explains:
 
 ## What we defend against
 
-The terminal core will implement the mandatory mitigations below. Each
-bullet is annotated with its implementation status as of `main` at
-Stage 3b — none of these protections are in code yet beyond the
-`bInheritHandles = FALSE` guarantee that ConPTY itself enforces. The
-list is the *target* trust model; track each via the corresponding
-stage in [`spec/tech-plan.md`](spec/tech-plan.md).
+The terminal core will implement the mandatory mitigations below.
+Each bullet is annotated with its implementation status as of
+`main`. **For the consolidated audit-trail summary of every threat
+class — including the auto-update threats added by Stage 11 and
+the build / supply-chain threats from CI hardening — see the
+"[Vulnerability inventory](#vulnerability-inventory)" section below.**
+The list here is narrative-first; the inventory table is the index.
+
+The list is the *target* trust model; track each via the
+corresponding stage in [`spec/tech-plan.md`](spec/tech-plan.md).
 
 - **No response-generating sequences.** *(planned, stage TBD as part of
   the Stage 2+ parser hardening pass.)* DSR (`CSI n`), DA1/DA2/DA3,
@@ -80,6 +84,277 @@ We do not defend against:
   pip, etc.). Once Job Object isolation lands we cap their lifetime
   to the parent's; we never audit their code.
 
+## Auto-update threat model
+
+Stage 11 (Velopack auto-update via `Ctrl+Shift+U`, shipped in PR #63
+and refined in PR #66) introduces a network-fetch + execute path
+that is now part of the running app's behaviour. This section
+enumerates the threats against that path, the protections in place
+**today** on the unsigned-preview line, and the protections that
+return at `v0.1.0` when signing comes back.
+
+The chain of trust looks like this — each link's failure has a
+distinct mitigation:
+
+```
+Maintainer's GitHub account
+        │
+        ▼  (publishes a release tag pointing at a commit)
+Git tag on GitHub
+        │
+        ▼  (release: published event fires)
+release.yml on a windows-latest runner
+        │
+        ▼  (vpk pack produces nupkg + Setup.exe + releases.win.json)
+GitHub Release assets
+        │
+        ▼  (HTTPS over TLS to api.github.com / objects.githubusercontent.com)
+Velopack on the user's machine
+        │
+        ▼  (hash-verify nupkg against releases.win.json, then apply)
+Updated install in %LocalAppData%\pty-speak\
+```
+
+Threats are organised by which link of the chain they target.
+
+### T-1. Network attacker observes the update flow (passive)
+
+**Risk:** A passive eavesdropper can see when the user updates, what
+version transitions occur, and (via traffic timing / size) infer
+which release they're on.
+
+**Severity:** Low. The update flow contacts public GitHub Release
+endpoints; release versions are themselves public. No user secrets
+are transmitted.
+
+**Mitigation today:** TLS to GitHub. SNI is not encrypted, so an
+observer can see the destination is `github.com` / its CDN, but the
+specific URL path and response body are encrypted.
+
+**Future mitigation:** None planned; the cost-benefit of ECH
+(Encrypted Client Hello) for this app is not justified.
+
+### T-2. Network attacker substitutes update bytes (active MITM)
+
+**Risk:** An attacker on the network path between the user and
+GitHub injects a malicious `*-full.nupkg` or `*-delta.nupkg`
+substitute for the legitimate one. If accepted, the next
+`ApplyUpdatesAndRestart` runs attacker-controlled code at the
+user's privilege level.
+
+**Severity:** High if it lands; difficult to land.
+
+**Mitigation today:**
+
+- TLS prevents the simple-MITM case — the attacker would need to
+  defeat the certificate chain (compromise a CA, exploit a CT-log
+  gap, or be the user's network operator with a trusted-root MITM
+  proxy installed).
+- Velopack writes a SHA hash for every `*.nupkg` into
+  `releases.win.json` at pack time. Before applying, Velopack
+  verifies the downloaded bytes against that hash. A truncated,
+  corrupted, or substituted nupkg fails verification and the apply
+  step throws — caught by PR #66's `IOException` branch with the
+  "Update could not be written to disk" announcement; the existing
+  install is untouched.
+- **Caveat:** if the attacker can substitute *both* `releases.win.json`
+  AND the nupkg (consistent forgery), the hash check passes because
+  they control both halves. This is the gap Ed25519 manifest signing
+  closes.
+
+**Future mitigation (`v0.1.0`+):** Ed25519 release-manifest signing
+makes consistent forgery require the maintainer's offline private
+key. See "Release signing and verification" below.
+
+### T-3. Maintainer GitHub account compromise
+
+**Risk:** An attacker who obtains the maintainer's GitHub credentials
+(or an OAuth token with `repo` scope) publishes a malicious release
+through the legitimate publishing flow. The release.yml workflow runs
+attacker-controlled source if the attacker also pushes a malicious
+PR to `main` and merges it; or, more simply, the attacker pushes a
+new tag pointing at a malicious commit they've crafted.
+
+**Severity:** Critical. Every running pty-speak that presses
+`Ctrl+Shift+U` after the malicious release goes live would install
+attacker-controlled code.
+
+**Mitigation today:**
+
+- **Branch protection on `main`** — direct pushes blocked; merges
+  require PR review (status set in GitHub repository settings;
+  honoured by CodeOwners and the `target_commitish=main` gate in
+  `release.yml`). An attacker with stolen credentials still has to
+  win a code review, OR find a way to bypass branch protection
+  (which would itself be a noteworthy event).
+- **2FA on the maintainer GitHub account.** Required by GitHub for
+  the `kylekeane` account.
+- **Repository visibility audit.** The release workflow's
+  `target_commitish` gate fails fast if a release was published
+  against a non-`main` branch (added in PR #44 after preview.14 was
+  burned this way). An attacker pushing a malicious tag against a
+  hidden branch is detected at workflow time.
+
+**Future mitigation (`v0.1.0`+):** Ed25519 manifest signing. The
+private key lives offline (never on the maintainer's GitHub-connected
+machine, never on a CI runner). An attacker with credentials can
+publish a release but cannot sign the manifest; the running app
+rejects the unsigned manifest. This is the **central reason
+signing returns before `v0.1.0`** — the unsigned-preview line's
+trust root is the maintainer's GitHub account, which is a single
+point of failure.
+
+### T-4. CI runner compromise / supply-chain attack
+
+**Risk:** A malicious dependency (npm / NuGet / GitHub Action)
+modifies the build during `release.yml` execution to insert a
+backdoor into the produced binaries. The legitimate release flow
+runs to completion and the maliciously-modified `Setup.exe` ships.
+
+**Severity:** Critical if it lands; the surface is broad
+(`actions/checkout`, `actions/setup-dotnet`, `softprops/action-gh-release`,
+NuGet packages including `Velopack` itself, etc.).
+
+**Mitigation today:**
+
+- **All third-party GitHub Actions pinned to major version tags**
+  (`@v4`, `@v5`). This catches some classes of action-takeover
+  attacks but not all; we trust the publishers
+  (`actions/*` is GitHub-controlled, `softprops/*` is widely
+  audited, `raven-actions/actionlint` runs only against our YAML
+  not our code).
+- **`actionlint` job in `ci.yml`** catches malicious YAML / shell
+  injection via `${{ github.event.* }}` interpolation in `run:`
+  blocks before merge.
+- **Deterministic build flags** (`Deterministic=true`,
+  `ContinuousIntegrationBuild=true` under `GITHUB_ACTIONS`) make
+  the produced binaries hash-stable across runs, so anyone can
+  rebuild from source per [`docs/BUILD.md`](docs/BUILD.md) and
+  compare hashes against a published release.
+
+**Future mitigation (`v0.1.0`+):** Authenticode signing happens
+**off-runner** via SignPath Foundation OSS. The signing key never
+touches the GitHub Actions runner; SignPath signs the artifact in
+their own infrastructure after the runner uploads it. A
+compromised runner can produce malicious bytes but cannot sign
+them — Authenticode verification on the user side catches this.
+The Ed25519 manifest signing has the same off-runner property.
+
+### T-5. Replay / downgrade attack
+
+**Risk:** An attacker presents an older legitimate release as
+"current," tricking the running app into "updating" to a known-
+vulnerable past version.
+
+**Severity:** Medium. Each `0.0.x-preview.N` shipped knowingly with
+the unsigned-preview caveat; downgrade does not increase the attack
+surface because the "current" install carries the same caveat. Once
+signing is on, downgrading from a signed `v0.1.0+` release to an
+older signed release is the actual risk.
+
+**Mitigation today:**
+
+- Velopack's update flow only applies a release if its version is
+  **strictly greater** than the installed version (SemVer
+  comparison). An attacker pointing a downgrade at us is rejected
+  by Velopack itself; we don't need to add a check.
+- The `releases.win.json` manifest contains the full version list
+  for the channel, not just the latest. A truncated manifest that
+  hides newer releases would land users on the highest version
+  the manifest exposes — same as today's behaviour, no security
+  regression.
+
+**Future mitigation:** None additional planned. Once Ed25519
+signing is on, the manifest signature pins the version list
+contents; an attacker cannot truncate it without breaking the
+signature.
+
+### T-6. Local privilege escalation via update path
+
+**Risk:** A local non-admin attacker on the user's machine
+manipulates the update flow to gain elevated privileges.
+
+**Severity:** Low. The update flow runs at the user's existing
+privilege level (per Velopack's `asInvoker` manifest requirement,
+documented in `spec/tech-plan.md` §11.5). A local attacker who can
+already write to `%LocalAppData%\pty-speak\` can simply replace
+`Terminal.App.exe` directly, no update needed; no LPE is gained
+through the update channel specifically.
+
+**Mitigation today:** `asInvoker` manifest, per-user install path.
+
+**Future mitigation:** None additional planned. Per-machine installs
+(if we ever support them) would need their own threat analysis.
+
+### T-7. Time-of-check vs time-of-use during apply
+
+**Risk:** Between Velopack's hash verification and the apply step,
+a local attacker swaps the verified file for a malicious one. The
+attacker would need to be a local-non-admin process running
+concurrently with the update flow.
+
+**Severity:** Low (requires concurrent local malicious process —
+which already has alternative attack paths via T-6).
+
+**Mitigation today:** Velopack downloads to a temp directory,
+verifies, then moves to the install location. The race window is
+tight; local attackers pose a more severe threat through other
+paths (T-6) without going through this race.
+
+**Future mitigation:** Atomic replace via filesystem-level operations
+is Velopack's responsibility; we inherit their current implementation.
+
+### T-8. Resource exhaustion / DoS during update
+
+**Risk:** An attacker forces the update flow to consume excessive
+disk / network / CPU.
+
+**Severity:** Low. The user must press `Ctrl+Shift+U` to trigger
+the flow; an attacker cannot force the flow remotely. Repeated
+keypresses are deduplicated by `updateInProgress` (PR #63). A
+malformed release that's gigabytes in size would eventually hit
+disk-full, caught by PR #66's `IOException` branch.
+
+**Mitigation today:** In-flight dedup; structured failure
+announcement.
+
+**Future mitigation:** Not prioritised; severity is bounded by the
+fact that update is user-initiated.
+
+### T-9. Information disclosure via update logs
+
+**Risk:** Velopack writes update logs (e.g. `Velopack.log` in the
+install directory) that may contain user-identifying paths or
+network endpoints. If the user shares the install directory with
+an attacker, those logs are exposed.
+
+**Severity:** Low. Logs do not contain credentials. Path leakage is
+a privacy concern, not a security vulnerability.
+
+**Mitigation today:** None specific.
+
+**Future mitigation:** Could rotate / cap log size if it becomes a
+concern.
+
+### Out of scope for the update path
+
+We do not defend against:
+
+- A user-modified install directory. If you replace `Terminal.App.exe`
+  with a malicious binary at `%LocalAppData%\pty-speak\current\`,
+  pressing `Ctrl+Shift+U` from that binary will run whatever code
+  the attacker placed there. The trust root is the install,
+  not the update flow.
+- Compromise of Velopack itself (their delivery infrastructure /
+  their NuGet package). We pin Velopack to a specific NuGet
+  version, but a malicious `Velopack` package release would
+  affect us until we noticed and pinned away from it. Velopack is
+  widely used and audited (`Velopack/Velopack` on GitHub) — we
+  inherit the broader ecosystem's scrutiny.
+- A user who has chosen to disable Windows Update / antivirus and
+  install with SmartScreen overridden. Self-elected trust
+  reductions are out of scope.
+
 ## Release signing and verification
 
 > The two layers below describe the **target** trust model from
@@ -116,6 +391,71 @@ Get-AuthenticodeSignature .\pty-speak-Setup.exe |
 # Ed25519 manifest (once manifest tooling lands; see docs/RELEASE-PROCESS.md)
 pty-speak-verify --manifest releases.json --pubkey docs/release-pubkey.txt
 ```
+
+## Vulnerability inventory
+
+This is the consolidated index of every threat class this document
+identifies, with the protections in place today and what closes
+remaining gaps. Read this together with the narrative sections
+above; the table is the audit-trail summary, the narrative is where
+the rationale lives.
+
+| ID | Threat class | Severity | Mitigated today by | Closed at v0.1.0+ by | Status |
+|----|--------------|----------|--------------------|----------------------|--------|
+| **Terminal core** ||||||
+| TC-1 | Response-generating sequences (DSR, DA1/2/3, DECRQM, DECRQSS, cursor / title / font reports) | High (RCE class — see CVE-2003-0063, CVE-2022-45872, CVE-2024-50349/52005) | Not yet — Stage 2+ parser hardening pass | n/a (parser-level, not signing-related) | **planned** |
+| TC-2 | OSC 52 clipboard write from child | High (one-paste-from-RCE class) | Not yet — parser hardening pass | n/a | **planned** |
+| TC-3 | OSC 0/2 window title escape injection (CVE-2022-44702) | Medium | Not yet — parser hardening pass | n/a | **planned** |
+| TC-4 | OSC 8 hyperlink with non-allowlisted scheme (`javascript:`, `data:`, etc.) | Medium | Not yet — Stage 4+ when OSC 8 surface lands | n/a | **planned** |
+| TC-5 | Control characters in NVDA `displayString` | Low (defense in depth) | Not yet — Stage 5 streaming notifications | n/a | **planned** |
+| TC-6 | Output-rate ANSI bomb DoS | Medium | Not yet — Stage 5 ingestion cap (~10 MB/s) | n/a | **planned** |
+| **Process / OS** ||||||
+| PO-1 | Pipe handle inheritance to child (allowing child to write back into our pipes) | High | `bInheritHandles=FALSE`; ConPTY duplicates via attribute list (Stage 1, **shipped**) | n/a | **shipped** |
+| PO-2 | Orphan child process after parent exit | Medium (resource / accountability) | Not yet — Job Object lifecycle deferred from Stage 1 | n/a | **planned** |
+| PO-3 | Child running with elevated privileges relative to parent | High (privilege confusion) | Not yet — "we never run elevated with unelevated child" planned | n/a | **planned** |
+| PO-4 | Per-user install elevation (UAC) on update | Low | `asInvoker` manifest (Stage 11, **shipped**) | n/a | **shipped** |
+| **Update path (Stage 11)** ||||||
+| T-1 | Passive network observer of update flow | Low | TLS to GitHub | n/a (cost not justified) | **shipped** |
+| T-2 | Active MITM substituting update bytes | High | TLS + Velopack per-nupkg SHA hash in releases.win.json | + Ed25519 manifest signing (consistent forgery resistance) | **partial** (TLS+hash today; signing v0.1.0+) |
+| T-3 | Maintainer GitHub account compromise | Critical | `main` branch protection + 2FA + target-branch gate in release.yml | + Ed25519 manifest signing (key offline, never on GitHub) | **partial** (procedural today; cryptographic v0.1.0+) |
+| T-4 | CI runner / supply-chain compromise | Critical | Pinned action versions + actionlint + deterministic build for hash comparison | + Authenticode signing happens off-runner via SignPath | **partial** |
+| T-5 | Replay / downgrade attack | Medium | Velopack version-comparison; only applies strictly-greater versions | + Ed25519 manifest signing pins version list | **partial** |
+| T-6 | LPE via update path | Low | `asInvoker` manifest, per-user install | n/a (LPE has alternative paths anyway) | **shipped** |
+| T-7 | Time-of-check vs time-of-use during apply | Low | Velopack's atomic-ish stage-then-move | n/a | **shipped (inherited from Velopack)** |
+| T-8 | Resource exhaustion on update | Low | User-initiated only; in-flight dedup; structured failure handling | n/a | **shipped** |
+| T-9 | Velopack log path/info disclosure | Low | None specific | n/a | **accepted risk** |
+| **Build and supply chain** ||||||
+| B-1 | Stale-branch release publishing (preview.{14, 23, 24} pattern) | Medium (operational) | Workflow target-branch gate + RELEASE-PROCESS.md hardened guidance + walk-back logic for burned-tag delta source (PRs #44, #64, #65) | n/a | **shipped** |
+| B-2 | CHANGELOG / version mismatch on release | Low (operational) | Workflow extracts version from tag; CHANGELOG `[Unreleased]` rewrite step (PR #37) | n/a | **shipped** |
+| B-3 | Velopack pack producing incomplete artifact set | Medium (silent ship of broken installer) | Defense-in-depth artifact-existence gate after vpk pack (PR #41) | n/a | **shipped** |
+| B-4 | Malicious / unreviewed merge to `main` | Critical | Branch protection requires PR + review | + (organisational policy) at v0.1.0+ | **partial** |
+
+### Severity glossary
+
+- **Critical** — direct path to RCE on user machines or full
+  compromise of the release distribution.
+- **High** — meaningful step toward compromise (one mitigation
+  away from Critical) or known CVE-class issue.
+- **Medium** — exploit requires preconditions / chained vulnerabilities.
+- **Low** — privacy / availability concerns; not direct security.
+
+### Status glossary
+
+- **shipped** — protection is implemented in `main` today.
+- **partial** — some protection in place; full protection requires
+  additional work (typically signing).
+- **planned** — known and on the roadmap; not yet implemented.
+- **accepted risk** — known but explicitly out of scope.
+
+### How to use this inventory
+
+When considering a change to `pty-speak` (a new feature, a
+refactor, a dependency bump), check whether it touches any of
+these classes. If a change weakens a protection, the PR description
+must justify the change and update both the affected row in this
+table and the relevant narrative section above. **PRs that disable
+any protection without updating SECURITY.md should be requested
+changes during review.**
 
 ## Reporting a vulnerability
 
