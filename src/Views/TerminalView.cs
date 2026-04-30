@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Automation.Peers;
 using System.Windows.Media;
 using Terminal.Accessibility;
@@ -97,6 +98,41 @@ public class TerminalView : FrameworkElement
     public void InvalidateScreen()
     {
         InvalidateVisual();
+    }
+
+    /// <summary>
+    /// Raise a UIA Notification event on this element so NVDA
+    /// announces <paramref name="message"/> immediately. Used by
+    /// Stage 11's auto-update flow to surface "Checking for
+    /// updates", "Downloading...", "Restarting" etc. as the
+    /// background `UpdateManager` task progresses.
+    /// </summary>
+    /// <remarks>
+    /// `MostRecent` processing means a newer notification
+    /// supersedes any in-flight one, so a fast download doesn't
+    /// flood NVDA's speech queue with stale percentages — only
+    /// the latest progress message gets read. The
+    /// <c>activityId</c> groups the notifications so screen
+    /// readers can identify them as part of one logical
+    /// activity (the update flow).
+    ///
+    /// If no UIA client has connected yet (no peer in WPF's
+    /// cache), the announce is a silent no-op rather than
+    /// forcing peer creation. By the time the user has pressed
+    /// Ctrl+Shift+U for the first time, NVDA / Inspect.exe will
+    /// have already triggered peer construction.
+    /// </remarks>
+    public void Announce(string message)
+    {
+        var peer = UIElementAutomationPeer.FromElement(this);
+        if (peer is not null)
+        {
+            peer.RaiseNotificationEvent(
+                AutomationNotificationKind.Other,
+                AutomationNotificationProcessing.MostRecent,
+                message,
+                "pty-speak.update");
+        }
     }
 
     /// <summary>

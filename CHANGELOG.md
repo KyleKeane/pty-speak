@@ -15,6 +15,53 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added
+
+- **Stage 11 — Velopack auto-update via `Ctrl+Shift+U`.** The
+  running app can now self-update from GitHub Releases:
+  pressing the keybinding fetches the next preview's delta-
+  nupkg, downloads ~KB-sized binary diff, and restarts in-
+  place via Velopack's `ApplyUpdatesAndRestart`. No
+  SmartScreen prompt, no UAC, no installer dialog —
+  replaces the standalone
+  `scripts/install-latest-preview.ps1` bridge for in-place
+  updates (the script stays useful for fresh installs and
+  development-environment workflows).
+
+  Implementation:
+
+  - `src/Views/TerminalView.cs` gains a public `Announce`
+    method that raises a UIA Notification event via
+    `UIElementAutomationPeer.FromElement`. Uses
+    `MostRecent` processing so a fast download doesn't
+    flood NVDA's speech queue with stale percentages.
+  - `src/Terminal.App/Program.fs` adds `runUpdateFlow` (the
+    background-task orchestrator that calls Velopack's
+    `UpdateManager` against `GithubSource(repoUrl, null,
+    prerelease=true)` and announces each phase: "Checking
+    for updates", "Downloading X.Y.Z",
+    "N percent downloaded" coalesced to 25% buckets,
+    "Restarting to apply update") and
+    `setupAutoUpdateKeybinding` (which wires the
+    `KeyBinding` via the Window's `InputBindings`).
+    `compose` calls `setupAutoUpdateKeybinding window`
+    before the window is shown so the gesture is live for
+    the user's first keypress.
+  - The `KeyBinding` lives in `Window.InputBindings`
+    rather than the future Stage 6 PTY input pipeline, so
+    app-level shortcuts capture the gesture before it
+    reaches any keyboard router.
+  - `mgr.IsInstalled` check announces a "use the install
+    script for development copies" message for `dotnet
+    run` paths so the keybinding fails gracefully in dev.
+  - `updateInProgress` mutable flag dedupes repeat
+    keypresses while a download is in flight.
+  - Failure handling is currently a single
+    "Update failed: <reason>" announcement; structured
+    pattern-matching on Velopack exception types
+    (`NetworkUnavailable`, `SignatureMismatch`) for distinct
+    announcements is a later refinement.
+
 ### Changed
 
 - **Stage 11 (Velopack auto-update) re-prioritised to land
