@@ -7,8 +7,7 @@
         Width="800"
         Background="Black"
         AutomationProperties.Name="pty-speak terminal"
-        AutomationProperties.AutomationId="pty-speak.MainWindow"
-        AutomationProperties.HelpText="Screen-reader-native Windows terminal. Stage 3b: bytes from a child shell are parsed and rendered; UIA exposure lands in Stage 4.">
+        AutomationProperties.AutomationId="pty-speak.MainWindow">
     <Grid>
         <views:TerminalView x:Name="TerminalSurface" x:FieldModifier="public" />
     </Grid>

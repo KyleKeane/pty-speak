@@ -179,3 +179,81 @@ let ``UIA Text pattern is reachable and DocumentRange.GetText reflects the scree
     Assert.Contains("\n", text)
 
     app.Close() |> ignore
+
+/// Stage 4 navigation regression test (post-PR-#56).
+///
+/// Preview.20 install smoke established that a working
+/// Text-pattern producer is necessary but not sufficient
+/// for NVDA: the review cursor needs functional
+/// `ExpandToEnclosingUnit` + `Move` to delimit and traverse
+/// lines. PR #56's no-op stubs satisfied the interface but
+/// silently dropped NVDA's navigation calls, leaving the
+/// range collapsed at start (read-current-line returned
+/// "blank"). This test pins that working line navigation
+/// stays working.
+///
+/// What's asserted:
+///   1. After `ExpandToEnclosingUnit(Line)` on the document
+///      range, `GetText` length is bounded above by ~`cols`
+///      (one row plus one row-separator newline at most).
+///      This catches the no-op-stub regression — without
+///      navigation the range stays at full-document length
+///      (3629).
+///   2. After `Move(Line, 1)` the range stays Line-shaped
+///      (same length bound), confirming Move preserves the
+///      unit shape rather than e.g. collapsing the range.
+///
+/// What's deliberately not asserted:
+///   * Specific cell content — cmd.exe banner timing isn't
+///     deterministic across Windows runners.
+///   * Word / Paragraph navigation — Stage 4 ships Line +
+///     Character only; later stages add tokenized units.
+[<Fact>]
+let ``Text-pattern range navigation can pin to a single line and advance`` () =
+    let exePath = locateTerminalAppExe ()
+    use app = Application.Launch(exePath)
+    use automation = new UIA3Automation()
+    let mainWindow =
+        match app.GetMainWindow(automation, TimeSpan.FromSeconds(10.0)) with
+        | null -> failwith "Main window did not appear within 10 seconds."
+        | mw -> mw
+
+    let textPattern =
+        match findTextPattern mainWindow with
+        | None -> failwith "Text pattern not found in the UIA tree."
+        | Some tp -> tp
+
+    let docRange = textPattern.DocumentRange
+    let docLength = docRange.GetText(-1).Length
+
+    // After Line expansion the range should cover at most
+    // one row plus one row-separator. `Program.compose`
+    // sets cols=120; the upper bound 200 leaves slack for
+    // implementation choices around the trailing newline
+    // without admitting "full document" (3629).
+    let lineRange = docRange.Clone()
+    lineRange.ExpandToEnclosingUnit(FlaUI.Core.Definitions.TextUnit.Line)
+    let lineText = lineRange.GetText(-1)
+    let firstLineLength = lineText.Length
+    Assert.True(
+        firstLineLength > 0 && firstLineLength <= 200,
+        sprintf
+            "Expected Line-expanded range length in (0, 200]; got %d. If %d == %d, ExpandToEnclosingUnit(Line) regressed to a no-op (Stage 4's preview.20 failure mode)."
+            firstLineLength
+            firstLineLength
+            docLength)
+
+    // Move to next line should preserve Line shape.
+    let moved = lineRange.Move(FlaUI.Core.Definitions.TextUnit.Line, 1)
+    Assert.True(
+        moved >= 0,
+        sprintf "Expected Move(Line, 1) to return non-negative count; got %d" moved)
+    let secondLineLength = lineRange.GetText(-1).Length
+    Assert.True(
+        secondLineLength > 0 && secondLineLength <= 200,
+        sprintf
+            "Expected post-Move Line range length in (0, 200]; got %d. Move regressed if this matches the document length (%d)."
+            secondLineLength
+            docLength)
+
+    app.Close() |> ignore
