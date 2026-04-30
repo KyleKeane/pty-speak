@@ -100,49 +100,182 @@ module SnapshotText =
                     sb.Append(row.[c].Ch.ToString()) |> ignore
             sb.ToString()
 
-/// UIA `ITextRangeProvider` over an immutable row snapshot.
+/// UIA `ITextRangeProvider` over an immutable row snapshot
+/// with mutable `(row, col)` endpoints.
 ///
-/// Stage 4 (this PR) ships only `GetText`, `Clone`, and
-/// `Compare` with real behaviour — those three are what NVDA
-/// calls during initial document read-out. Navigation
-/// (`Move`, `MoveEndpointByUnit`), endpoint manipulation,
-/// selection, and attribute queries are stubbed to satisfy the
-/// interface so UIA marshalling doesn't fault, but they don't
-/// influence what NVDA reads in this PR. PR C (the FlaUI
-/// Text-pattern integration test) verifies that `GetText`
-/// returns the expected snapshot under a real UIA client; the
-/// stubbed methods are exercised in later stages when caret
-/// movement / SGR exposure work begins.
+/// The range covers cells in `[Start, End)` half-open, where
+/// each endpoint is a `(row, col)` position with `col` in
+/// `[0, cols]` — `col == cols` is the legal "end of row"
+/// position equivalent to `(row + 1, 0)` for `row < rows - 1`.
 ///
-/// `Sequence` records the `Screen.SequenceNumber` at capture
-/// time so a future stale-detection check can compare against
-/// the current screen state. Stage 4 doesn't use it yet — the
-/// snapshot is materialised once per UIA query and discarded —
-/// but storing it now keeps the range structure aligned with
-/// the substrate that Screen.fs already exposes.
-type TerminalTextRange(sequence: int64, rows: Cell[][]) =
+/// Endpoints are *mutable* because UIA's `ITextRangeProvider`
+/// surface mutates ranges in place (`ExpandToEnclosingUnit`,
+/// `Move`, `MoveEndpointByUnit`, `MoveEndpointByRange`,
+/// `Select` are all `void` — they are required to alter the
+/// receiver, not return a new range). The original PR-C
+/// implementation kept the range immutable and stubbed every
+/// mutating method as a no-op; that broke NVDA's review
+/// cursor (preview.20 smoke: read-current-line returned
+/// "blank" because NVDA's `ExpandToEnclosingUnit(Line)` was
+/// silently dropped, leaving the range collapsed at start
+/// with no text to read).
+type TerminalTextRange(
+        sequence: int64,
+        rows: Cell[][],
+        cols: int,
+        initialStartRow: int,
+        initialStartCol: int,
+        initialEndRow: int,
+        initialEndCol: int) =
+
+    let mutable startRow = initialStartRow
+    let mutable startCol = initialStartCol
+    let mutable endRow = initialEndRow
+    let mutable endCol = initialEndCol
+
+    /// Number of rows in the snapshot. `rows.Length` for non-empty
+    /// snapshots; 0 for the early-startup empty range.
+    let rowCount = rows.Length
 
     member _.Sequence = sequence
     member _.Rows = rows
+    member _.Cols = cols
+    member _.StartRow = startRow
+    member _.StartCol = startCol
+    member _.EndRow = endRow
+    member _.EndCol = endCol
+    member _.RowCount = rowCount
+
+    /// Compare two positions; returns -1 / 0 / 1 like
+    /// `compare` on tuples but inlined so the hot path
+    /// doesn't allocate.
+    static member private ComparePos
+            (aRow: int, aCol: int, bRow: int, bCol: int) : int =
+        if aRow < bRow then -1
+        elif aRow > bRow then 1
+        elif aCol < bCol then -1
+        elif aCol > bCol then 1
+        else 0
+
+    /// Clamp a position to the valid range `[0, rows] × [0, cols]`,
+    /// where `(rows, 0)` is the legal one-past-end position.
+    static member private ClampPos
+            (rowCount: int, cols: int, r: int, c: int) : int * int =
+        let r = max 0 (min rowCount r)
+        let c =
+            if r = rowCount then 0
+            else max 0 (min cols c)
+        (r, c)
+
+    /// Render `[start, end)` of `rows` into a string using
+    /// `\n` between rows, matching `SnapshotText.render`'s
+    /// row-join rule. Cells beyond `cols` (impossible for
+    /// well-formed snapshots, but defensive against jagged
+    /// arrays) are skipped.
+    static member private GetTextInRange
+            (rows: Cell[][]) (cols: int)
+            (sr: int) (sc: int) (er: int) (ec: int) : string =
+        let sb = StringBuilder()
+        let mutable r = sr
+        while r <= er && r < rows.Length do
+            let firstCol = if r = sr then sc else 0
+            let lastColExclusive =
+                if r = er then ec
+                else cols
+            let row = rows.[r]
+            let mutable c = firstCol
+            while c < lastColExclusive && c < row.Length do
+                sb.Append(row.[c].Ch.ToString()) |> ignore
+                c <- c + 1
+            if r < er then
+                sb.Append('\n') |> ignore
+            r <- r + 1
+        sb.ToString()
 
     interface ITextRangeProvider with
 
         member _.Clone() =
-            TerminalTextRange(sequence, rows) :> ITextRangeProvider
+            TerminalTextRange(
+                sequence, rows, cols,
+                startRow, startCol, endRow, endCol)
+            :> ITextRangeProvider
 
         member _.Compare(other: ITextRangeProvider) : bool =
-            // Two ranges are equal when they wrap the same
-            // snapshot identity. Reference equality is enough
-            // for Stage 4 because each `DocumentRange` call
-            // returns a freshly captured snapshot — clones
-            // share the underlying `rows` reference.
+            // Two ranges compare equal when they wrap the same
+            // snapshot AND have identical endpoints. Endpoint
+            // equality matters because NVDA clones a range,
+            // navigates the clone, then asks "did anything
+            // happen?" — without endpoint comparison every
+            // clone would be reported as "same as original."
             match other with
             | :? TerminalTextRange as r ->
                 obj.ReferenceEquals(r.Rows, rows)
+                && r.StartRow = startRow && r.StartCol = startCol
+                && r.EndRow = endRow && r.EndCol = endCol
             | _ -> false
 
-        member _.CompareEndpoints(_: TextPatternRangeEndpoint, _: ITextRangeProvider, _: TextPatternRangeEndpoint) = 0
-        member _.ExpandToEnclosingUnit(_: TextUnit) = ()
+        member _.CompareEndpoints
+                (thisEndpoint, otherProvider, otherEndpoint) =
+            let (thisR, thisC) =
+                if thisEndpoint = TextPatternRangeEndpoint.Start
+                then (startRow, startCol)
+                else (endRow, endCol)
+            match otherProvider with
+            | :? TerminalTextRange as r ->
+                let (otherR, otherC) =
+                    if otherEndpoint = TextPatternRangeEndpoint.Start
+                    then (r.StartRow, r.StartCol)
+                    else (r.EndRow, r.EndCol)
+                TerminalTextRange.ComparePos(thisR, thisC, otherR, otherC)
+            | _ -> 0
+
+        member _.ExpandToEnclosingUnit(unit: TextUnit) =
+            // Reshape the range to enclose the unit at `Start`.
+            // For Line we pick the row of `Start` and span the
+            // whole row plus the implicit row separator (so
+            // GetText returns the row's cells). Word /
+            // Paragraph / Page degrade to Line for now — Stage
+            // 4 ships line + character navigation; word
+            // semantics arrive later when we have a tokenizer
+            // for terminal output (prompt vs command vs result
+            // is the heuristic).
+            match unit with
+            | TextUnit.Character ->
+                // 1-cell range starting at the current Start.
+                let (sr, sc) =
+                    TerminalTextRange.ClampPos(rowCount, cols, startRow, startCol)
+                let (er, ec) =
+                    if sc + 1 <= cols then (sr, sc + 1)
+                    elif sr + 1 < rowCount then (sr + 1, 0)
+                    else (rowCount, 0)
+                startRow <- sr
+                startCol <- sc
+                endRow <- er
+                endCol <- ec
+            | TextUnit.Document ->
+                startRow <- 0
+                startCol <- 0
+                endRow <- rowCount
+                endCol <- 0
+            | _ ->
+                // Line / Word / Paragraph / Page → enclose the
+                // row at Start.
+                let (sr, _) =
+                    TerminalTextRange.ClampPos(rowCount, cols, startRow, startCol)
+                if rowCount = 0 then
+                    startRow <- 0
+                    startCol <- 0
+                    endRow <- 0
+                    endCol <- 0
+                else
+                    startRow <- sr
+                    startCol <- 0
+                    if sr + 1 < rowCount then
+                        endRow <- sr + 1
+                        endCol <- 0
+                    else
+                        endRow <- sr
+                        endCol <- cols
         member _.FindAttribute(_: int, _: obj, _: bool) =
             Unchecked.defaultof<ITextRangeProvider>
         member _.FindText(_: string, _: bool, _: bool) =
@@ -157,15 +290,128 @@ type TerminalTextRange(sequence: int64, rows: Cell[][]) =
         member _.GetEnclosingElement() = Unchecked.defaultof<IRawElementProviderSimple>
 
         member _.GetText(maxLength: int) =
-            let rendered = SnapshotText.render rows
+            let rendered =
+                TerminalTextRange.GetTextInRange
+                    rows cols startRow startCol endRow endCol
             if maxLength < 0 || maxLength >= rendered.Length then
                 rendered
             else
                 rendered.Substring(0, maxLength)
 
-        member _.Move(_: TextUnit, _: int) = 0
-        member _.MoveEndpointByUnit(_: TextPatternRangeEndpoint, _: TextUnit, _: int) = 0
-        member _.MoveEndpointByRange(_: TextPatternRangeEndpoint, _: ITextRangeProvider, _: TextPatternRangeEndpoint) = ()
+        member this.Move(unit: TextUnit, count: int) =
+            // Per UIA contract, `Move` translates the entire
+            // range by `count` units, preserving the unit
+            // shape. We collapse to start, move that endpoint,
+            // then expand back to the unit. Returns the
+            // number of units actually moved (clamped at
+            // document boundaries).
+            if rowCount = 0 || count = 0 then 0
+            else
+                match unit with
+                | TextUnit.Character ->
+                    let stepsRequested = count
+                    let totalCells = rowCount * cols
+                    // Position-as-cell-index: r*cols + c
+                    let curIdx =
+                        (max 0 (min (rowCount - 1) startRow)) * cols
+                        + (max 0 (min cols startCol))
+                    let targetIdx = max 0 (min totalCells (curIdx + stepsRequested))
+                    let actualMoved = targetIdx - curIdx
+                    let nr = targetIdx / cols
+                    let nc = targetIdx % cols
+                    startRow <- nr
+                    startCol <- nc
+                    // 1-cell range
+                    let (er, ec) =
+                        if nc + 1 <= cols then (nr, nc + 1)
+                        elif nr + 1 < rowCount then (nr + 1, 0)
+                        else (rowCount, 0)
+                    endRow <- er
+                    endCol <- ec
+                    actualMoved
+                | _ ->
+                    // Line / Word / Paragraph / Page → line.
+                    let curRow = max 0 (min (rowCount - 1) startRow)
+                    let target = max 0 (min (rowCount - 1) (curRow + count))
+                    let actualMoved = target - curRow
+                    startRow <- target
+                    startCol <- 0
+                    if target + 1 < rowCount then
+                        endRow <- target + 1
+                        endCol <- 0
+                    else
+                        endRow <- target
+                        endCol <- cols
+                    actualMoved
+
+        member _.MoveEndpointByUnit
+                (endpoint: TextPatternRangeEndpoint,
+                 unit: TextUnit,
+                 count: int) =
+            // Move only one endpoint by `count` units, keeping
+            // the other fixed. If the endpoints cross, UIA's
+            // contract is to also pull the other endpoint to
+            // match (the range collapses to the moved point).
+            if rowCount = 0 || count = 0 then 0
+            else
+                let isStart = endpoint = TextPatternRangeEndpoint.Start
+                let (curR, curC) =
+                    if isStart then (startRow, startCol) else (endRow, endCol)
+                let (newR, newC, actualMoved) =
+                    match unit with
+                    | TextUnit.Character ->
+                        let totalCells = rowCount * cols
+                        let curIdx =
+                            (max 0 (min (rowCount - 1) curR)) * cols
+                            + (max 0 (min cols curC))
+                        let targetIdx = max 0 (min totalCells (curIdx + count))
+                        let moved = targetIdx - curIdx
+                        let nr = targetIdx / cols
+                        let nc = targetIdx % cols
+                        (nr, nc, moved)
+                    | _ ->
+                        let target = max 0 (min rowCount (curR + count))
+                        let moved = target - curR
+                        // Line endpoints land at column 0
+                        // (start of next line) for Line units.
+                        (target, 0, moved)
+                if isStart then
+                    startRow <- newR
+                    startCol <- newC
+                    if TerminalTextRange.ComparePos(startRow, startCol, endRow, endCol) > 0 then
+                        endRow <- startRow
+                        endCol <- startCol
+                else
+                    endRow <- newR
+                    endCol <- newC
+                    if TerminalTextRange.ComparePos(startRow, startCol, endRow, endCol) > 0 then
+                        startRow <- endRow
+                        startCol <- endCol
+                actualMoved
+
+        member _.MoveEndpointByRange
+                (thisEndpoint: TextPatternRangeEndpoint,
+                 otherProvider: ITextRangeProvider,
+                 otherEndpoint: TextPatternRangeEndpoint) =
+            match otherProvider with
+            | :? TerminalTextRange as r ->
+                let (otherR, otherC) =
+                    if otherEndpoint = TextPatternRangeEndpoint.Start
+                    then (r.StartRow, r.StartCol)
+                    else (r.EndRow, r.EndCol)
+                if thisEndpoint = TextPatternRangeEndpoint.Start then
+                    startRow <- otherR
+                    startCol <- otherC
+                    if TerminalTextRange.ComparePos(startRow, startCol, endRow, endCol) > 0 then
+                        endRow <- startRow
+                        endCol <- startCol
+                else
+                    endRow <- otherR
+                    endCol <- otherC
+                    if TerminalTextRange.ComparePos(startRow, startCol, endRow, endCol) > 0 then
+                        startRow <- endRow
+                        startCol <- endCol
+            | _ -> ()
         member _.Select() = ()
         member _.AddToSelection() = ()
         member _.RemoveFromSelection() = ()
@@ -190,10 +436,19 @@ type TerminalTextProvider(screenSource: Func<Screen | null>) =
     member private _.CaptureFullRange() : ITextRangeProvider =
         match screenSource.Invoke() with
         | null ->
-            TerminalTextRange(0L, Array.empty<Cell[]>) :> ITextRangeProvider
+            TerminalTextRange(
+                0L, Array.empty<Cell[]>, 0,
+                0, 0, 0, 0)
+            :> ITextRangeProvider
         | screen ->
             let seqNum, rows = screen.SnapshotRows(0, screen.Rows)
-            TerminalTextRange(seqNum, rows) :> ITextRangeProvider
+            // Document range: start = (0, 0), end = (rows, 0)
+            // i.e. one-past-last-row, matching UIA's
+            // half-open range convention.
+            TerminalTextRange(
+                seqNum, rows, screen.Cols,
+                0, 0, rows.Length, 0)
+            :> ITextRangeProvider
 
     interface ITextProvider with
 
