@@ -15,6 +15,42 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed
+
+- **`docs/RELEASE-PROCESS.md` step 3 rewritten with explicit
+  CLI vs UI paths and target-branch failure recovery.**
+  `v0.0.1-preview.23` was burned by a UI-path publish with the
+  Target dropdown still pointing at a stale feature branch
+  (`fix/stage-4-text-pattern-navigation`); the workflow's
+  target-branch gate caught it correctly and failed fast, but
+  the docs didn't make the failure mode prominent enough to
+  prevent the recurrence (`v0.0.1-preview.14` was the first time
+  this happened). The rewrite:
+
+  - Splits step 3 into "3a CLI path (recommended)" and "3b UI
+    path." The CLI path is recommended for screen-reader users
+    because it's a single keyboard-driven command vs the UI's
+    multi-step dropdown navigation.
+  - Bolds and elaborates the "`--target main` is not optional"
+    warning on the CLI command, with the explicit failure mode
+    (gh uses your local checkout's current branch as the target
+    if you don't pass `--target`).
+  - Bolds and elaborates the "confirm Target reads `main`
+    before clicking Publish" warning on the UI path, with NVDA-
+    specific guidance (tab to the combobox, arrow until you
+    hear "main", confirm). Adds an explicit fallback to the
+    CLI path when the dropdown can't be confirmed.
+  - New subsection "What to do if a release was published
+    targeting the wrong branch" describing both recovery
+    paths: skip the burned tag (the simple option;
+    preview.{16, 17, 23} were all skipped this way) or
+    delete-and-republish at the same tag with `--cleanup-tag`
+    (only if the version number must be preserved).
+  - "Common pitfalls" section's "Releases UI Target dropdown"
+    entry expanded to cover both the UI and CLI failure modes,
+    name the burned previews, and link forward to the new
+    recovery procedure in step 3.
+
 ### Added
 
 - **Stage 11 — Velopack auto-update via `Ctrl+Shift+U`.** The
