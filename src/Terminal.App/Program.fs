@@ -113,10 +113,13 @@ module Program =
                                 // Progress callback fires on the
                                 // download thread; coalesce to
                                 // 25% buckets so NVDA isn't
-                                // spammed.
+                                // spammed. Velopack's API takes
+                                // a raw Action<int>, NOT an
+                                // IProgress<int> — using
+                                // Progress<int> trips FS0001.
                                 let lastBucket = ref -1
                                 let progress =
-                                    Progress<int>(fun pct ->
+                                    Action<int>(fun pct ->
                                         let bucket = pct / 25
                                         if bucket > lastBucket.Value then
                                             lastBucket.Value <- bucket
