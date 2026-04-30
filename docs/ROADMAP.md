@@ -38,14 +38,14 @@ for ANSI color/style changes.*
 | 1     | ConPTY hello world                     | `dir` bytes returned from cmd.exe via PTY       | merged on `main` |
 | 2     | VT500 parser                           | Golden tests + FsCheck never-throws property    | merged on `main` |
 | 3     | Screen model + WPF rendering           | `cmd` runs visibly inside the WPF window        | merged on `main` (split as 3a + 3b — see [`docs/CHECKPOINTS.md`](CHECKPOINTS.md)) |
-| 4     | First UIA provider (text exposure)     | NVDA review cursor reads the buffer             | next — split into spike + 4a/4b/4c per [`docs/SESSION-HANDOFF.md`](SESSION-HANDOFF.md#stage-4-implementation-sketch) |
+| 4     | First UIA provider (text exposure)     | NVDA review cursor reads the buffer             | merged on `main` (PRs #54-#56, #59, #60); awaiting external NVDA verification on the preview that bundles them |
+| 11    | Velopack auto-update                   | `Ctrl+Shift+U` updates from GitHub Releases     | **next** (re-prioritised — see "Stage ordering" note below) |
 | 5     | Streaming output notifications         | NVDA reads `dir` line by line; spinner doesn't flood | pending |
 | 6     | Keyboard input to PTY                  | PowerShell, vim, Ctrl+C all work; NVDA keys still work | pending |
 | 7     | Run Claude Code end-to-end             | Roundtrip prompt → response, NVDA reads it      | pending |
 | 8     | Interactive list detection + UIA list  | Selection prompt announced as listbox           | pending |
 | 9     | Earcons (NAudio) + color announcement  | Red plays alarm; Ctrl+Shift+M mutes             | pending |
 | 10    | Review mode + structured navigation    | `e` jumps to next error in scrollback           | pending |
-| 11    | Velopack auto-update                   | `Ctrl+Shift+U` updates from GitHub Releases     | pending |
 
 A stage in CI green and an internal test pass earns a `vX.Y.Z-preview.N`
 prerelease. A stage with a successful external NVDA validation pass
@@ -53,6 +53,31 @@ earns a non-prerelease tag.
 
 For the canonical list of stable rollback points (one per shipped
 stage), see [`docs/CHECKPOINTS.md`](CHECKPOINTS.md).
+
+### Stage ordering
+
+The original ordering put Stage 11 (Velopack auto-update) last because
+auto-update is feature-completeness rather than core functionality.
+After Stage 4's manual-NVDA verification cycle made the install
+friction's recurring cost visible (each iterative preview is
+download → SmartScreen prompts → install, several screen-reader
+steps per loop), Stage 11 was re-prioritised to land **next** —
+ahead of Stages 5-10. The justification:
+
+- Stage 11 has **no architectural dependency** on Stages 5-10. It's
+  Velopack's `UpdateManager` API + a `KeyBinding` on the Window's
+  `InputBindings`; both are independent of streaming notifications,
+  keyboard input routing, list detection, earcons, or review mode.
+- Every subsequent stage will need its own NVDA verification loop,
+  and each loop pays the install-friction tax under the current
+  flow. Shipping Stage 11 first amortises that cost across all
+  remaining stages.
+- The standalone `scripts/install-latest-preview.ps1` (PR #61) is
+  the bridge until Stage 11 lands; once it does, that script is
+  deprecated for in-place updates.
+
+Stage 4's verification can complete in parallel with Stage 11
+shipping — they don't block each other.
 
 ## Phase 2 — accessibility depth (v0.2.0 onward)
 

@@ -637,6 +637,22 @@ When focus reaches an item, build a snapshot range, raise `RaiseAutomationEvent(
 
 ## Stage 11 — Velopack auto-update
 
+> **Implementation order note (post-Stage-4):** Stage 11 was
+> originally listed last because auto-update is feature
+> completeness, not core functionality. It has been re-prioritised
+> to land **immediately after Stage 4** rather than after Stages
+> 5-10. Stage 4's NVDA verification cycle made the recurring cost
+> of manual install friction visible (each iterative preview is
+> several screen-reader steps to navigate the release page,
+> dismiss SmartScreen, run the installer). Stage 11 has no
+> architectural dependency on Stages 5-10 — the `UpdateManager`
+> API is independent of streaming notifications, keyboard input
+> routing, list detection, earcons, or review mode — so moving
+> it forward amortises the install-friction tax across all
+> subsequent stages without compromising the design. The spec
+> below is unchanged; only the order of execution has shifted.
+> See `docs/ROADMAP.md` "Stage ordering" for the rationale.
+
 **Goal.** Ship to GitHub Releases. User presses `Ctrl+Shift+U`; app checks for updates; reports progress audibly via UIA LiveRegion; restarts on apply.
 
 ### 11.1 Velopack from F#
