@@ -36,8 +36,12 @@ mark it N/A.
 - [ ] WASAPI shared mode (`AudioClientShareMode.Shared`) is used; no
       exclusive-mode acquisition added.
 - [ ] [`docs/ACCESSIBILITY-TESTING.md`](../docs/ACCESSIBILITY-TESTING.md)
-      validation rows for the touched stage were run against NVDA, or
-      a follow-up issue is filed if validation is deferred.
+      manual smoke-test rows for the touched stage were run against
+      NVDA on a clean Windows VM, or a follow-up issue is filed if
+      validation is deferred. **If this PR ships new user-visible
+      behaviour that CI cannot fully verify**, also add a row to the
+      matrix per the document's "Adding new manual tests" section
+      (procedure, expected outcome, diagnostic decoder bullet).
 
 ## Screenshots and screen-reader output
 

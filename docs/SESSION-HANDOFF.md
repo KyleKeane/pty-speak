@@ -51,24 +51,33 @@ disconnects mid-session.
    programmatically check PR status, merge PRs, or post issue
    comments — falls back to asking the maintainer.
 
-3. **Visual install smoke of `v0.0.1-preview.19` on Windows.**
-   `v0.0.1-preview.19` was published 2026-04-28 and shipped all
-   five Velopack assets correctly (full nupkg, Setup.exe,
-   `releases.win.json`, `assets.win.json`, `RELEASES`) plus the
-   two GitHub-auto source archives — 7 visible in the release
-   UI, validating the manifest fix from PR #43. The
-   single-window fix from PR #44 still needs an actual Windows
-   install to confirm. Steps:
-   1. Download `pty-speak-win-Setup.exe` from
-      <https://github.com/KyleKeane/pty-speak/releases/tag/v0.0.1-preview.19>.
-   2. Run the installer (SmartScreen will warn — expected for
-      unsigned previews).
-   3. Launch from Start menu.
-   4. **Pass condition**: only one window appears (the WPF
-      surface). No empty console window behind it.
-   If a second window does appear, reopen [Issue #39](https://github.com/KyleKeane/pty-speak/issues/39)
-   with details — the WinExe fix may not have taken effect, or
-   there's a different cause we haven't surfaced yet.
+3. **Run the full manual smoke matrix on the latest preview.**
+   The comprehensive gate lives in
+   [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md);
+   walk the always-run sections (Artifact integrity + Launch and
+   process hygiene) plus every shipped-stage row for whichever
+   preview is current. Track FAILs as GitHub issues, pasting the
+   relevant decoder bullet into the issue body so triage is
+   focused.
+
+   Specific items still pending verification on the most recent
+   previews:
+
+   - The single-window fix from PR #44 (`OutputType=WinExe`)
+     needs a clean Windows install to confirm. Pass condition is
+     the matrix's "Single window appears" row in the
+     Launch-and-process-hygiene section.
+   - The Stage 4 Text-pattern surface (PRs #54 / #55 / #56)
+     needs an NVDA review-cursor walk on a real terminal. Pass
+     conditions are the Stage-4 "Review cursor reads current
+     line" / "Review cursor moves by line" rows.
+
+   If the single-window check fails, reopen
+   [Issue #39](https://github.com/KyleKeane/pty-speak/issues/39).
+   For Stage-4 NVDA failures, file a fresh issue — the chain is
+   new and a regression there is most likely a `GetPattern`
+   override regression on `TerminalAutomationPeer`, per the
+   Stage-4 diagnostic decoder.
 
 4. **Small CI / release timing optimisation pass** (low priority,
    pure cleanup). Current CI per-PR job times are reasonable but

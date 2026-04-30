@@ -70,7 +70,7 @@ docs/                    Living developer documentation
   ROADMAP.md             Phased roadmap derived from spec/tech-plan.md
   BUILD.md               Build from source
   RELEASE-PROCESS.md     Cutting a Velopack release to GitHub Releases
-  ACCESSIBILITY-TESTING.md   NVDA / Narrator / JAWS validation matrix
+  ACCESSIBILITY-TESTING.md   Comprehensive manual smoke-test matrix (artifact integrity, process hygiene, NVDA, earcons, auto-update) with per-row diagnostic decoders
   CHECKPOINTS.md         Stable-baseline tags per shipped stage
   CONPTY-NOTES.md        Observed Windows ConPTY platform quirks
   SESSION-HANDOFF.md     Bridge between Claude Code coding sessions
@@ -92,7 +92,7 @@ tests/                   xUnit + FsCheck.Xunit + FlaUI placeholder
 - **Stable checkpoints (rollback guide):** [`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md)
 - **ConPTY platform notes:** [`docs/CONPTY-NOTES.md`](docs/CONPTY-NOTES.md)
 - **Session handoff (for picking up between Claude Code sessions):** [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)
-- **Accessibility test matrix:** [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
+- **Manual smoke-test matrix (every release):** [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
 - **Security and trust model:** [`SECURITY.md`](SECURITY.md)
 - **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - **Changelog:** [`CHANGELOG.md`](CHANGELOG.md)
