@@ -15,6 +15,56 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Stage 4 Text-pattern navigation: NVDA's review cursor can
+  now read the terminal buffer.** `v0.0.1-preview.20` install
+  smoke established that PR #56's Text-pattern surface was
+  reachable but unusable: NVDA's "read current line" returned
+  "blank" and prev/next-line did nothing. Root cause was that
+  `TerminalTextRange`'s `ExpandToEnclosingUnit`, `Move`,
+  `MoveEndpointByUnit`, and `MoveEndpointByRange` were all
+  no-op stubs from PR #56's "navigation deferred to PR D"
+  scope. Without them NVDA's review cursor couldn't delimit a
+  line: `ExpandToEnclosingUnit(Line)` was silently dropped,
+  leaving the range collapsed at start with empty `GetText`
+  output. Implementation in this commit:
+
+  - `TerminalTextRange` now tracks mutable `(startRow,
+    startCol, endRow, endCol)` endpoints (the UIA contract
+    requires the void-returning navigation methods to mutate
+    in place).
+  - `ExpandToEnclosingUnit` handles `Character`, `Document`,
+    and `Line` (other unit types degrade to `Line` until a
+    terminal-output tokenizer arrives).
+  - `Move`, `MoveEndpointByUnit`, `MoveEndpointByRange`
+    implement UIA's contract including endpoint-collision
+    handling (range collapses to the moved point if endpoints
+    cross).
+  - `CompareEndpoints` returns the lexicographic ordering
+    over `(row, col)` positions.
+  - `GetText` uses the range endpoints (was returning the
+    entire snapshot regardless of range).
+  - `DocumentRange` constructs a half-open `[(0,0), (rows, 0))`
+    range matching UIA's standard endpoint convention.
+
+  `tests/Tests.Ui/TextPatternTests.fs` gains a navigation
+  regression test that asserts `ExpandToEnclosingUnit(Line)`
+  bounds the range length below the full-document size, and
+  `Move(Line, 1)` preserves the Line shape — the two
+  invariants whose violation produced the preview.20
+  failure mode.
+
+- **Removed `MainWindow.xaml`'s
+  `AutomationProperties.HelpText`.** Preview.20 NVDA smoke
+  heard "Screen-reader-native Windows terminal. Stage 3b:
+  bytes from a child shell are parsed and rendered; UIA
+  exposure lands in Stage 4." read after the role
+  announcement on every focus. That string was useful as
+  developer documentation while the project was bootstrapping
+  but is verbose chatter for the user. The window's name and
+  Document role are sufficient.
+
 ### Added
 
 - **Comprehensive manual smoke-test matrix
