@@ -101,22 +101,101 @@ the (2) flow you don't need a separate changelog PR.
 
 ### 3. Publish the release
 
+There are two paths: GitHub Releases UI (web), or the `gh` CLI from
+a local terminal. The CLI path is **the recommended one for
+screen-reader users** — it's a single keyboard-driven command,
+versus the UI's multi-step navigation through dropdowns and
+checkboxes. Both paths fire the same `release: published` event
+and run the same workflow.
+
+#### 3a. CLI path (recommended)
+
+```sh
+gh release create vX.Y.Z-preview.N \
+  --target main \
+  --prerelease \
+  --title "" \
+  --notes "" \
+  --repo KyleKeane/pty-speak
+```
+
+**The `--target main` flag is not optional.** Without it, `gh
+release create` uses your **currently-checked-out local branch**
+as the target. If you're sitting on a feature branch from earlier
+work — even one that's already merged — the release will tag from
+that branch, not from `main`, and the workflow's target-branch gate
+(documented below) will refuse to build. `v0.0.1-preview.23` was
+burned this way; the lesson is "always pass `--target main`,
+regardless of where you think your local checkout is."
+
+The `--title ""` and `--notes ""` empty values are deliberate —
+the release workflow overwrites both from the matching
+`CHANGELOG.md` section. Setting them by hand here just creates
+content that will be replaced.
+
+For a non-prerelease (`vX.Y.Z` without the suffix), drop
+`--prerelease`.
+
+#### 3b. UI path
+
 In the GitHub UI:
 
 1. Go to *Releases → Draft a new release*
    (`https://github.com/KyleKeane/pty-speak/releases/new`).
 2. **Choose a tag** → type `vX.Y.Z` (or `-preview.N` / `-rc.N`) →
-   click "Create new tag: `vX.Y.Z` on publish".
-3. **Target**: `main`. **Verify this — the dropdown defaults to main
-   but at least one preview accidentally targeted a stale branch and
-   ran the wrong workflow file.**
+   activate "Create new tag: `vX.Y.Z` on publish".
+3. **Target dropdown — confirm it reads `main` BEFORE clicking
+   Publish.** This is the historical failure mode: the dropdown
+   defaults to the default branch but its contents include every
+   open and recently-active branch in the repository, and selecting
+   the wrong entry (or having the dropdown reset to a recently-used
+   branch from prior work) silently produces a broken release.
+   `v0.0.1-preview.{14, 23}` were both burned this way. With NVDA,
+   tab to the Target combobox, press Down/Up arrows until you hear
+   "main", then move on. **If you cannot confirm the target is
+   `main`, use the CLI path (3a) instead** — it's safer because
+   `--target main` is explicit text rather than a dropdown
+   selection.
 4. Leave title and description blank — the workflow overwrites both
    from the matching `CHANGELOG.md` section + unsigned-preview banner.
 5. Check **"Set as a pre-release"** for `-preview.N` / `-rc.N` tags.
-6. Click **Publish release**.
+6. Activate **Publish release**.
 
 The `release: published` event fires
 [`.github/workflows/release.yml`](../.github/workflows/release.yml).
+
+#### What to do if a release was published targeting the wrong branch
+
+The workflow's target-branch gate fails the build with a clear
+error message naming the offending branch (this gate exists
+specifically to catch this and was added after `v0.0.1-preview.14`).
+You have two recovery paths:
+
+**A. Skip the burned tag and publish the next one correctly.**
+The simplest option. If `vX.Y.Z-preview.N` was burned, leave it
+in place (delete-and-republish doesn't refire `release: published`
+for the same tag in some cases) and publish `vX.Y.Z-preview.(N+1)`
+with the correct target. Add a note in the next CHANGELOG entry
+acknowledging the burned tag so the gap doesn't confuse future
+maintainers reading the version history. Examples:
+`v0.0.1-preview.{16, 17, 23}` were all burned and skipped this
+way.
+
+**B. Delete the burned release and republish at the same tag.**
+Only do this if you specifically need the version number
+preserved. The cleanup is:
+
+```sh
+gh release delete vX.Y.Z-preview.N --cleanup-tag --yes \
+  --repo KyleKeane/pty-speak
+gh release create vX.Y.Z-preview.N --target main \
+  --prerelease --title "" --notes "" \
+  --repo KyleKeane/pty-speak
+```
+
+`--cleanup-tag` is the critical flag — without it the underlying
+git tag survives and the `release: published` event won't refire
+for the recreated release.
 
 ### 4. Wait for the release workflow
 
@@ -275,11 +354,23 @@ they aren't re-discovered.
   step in
   [`.github/workflows/release.yml`](../.github/workflows/release.yml)
   for the canonical pattern.
-- **Releases UI Target dropdown.** It defaults to the default branch,
-  but at least one preview accidentally targeted a stale branch
-  (`claude/create-project-docs-xVA6n`) which still had the old broken
-  workflow file. Always **confirm Target = `main`** before clicking
-  Publish.
+- **Target branch, both UI and CLI paths.** `v0.0.1-preview.14`
+  (UI dropdown, dropdown reset to a stale branch) and
+  `v0.0.1-preview.23` (UI publish but with the dropdown still
+  pointing at a previously-active branch) were both burned by
+  publishing a release with `target_commitish` other than `main`.
+  The workflow's first build-step gate now fails fast with a
+  clear error naming the offending branch — added specifically
+  to catch this — but publishing-side hygiene matters too:
+  - In the UI: with NVDA, tab to the Target combobox, arrow
+    until you hear "main", confirm before activating Publish.
+    If you can't confirm, use the CLI path instead.
+  - In the CLI: ALWAYS pass `--target main` explicitly.
+    Without it, `gh release create` uses your currently-checked-
+    out local branch — a stale feature branch from earlier work
+    will silently target the release at that branch.
+  Recovery procedure ("What to do if a release was published
+  targeting the wrong branch") is in step 3 above.
 - **`fail_on_unmatched_files: true` on a glob that's only sometimes
   populated.** `vpk pack` doesn't produce `*-delta.nupkg` until there's
   a previous release to diff against, so a strict files list fails on
