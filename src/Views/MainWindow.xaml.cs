@@ -1,4 +1,6 @@
+using System.Reflection;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Interop;
 
 namespace PtySpeak.Views;
@@ -8,6 +10,37 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+
+        // Inject the running assembly's informational version into
+        // both the visible Title and the AutomationProperties.Name
+        // (the latter is what NVDA reads on focus / NVDA+T). Lets
+        // the user audibly confirm which version is running —
+        // important after Stage 11's Ctrl+Shift+U self-update so
+        // the post-restart announcement reflects the new version.
+        //
+        // Uses `AssemblyInformationalVersionAttribute` rather than
+        // `Assembly.GetName().Version` because the System.Version
+        // type doesn't carry prerelease suffixes ("0.0.1-preview.26"
+        // is not a valid System.Version; it parses as 0.0.1.0).
+        // The release workflow's `dotnet publish /p:Version=...`
+        // step injects the InformationalVersion at build time from
+        // the GitHub release tag, so installed builds carry the
+        // exact version string the user can match against the
+        // GitHub Release page.
+        var version = Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(version))
+        {
+            // Strip any "+commit-sha" suffix the build pipeline
+            // adds (SourceLink / deterministic build trailer);
+            // it's noise for the user's audible announcement.
+            var plusIdx = version.IndexOf('+');
+            if (plusIdx > 0) version = version.Substring(0, plusIdx);
+
+            Title = $"pty-speak {version}";
+            AutomationProperties.SetName(this, $"pty-speak terminal {version}");
+        }
 
         // Install the WM_GETOBJECT subclass hook as soon as the
         // HWND exists. SourceInitialized fires after CreateWindow

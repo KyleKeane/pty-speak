@@ -15,7 +15,46 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added
+
+- **Window title and accessibility name now include the running
+  version.** `MainWindow.xaml.cs` reads
+  `AssemblyInformationalVersionAttribute` (which carries the
+  prerelease tag like `0.0.1-preview.26` because
+  `System.Version` doesn't) and sets `Title = "pty-speak {version}"`
+  + `AutomationProperties.Name = "pty-speak terminal {version}"`.
+  NVDA+T now reads the version, so users can audibly confirm
+  which build they're running — particularly important after
+  Stage 11's `Ctrl+Shift+U` self-update so the post-restart
+  announcement reflects the new version. Strips any
+  `+commit-sha` deterministic-build trailer from the
+  announcement to keep it clean. Closes the
+  "version-suffix-missing" follow-up logged in
+  `docs/SESSION-HANDOFF.md`.
+
 ### Fixed
+
+- **Update-failure announcements pattern-match on common
+  exception types instead of a single generic catch.**
+  `runUpdateFlow`'s `with` block now branches on:
+  - `HttpRequestException` → "Update check failed: cannot
+    reach GitHub Releases. Check your internet connection.
+    (...)" — the offline case, the most common failure for
+    end users on flaky connections.
+  - `TaskCanceledException` → "Update check timed out. Check
+    your internet connection and try Ctrl+Shift+U again." —
+    timeouts and dropped-mid-download.
+  - `IOException` → "Update could not be written to disk: ...
+    Free up space or check folder permissions in
+    %%LocalAppData%%\\pty-speak\\." — disk-side failures
+    during download or patch application.
+  - Catch-all for unexpected exceptions remains as
+    "Update failed: ...".
+  Replaces the single generic "Update failed: <ex.Message>"
+  that PR #63 shipped with a "later stage can pattern-match"
+  TODO comment. The user's offline-failure question on
+  preview.25 install made this concrete enough to
+  implement now.
 
 - **Release workflow walks back through burned tags when
   fetching the prior `*-full.nupkg`.** `v0.0.1-preview.24`
