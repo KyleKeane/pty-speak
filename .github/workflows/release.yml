@@ -88,23 +88,44 @@ jobs:
         # build ships full-only — auto-update clients fall back to
         # downloading the entire ~66 MB package every time.
         #
-        # Find the most recently published GitHub Release that isn't
-        # the one currently being released, download its
-        # `*-full.nupkg` into releases/, and let the next step pick it
-        # up. Skips silently if no prior release exists (first release
-        # on the channel) — that's not an error.
+        # Walk through GitHub Releases in published-descending order
+        # until we find one that has a `*-full.nupkg` asset, then
+        # download it. The walk-back skips "burned" releases: tags
+        # whose workflow run failed before producing artifacts, so
+        # the release exists on GitHub but has no nupkg attached.
+        # `v0.0.1-preview.{14, 23, 24}` were all burned this way at
+        # various points in this project's history; without the
+        # walk-back, the next release after a burned tag fails this
+        # step trying to download a nonexistent asset.
+        #
+        # Skips silently with a "no prior nupkg anywhere" message
+        # if no release in the history has the asset (legitimate
+        # first release on a channel).
         run: |
           New-Item -ItemType Directory -Force -Path releases | Out-Null
           $currentTag = '${{ github.event.release.tag_name }}'
-          $priorTag = gh release list --limit 100 --json tagName,publishedAt `
+          $candidates = gh release list --limit 100 --json tagName,publishedAt `
             | ConvertFrom-Json `
             | Where-Object { $_.tagName -ne $currentTag } `
-            | Sort-Object publishedAt -Descending `
-            | Select-Object -First 1 -ExpandProperty tagName
+            | Sort-Object publishedAt -Descending
+          $priorTag = $null
+          foreach ($candidate in $candidates) {
+            $tag = $candidate.tagName
+            Write-Host "Checking $tag for *-full.nupkg..."
+            $assets = gh release view $tag --json assets --jq '[.assets[].name]' 2>$null `
+              | ConvertFrom-Json
+            if ($assets -and ($assets | Where-Object { $_ -match '-full\.nupkg$' })) {
+              $priorTag = $tag
+              Write-Host "  Found *-full.nupkg in $tag."
+              break
+            } else {
+              Write-Host "  $tag has no *-full.nupkg (likely a burned tag); skipping."
+            }
+          }
           if (-not $priorTag) {
-            Write-Host 'No prior release found; vpk pack will produce a full nupkg only (no delta).'
+            Write-Host 'No prior release in history has a *-full.nupkg. vpk pack will produce a full nupkg only (no delta).'
           } else {
-            Write-Host "Prior release: $priorTag. Downloading *-full.nupkg into releases/ for delta generation."
+            Write-Host "Downloading *-full.nupkg from $priorTag for delta generation."
             gh release download $priorTag --pattern '*-full.nupkg' --dir releases --clobber
             Write-Host 'Prior nupkg present:'
             Get-ChildItem -Path releases -Filter '*-full.nupkg' | Format-Table Name, Length

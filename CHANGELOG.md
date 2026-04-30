@@ -15,6 +15,28 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Release workflow walks back through burned tags when
+  fetching the prior `*-full.nupkg`.** `v0.0.1-preview.24`
+  failed at the "Fetch prior release nupkg" step because the
+  most recent prior release (`preview.23`) was a burned tag
+  whose own workflow had failed at the target-branch gate, so
+  no `*-full.nupkg` was ever uploaded to it. The original step
+  picked the most recent prior release by publishedAt and
+  blindly tried to download the asset — exit 1 from `gh
+  release download` when no matching assets existed propagated
+  to the workflow as a failure. Replaced with a walk-back loop
+  that iterates releases in descending order and uses
+  `gh release view --json assets` to find the most recent one
+  that actually has a `*-full.nupkg`. Falls through to the
+  existing "no prior nupkg, ship full-only" path if no release
+  in the history has the asset (legitimate first release on a
+  channel). Resolves the failure mode that
+  `v0.0.1-preview.{14, 23, 24}` all hit at different points;
+  combined with PR #64's documentation strengthening, makes
+  burned tags a recoverable rather than cascading failure.
+
 ### Changed
 
 - **`docs/RELEASE-PROCESS.md` step 3 rewritten with explicit
