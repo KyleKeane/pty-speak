@@ -51,33 +51,55 @@ disconnects mid-session.
    programmatically check PR status, merge PRs, or post issue
    comments — falls back to asking the maintainer.
 
-3. **Run the full manual smoke matrix on the latest preview.**
-   The comprehensive gate lives in
-   [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md);
-   walk the always-run sections (Artifact integrity + Launch and
-   process hygiene) plus every shipped-stage row for whichever
-   preview is current. Track FAILs as GitHub issues, pasting the
-   relevant decoder bullet into the issue body so triage is
-   focused.
+3. **Stage 4 NVDA verification — partial completion on
+   `v0.0.1-preview.22`; one row deferred + two follow-ups
+   logged.** The maintainer ran the Stage 4 rows of
+   [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
+   on `v0.0.1-preview.22` (the build that bundled PRs
+   #54-#56 + #59 + #60) on Windows 11 + NVDA. Outcome:
 
-   Specific items still pending verification on the most recent
-   previews:
+   - ✓ Document role announced on focus.
+   - ✓ Review cursor reads current line, prev / next line,
+     and characters.
+   - ⚠ Word navigation degrades to Line — known limitation,
+     see follow-up below.
+   - ✓ Window title accessibility name (`NVDA+T`) reads
+     "pty-speak terminal" — note the version-suffix gap
+     follow-up below.
+   - ✓ Re-launch from Start menu works cleanly.
+   - ↻ **Deferred:** "Process cleanup on close" row (Task
+     Manager check for orphan `Terminal.App.exe` /
+     `cmd.exe`). Run on the next preview when convenient.
 
-   - The single-window fix from PR #44 (`OutputType=WinExe`)
-     needs a clean Windows install to confirm. Pass condition is
-     the matrix's "Single window appears" row in the
-     Launch-and-process-hygiene section.
-   - The Stage 4 Text-pattern surface (PRs #54 / #55 / #56)
-     needs an NVDA review-cursor walk on a real terminal. Pass
-     conditions are the Stage-4 "Review cursor reads current
-     line" / "Review cursor moves by line" rows.
+   Stage-4 follow-ups discovered during verification:
 
-   If the single-window check fails, reopen
-   [Issue #39](https://github.com/KyleKeane/pty-speak/issues/39).
-   For Stage-4 NVDA failures, file a fresh issue — the chain is
-   new and a regression there is most likely a `GetPattern`
-   override regression on `TerminalAutomationPeer`, per the
-   Stage-4 diagnostic decoder.
+   - **Word navigation needs real implementation.**
+     `TerminalTextRange`'s `ExpandToEnclosingUnit` /
+     `Move` / `MoveEndpointByUnit` currently degrade
+     `Word` / `Paragraph` / `Page` to `Line`, so
+     NVDA+Ctrl+Right reads a whole line instead of one
+     word. F# already documents this in the `_` match
+     arms; needs a tokenizer that splits on whitespace
+     and SGR boundaries (the latter so a coloured word
+     count as one token even if it spans cells with
+     different attrs). Ship as a small dedicated PR
+     once Stage 11 lands.
+   - **Window title doesn't include the version
+     number.** The smoke matrix's "Window title shows
+     version" row promises something the code doesn't
+     do — `MainWindow.xaml`'s `Title` attribute is the
+     static string `"pty-speak"`. Two options: inject the
+     version into `Title` at startup from the assembly
+     metadata, or update the matrix to drop the version
+     claim. The injection path is more useful for users
+     post-update so they can hear which version they're
+     on; small one-file change in `MainWindow.xaml.cs` /
+     `Program.fs` reading `Assembly.GetExecutingAssembly().GetName().Version`.
+
+   For Stage-4 NVDA failures going forward, file a fresh
+   issue — a regression is most likely a `GetPattern`
+   override regression on `TerminalAutomationPeer` per
+   the Stage-4 diagnostic decoder.
 
 4. **Small CI / release timing optimisation pass** (low priority,
    pure cleanup). Current CI per-PR job times are reasonable but
