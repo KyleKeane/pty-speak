@@ -77,6 +77,7 @@ docs/                    Living developer documentation
 .github/
   workflows/             CI and release automation
   ISSUE_TEMPLATE/        Bug, feature, accessibility-issue templates
+scripts/                 Repo-local utility scripts (install helpers, etc.)
 src/                     F# / C# / WPF source (Stage 0 skeleton merged)
 tests/                   xUnit + FsCheck.Xunit + FlaUI placeholder
 ```
@@ -93,6 +94,7 @@ tests/                   xUnit + FsCheck.Xunit + FlaUI placeholder
 - **ConPTY platform notes:** [`docs/CONPTY-NOTES.md`](docs/CONPTY-NOTES.md)
 - **Session handoff (for picking up between Claude Code sessions):** [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)
 - **Manual smoke-test matrix (every release):** [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
+- **Install latest preview (PowerShell helper):** [`scripts/install-latest-preview.ps1`](scripts/install-latest-preview.ps1) — see [`scripts/README.md`](scripts/README.md)
 - **Security and trust model:** [`SECURITY.md`](SECURITY.md)
 - **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - **Changelog:** [`CHANGELOG.md`](CHANGELOG.md)

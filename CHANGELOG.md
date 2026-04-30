@@ -15,6 +15,24 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added
+
+- **`scripts/install-latest-preview.ps1` — one-command preview
+  installer for Windows.** Downloads the latest (or specified)
+  preview's `Setup.exe` from the GitHub Release assets, strips
+  the Mark-of-the-Web tag with `Unblock-File` so SmartScreen
+  doesn't prompt the unsigned-preview line on every iteration,
+  and runs the installer. Replaces the multi-step "open the
+  release page → navigate the asset list → click `Setup.exe`
+  → click 'More info' → click 'Run anyway'" flow that takes
+  several screen-reader steps per iteration with a single
+  command. Scoped to the iterative-smoke-testing workflow that
+  Stage 4+ NVDA verification needs; once Stage 11 ships
+  Velopack delta self-update via `Ctrl+Shift+U`, this script
+  becomes unnecessary for in-place updates. New `scripts/README.md`
+  documents the script and reserves the directory for future
+  utilities.
+
 ### Fixed
 
 - **`MainWindow` moves keyboard focus to `TerminalSurface` on
