@@ -17,6 +17,40 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Comprehensive manual smoke-test matrix
+  (`docs/ACCESSIBILITY-TESTING.md` rewrite).** Reframes the
+  accessibility-only doc as the universal manual-validation gate
+  every release must pass. Three new always-run sections cover
+  artifact integrity (Velopack assets present, Setup.exe
+  non-zero, Authenticode status, hash matches) and launch /
+  process hygiene (single window, version in title, one-deep
+  process tree, clean shutdown, no orphan `cmd.exe`,
+  re-launch). Every per-stage table now has a "Diagnostic
+  decoder" subsection that maps each possible failure to the
+  likely-responsible subsystem — file paths and PR numbers
+  where applicable, so a FAIL goes from "something broke" to
+  "look at file X, PR Y" without further triage. New top-level
+  sections "Adding new manual tests" (criteria, required
+  fields, where in the matrix), "Sunset rules" (when a row
+  graduates to CI or gets deleted), and "Coverage that moved
+  to CI" (audit trail of the matrix's shrinking surface area
+  as automated assertions land). The Stage 4 section is
+  rewritten to reflect the actual ship architecture
+  (`AutomationPeer.GetPattern` override after the WM_GETOBJECT
+  pivot, not the original raw-provider plan), and notes that
+  PR #56's `tests/Tests.Ui/TextPatternTests.fs` now CI-pins
+  the producer side of the Text pattern. `docs/RELEASE-PROCESS.md`
+  step 5 was rewritten to defer to the comprehensive matrix
+  rather than carry its own minimal smoke list, and
+  `docs/SESSION-HANDOFF.md` item 3 (the visual install smoke
+  for the maintainer) now points at the matrix and tracks
+  Stage 4 NVDA verification alongside the existing single-window
+  check. The PR template's accessibility checklist gains an
+  "Adding new manual tests" reminder so PRs that ship
+  CI-unverifiable behaviour grow the matrix in the same change.
+  README's docs-index entry is updated to reflect the broader
+  scope.
+
 - **Stage 4 PR C — UIA Text pattern via `AutomationPeer.GetPattern`
   override + FlaUI verification test
   (`tests/Tests.Ui/TextPatternTests.fs`).** PR C started as a

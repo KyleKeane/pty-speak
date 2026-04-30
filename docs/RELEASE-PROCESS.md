@@ -200,26 +200,27 @@ Triggered by the `release: published` event you just fired. Runs on
 
 ### 5. Smoke-test the release
 
-On a clean VM:
+The comprehensive manual smoke-test gate lives in
+[`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md). Walk
+that document top-to-bottom on a clean Windows VM:
 
-1. Download `pty-speak-Setup.exe` from the new release.
-2. Confirm the build is **unsigned** (this is currently expected):
-   ```powershell
-   Get-AuthenticodeSignature .\pty-speak-Setup.exe |
-     Select-Object Status, StatusMessage
-   ```
-   `Status` is `NotSigned`; `StatusMessage` confirms no signature.
-   SmartScreen will prompt; choose "More info → Run anyway" or use
-   `Unblock-File` first.
-3. Run the installer. For the historic Stage 0 preview the window
-   was empty; for previews built from `main` at Stage 3b+ the window
-   shows live `cmd.exe` output. Confirm no errors and that the
-   window titled "pty-speak" opens.
-4. Launch the app from the Start menu; confirm the same window opens
-   from the installed location (`%LocalAppData%\pty-speak\current\`).
-5. Once Stage 11 lands, trigger the auto-update path from a previously
-   installed older version (`Ctrl+Shift+U`); confirm the delta
-   downloads and the relaunch happens within ~2 seconds.
+1. Run the **always-run** sections (Artifact integrity, Launch and
+   process hygiene) for every release regardless of stage.
+2. Run the **stage matrix** rows for every stage that's shipped at
+   this release tag. (E.g. for a release built from `main` after
+   PR #56 merged, that's Stage 0 + Stage 3b + Stage 4.)
+3. For each FAIL, paste the relevant decoder bullet from the
+   document into the GitHub Issue you open.
+4. The release is not promoted from prerelease to "latest" until
+   every required-stage row is PASS or N/A.
+
+The smoke-test document captures (a) the procedure for every test,
+(b) the expected outcome verbatim, and (c) a "Diagnostic decoder"
+that maps each possible failure to the likely-responsible subsystem,
+so a failure goes from "something broke" to "look at file X, PR Y,
+subsystem Z" without further investigation. New manual tests are
+added per the "Adding new manual tests" section of that document
+whenever a shipped behaviour can't be CI-verified.
 
 ### 6. Announce
 
