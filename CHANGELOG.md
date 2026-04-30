@@ -17,6 +17,21 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Fixed
 
+- **`MainWindow` moves keyboard focus to `TerminalSurface` on
+  `Loaded`.** `v0.0.1-preview.21` install smoke established that
+  even with PR #59's working Text-pattern navigation, NVDA still
+  couldn't reach the buffer: focus stayed on the WPF `Window`
+  after launch, so NVDA announced "pty-speak terminal, window"
+  and anchored the review cursor on the Window (which has no
+  Text pattern). The `TerminalView`'s Document-role peer with
+  the working Text pattern was reachable in the UIA tree but
+  invisible to NVDA's review cursor because focus was on the
+  wrong element. One-line fix in `MainWindow.xaml.cs`: hook
+  `Loaded` and call `TerminalSurface.Focus()`. NVDA now
+  announces "Terminal, document" on launch and the review
+  cursor anchors to the TerminalView, where PR #59's
+  navigation is reachable.
+
 - **Stage 4 Text-pattern navigation: NVDA's review cursor can
   now read the terminal buffer.** `v0.0.1-preview.20` install
   smoke established that PR #56's Text-pattern surface was
