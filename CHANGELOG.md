@@ -15,6 +15,49 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed
+
+- **`SECURITY.md` rewritten with a comprehensive auto-update
+  threat model and a consolidated vulnerability inventory.**
+  Stage 11's auto-update flow added a new attack surface
+  (network-fetch + execute) that wasn't analysed in the
+  previous SECURITY.md. The maintainer asked for "every
+  single vulnerability" and the known mitigations or
+  forward-mitigation paths to be documented end-to-end. The
+  rewrite:
+
+  - **New section "Auto-update threat model"** enumerating
+    nine threat classes (T-1 through T-9): passive observation,
+    active MITM substitution, GitHub account compromise, CI
+    runner / supply-chain attack, replay / downgrade, LPE via
+    the update path, time-of-check vs time-of-use during apply,
+    resource exhaustion, and Velopack log info-disclosure.
+    Each class has Risk / Severity / Mitigation today / Future
+    mitigation columns spelled out, with explicit references to
+    the protections shipped in PRs #44, #63, #64, #65, #66.
+    Includes a chain-of-trust diagram showing where each link
+    can fail.
+  - **New section "Vulnerability inventory"** consolidating
+    every threat class in the document into a single table
+    (terminal core, process / OS, update path, build and
+    supply chain — 24 rows total). Each row has the threat
+    ID, severity, mitigation today, what closes the gap at
+    `v0.1.0+`, and shipping status. Severity and status
+    glossaries make the table self-contained.
+  - **"How to use this inventory"** subsection describing the
+    contributor workflow: PRs that touch a protection class
+    must update both the affected row and the narrative
+    section. Reviewers are told to request changes on PRs
+    that weaken a protection without updating SECURITY.md.
+  - **Cross-link** from the existing "What we defend against"
+    section to the new inventory so a contributor reading
+    top-down lands on both the narrative and the audit-table
+    view.
+
+  No code changes; this is the documentation pass that
+  captures the security state we've actually been shipping
+  through the past several PRs.
+
 ### Added
 
 - **Window title and accessibility name now include the running
