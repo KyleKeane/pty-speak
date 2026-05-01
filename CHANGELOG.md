@@ -15,6 +15,56 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added
+
+- **Real word-navigation in `TerminalTextRange`.** Closes the
+  Stage 4 follow-up logged after `v0.0.1-preview.22`'s smoke
+  pass — previously `TextUnit.Word` degraded to `TextUnit.Line`
+  in `ExpandToEnclosingUnit`, `Move`, and `MoveEndpointByUnit`,
+  so NVDA+Ctrl+RightArrow read a whole row instead of a single
+  word. Now the three navigation methods all branch on
+  `TextUnit.Word` separately:
+
+  - **Word boundaries**: `' '` (space, U+0020) and `\t` (tab,
+    U+0009) are word separators. Punctuation is NOT a separator
+    so `"C:\\Users\\test>"` reads as one word — matching how
+    most terminal users mentally parse paths and prompts. A
+    later stage with an SGR-aware tokenizer can refine this.
+  - `WordEndFrom(rows, cols, r, c)` walks forward from `(r, c)`
+    until it hits a separator or the document end; returns
+    one-past-end. Crosses row boundaries so a word that wraps
+    is one word.
+  - `NextWordStart(rows, cols, r, c)` walks forward, skipping
+    the rest of the current word and any separator run, landing
+    on the first non-separator cell of the next word. Returns
+    `(rowCount, 0)` if no further word exists.
+  - `PrevWordStart(rows, cols, r, c)` walks backward through
+    any separator run, then back to the start of the word
+    before the original position. Returns `(0, 0)` at origin.
+  - `ExpandToEnclosingUnit(Word)` snaps the range to the word
+    at `Start`; if `Start` lands on a separator it advances to
+    the next word. `Document` and `Character` cases unchanged;
+    `Paragraph` and `Page` still degrade to `Line` because
+    terminal output doesn't have well-defined paragraph or
+    page semantics.
+  - `Move(Word, n)` walks `n` word boundaries (forward if
+    positive, backward if negative), then expands to the word
+    at the new position. Returns the number of words actually
+    moved (clamped at document boundaries).
+  - `MoveEndpointByUnit(endpoint, Word, n)` moves only one
+    endpoint by `n` word boundaries, with the existing
+    endpoint-collision rule (range collapses if endpoints
+    cross).
+
+  After this, NVDA's word-navigation commands (`NVDA+Ctrl+LeftArrow`
+  / `NVDA+Ctrl+RightArrow` on laptop layout) read individual
+  words from the buffer instead of jumping line-by-line.
+  Verification is via the manual smoke matrix's Stage-4 word
+  navigation row; the FlaUI integration test from PR #59 still
+  pins Line navigation against regression but doesn't yet
+  exercise Word semantics specifically — that's added when we
+  have deterministic test fixtures (Stage 5+).
+
 ### Changed
 
 - **`SECURITY.md` rewritten with a comprehensive auto-update
