@@ -9,6 +9,7 @@
   <ItemGroup>
     <Compile Include="Types.fs" />
     <Compile Include="Screen.fs" />
+    <Compile Include="AnnounceSanitiser.fs" />
     <Compile Include="UpdateMessages.fs" />
   </ItemGroup>
 

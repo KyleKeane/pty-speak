@@ -162,3 +162,55 @@ let ``PrevWordStart from inside a word returns that word's start`` () =
     let (r, c) = TerminalTextRange.PrevWordStart rows 30 0 5
     Assert.Equal(0, r)
     Assert.Equal(2, c)
+
+// ---------- Jagged-snapshot defence (audit-cycle SR-2) ----------
+//
+// `Screen.SnapshotRows` returns uniform rows today, but
+// `TerminalTextRange`'s constructor doesn't enforce uniformity.
+// A jagged `Cell[][]` (legitimately produced by a future
+// refactor, or constructed adversarially) must not crash the
+// helpers with `IndexOutOfRangeException`. SR-2 added
+// `c >= rows.[r].Length` guards inside `WordEndFrom`,
+// `NextWordStart`, and `PrevWordStart`. These tests pin the
+// contract.
+
+let private mkJagged () : Cell[][] =
+    // Row 0: "ab" (length 2), Row 1: "" (length 0), Row 2: "c"
+    // (length 1). `cols` is 4 — strictly larger than every row.
+    // The helpers must not index past the actual row length even
+    // though `c < cols` would suggest the cell exists.
+    [|
+        [| mkCell 'a'; mkCell 'b' |]
+        Array.empty<Cell>
+        [| mkCell 'c' |]
+    |]
+
+[<Fact>]
+let ``WordEndFrom does not throw on a jagged snapshot`` () =
+    let rows = mkJagged ()
+    // From (0, 0) — well-formed start. Walking forward must
+    // eventually halt without indexing past the actual lengths
+    // of rows 1 and 2.
+    let (r, c) = TerminalTextRange.WordEndFrom rows 4 0 0
+    Assert.True(r >= 0)
+    Assert.True(c >= 0)
+
+[<Fact>]
+let ``NextWordStart does not throw on a jagged snapshot`` () =
+    let rows = mkJagged ()
+    // From (0, 0) — inside "ab" on row 0. Advance must walk
+    // past the empty row 1 and onto row 2 ("c") without
+    // hitting `IndexOutOfRangeException`.
+    let (r, c) = TerminalTextRange.NextWordStart rows 4 0 0
+    Assert.True(r >= 0)
+    Assert.True(c >= 0)
+
+[<Fact>]
+let ``PrevWordStart does not throw on a jagged snapshot`` () =
+    let rows = mkJagged ()
+    // From (2, 0) — start of "c" on row 2. Walking backward
+    // must skip the empty row 1 and land in row 0 without
+    // indexing past row 1's length (which is 0).
+    let (r, c) = TerminalTextRange.PrevWordStart rows 4 2 0
+    Assert.True(r >= 0)
+    Assert.True(c >= 0)

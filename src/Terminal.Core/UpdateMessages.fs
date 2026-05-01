@@ -41,16 +41,23 @@ module UpdateMessages =
     /// branches before the catch-all when their failure mode
     /// becomes observable.
     let announcementForException (ex: exn) : string =
+        // Audit-cycle SR-2: pipe every interpolation of
+        // `ex.Message` through `AnnounceSanitiser.sanitise` so
+        // an exception message containing BiDi overrides
+        // (U+202E), BEL (0x07), or ANSI escape sequences
+        // (0x1B) can't confuse NVDA's notification handler.
+        // See SECURITY.md TC-5.
+        let safe = AnnounceSanitiser.sanitise ex.Message
         match ex with
         | :? HttpRequestException ->
             sprintf
                 "Update check failed: cannot reach GitHub Releases. Check your internet connection. (%s)"
-                ex.Message
+                safe
         | :? TaskCanceledException ->
             "Update check timed out. Check your internet connection and try Ctrl+Shift+U again."
         | :? System.IO.IOException ->
             sprintf
                 "Update could not be written to disk: %s. Free up space or check folder permissions in %%LocalAppData%%\\pty-speak\\."
-                ex.Message
+                safe
         | _ ->
-            sprintf "Update failed: %s" ex.Message
+            sprintf "Update failed: %s" safe

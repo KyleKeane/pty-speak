@@ -230,6 +230,13 @@ type internal TerminalTextRange(
     /// practice cmd.exe's output rarely produces wrap-words
     /// because cmd.exe's own rendering already breaks at
     /// row boundaries.
+    ///
+    /// Audit-cycle SR-2: every `rows.[r].[c]` access is guarded
+    /// against jagged snapshots (`c >= rows.[r].Length`). Today's
+    /// `Screen.SnapshotRows` returns uniform rows, but
+    /// `TerminalTextRange` doesn't enforce uniformity at the
+    /// constructor and a future refactor (e.g. ragged scrollback)
+    /// would re-open an `IndexOutOfRangeException` DoS class.
     static member internal WordEndFrom
             (rows: Cell[][]) (cols: int)
             (r: int) (c: int) : int * int =
@@ -237,7 +244,7 @@ type internal TerminalTextRange(
         let mutable c = c
         let mutable stop = false
         while not stop && r < rows.Length do
-            if c >= cols then
+            if c >= cols || c >= rows.[r].Length then
                 r <- r + 1
                 c <- 0
             elif TerminalTextRange.IsWordSeparator(rows.[r].[c]) then
@@ -259,33 +266,40 @@ type internal TerminalTextRange(
             (r: int) (c: int) : int * int =
         let mutable r = r
         let mutable c = c
+        // Audit-cycle SR-2: jagged-snapshot guard. Treat
+        // `c >= rows.[r].Length` as end-of-row so a short row
+        // can't trigger `IndexOutOfRangeException` at the
+        // `rows.[r].[c]` access below.
+        let onValidCell () =
+            r < rows.Length
+            && c < cols
+            && c < rows.[r].Length
         let advanceOne () =
             c <- c + 1
             if c >= cols then
                 c <- 0
                 r <- r + 1
+            elif r < rows.Length && c >= rows.[r].Length then
+                c <- 0
+                r <- r + 1
         // If we're currently on a non-separator cell, skip
         // forward through the rest of this word first.
         let mutable inWord =
-            r < rows.Length
-            && c < cols
+            onValidCell ()
             && not (TerminalTextRange.IsWordSeparator(rows.[r].[c]))
         while inWord do
             advanceOne ()
             inWord <-
-                r < rows.Length
-                && c < cols
+                onValidCell ()
                 && not (TerminalTextRange.IsWordSeparator(rows.[r].[c]))
         // Now skip the separator run.
         let mutable inSep =
-            r < rows.Length
-            && c < cols
+            onValidCell ()
             && TerminalTextRange.IsWordSeparator(rows.[r].[c])
         while inSep do
             advanceOne ()
             inSep <-
-                r < rows.Length
-                && c < cols
+                onValidCell ()
                 && TerminalTextRange.IsWordSeparator(rows.[r].[c])
         // Either we're at the start of a new word, or we
         // walked off the end of the document.
@@ -312,6 +326,10 @@ type internal TerminalTextRange(
             else
                 c <- c - 1
         let atOrigin () = r = 0 && c = 0
+        // Audit-cycle SR-2: jagged-snapshot guard. Each access
+        // to `rows.[r].[c]` (and the peek-back `rows.[pr].[pc]`)
+        // is guarded against `c >= rows.[r].Length` so a short
+        // row can't trigger `IndexOutOfRangeException`.
         // Step back one to start, since we want the position
         // BEFORE the current one.
         retreatOne ()
@@ -319,6 +337,7 @@ type internal TerminalTextRange(
         while not (atOrigin ())
               && r < rows.Length
               && c < cols
+              && c < rows.[r].Length
               && TerminalTextRange.IsWordSeparator(rows.[r].[c]) do
             retreatOne ()
         // Now we're on a non-separator (or at origin). Walk
@@ -333,6 +352,7 @@ type internal TerminalTextRange(
                || pr >= rows.Length
                || pc < 0
                || pc >= cols
+               || pc >= rows.[pr].Length
                || TerminalTextRange.IsWordSeparator(rows.[pr].[pc]) then
                 continueBack <- false
             else
@@ -487,13 +507,21 @@ type internal TerminalTextRange(
             else
                 match unit with
                 | TextUnit.Character ->
-                    let stepsRequested = count
+                    // Audit-cycle SR-2: widen to int64 before the
+                    // `curIdx + count` add so a hostile or
+                    // accidental `count = int.MinValue` can't
+                    // underflow int32 silently and slip past the
+                    // `max 0` clamp. Same observed clamping
+                    // behaviour for legitimate inputs; underflow
+                    // class disappears.
                     let totalCells = rowCount * cols
                     // Position-as-cell-index: r*cols + c
                     let curIdx =
                         (max 0 (min (rowCount - 1) startRow)) * cols
                         + (max 0 (min cols startCol))
-                    let targetIdx = max 0 (min totalCells (curIdx + stepsRequested))
+                    let target64 =
+                        max 0L (min (int64 totalCells) (int64 curIdx + int64 count))
+                    let targetIdx = int target64
                     let actualMoved = targetIdx - curIdx
                     let nr = targetIdx / cols
                     let nc = targetIdx % cols
@@ -590,11 +618,15 @@ type internal TerminalTextRange(
                 let (newR, newC, actualMoved) =
                     match unit with
                     | TextUnit.Character ->
+                        // Audit-cycle SR-2: int64 widening, see
+                        // matching note in `Move`.
                         let totalCells = rowCount * cols
                         let curIdx =
                             (max 0 (min (rowCount - 1) curR)) * cols
                             + (max 0 (min cols curC))
-                        let targetIdx = max 0 (min totalCells (curIdx + count))
+                        let target64 =
+                            max 0L (min (int64 totalCells) (int64 curIdx + int64 count))
+                        let targetIdx = int target64
                         let moved = targetIdx - curIdx
                         let nr = targetIdx / cols
                         let nc = targetIdx % cols
