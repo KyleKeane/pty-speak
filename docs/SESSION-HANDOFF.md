@@ -19,19 +19,21 @@ A new session should read this **first**, then
 
 | | |
 |---|---|
-| **Last merged stage** | Stage 4 — UIA exposure: `TerminalAutomationPeer` Document role + Text pattern via `AutomationPeer.GetPattern` override + Line/Character review-cursor navigation + `MainWindow.Loaded` focuses `TerminalSurface` (PRs #54-#56, #59, #60). |
-| **Last shipped release** | `v0.0.1-preview.22` (the build the maintainer is testing now). Earlier preview.21 install smoke surfaced the focus-on-Window bug fixed in PR #60; preview.22 is the verification target. |
-| **In-flight branch** | None. Stage 4 fully merged on `main`; Stage-4 NVDA verification is happening on preview.22 in parallel with Stage-11 prep. |
-| **Next stage** | **Stage 11 (re-prioritised) — Velopack auto-update.** The original ordering put Stage 11 last, but Stage 4's NVDA verification cycle made the install friction's recurring cost visible (each iterative preview is download → SmartScreen prompts → install, several screen-reader steps per loop). Stage 11 has no architectural dependency on Stages 5-10, so it's been moved forward to amortise the install-friction tax across all remaining stages. See `docs/ROADMAP.md` "Stage ordering" for the rationale; the implementation sketch is the existing `spec/tech-plan.md` §11. The standalone `scripts/install-latest-preview.ps1` (PR #61) is the bridge until Stage 11 lands. |
+| **Last merged stages** | **Stage 4** (UIA Document + Text pattern + Line/Character/Word navigation + focus-into-TerminalSurface fix, PRs #54-#56, #59, #60, #68) and **Stage 11** (Velopack auto-update via `Ctrl+Shift+U`, PRs #63, #66). Both **NVDA-verified working** on a clean Windows 11 install — Stage 4 on `v0.0.1-preview.22` and `.26`, Stage 11 via a successful `preview.25 → preview.26` self-update. |
+| **Last shipped release** | `v0.0.1-preview.26` (or whichever preview the maintainer last cut — release cadence is ad-hoc during the unsigned-preview line). The auto-update path replaces the `scripts/install-latest-preview.ps1` bridge for in-place updates from this point forward; the script remains useful for fresh installs and dev-environment workflows. |
+| **In-flight branch** | None. Stages 4 and 11 are both fully merged and verified. Word-navigation (the only Stage 4 follow-up that needed code) shipped in PR #68. Process-cleanup smoke (the only Stage 4 row not yet exercised in NVDA verification) is logged as a maintainer pending item. |
+| **Next stage** | **Stage 5 — Streaming output notifications.** First stage where the user gets passive narration as terminal output streams in, rather than active review-cursor exploration. Validation: NVDA reads `dir` line-by-line; spinner-class redraws don't flood NVDA's speech queue; busy loops printing dots don't get NVDA stuck. Substrate from `spec/tech-plan.md` §5 + the `Screen.SequenceNumber` + `Screen.SnapshotRows` primitives shipped in PR #38 are the foundation. |
 
-The end-to-end pipeline is wired through Stage 4: launching the app
-spawns `cmd.exe` under ConPTY, parses its output, applies VtEvents
-to a 30×120 `Screen`, renders the buffer in a custom WPF
-`FrameworkElement`, and exposes that buffer to NVDA via UIA Document
-role + Text pattern with working Line / Character / Document review-
-cursor navigation. The maintainer has installed `v0.0.1-preview.22`
-and is running the manual smoke matrix Stage-4 rows in parallel
-with Stage-11 implementation prep.
+The end-to-end pipeline now reaches the auto-update boundary:
+launching the app spawns `cmd.exe` under ConPTY, parses its
+output, applies VtEvents to a 30×120 `Screen`, renders the buffer
+in a custom WPF `FrameworkElement`, exposes that buffer to NVDA
+via UIA Document role + Text pattern with working Line / Word /
+Character / Document review-cursor navigation, and self-updates
+to subsequent previews via `Ctrl+Shift+U` with NVDA progress
+narration plus an audible version-flip on restart. Stage 5 is
+the first stage where output starts narrating itself instead of
+waiting for the user to navigate to it.
 
 ## Pending action items (maintainer)
 
@@ -51,53 +53,71 @@ disconnects mid-session.
    programmatically check PR status, merge PRs, or post issue
    comments — falls back to asking the maintainer.
 
-3. **Stage 4 NVDA verification — partial completion on
-   `v0.0.1-preview.22`; one row deferred + two follow-ups
-   logged.** The maintainer ran the Stage 4 rows of
+3. **Stage 4 + Stage 11 NVDA verification — complete except
+   for one process-cleanup row.** The maintainer ran the
+   relevant rows of
    [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
-   on `v0.0.1-preview.22` (the build that bundled PRs
-   #54-#56 + #59 + #60) on Windows 11 + NVDA. Outcome:
+   on `v0.0.1-preview.22` (Stage 4 first pass), `.26` (Stage
+   4 word-navigation re-verification + Stage 11 self-update
+   verification) on Windows 11 + NVDA. Outcome:
+
+   **Stage 4 (UIA Document + Text pattern + navigation):**
 
    - ✓ Document role announced on focus.
    - ✓ Review cursor reads current line, prev / next line,
-     and characters.
-   - ⚠ Word navigation degrades to Line — known limitation,
-     see follow-up below.
+     prev / next character, prev / next word.
    - ✓ Window title accessibility name (`NVDA+T`) reads
-     "pty-speak terminal" — note the version-suffix gap
-     follow-up below.
+     "pty-speak terminal {version}" (version suffix shipped
+     in PR #66).
    - ✓ Re-launch from Start menu works cleanly.
-   - ↻ **Deferred:** "Process cleanup on close" row (Task
-     Manager check for orphan `Terminal.App.exe` /
-     `cmd.exe`). Run on the next preview when convenient.
+   - ↻ **Still deferred — Test 8 "Process cleanup on close":**
+     Alt+F4 the running app, wait ~3 s, open Task Manager →
+     Details, confirm neither `Terminal.App.exe` nor orphan
+     `cmd.exe` remains. Pass condition is in the
+     "Launch and process hygiene" section of the matrix.
+     Low priority because no orphan accumulation has been
+     observed in repeated launch / close cycles during
+     Stage 4 + 11 verification, but should be checked once
+     before any non-prerelease (`v0.1.0`+) tag.
 
-   Stage-4 follow-ups discovered during verification:
+   **Stage 11 (Velopack auto-update):**
 
-   - **Word navigation needs real implementation.**
-     `TerminalTextRange`'s `ExpandToEnclosingUnit` /
-     `Move` / `MoveEndpointByUnit` currently degrade
-     `Word` / `Paragraph` / `Page` to `Line`, so
-     NVDA+Ctrl+Right reads a whole line instead of one
-     word. F# already documents this in the `_` match
-     arms; needs a tokenizer that splits on whitespace
-     and SGR boundaries (the latter so a coloured word
-     count as one token even if it spans cells with
-     different attrs). Ship as a small dedicated PR
-     once Stage 11 lands.
-   - **Window title doesn't include the version
-     number.** The smoke matrix's "Window title shows
-     version" row promises something the code doesn't
-     do — `MainWindow.xaml`'s `Title` attribute is the
-     static string `"pty-speak"`. Two options: inject the
-     version into `Title` at startup from the assembly
-     metadata, or update the matrix to drop the version
-     claim. The injection path is more useful for users
-     post-update so they can hear which version they're
-     on; small one-file change in `MainWindow.xaml.cs` /
-     `Program.fs` reading `Assembly.GetExecutingAssembly().GetName().Version`.
+   - ✓ `Ctrl+Shift+U` from inside `preview.25` triggered the
+     update flow.
+   - ✓ NVDA narrated "Checking for updates" → "Downloading"
+     → bucketed percent updates → "Restarting to apply
+     update".
+   - ✓ App restarted automatically at preview.26.
+   - ✓ Post-restart, NVDA+T reads "pty-speak terminal
+     0.0.1-preview.26" — audible confirmation the version
+     actually flipped.
+   - Negative paths (offline, network failure, repeat
+     keypresses) covered by PR #66's structured error
+     announcements; not yet manually exercised in
+     verification, but failure-mode logic is exercised by
+     the in-progress dedup test path.
 
-   For Stage-4 NVDA failures going forward, file a fresh
-   issue — a regression is most likely a `GetPattern`
+   Both Stage 4 follow-ups discovered during verification
+   have shipped:
+
+   - ✓ **Word-navigation real implementation** — PR #68.
+     `IsWordSeparator` is whitespace-only (space + tab);
+     punctuation stays inside words so paths like
+     `C:\Users\test>` read as one token. UAX #29 / vim-
+     style is a future refinement only if user feedback
+     warrants; see "Word boundaries" rationale at the top
+     of `TerminalTextRange` in
+     `src/Terminal.Accessibility/TerminalAutomationPeer.fs`.
+   - ✓ **Window title version suffix** — PR #66.
+     `MainWindow.xaml.cs` reads
+     `AssemblyInformationalVersionAttribute` and sets both
+     `Title` and `AutomationProperties.Name` to include
+     the version. Strips any `+commit-sha` deterministic-
+     build trailer.
+
+   For Stage 4 / 11 NVDA failures going forward, file a
+   fresh issue — a Stage 4 regression is most likely a
+   `GetPattern`
    override regression on `TerminalAutomationPeer` per
    the Stage-4 diagnostic decoder.
 
