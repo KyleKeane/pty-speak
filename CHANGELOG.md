@@ -15,6 +15,63 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added
+
+- **Audit-cycle PR-D: deferred-test burn-down.** Closes the
+  largest test-coverage gap identified by the audit
+  (SESSION-HANDOFF.md item 6) and validates that PR-C's
+  `InternalsVisibleTo("PtySpeak.Tests.Unit")` wiring works
+  end-to-end. Two new test files in `tests/Tests.Unit/`:
+
+  - **`UpdateMessagesTests.fs`** — six unit tests for the
+    Stage 11 update-failure announcement mapping. PR-D
+    extracted the exception-to-message logic from
+    `runUpdateFlow`'s catch block into a pure function
+    `Terminal.Core.UpdateMessages.announcementForException :
+    exn -> string` so the regression class that matters
+    most (the user-visible NVDA announcement per failure
+    class) is testable without standing up an
+    `IUpdateManager` adapter to mock Velopack's concrete
+    type. Tests cover all four branches
+    (`HttpRequestException` → network message,
+    `TaskCanceledException` → timeout message,
+    `IOException` → disk message, catch-all → generic),
+    plus two defensive ordering tests that fail loudly if
+    a refactor accidentally moves the catch-all above the
+    specific branches.
+
+  - **`WordBoundaryTests.fs`** — fourteen unit tests for
+    `TerminalTextRange`'s word-boundary helpers
+    (`IsWordSeparator`, `WordEndFrom`, `NextWordStart`,
+    `PrevWordStart`). PR-D changed the four helpers from
+    `static member private` to `static member internal`
+    so Tests.Unit can reach them via PR-C's
+    `InternalsVisibleTo` declaration. The tests pin the
+    "whitespace-only word boundaries (paths read as one
+    word)" policy that PR #68 shipped — anyone tightening
+    `IsWordSeparator` to include punctuation will fail
+    these tests and have to update them deliberately.
+
+  Companion changes: `src/Terminal.App/Program.fs`
+  `runUpdateFlow` now calls
+  `UpdateMessages.announcementForException` instead of
+  inlining the match (no behaviour change, just relocation
+  for testability). `tests/Tests.Unit/Tests.Unit.fsproj`
+  gains `UseWPF=true` and a ProjectReference to
+  `Terminal.Accessibility` (needed to resolve the WPF
+  reference set transitively when reaching internal
+  helpers in that assembly).
+
+### Changed
+
+- **Audit-cycle PR-D: SESSION-HANDOFF.md cleanup.** Item 2
+  (Re-enable the GitHub MCP server) removed as obsolete —
+  the MCP has been working reliably for the last ~14 PRs
+  in this session, the original "occasionally disconnects
+  mid-session" concern has not recurred. Items 3-5
+  renumbered to 2-4. Item 6 (Stage 11 `runUpdateFlow`
+  test coverage) removed as shipped via this PR.
+
 ### Removed
 
 - **Audit-cycle PR-C: deleted dead-code MSAA fallback path

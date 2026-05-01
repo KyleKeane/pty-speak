@@ -218,7 +218,7 @@ type internal TerminalTextRange(
     /// single word, matching how most terminal users mentally
     /// parse paths and prompts. A future stage with a real
     /// SGR-aware tokenizer can refine this.
-    static member private IsWordSeparator(cell: Cell) : bool =
+    static member internal IsWordSeparator(cell: Cell) : bool =
         let n = cell.Ch.Value
         n = int ' ' || n = int '\t'
 
@@ -230,7 +230,7 @@ type internal TerminalTextRange(
     /// practice cmd.exe's output rarely produces wrap-words
     /// because cmd.exe's own rendering already breaks at
     /// row boundaries.
-    static member private WordEndFrom
+    static member internal WordEndFrom
             (rows: Cell[][]) (cols: int)
             (r: int) (c: int) : int * int =
         let mutable r = r
@@ -254,7 +254,7 @@ type internal TerminalTextRange(
     /// the first non-separator cell after that run. Returns
     /// `(rowCount, 0)` (one past the document) if no
     /// further word exists.
-    static member private NextWordStart
+    static member internal NextWordStart
             (rows: Cell[][]) (cols: int)
             (r: int) (c: int) : int * int =
         let mutable r = r
@@ -298,7 +298,7 @@ type internal TerminalTextRange(
     /// cells until either the cell BEFORE us is a separator
     /// or we hit `(0, 0)`. Returns `(0, 0)` if no earlier word
     /// boundary exists.
-    static member private PrevWordStart
+    static member internal PrevWordStart
             (rows: Cell[][]) (cols: int)
             (r: int) (c: int) : int * int =
         let mutable r = r
