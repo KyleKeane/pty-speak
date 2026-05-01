@@ -237,6 +237,50 @@ disconnects mid-session.
       reference comment in `OnRender` deferring to Stage 5 is
       the lightweight handle.
 
+6. **Diagnostic-launcher UX needs a screen-reader-native
+   replacement (post-Stage-5/6).** PR #81 shipped
+   `Ctrl+Shift+D` to launch
+   `scripts/test-process-cleanup.ps1` in a separate
+   PowerShell window, with the working hypothesis that the
+   spawned conhost window would route the script's stdout
+   through Windows' default screen-reader path. Manual
+   verification on `v0.0.1-preview.27` (and the next preview
+   that picks up PR #82's script fix) found that **NVDA's
+   reading of the spawned PowerShell window is unreliable**
+   in practice — line-by-line stdout is the script's design
+   but conhost's UIA exposure isn't on par with pty-speak's
+   own `Document` + `Text` pattern peer.
+
+   The right replacement, suspected by the maintainer
+   during the manual test, is to run diagnostics **inside
+   pty-speak itself** rather than spawning a separate
+   process:
+
+   - **Once Stage 6 (keyboard input to PTY) ships:** the
+     user types `pwsh ./test-process-cleanup.ps1` (or
+     similar) directly into pty-speak's child shell. The
+     output flows through the screen and NVDA reads it
+     via the well-tested UIA peer.
+   - **Once Stage 5 (streaming announcements) ships:** the
+     output is also actively narrated as it streams in,
+     not just available via review cursor.
+   - **Optional architectural alternative** if multi-instance
+     launch becomes a desired feature: `Ctrl+Shift+D`
+     could launch a second pty-speak instance whose child
+     shell is the diagnostic, side-by-side with the
+     primary instance. Requires multi-instance plumbing
+     that isn't on the roadmap today.
+   - **Or:** rewrite the diagnostic as F# in
+     `Terminal.App.exe`, emitting announcements via the
+     existing `TerminalSurface.Announce` chokepoint. Most
+     accessible, but duplicates the logic.
+
+   `Ctrl+Shift+D` stays in place as a usable-but-imperfect
+   diagnostic until the above lands; the
+   `docs/ACCESSIBILITY-TESTING.md` "Diagnostic decoder for
+   the launcher hotkeys" subsection notes the limitation
+   so future runs aren't surprised.
+
 ## Working conventions on this repo
 
 The written rules live in [`CONTRIBUTING.md`](../CONTRIBUTING.md):

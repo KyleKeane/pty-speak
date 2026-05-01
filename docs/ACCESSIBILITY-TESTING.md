@@ -513,6 +513,18 @@ the app-reserved-hotkey contract in `spec/tech-plan.md` §6.
 | Release-notes launcher            | From running pty-speak, press `Ctrl+Shift+R`    | NVDA reads "Opened release notes in default browser: <url>"; default browser opens to the GitHub Releases page |
 | Release-notes URL is correct      | Inspect the browser's address bar               | URL is `https://github.com/KyleKeane/pty-speak/releases` (or whatever fork's `UpdateRepoUrl` was configured to) |
 
+**Known limitation (logged to `docs/SESSION-HANDOFF.md`
+item 6 for post-Stage-5/6 follow-up):** the spawned
+PowerShell window's stdout is **unreliably read by NVDA**.
+The script's plain-text output is correct, but conhost's
+UIA exposure isn't on par with pty-speak's own peer.
+Treat the on-screen output as the source of truth (review
+cursor in PowerShell works; sighted helper or
+copy-paste-into-NVDA-Speech-Viewer also works). The right
+fix is to run the diagnostic inside pty-speak itself once
+Stage 5 (streaming announcements) and Stage 6 (keyboard
+input) ship; see SESSION-HANDOFF item 6 for options.
+
 **Diagnostic decoder for the launcher hotkeys:**
 
 - **`Ctrl+Shift+D` silent, no PowerShell window** → Either the
