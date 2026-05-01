@@ -85,9 +85,16 @@ module Program =
                 with
                 | :? OperationCanceledException -> ()
                 | ex ->
+                    // Audit-cycle SR-2: sanitise ex.Message before
+                    // it reaches NVDA via the notification channel.
+                    // Reader-loop exceptions can wrap arbitrary
+                    // parser internals; control characters in the
+                    // message would confuse NVDA's notification
+                    // handler. See SECURITY.md TC-5.
+                    let safe = AnnounceSanitiser.sanitise ex.Message
                     let _ =
                         notifications.TryWrite(
-                            ParserError(sprintf "Parser/reader loop: %s" ex.Message))
+                            ParserError(sprintf "Parser/reader loop: %s" safe))
                     ()
             } :> Task)
 

@@ -17,6 +17,70 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Security
 
+- **Security audit cycle SR-2: accessibility hardening against
+  malformed snapshots and untrusted exception messages.**
+  Closes three HIGH/MEDIUM findings from the comprehensive
+  code-level security audit. Companion to SR-1's parser
+  hardening; together they close every HIGH-severity finding
+  the audit identified.
+
+  - **Jagged-snapshot bounds in word-boundary helpers.**
+    `TerminalTextRange`'s `WordEndFrom`, `NextWordStart`, and
+    `PrevWordStart` walked `rows.[r].[c]` assuming uniform
+    row lengths (`c < cols`). `Screen.SnapshotRows` returns
+    uniform rows today, but the `TerminalTextRange`
+    constructor doesn't enforce uniformity, so a future
+    refactor (e.g. ragged scrollback) or adversarial test
+    construction could trigger `IndexOutOfRangeException`.
+    Each `rows.[r].[c]` access in
+    `src/Terminal.Accessibility/TerminalAutomationPeer.fs` is
+    now guarded against `c >= rows.[r].Length`; the helpers
+    advance to the next row when a short row is encountered.
+
+  - **Control-character `AnnounceSanitiser`.** New
+    `Terminal.Core.AnnounceSanitiser.sanitise : string ->
+    string` strips C0 (0x00..0x1F), DEL (0x7F), and C1
+    (0x80..0x9F) controls before any string reaches NVDA via
+    UIA's `RaiseNotificationEvent`. Applied at the two call
+    sites that interpolate exception messages: the
+    `ParserError` construction in
+    `src/Terminal.App/Program.fs` and all four interpolations
+    in `Terminal.Core.UpdateMessages.announcementForException`.
+    Closes the path where an exception message containing a
+    BiDi override (U+202E), BEL (0x07), or ANSI escape
+    sequence (0x1B) could confuse NVDA's notification handler
+    or spoof announcement direction. Stage 5's streaming
+    coalescer is the future second consumer; the sanitiser
+    is the central chokepoint.
+
+  - **`Move(Character, count)` int64 widening.** Both `Move`
+    and `MoveEndpointByUnit` previously did `curIdx + count`
+    in unchecked int32; `count = int.MinValue` underflowed to
+    a positive value due to wrap, slipping past the `max 0`
+    clamp and returning a wrong-direction result. Both sites
+    now widen to int64 before the add, then narrow back to
+    int after the bounds clamp. Same observed clamping
+    behaviour for legitimate inputs; the underflow class
+    disappears.
+
+  Three new tests in `tests/Tests.Unit/WordBoundaryTests.fs`
+  pin the jagged-snapshot contract (no
+  `IndexOutOfRangeException` from any of the three helpers
+  on a deliberately-jagged `Cell[][]`). Three new tests in
+  `tests/Tests.Unit/UpdateMessagesTests.fs` pin the
+  control-char strip contract end-to-end (BiDi override
+  printable-Unicode preserved; BEL stripped from `IOException`
+  message; clipboard-OSC `\x1b]52;c;...\x07` stripped from
+  catch-all message). New `tests/Tests.Unit/AnnounceSanitiserTests.fs`
+  exercises the sanitiser directly: empty / null tolerance,
+  pure-ASCII identity, each control class stripped, BiDi /
+  multi-byte UTF-8 / combining-mark printable Unicode
+  preserved, long control-byte runs handled.
+
+  Companion PRs: SR-1 (parser hardening, merged via #76);
+  SR-3 (`SECURITY.md` audit response, queued). The full
+  plan is in `/root/.claude/plans/replicated-riding-sketch.md`.
+
 - **Security audit cycle SR-1: parser bounds against malicious
   input.** Closes three HIGH/MEDIUM findings from the
   comprehensive code-level security audit. All three are
