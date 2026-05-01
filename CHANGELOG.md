@@ -17,6 +17,77 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Stage 4.5 PR-B: alt-screen 1049 back-buffer.** Closes the
+  last latent gap in the Claude Code rendering substrate.
+  Claude's Ink reconciler — and many other modern TUIs (`less`,
+  `vim`, `fzf`, `git log` pager, npm install's progress bars)
+  — sends `\x1b[?1049h` on startup to enter the alternate
+  screen and `\x1b[?1049l` on exit. Without alt-screen support,
+  the primary buffer's scrollback would get corrupted on every
+  alt-screen TUI launch; with it, the primary content is
+  preserved untouched and the screen reader can navigate
+  whichever buffer is active at the moment.
+
+  Implementation:
+
+  - `Screen` now holds two `Cell[,]` buffers (`primaryBuffer`,
+    `altBuffer`) and a `mutable activeBuffer` field that
+    points at one of them. Every cell read / write site
+    (`printRune`, `executeC0` for BS/HT/LF/CR, `eraseDisplay`,
+    `eraseLine`, `csiDispatch` cursor moves, `SnapshotRows`,
+    `GetCell`) was migrated from `cells.[r, c]` to
+    `activeBuffer.[r, c]` in one mechanical rename.
+
+  - `csiPrivateDispatch` (added by PR-A) now handles
+    `?1049h` → `enterAltScreen ()` and `?1049l` →
+    `exitAltScreen ()`. Both functions are idempotent: a
+    repeated `?1049h` while already in alt-screen is a
+    no-op; a repeated `?1049l` while already on primary is
+    a no-op.
+
+  - **Save/restore semantics match xterm `?1049`**: on enter,
+    the cursor row / col / SGR attrs are captured into a
+    `savedPrimary: (int * int * SgrAttrs) option` field;
+    `activeBuffer` is repointed at `altBuffer`; the alt
+    buffer is cleared (xterm convention — alt-screen always
+    starts blank); cursor moves to (0, 0) with default
+    attrs. On exit, the saved state is restored and
+    `activeBuffer` is repointed at `primaryBuffer`. Primary
+    cells are *never copied* — they sit unchanged in
+    `primaryBuffer` because nothing wrote to them during
+    the alt session.
+
+  - **`Modes.AltScreen` flag** flips with the swap so future
+    consumers (UIA peer announcing buffer changes, Stage 5
+    coalescer needing flush barriers, etc.) can read it.
+
+  - **`SequenceNumber` bumps on `?1049h/l`** as a side
+    effect of every `Apply` call. Stage 5's coalescer
+    should treat alt-screen toggles as a hard
+    invalidation barrier — flush the debounce window,
+    then resume — because the row content can change
+    wholesale between buffers and a debounce window
+    straddling a swap would mis-attribute rows. The PR-B
+    test `SequenceNumber bumps on ?1049h and ?1049l` pins
+    the contract for Stage 5's author to read.
+
+  9 new tests in `tests/Tests.Unit/ScreenTests.fs` exercise:
+  the AltScreen flag toggle; primary content preservation
+  across alt-screen entry/exit; alt-buffer reset on every
+  entry; cursor + attrs reset on enter and restore on
+  exit; idempotency of double-enter and double-exit;
+  `SnapshotRows` returning alt content during alt mode and
+  primary content after exit; and the `SequenceNumber`
+  bump on toggle.
+
+  **Stage 4.5 cycle complete with this PR**: the substrate
+  is in place for Stage 7 to actually run Claude Code. Next
+  is Stage 5 (streaming output notifications) — the
+  coalescer plugs into the `ScreenNotification` channel
+  seam shipped in audit-cycle PR-B and uses the `Modes`
+  bits + `SequenceNumber` bumps that Stage 4.5 PR-A and
+  PR-B established.
+
 - **Stage 4.5 PR-A: VT mode coverage + SGR table fills.**
   Closes the latent gap where the parser correctly emits
   events that `Screen.fs` silently dropped at its `_ -> ()`

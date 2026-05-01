@@ -67,8 +67,24 @@ type Screen(rows: int, cols: int) =
         if rows <= 0 then invalidArg "rows" "rows must be positive"
         if cols <= 0 then invalidArg "cols" "cols must be positive"
 
-    // Row-major grid. Row 0 is the top of the screen.
-    let cells: Cell[,] = Array2D.create rows cols Cell.blank
+    // Stage 4.5 PR-B: alt-screen 1049 back-buffer.
+    // Two row-major grids (primary + alt). All cell reads /
+    // writes go through `activeBuffer`, which is one of the
+    // two depending on alt-screen state. Primary content is
+    // preserved by *reference* during alt-screen sessions —
+    // we never copy primary on enter. On exit we just stop
+    // pointing at alt; primary is unchanged because nothing
+    // wrote to it during the alt-screen session.
+    //
+    // `savedPrimary` captures the cursor + SGR state that the
+    // primary buffer was in at the moment of `?1049h`, so
+    // `?1049l` can restore them. The xterm convention is that
+    // `?1049` saves/restores cursor + attrs as part of the
+    // buffer swap (it's a DECSC-equivalent baked in).
+    let primaryBuffer: Cell[,] = Array2D.create rows cols Cell.blank
+    let altBuffer: Cell[,] = Array2D.create rows cols Cell.blank
+    let mutable activeBuffer: Cell[,] = primaryBuffer
+    let mutable savedPrimary: (int * int * SgrAttrs) option = None
     let cursor: Cursor = Cursor.create ()
     let mutable currentAttrs: SgrAttrs = SgrAttrs.defaults
 
@@ -91,9 +107,9 @@ type Screen(rows: int, cols: int) =
         // Move every row up by one; bottom row becomes blank.
         for r in 0 .. rows - 2 do
             for c in 0 .. cols - 1 do
-                cells.[r, c] <- cells.[r + 1, c]
+                activeBuffer.[r, c] <- activeBuffer.[r + 1, c]
         for c in 0 .. cols - 1 do
-            cells.[rows - 1, c] <- Cell.blank
+            activeBuffer.[rows - 1, c] <- Cell.blank
 
     let advanceRow () =
         if cursor.Row < rows - 1 then
@@ -103,7 +119,7 @@ type Screen(rows: int, cols: int) =
 
     let writeAt (r: int) (c: int) (cell: Cell) =
         if r >= 0 && r < rows && c >= 0 && c < cols then
-            cells.[r, c] <- cell
+            activeBuffer.[r, c] <- cell
 
     let printRune (rune: Rune) =
         if cursor.Col >= cols then
@@ -139,32 +155,32 @@ type Screen(rows: int, cols: int) =
             // Clear from cursor to end of current line, then clear
             // following rows.
             for c in cursor.Col .. cols - 1 do
-                cells.[cursor.Row, c] <- Cell.blank
+                activeBuffer.[cursor.Row, c] <- Cell.blank
             for r in cursor.Row + 1 .. rows - 1 do
                 for c in 0 .. cols - 1 do
-                    cells.[r, c] <- Cell.blank
+                    activeBuffer.[r, c] <- Cell.blank
         | 1 ->
             for r in 0 .. cursor.Row - 1 do
                 for c in 0 .. cols - 1 do
-                    cells.[r, c] <- Cell.blank
+                    activeBuffer.[r, c] <- Cell.blank
             for c in 0 .. cursor.Col do
-                if c < cols then cells.[cursor.Row, c] <- Cell.blank
+                if c < cols then activeBuffer.[cursor.Row, c] <- Cell.blank
         | _ ->
             for r in 0 .. rows - 1 do
                 for c in 0 .. cols - 1 do
-                    cells.[r, c] <- Cell.blank
+                    activeBuffer.[r, c] <- Cell.blank
 
     let eraseLine (mode: int) =
         match mode with
         | 0 ->
             for c in cursor.Col .. cols - 1 do
-                cells.[cursor.Row, c] <- Cell.blank
+                activeBuffer.[cursor.Row, c] <- Cell.blank
         | 1 ->
             for c in 0 .. cursor.Col do
-                if c < cols then cells.[cursor.Row, c] <- Cell.blank
+                if c < cols then activeBuffer.[cursor.Row, c] <- Cell.blank
         | _ ->
             for c in 0 .. cols - 1 do
-                cells.[cursor.Row, c] <- Cell.blank
+                activeBuffer.[cursor.Row, c] <- Cell.blank
 
     /// Apply a single SGR parameter to currentAttrs.
     let applySgrOne (n: int) =
@@ -240,6 +256,56 @@ type Screen(rows: int, cols: int) =
                     walk (i + 1)
             walk 0
 
+    /// Switch the active buffer from primary to alt and reset
+    /// alt-screen state (cleared buffer, cursor at origin,
+    /// default attrs). Called when DECSET `?1049h` arrives.
+    /// Idempotent: if alt-screen is already active, this is a
+    /// no-op.
+    ///
+    /// Save semantics match xterm's `?1049`: the cursor
+    /// position and SGR attrs of the primary buffer at the
+    /// moment of swap are captured into `savedPrimary` so
+    /// `?1049l` can restore them. The primary buffer's *cells*
+    /// are not copied — they stay in `primaryBuffer` because
+    /// nothing writes to it during the alt session.
+    let enterAltScreen () =
+        if not modes.AltScreen then
+            savedPrimary <- Some (cursor.Row, cursor.Col, currentAttrs)
+            // Clear alt buffer (xterm convention: alt-screen
+            // starts blank).
+            for r in 0 .. rows - 1 do
+                for c in 0 .. cols - 1 do
+                    altBuffer.[r, c] <- Cell.blank
+            activeBuffer <- altBuffer
+            cursor.Row <- 0
+            cursor.Col <- 0
+            currentAttrs <- SgrAttrs.defaults
+            modes.AltScreen <- true
+
+    /// Switch the active buffer back to primary and restore
+    /// the cursor + SGR attrs that were saved on enter. Called
+    /// when DECSET `?1049l` arrives. Idempotent: if alt-screen
+    /// is not active, this is a no-op.
+    ///
+    /// Defensive: if `savedPrimary` is somehow `None` while
+    /// `modes.AltScreen` is `true` (shouldn't happen — they
+    /// flip atomically — but guard anyway), fall back to
+    /// (0, 0) with default attrs rather than crash.
+    let exitAltScreen () =
+        if modes.AltScreen then
+            match savedPrimary with
+            | Some (savedRow, savedCol, savedAttrs) ->
+                cursor.Row <- savedRow
+                cursor.Col <- savedCol
+                currentAttrs <- savedAttrs
+            | None ->
+                cursor.Row <- 0
+                cursor.Col <- 0
+                currentAttrs <- SgrAttrs.defaults
+            savedPrimary <- None
+            activeBuffer <- primaryBuffer
+            modes.AltScreen <- false
+
     /// CSI private-marker dispatch: handles sequences emitted
     /// when the parser sees a `?` private byte (DECSET / DECRESET
     /// for terminal modes). Stage 4.5 PR-A wires DECTCEM (`?25h/l`,
@@ -256,8 +322,8 @@ type Screen(rows: int, cols: int) =
         match finalByte, n with
         | 'h', 25 -> modes.CursorVisible <- true
         | 'l', 25 -> modes.CursorVisible <- false
-        // PR-B will add: | 'h', 1049 -> enterAltScreen ()
-        //                | 'l', 1049 -> exitAltScreen ()
+        | 'h', 1049 -> enterAltScreen ()
+        | 'l', 1049 -> exitAltScreen ()
         // Stage 6 will add: ?1 (DECCKM), ?2004 (bracketed paste),
         //                   ?1004 (focus reporting)
         | _ -> ()
@@ -352,7 +418,7 @@ type Screen(rows: int, cols: int) =
     member _.Modes = modes
 
     /// Read-only access to a cell. (row, col) are 0-indexed.
-    member _.GetCell(row: int, col: int) : Cell = cells.[row, col]
+    member _.GetCell(row: int, col: int) : Cell = activeBuffer.[row, col]
 
     /// Monotonic counter incremented on every Apply. Stage 4 ranges
     /// store this at construction; if it has changed when the range
@@ -375,7 +441,7 @@ type Screen(rows: int, cols: int) =
         lock gate (fun () ->
             let snapshot = Array.init count (fun i ->
                 let r = startRow + i
-                Array.init cols (fun c -> cells.[r, c]))
+                Array.init cols (fun c -> activeBuffer.[r, c]))
             sequenceNumber, snapshot)
 
     /// Apply a single VT event to the buffer. Stage 3a covers the

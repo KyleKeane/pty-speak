@@ -482,3 +482,140 @@ let ``OSC 52 sequence increments SequenceNumber but does not mutate cells`` () =
     // Cells unchanged.
     for c in 0 .. snap0.[0].Length - 1 do
         Assert.Equal(snap0.[0].[c], snap1.[0].[c])
+
+// ---------------------------------------------------------------------
+// Stage 4.5 PR-B — alt-screen 1049 back-buffer
+// ---------------------------------------------------------------------
+//
+// Tests for DECSET ?1049h/l. Pointer-swap semantics: alt-screen
+// is its own buffer; primary content is preserved by reference
+// (no copy), so exiting alt-screen surfaces the unchanged
+// primary buffer. Cursor + SGR attrs are saved on enter and
+// restored on exit (xterm `?1049` is a buffer swap + DECSC
+// rolled into one).
+
+[<Fact>]
+let ``alt-screen toggle flips Modes.AltScreen flag`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    Assert.False(screen.Modes.AltScreen)
+    feed screen (ascii "\x1b[?1049h")
+    Assert.True(screen.Modes.AltScreen)
+    feed screen (ascii "\x1b[?1049l")
+    Assert.False(screen.Modes.AltScreen)
+
+[<Fact>]
+let ``alt-screen entry preserves primary content (pointer-swap, no copy)`` () =
+    let screen = Screen(rows = 3, cols = 8)
+    feed screen (ascii "primary!")
+    Assert.Equal("primary!", rowText screen 0)
+    // Enter alt-screen and write something completely
+    // different on it.
+    feed screen (ascii "\x1b[?1049h")
+    feed screen (ascii "ALTSCRN!")
+    Assert.Equal("ALTSCRN!", rowText screen 0)
+    // Exit alt-screen — primary should be untouched because
+    // nothing wrote to it during the alt session.
+    feed screen (ascii "\x1b[?1049l")
+    Assert.Equal("primary!", rowText screen 0)
+
+[<Fact>]
+let ``alt-screen entry clears the alt buffer`` () =
+    // Alt buffer starts blank on every enter; if we enter,
+    // write, exit, and re-enter, the alt buffer should be
+    // blank on the second entry (xterm convention).
+    let screen = Screen(rows = 3, cols = 5)
+    feed screen (ascii "\x1b[?1049h")
+    feed screen (ascii "first")
+    Assert.Equal("first", rowText screen 0)
+    feed screen (ascii "\x1b[?1049l")
+    feed screen (ascii "\x1b[?1049h")
+    // Second entry should clear the alt buffer.
+    Assert.Equal("     ", rowText screen 0)
+
+[<Fact>]
+let ``alt-screen entry resets cursor to (0, 0) with default attrs`` () =
+    let screen = Screen(rows = 3, cols = 10)
+    // Set up non-trivial primary state: bold attr + cursor at (1, 5).
+    feed screen (ascii "\x1b[1m\x1b[2;6H")
+    Assert.True(screen.CurrentAttrs.Bold)
+    Assert.Equal(1, screen.Cursor.Row)
+    Assert.Equal(5, screen.Cursor.Col)
+    feed screen (ascii "\x1b[?1049h")
+    // On enter: cursor at (0, 0), default attrs.
+    Assert.Equal(0, screen.Cursor.Row)
+    Assert.Equal(0, screen.Cursor.Col)
+    Assert.False(screen.CurrentAttrs.Bold)
+
+[<Fact>]
+let ``alt-screen exit restores cursor + SGR attrs from primary`` () =
+    let screen = Screen(rows = 3, cols = 10)
+    feed screen (ascii "\x1b[1m\x1b[2;6H")  // bold + (1, 5)
+    feed screen (ascii "\x1b[?1049h")
+    // Mess with state inside alt-screen.
+    feed screen (ascii "\x1b[3;1H\x1b[3m")  // (2, 0) + italic
+    feed screen (ascii "\x1b[?1049l")
+    // Exit: cursor and bold attrs restored from primary.
+    Assert.Equal(1, screen.Cursor.Row)
+    Assert.Equal(5, screen.Cursor.Col)
+    Assert.True(screen.CurrentAttrs.Bold)
+    Assert.False(screen.CurrentAttrs.Italic)
+
+[<Fact>]
+let ``alt-screen entry is idempotent (?1049h while already in alt is a no-op)`` () =
+    let screen = Screen(rows = 3, cols = 10)
+    feed screen (ascii "primary")
+    feed screen (ascii "\x1b[?1049h")
+    feed screen (ascii "altone")
+    Assert.Equal("altone    ", rowText screen 0)
+    // Second ?1049h must not clear the alt buffer (the
+    // already-in-alt branch short-circuits before the clear
+    // loop).
+    feed screen (ascii "\x1b[?1049h")
+    Assert.Equal("altone    ", rowText screen 0)
+
+[<Fact>]
+let ``alt-screen exit is idempotent (?1049l while not in alt is a no-op)`` () =
+    let screen = Screen(rows = 3, cols = 10)
+    feed screen (ascii "primary")
+    Assert.False(screen.Modes.AltScreen)
+    feed screen (ascii "\x1b[?1049l")
+    Assert.False(screen.Modes.AltScreen)
+    // Primary content unchanged.
+    Assert.Equal("primary   ", rowText screen 0)
+
+[<Fact>]
+let ``SnapshotRows during alt-screen returns alt content; post-exit returns primary`` () =
+    let screen = Screen(rows = 1, cols = 8)
+    feed screen (ascii "primary!")
+    feed screen (ascii "\x1b[?1049h")
+    feed screen (ascii "altscrn!")
+    let _, snapDuring = screen.SnapshotRows(0, 1)
+    let cellChars =
+        snapDuring.[0]
+        |> Array.map (fun c -> c.Ch.ToString())
+        |> String.concat ""
+    Assert.Equal("altscrn!", cellChars)
+    feed screen (ascii "\x1b[?1049l")
+    let _, snapAfter = screen.SnapshotRows(0, 1)
+    let cellCharsAfter =
+        snapAfter.[0]
+        |> Array.map (fun c -> c.Ch.ToString())
+        |> String.concat ""
+    Assert.Equal("primary!", cellCharsAfter)
+
+[<Fact>]
+let ``SequenceNumber bumps on ?1049h and ?1049l`` () =
+    // Stage 5's coalescer must treat alt-screen toggles as
+    // flush barriers — the row content can change wholesale
+    // between primary and alt, so a debounce window
+    // straddling a swap would mis-attribute rows. The bump is
+    // automatic because Apply unconditionally bumps for every
+    // event; this test pins the contract.
+    let screen = Screen(rows = 1, cols = 5)
+    let seq0 = screen.SequenceNumber
+    feed screen (ascii "\x1b[?1049h")
+    let seq1 = screen.SequenceNumber
+    Assert.True(seq1 > seq0)
+    feed screen (ascii "\x1b[?1049l")
+    let seq2 = screen.SequenceNumber
+    Assert.True(seq2 > seq1)
