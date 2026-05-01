@@ -48,12 +48,7 @@ disconnects mid-session.
    3a-screen-model, 3b-wpf-rendering}`. Tags don't trigger any
    workflow; they're rollback handles only.
 
-2. **Re-enable the GitHub MCP server** in the next Claude Code thread
-   if it's not auto-reconnected. Without it the agent can't
-   programmatically check PR status, merge PRs, or post issue
-   comments — falls back to asking the maintainer.
-
-3. **Stage 4 + Stage 11 NVDA verification — complete except
+2. **Stage 4 + Stage 11 NVDA verification — complete except
    for one process-cleanup row.** The maintainer ran the
    relevant rows of
    [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
@@ -121,7 +116,7 @@ disconnects mid-session.
    override regression on `TerminalAutomationPeer` per
    the Stage-4 diagnostic decoder.
 
-4. **Small CI / release timing optimisation pass** (low priority,
+3. **Small CI / release timing optimisation pass** (low priority,
    pure cleanup). Current CI per-PR job times are reasonable but
    not tight: actionlint ~12 s, markdown link check ~56 s,
    Build+test (windows-latest) ~2 min. Candidate trims that don't
@@ -149,7 +144,7 @@ disconnects mid-session.
    (it's the only thing that catches packaging regressions
    before release day).
 
-5. **Enable NuGet lock files (deferred from PR #41).** The
+4. **Enable NuGet lock files (deferred from PR #41).** The
    investigation in PR #41 settled on enabling
    `<RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>`
    in `Directory.Build.props` so `dotnet restore` writes a
@@ -171,43 +166,6 @@ disconnects mid-session.
    The `**/packages.lock.json` glob already in `ci.yml`'s cache
    key picks up the lock files automatically once they exist —
    no separate cache-key change needed.
-
-6. **Stage 11 `runUpdateFlow` test coverage** (deferred from
-   audit-cycle PR-C). The audit identified
-   `src/Terminal.App/Program.fs:runUpdateFlow` (~80 lines,
-   three exception branches) as the largest untested surface
-   in the codebase. PR-C scoped this out because the cheapest
-   test approach needs an `IUpdateManager` adapter wrapping
-   Velopack's concrete `UpdateManager` class so tests can
-   inject a fake — that's adapter scaffold large enough to
-   warrant its own focused PR. Recommended approach when
-   landing this:
-
-   - Define `IUpdateManager` in
-     `src/Terminal.App/Program.fs` (or a sibling F# file)
-     mirroring the methods used (`IsInstalled`,
-     `CheckForUpdatesAsync`, `DownloadUpdatesAsync`,
-     `ApplyUpdatesAndRestart`).
-   - Wrap Velopack's concrete `UpdateManager` in a
-     `VelopackUpdateManager : IUpdateManager` adapter.
-   - `runUpdateFlow` takes a factory (or the
-     `IUpdateManager` directly) so tests inject a fake.
-   - Tests in a new
-     `tests/Tests.Unit/UpdateFlowTests.fs` cover:
-     `HttpRequestException` → "cannot reach GitHub Releases";
-     `TaskCanceledException` → "Update check timed out";
-     `IOException` → "Update could not be written to disk";
-     repeat keypress while in-flight → dedup announcement.
-   - **Alternative (simpler)**: extract the
-     exception-to-message mapping into a pure function
-     `announcementForUpdateException : exn -> string` and
-     test that directly without mocking UpdateManager. This
-     covers the regression class that matters most (the
-     user-facing message for each exception class) without
-     the adapter scaffold cost. Either approach is
-     acceptable; pick based on whether other tests will
-     also need an `IUpdateManager` adapter (e.g. if Stage
-     11 grows new flows).
 
 ## Working conventions on this repo
 

@@ -7,6 +7,15 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <GenerateProgramFile>false</GenerateProgramFile>
+    <!--
+      Audit-cycle PR-D added Terminal.Accessibility (which has
+      UseWPF=true) as a project ref so we can unit-test its
+      `internal` word-boundary helpers. UseWPF here ensures
+      the WPF reference set resolves; tests don't directly
+      construct WPF types, but the F# compiler still needs
+      the references when it loads the dependency graph.
+    -->
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,6 +23,8 @@
     <Compile Include="ConPtyHostTests.fs" />
     <Compile Include="VtParserTests.fs" />
     <Compile Include="ScreenTests.fs" />
+    <Compile Include="UpdateMessagesTests.fs" />
+    <Compile Include="WordBoundaryTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
@@ -30,6 +41,14 @@
     <ProjectReference Include="..\..\src\Terminal.Core\Terminal.Core.fsproj" />
     <ProjectReference Include="..\..\src\Terminal.Pty\Terminal.Pty.fsproj" />
     <ProjectReference Include="..\..\src\Terminal.Parser\Terminal.Parser.fsproj" />
+    <!--
+      Audit-cycle PR-D added Terminal.Accessibility so
+      WordBoundaryTests can reach `TerminalTextRange`'s
+      static internal helpers via the
+      `[<assembly: InternalsVisibleTo("PtySpeak.Tests.Unit")>]`
+      declaration PR-C added to Terminal.Accessibility.
+    -->
+    <ProjectReference Include="..\..\src\Terminal.Accessibility\Terminal.Accessibility.fsproj" />
   </ItemGroup>
 
 </Project>

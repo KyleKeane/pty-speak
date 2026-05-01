@@ -152,42 +152,22 @@ module Program =
                                 do! mgr.DownloadUpdatesAsync(updateInfo, progress)
                                 announce "Restarting to apply update..."
                                 mgr.ApplyUpdatesAndRestart(updateInfo)
-                    with
-                    | :? System.Net.Http.HttpRequestException as ex ->
-                        // Network-layer failure: DNS resolution,
-                        // connection refused, TLS handshake, etc.
-                        // The most common case offline; surface it
-                        // explicitly so the user knows it's
-                        // recoverable by reconnecting rather than
-                        // a permanent app-state issue.
-                        announce
-                            (sprintf
-                                "Update check failed: cannot reach GitHub Releases. Check your internet connection. (%s)"
-                                ex.Message)
-                    | :? TaskCanceledException ->
-                        // Includes both explicit cancellation
-                        // and HTTP timeouts. Velopack uses
-                        // CancellationToken under the hood; a
-                        // dropped connection mid-download lands
-                        // here.
-                        announce
-                            "Update check timed out. Check your internet connection and try Ctrl+Shift+U again."
-                    | :? System.IO.IOException as ex ->
-                        // Disk-side failure during download or
-                        // applying the patch — typically
-                        // permission denied or out of disk.
-                        announce
-                            (sprintf
-                                "Update could not be written to disk: %s. Free up space or check folder permissions in %%LocalAppData%%\\pty-speak\\."
-                                ex.Message)
-                    | ex ->
-                        // Catch-all for the genuinely unexpected.
-                        // Specific Velopack exception types
-                        // (SignatureMismatch when signing returns,
-                        // etc.) can be split out as their failure
-                        // modes become observable.
-                        announce
-                            (sprintf "Update failed: %s" ex.Message)
+                    with ex ->
+                        // Audit-cycle PR-D extracted the
+                        // exception → user-message mapping into
+                        // the pure `UpdateMessages.announcementForException`
+                        // function in Terminal.Core so the
+                        // four cases (HttpRequestException →
+                        // network message, TaskCanceledException →
+                        // timeout message, IOException → disk
+                        // message, catch-all → generic message)
+                        // are unit-testable without mocking
+                        // Velopack's UpdateManager. New Velopack
+                        // exception types (e.g. SignatureMismatch
+                        // when signing returns) get added as
+                        // discrete branches in that module; this
+                        // call site doesn't change.
+                        announce (UpdateMessages.announcementForException ex)
 
                     updateInProgress <- false
                 }
