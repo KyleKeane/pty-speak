@@ -192,6 +192,137 @@ type TerminalTextRange(
             r <- r + 1
         sb.ToString()
 
+    /// Whitespace test for word-boundary detection. We treat
+    /// `' '` (space, U+0020) and `\t` (tab, U+0009) as the
+    /// only word separators. Newlines aren't relevant because
+    /// the row dimension already separates them; cells inside
+    /// the buffer never contain `\n` directly. Punctuation is
+    /// NOT a separator — "C:\\Users\\test>" is read as a
+    /// single word, matching how most terminal users mentally
+    /// parse paths and prompts. A future stage with a real
+    /// SGR-aware tokenizer can refine this.
+    static member private IsWordSeparator(cell: Cell) : bool =
+        let n = cell.Ch.Value
+        n = int ' ' || n = int '\t'
+
+    /// Find the position one past the end of the word that
+    /// starts at `(r, c)`. If `(r, c)` is on a separator,
+    /// returns the same position (zero-width). Walks forward
+    /// across rows so a word that wraps the implicit row
+    /// boundary is still returned as one word — though in
+    /// practice cmd.exe's output rarely produces wrap-words
+    /// because cmd.exe's own rendering already breaks at
+    /// row boundaries.
+    static member private WordEndFrom
+            (rows: Cell[][]) (cols: int)
+            (r: int) (c: int) : int * int =
+        let mutable r = r
+        let mutable c = c
+        let mutable stop = false
+        while not stop && r < rows.Length do
+            if c >= cols then
+                r <- r + 1
+                c <- 0
+            elif TerminalTextRange.IsWordSeparator(rows.[r].[c]) then
+                stop <- true
+            else
+                c <- c + 1
+        (r, c)
+
+    /// Find the position of the next word start strictly
+    /// after `(r, c)`. Skips any separators after the
+    /// current position, then any non-separators (the
+    /// remainder of the current word if we're inside one),
+    /// then the run of separators that follow, landing on
+    /// the first non-separator cell after that run. Returns
+    /// `(rowCount, 0)` (one past the document) if no
+    /// further word exists.
+    static member private NextWordStart
+            (rows: Cell[][]) (cols: int)
+            (r: int) (c: int) : int * int =
+        let mutable r = r
+        let mutable c = c
+        let advanceOne () =
+            c <- c + 1
+            if c >= cols then
+                c <- 0
+                r <- r + 1
+        // If we're currently on a non-separator cell, skip
+        // forward through the rest of this word first.
+        let mutable inWord =
+            r < rows.Length
+            && c < cols
+            && not (TerminalTextRange.IsWordSeparator(rows.[r].[c]))
+        while inWord do
+            advanceOne ()
+            inWord <-
+                r < rows.Length
+                && c < cols
+                && not (TerminalTextRange.IsWordSeparator(rows.[r].[c]))
+        // Now skip the separator run.
+        let mutable inSep =
+            r < rows.Length
+            && c < cols
+            && TerminalTextRange.IsWordSeparator(rows.[r].[c])
+        while inSep do
+            advanceOne ()
+            inSep <-
+                r < rows.Length
+                && c < cols
+                && TerminalTextRange.IsWordSeparator(rows.[r].[c])
+        // Either we're at the start of a new word, or we
+        // walked off the end of the document.
+        if r >= rows.Length then (rows.Length, 0)
+        else (r, c)
+
+    /// Find the position of the previous word start, scanning
+    /// strictly backward from `(r, c)`. Walks back through any
+    /// separator run, then back through the current word's
+    /// cells until either the cell BEFORE us is a separator
+    /// or we hit `(0, 0)`. Returns `(0, 0)` if no earlier word
+    /// boundary exists.
+    static member private PrevWordStart
+            (rows: Cell[][]) (cols: int)
+            (r: int) (c: int) : int * int =
+        let mutable r = r
+        let mutable c = c
+        let retreatOne () =
+            if c = 0 then
+                if r = 0 then ()
+                else
+                    r <- r - 1
+                    c <- cols - 1
+            else
+                c <- c - 1
+        let atOrigin () = r = 0 && c = 0
+        // Step back one to start, since we want the position
+        // BEFORE the current one.
+        retreatOne ()
+        // Skip separator run going backward.
+        while not (atOrigin ())
+              && r < rows.Length
+              && c < cols
+              && TerminalTextRange.IsWordSeparator(rows.[r].[c]) do
+            retreatOne ()
+        // Now we're on a non-separator (or at origin). Walk
+        // back to the start of this word.
+        let mutable lastNonSep = (r, c)
+        let mutable continueBack = true
+        while continueBack && not (atOrigin ()) do
+            // Peek one back; if it's a separator, stop here.
+            let pr = if c = 0 then r - 1 else r
+            let pc = if c = 0 then cols - 1 else c - 1
+            if pr < 0
+               || pr >= rows.Length
+               || pc < 0
+               || pc >= cols
+               || TerminalTextRange.IsWordSeparator(rows.[pr].[pc]) then
+                continueBack <- false
+            else
+                retreatOne ()
+                lastNonSep <- (r, c)
+        lastNonSep
+
     interface ITextRangeProvider with
 
         member _.Clone() =
@@ -231,14 +362,14 @@ type TerminalTextRange(
 
         member _.ExpandToEnclosingUnit(unit: TextUnit) =
             // Reshape the range to enclose the unit at `Start`.
-            // For Line we pick the row of `Start` and span the
-            // whole row plus the implicit row separator (so
-            // GetText returns the row's cells). Word /
-            // Paragraph / Page degrade to Line for now — Stage
-            // 4 ships line + character navigation; word
-            // semantics arrive later when we have a tokenizer
-            // for terminal output (prompt vs command vs result
-            // is the heuristic).
+            // For Line we pick the row of `Start`; for Word we
+            // pick the contiguous non-whitespace run at or
+            // after `Start`; for Character we pick a 1-cell
+            // range; for Document we pick everything. Paragraph
+            // and Page still degrade to Line — terminal output
+            // doesn't have well-defined paragraph or page
+            // semantics, and forcing a definition here would be
+            // arbitrary. Refine in a later stage if needed.
             match unit with
             | TextUnit.Character ->
                 // 1-cell range starting at the current Start.
@@ -257,9 +388,39 @@ type TerminalTextRange(
                 startCol <- 0
                 endRow <- rowCount
                 endCol <- 0
+            | TextUnit.Word ->
+                // If Start is on a separator, walk forward to
+                // the next word; otherwise the current word
+                // begins where it does. End is the position
+                // one past the last non-separator cell of that
+                // word.
+                if rowCount = 0 then
+                    startRow <- 0
+                    startCol <- 0
+                    endRow <- 0
+                    endCol <- 0
+                else
+                    let (sr, sc) =
+                        TerminalTextRange.ClampPos(rowCount, cols, startRow, startCol)
+                    let onSep =
+                        sr < rowCount
+                        && sc < cols
+                        && TerminalTextRange.IsWordSeparator(rows.[sr].[sc])
+                    let (wr, wc) =
+                        if onSep then
+                            TerminalTextRange.NextWordStart rows cols sr sc
+                        else
+                            (sr, sc)
+                    let (er, ec) =
+                        if wr >= rowCount then (rowCount, 0)
+                        else TerminalTextRange.WordEndFrom rows cols wr wc
+                    startRow <- wr
+                    startCol <- wc
+                    endRow <- er
+                    endCol <- ec
             | _ ->
-                // Line / Word / Paragraph / Page → enclose the
-                // row at Start.
+                // Line / Paragraph / Page → enclose the row at
+                // Start.
                 let (sr, _) =
                     TerminalTextRange.ClampPos(rowCount, cols, startRow, startCol)
                 if rowCount = 0 then
@@ -329,8 +490,60 @@ type TerminalTextRange(
                     endRow <- er
                     endCol <- ec
                     actualMoved
+                | TextUnit.Word ->
+                    // Walk forward / backward through word
+                    // starts; each NextWordStart / PrevWordStart
+                    // call counts as one unit moved. After the
+                    // walk, expand to the word at that position
+                    // so the resulting range is Word-shaped.
+                    let mutable r = startRow
+                    let mutable c = startCol
+                    let mutable moved = 0
+                    if count > 0 then
+                        let mutable i = 0
+                        while i < count do
+                            let (nr, nc) =
+                                TerminalTextRange.NextWordStart rows cols r c
+                            if nr >= rowCount then
+                                i <- count  // stop loop
+                            else
+                                r <- nr
+                                c <- nc
+                                moved <- moved + 1
+                                i <- i + 1
+                    else
+                        let mutable i = 0
+                        while i > count do
+                            // We're at (r, c); find prev word start
+                            let (pr, pc) =
+                                TerminalTextRange.PrevWordStart rows cols r c
+                            if (pr, pc) = (r, c) then
+                                i <- count  // already at origin, stop
+                            else
+                                r <- pr
+                                c <- pc
+                                moved <- moved - 1
+                                i <- i - 1
+                    // Now reshape range to enclose the word at (r, c).
+                    let onSep =
+                        r < rowCount
+                        && c < cols
+                        && TerminalTextRange.IsWordSeparator(rows.[r].[c])
+                    let (wr, wc) =
+                        if onSep then
+                            TerminalTextRange.NextWordStart rows cols r c
+                        else
+                            (r, c)
+                    let (er, ec) =
+                        if wr >= rowCount then (rowCount, 0)
+                        else TerminalTextRange.WordEndFrom rows cols wr wc
+                    startRow <- wr
+                    startCol <- wc
+                    endRow <- er
+                    endCol <- ec
+                    moved
                 | _ ->
-                    // Line / Word / Paragraph / Page → line.
+                    // Line / Paragraph / Page → line.
                     let curRow = max 0 (min (rowCount - 1) startRow)
                     let target = max 0 (min (rowCount - 1) (curRow + count))
                     let actualMoved = target - curRow
@@ -369,6 +582,39 @@ type TerminalTextRange(
                         let nr = targetIdx / cols
                         let nc = targetIdx % cols
                         (nr, nc, moved)
+                    | TextUnit.Word ->
+                        // Walk this endpoint by word boundaries
+                        // without touching the other. Each
+                        // step is one NextWordStart /
+                        // PrevWordStart call.
+                        let mutable r = curR
+                        let mutable c = curC
+                        let mutable moved = 0
+                        if count > 0 then
+                            let mutable i = 0
+                            while i < count do
+                                let (nr, nc) =
+                                    TerminalTextRange.NextWordStart rows cols r c
+                                if nr >= rowCount then
+                                    i <- count
+                                else
+                                    r <- nr
+                                    c <- nc
+                                    moved <- moved + 1
+                                    i <- i + 1
+                        else
+                            let mutable i = 0
+                            while i > count do
+                                let (pr, pc) =
+                                    TerminalTextRange.PrevWordStart rows cols r c
+                                if (pr, pc) = (r, c) then
+                                    i <- count
+                                else
+                                    r <- pr
+                                    c <- pc
+                                    moved <- moved - 1
+                                    i <- i - 1
+                        (r, c, moved)
                     | _ ->
                         let target = max 0 (min rowCount (curR + count))
                         let moved = target - curR
