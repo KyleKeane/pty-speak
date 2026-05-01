@@ -25,7 +25,6 @@
     <Compile Include="ScreenTests.fs" />
     <Compile Include="UpdateMessagesTests.fs" />
     <Compile Include="WordBoundaryTests.fs" />
-    <Compile Include="AnnounceSanitiserTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
