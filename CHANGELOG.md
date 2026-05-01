@@ -17,6 +17,58 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **`docs/USER-SETTINGS.md` — forward-looking catalog of
+  hardcoded decisions that could become user-configurable
+  later.** Covers six categories with full rationale per
+  section: word boundaries (the maintainer-flagged
+  immediate trigger; whitespace-only today, vim / UAX #29
+  / per-context-with-hotkey as plausible future modes),
+  visual settings (font, size, colors, palette), audio /
+  earcons (mute, volume, style, device routing,
+  spec-defined defaults), keybindings (currently flat;
+  remappable + collision-detection candidate), update
+  behaviour (channel selection, auto-check, auto-apply),
+  and verbosity / NVDA narration (off / smart / verbose
+  presets). Each section follows the same four-part shape
+  (current state / why hardcoded now / what configurability
+  would look like / implementation notes) so a future
+  contributor designing the Phase 2 TOML config substrate
+  has the candidate list and the rationale, not just the
+  decisions.
+
+  Also adds a "Process for adding a new setting"
+  six-bullet workflow (substrate first, per-setting PR,
+  default = current behaviour, validate input, document
+  in this file, smoke-test row) and a "Reminder for
+  contributors" close-out summarising the meta-rule.
+
+- **`CONTRIBUTING.md` — new "Consider configurability when
+  iterating" section.** Codifies the meta-rule: every PR
+  that introduces a hardcoded constant or fixed behaviour
+  pauses to ask whether it's a config candidate; if yes,
+  pick the right default, ship it as a constant, AND
+  update the candidate catalog in
+  `docs/USER-SETTINGS.md`. Explicit obligations (1-4) and
+  reviewer guidance ("request changes on PRs that
+  introduce a clearly-config-shaped value without
+  updating the catalog or noting it"). The rule's purpose
+  is captured: not to make every PR a config-design
+  exercise, but to keep the rationale and candidate list
+  current as the project grows so the eventual
+  config-loader has a complete catalog to expose.
+
+- **`.github/PULL_REQUEST_TEMPLATE.md` gains a
+  "Configurability check" checklist item** — single bullet
+  that asks contributors to either update USER-SETTINGS.md
+  or note "no candidate settings introduced" below. Matches
+  the "Adding new manual tests" pattern from PR #58 — the
+  template enforces the rule at PR-write time, not just
+  review time.
+
+- **README docs index entry** added pointing at
+  USER-SETTINGS.md so contributors browsing the docs find
+  the catalog.
+
 - **Real word-navigation in `TerminalTextRange`.** Closes the
   Stage 4 follow-up logged after `v0.0.1-preview.22`'s smoke
   pass — previously `TextUnit.Word` degraded to `TextUnit.Line`

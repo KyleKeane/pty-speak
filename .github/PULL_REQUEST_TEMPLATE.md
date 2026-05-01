@@ -43,6 +43,18 @@ mark it N/A.
       matrix per the document's "Adding new manual tests" section
       (procedure, expected outcome, diagnostic decoder bullet).
 
+## Configurability check
+
+- [ ] If this PR introduces a hardcoded constant or fixed
+      behaviour that a user might plausibly want to control later
+      (font size, default shell, word-boundary algorithm,
+      verbosity threshold, etc.), I have either updated the
+      relevant section of
+      [`docs/USER-SETTINGS.md`](../docs/USER-SETTINGS.md) or
+      noted "no candidate settings introduced" below. See
+      [`CONTRIBUTING.md`](../CONTRIBUTING.md) → "Consider
+      configurability when iterating" for the rule.
+
 ## Screenshots and screen-reader output
 
 <!-- Where relevant, paste NVDA Event Tracker output or describe the

@@ -71,6 +71,7 @@ docs/                    Living developer documentation
   BUILD.md               Build from source
   RELEASE-PROCESS.md     Cutting a Velopack release to GitHub Releases
   ACCESSIBILITY-TESTING.md   Comprehensive manual smoke-test matrix (artifact integrity, process hygiene, NVDA, earcons, auto-update) with per-row diagnostic decoders
+  USER-SETTINGS.md       Catalog of current hardcoded values that may become user-configurable later (word boundaries, font, colors, audio, keybindings, etc.)
   CHECKPOINTS.md         Stable-baseline tags per shipped stage
   CONPTY-NOTES.md        Observed Windows ConPTY platform quirks
   SESSION-HANDOFF.md     Bridge between Claude Code coding sessions
@@ -94,6 +95,7 @@ tests/                   xUnit + FsCheck.Xunit + FlaUI placeholder
 - **ConPTY platform notes:** [`docs/CONPTY-NOTES.md`](docs/CONPTY-NOTES.md)
 - **Session handoff (for picking up between Claude Code sessions):** [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)
 - **Manual smoke-test matrix (every release):** [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
+- **User settings catalog (current and planned):** [`docs/USER-SETTINGS.md`](docs/USER-SETTINGS.md)
 - **Install latest preview (PowerShell helper):** [`scripts/install-latest-preview.ps1`](scripts/install-latest-preview.ps1) — see [`scripts/README.md`](scripts/README.md)
 - **Security and trust model:** [`SECURITY.md`](SECURITY.md)
 - **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md)

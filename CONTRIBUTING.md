@@ -88,6 +88,54 @@ See [`docs/BUILD.md`](docs/BUILD.md) for build instructions.
   pitfalls" is the funnel** for every diagnostic-loop lesson. If you
   hit something nasty in CI or a release, the fix is half the patch
   and the entry under "Common pitfalls" is the other half.
+- **[`docs/USER-SETTINGS.md`](docs/USER-SETTINGS.md) tracks
+  candidate user settings** — anything currently hardcoded that
+  users might plausibly want to control later. See "Consider
+  configurability when iterating" below for the working rule.
+
+## Consider configurability when iterating
+
+Every PR that introduces a hardcoded constant or fixed behaviour
+should pause and ask: **is this a value users might want to
+control later?** Common shapes that hit this:
+
+- A magic number (font size, screen rows × cols, timeout
+  duration, percentage threshold).
+- A choice between alternatives where reasonable people would
+  pick differently (word-boundary algorithm, default shell,
+  colour palette).
+- A behaviour that varies by user task (verbosity, when to
+  announce things, which audio device for earcons).
+
+If the answer is "yes, plausibly," the contributor's
+obligations are:
+
+1. **Still pick the right default and ship it as a constant.**
+   Don't add a one-off settings file ahead of the Phase 2 TOML
+   substrate — that's tech debt the moment proper config lands.
+2. **Add or update a section in
+   [`docs/USER-SETTINGS.md`](docs/USER-SETTINGS.md)** capturing
+   the current state, why it's hardcoded now, what
+   configurability would look like, and any per-context nuances.
+3. **If the value lives in a shared module** (e.g. F# constants
+   on a top-level type), name it something the future
+   config-loader can find without source archaeology. Better:
+   `Terminal.App.Defaults.ScreenRows = 30` than a bare `30`
+   buried in `Program.fs`.
+4. **The PR description** explicitly notes "future-config
+   candidate logged in USER-SETTINGS.md" so reviewers know to
+   check that the catalog stays current.
+
+Reviewers should request changes on PRs that introduce a
+clearly-config-shaped value without updating USER-SETTINGS.md
+or the PR description's configurability note.
+
+The purpose of this rule isn't to make every PR a config-design
+exercise. The purpose is to make sure the rationale and
+candidate list stays current as the project grows, so when the
+Phase 2 TOML substrate lands, the catalog of what to expose is
+already there — not reverse-engineered from "what was hardcoded
+where" by reading every PR's diff.
 
 ## The non-negotiable accessibility rules
 
