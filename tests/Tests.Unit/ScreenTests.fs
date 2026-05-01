@@ -38,7 +38,10 @@ let ``fresh screen cursor is at 0,0 visible`` () =
     let screen = Screen(rows = 3, cols = 5)
     Assert.Equal(0, screen.Cursor.Row)
     Assert.Equal(0, screen.Cursor.Col)
-    Assert.True(screen.Cursor.Visible)
+    // Stage 4.5 PR-A: cursor visibility moved from
+    // `Cursor.Visible` (dead-coded field, removed) to
+    // `Modes.CursorVisible` (DECTCEM `?25h/l`-driven).
+    Assert.True(screen.Modes.CursorVisible)
 
 [<Fact>]
 let ``Screen constructor rejects nonpositive dimensions`` () =
@@ -298,3 +301,184 @@ let ``concurrent snapshots and applies never tear`` () =
     producer.Wait()
     let finalSeq, _ = screen.SnapshotRows(0, screen.Rows)
     Assert.True(finalSeq >= lastSeq)
+
+// ---------------------------------------------------------------------
+// Stage 4.5 PR-A — VT mode coverage
+// ---------------------------------------------------------------------
+//
+// Tests for DECTCEM (?25h/l), DECSC/DECRC (ESC 7 / ESC 8),
+// 256-colour and truecolor SGR via the new applySgr walker, and
+// the OSC 52 defensive drop. These exercise the catch-all-arm
+// fills the parser was already emitting events for; before
+// Stage 4.5 PR-A, all of these were silently no-op'd at the
+// `Screen` layer.
+
+[<Fact>]
+let ``DECTCEM ?25l hides cursor; ?25h shows it`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    Assert.True(screen.Modes.CursorVisible)
+    feed screen (ascii "\x1b[?25l")
+    Assert.False(screen.Modes.CursorVisible)
+    feed screen (ascii "\x1b[?25h")
+    Assert.True(screen.Modes.CursorVisible)
+
+[<Fact>]
+let ``DECTCEM only fires on private-marker dispatch (?25, not 25)`` () =
+    // CSI 25 h without the `?` private marker is a different
+    // sequence entirely (in fact undefined / a no-op for us).
+    // Confirms `csiPrivateDispatch` and `csiDispatch` stay
+    // separate.
+    let screen = Screen(rows = 3, cols = 5)
+    feed screen (ascii "\x1b[25l")
+    Assert.True(screen.Modes.CursorVisible)
+
+[<Fact>]
+let ``DECSC then DECRC restores cursor position`` () =
+    let screen = Screen(rows = 3, cols = 10)
+    // Move to (1, 4), DECSC, move elsewhere, DECRC, expect (1, 4).
+    feed screen (ascii "\x1b[2;5H")
+    Assert.Equal(1, screen.Cursor.Row)
+    Assert.Equal(4, screen.Cursor.Col)
+    feed screen (ascii "\x1b7")
+    feed screen (ascii "\x1b[1;1H")
+    Assert.Equal(0, screen.Cursor.Row)
+    feed screen (ascii "\x1b8")
+    Assert.Equal(1, screen.Cursor.Row)
+    Assert.Equal(4, screen.Cursor.Col)
+
+[<Fact>]
+let ``DECSC also saves SGR attrs; DECRC restores them`` () =
+    let screen = Screen(rows = 3, cols = 10)
+    feed screen (ascii "\x1b[1m")  // bold on
+    Assert.True(screen.CurrentAttrs.Bold)
+    feed screen (ascii "\x1b7")    // DECSC: save bold + position
+    feed screen (ascii "\x1b[22m") // bold off
+    Assert.False(screen.CurrentAttrs.Bold)
+    feed screen (ascii "\x1b8")    // DECRC: restore bold
+    Assert.True(screen.CurrentAttrs.Bold)
+
+[<Fact>]
+let ``DECRC on empty stack lands at (0,0) with default attrs`` () =
+    let screen = Screen(rows = 3, cols = 10)
+    feed screen (ascii "\x1b[1m\x1b[2;5H")
+    Assert.Equal(1, screen.Cursor.Row)
+    Assert.True(screen.CurrentAttrs.Bold)
+    // No DECSC pushed; DECRC should restore defaults per
+    // xterm convention.
+    feed screen (ascii "\x1b8")
+    Assert.Equal(0, screen.Cursor.Row)
+    Assert.Equal(0, screen.Cursor.Col)
+    Assert.False(screen.CurrentAttrs.Bold)
+
+[<Fact>]
+let ``DECSC pushes onto a stack; multiple DECRC pop in LIFO order`` () =
+    let screen = Screen(rows = 3, cols = 10)
+    feed screen (ascii "\x1b[1;1H\x1b7")  // save (0, 0)
+    feed screen (ascii "\x1b[2;5H\x1b7")  // save (1, 4)
+    feed screen (ascii "\x1b[3;9H")       // move to (2, 8)
+    feed screen (ascii "\x1b8")           // restore (1, 4)
+    Assert.Equal(1, screen.Cursor.Row)
+    Assert.Equal(4, screen.Cursor.Col)
+    feed screen (ascii "\x1b8")           // restore (0, 0)
+    Assert.Equal(0, screen.Cursor.Row)
+    Assert.Equal(0, screen.Cursor.Col)
+
+[<Fact>]
+let ``256-colour SGR sets Fg to Indexed n`` () =
+    let screen = Screen(rows = 1, cols = 5)
+    feed screen (ascii "\x1b[38;5;42m")
+    match screen.CurrentAttrs.Fg with
+    | Indexed b -> Assert.Equal(42uy, b)
+    | other -> Assert.Fail(sprintf "Expected Indexed 42uy, got %A" other)
+
+[<Fact>]
+let ``256-colour SGR background works via 48;5;n`` () =
+    let screen = Screen(rows = 1, cols = 5)
+    feed screen (ascii "\x1b[48;5;200m")
+    match screen.CurrentAttrs.Bg with
+    | Indexed b -> Assert.Equal(200uy, b)
+    | other -> Assert.Fail(sprintf "Expected Indexed 200uy, got %A" other)
+
+[<Fact>]
+let ``truecolor SGR sets Fg to Rgb (r, g, b)`` () =
+    let screen = Screen(rows = 1, cols = 5)
+    feed screen (ascii "\x1b[38;2;100;200;50m")
+    match screen.CurrentAttrs.Fg with
+    | Rgb(r, g, b) ->
+        Assert.Equal(100uy, r)
+        Assert.Equal(200uy, g)
+        Assert.Equal(50uy, b)
+    | other -> Assert.Fail(sprintf "Expected Rgb(100,200,50), got %A" other)
+
+[<Fact>]
+let ``truecolor SGR background works via 48;2;r;g;b`` () =
+    let screen = Screen(rows = 1, cols = 5)
+    feed screen (ascii "\x1b[48;2;10;20;30m")
+    match screen.CurrentAttrs.Bg with
+    | Rgb(r, g, b) ->
+        Assert.Equal(10uy, r)
+        Assert.Equal(20uy, g)
+        Assert.Equal(30uy, b)
+    | other -> Assert.Fail(sprintf "Expected Rgb(10,20,30), got %A" other)
+
+[<Fact>]
+let ``Print after 256-colour SGR carries Indexed Fg into the cell`` () =
+    let screen = Screen(rows = 1, cols = 3)
+    feed screen (ascii "\x1b[38;5;7mX")
+    let cell = screen.GetCell(0, 0)
+    match cell.Attrs.Fg with
+    | Indexed 7uy -> ()
+    | other -> Assert.Fail(sprintf "Expected cell Fg = Indexed 7uy, got %A" other)
+
+[<Fact>]
+let ``malformed 38;5 at end of params does not throw`` () =
+    // Walker's bounds-guard should degrade to "ignore" rather
+    // than read past the array. Pin this contract — hostile
+    // input parity with audit-cycle SR-1.
+    let screen = Screen(rows = 1, cols = 3)
+    let before = screen.CurrentAttrs.Fg
+    feed screen (ascii "\x1b[38;5m")
+    // Behaviour: walker hits `38` arm but bounds-guard fails,
+    // falls through to `applySgrOne 38` which is the catch-all
+    // (no-op). Then `5` is `applySgrOne 5` which is also a
+    // no-op (no SGR 5 handler — blink is intentionally
+    // unsupported). Fg unchanged.
+    Assert.Equal(before, screen.CurrentAttrs.Fg)
+
+[<Fact>]
+let ``malformed 38;2;100;200 (missing blue) does not throw`` () =
+    let screen = Screen(rows = 1, cols = 3)
+    let before = screen.CurrentAttrs.Fg
+    feed screen (ascii "\x1b[38;2;100;200m")
+    Assert.Equal(before, screen.CurrentAttrs.Fg)
+
+[<Fact>]
+let ``mixed SGR with truecolor in the middle still applies the rest`` () =
+    // [1;38;2;10;20;30;4m → bold on, Fg = Rgb(10,20,30), underline on.
+    // Confirms the walker's `walk (i + 5)` advance leaves the
+    // following params (4) addressable.
+    let screen = Screen(rows = 1, cols = 3)
+    feed screen (ascii "\x1b[1;38;2;10;20;30;4m")
+    Assert.True(screen.CurrentAttrs.Bold)
+    Assert.True(screen.CurrentAttrs.Underline)
+    match screen.CurrentAttrs.Fg with
+    | Rgb(10uy, 20uy, 30uy) -> ()
+    | other -> Assert.Fail(sprintf "Expected Rgb(10,20,30), got %A" other)
+
+[<Fact>]
+let ``OSC 52 sequence increments SequenceNumber but does not mutate cells`` () =
+    // The Apply arm explicitly drops every OSC dispatch with a
+    // SECURITY-CRITICAL comment (see SECURITY.md TC-2). The
+    // sequence number bumps because Apply was called; the
+    // buffer must be unchanged.
+    let screen = Screen(rows = 1, cols = 5)
+    feed screen (ascii "Hello")
+    let before, snap0 = screen.SnapshotRows(0, 1)
+    // Feed an OSC 52 set-clipboard sequence (BEL-terminated):
+    //   ESC ] 52 ; c ; <base64> BEL
+    feed screen (ascii "\x1b]52;c;ZXZpbA==\x07")
+    let after, snap1 = screen.SnapshotRows(0, 1)
+    Assert.True(after > before, "SequenceNumber should bump on OSC")
+    // Cells unchanged.
+    for c in 0 .. snap0.[0].Length - 1 do
+        Assert.Equal(snap0.[0].[c], snap1.[0].[c])

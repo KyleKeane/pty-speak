@@ -32,13 +32,36 @@ open System.Text
 ///     of capture, taken under the same gate as Apply so callers
 ///     never observe a torn buffer.
 ///
+/// Stage 4.5 PR-A coverage (Claude Code rendering substrate):
+///   * 256-colour SGR (`\x1b[38;5;n m`, `\x1b[48;5;n m`) — emits
+///     `ColorSpec.Indexed n`. Walker in `applySgr` consumes
+///     sub-parameters from the `;`-split param array.
+///   * Truecolor SGR (`\x1b[38;2;r;g;b m`, `\x1b[48;2;r;g;b m`) —
+///     emits `ColorSpec.Rgb (r, g, b)`. Same walker.
+///   * DECTCEM (`\x1b[?25h` / `\x1b[?25l`) — toggles
+///     `Modes.CursorVisible`. Wired via `csiPrivateDispatch`
+///     when the parser passes the `?` private marker.
+///   * DECSC / DECRC (`ESC 7` / `ESC 8`) — push and pop
+///     `Cursor.SaveStack`. Saves position + SGR attrs.
+///   * `TerminalModes` record exposed via `Screen.Modes` for
+///     Stage 5/6/7 mode-bit reads.
+///
+/// Stage 4.5 PR-B coverage (alt-screen):
+///   * Alt-screen (`\x1b[?1049h` / `\x1b[?1049l`) — second
+///     `Cell[,]` back-buffer; switching toggles `activeBuffer`.
+///     Primary buffer is preserved by reference (no copy);
+///     cursor + attrs saved on enter and restored on exit.
+///
 /// Deliberately *not* covered yet (later stages refine):
-///   * 256-colour and truecolor SGR (38;5;n, 38;2;r;g;b) — needs a
-///     parser that splits sub-parameters by `;` vs `:`.
-///   * DECSET modes (cursor visibility ?25, alt-screen ?1049, focus
-///     reporting ?1004, etc.) — Stage 4/5 territory.
+///   * Colon-separated SGR sub-params (`38:5:n`, `38:2:r:g:b`) —
+///     parser today splits on `;` only. Stage 6 territory.
+///   * DECCKM (`?1`) cursor-key application mode — `TerminalModes`
+///     stub; Stage 6 keyboard layer reads it.
+///   * Bracketed paste (`?2004`) — same.
+///   * Focus reporting (`?1004`) — same.
+///   * OSC 0/2 title narration, OSC 8 hyperlink scheme allowlist —
+///     Phase 2 / post-Stage-10 territory respectively.
 ///   * Scrollback rotation beyond the active grid.
-///   * DECSC/DECRC ESC 7/8 cursor save/restore.
 type Screen(rows: int, cols: int) =
     do
         if rows <= 0 then invalidArg "rows" "rows must be positive"
@@ -48,6 +71,12 @@ type Screen(rows: int, cols: int) =
     let cells: Cell[,] = Array2D.create rows cols Cell.blank
     let cursor: Cursor = Cursor.create ()
     let mutable currentAttrs: SgrAttrs = SgrAttrs.defaults
+
+    // Stage 4.5 PR-A: mode bits (cursor visibility, alt-screen,
+    // DECCKM, bracketed paste, focus reporting). Centralised
+    // here so Stage 5/6/7 don't smear them across files. PR-B
+    // wires `AltScreen`; Stage 6 wires the keyboard-side bits.
+    let mutable modes: TerminalModes = TerminalModes.defaults
 
     // Mutation gate. Apply takes this lock; SnapshotRows takes it to
     // capture (sequence, rows) atomically. Stage 3b feeds Apply on the
@@ -163,13 +192,105 @@ type Screen(rows: int, cols: int) =
         | 49 -> currentAttrs <- { currentAttrs with Bg = Default }
         | _ -> ()  // 256-colour / truecolor / unsupported — no-op for now
 
+    /// Walk the SGR parameter array consuming sub-parameter
+    /// sequences for 256-colour (`38;5;n`, `48;5;n`) and
+    /// truecolor (`38;2;r;g;b`, `48;2;r;g;b`); other params
+    /// fall through to `applySgrOne`. Tail-recursive so the F#
+    /// compiler turns this into a `while` loop in IL.
+    ///
+    /// Bounds-guards are inline on each match arm so a malformed
+    /// trailer (e.g. `38;5` at end-of-array) degrades to "ignore"
+    /// rather than throw. This matches the hostile-input
+    /// posture audit-cycle SR-1 set elsewhere.
+    ///
+    /// TODO Stage 6: colon-separated sub-params (`38:5:n`,
+    /// `38:2:r:g:b`) require parser-side support — the
+    /// `StateMachine` currently splits parameters on `;` only.
+    /// When the parser learns `:`, this walker stays the same;
+    /// the parser presents the sub-params as additional
+    /// elements of `parms`.
     let applySgr (parms: int[]) =
         if parms.Length = 0 then
             // CSI m with no params is the same as CSI 0 m.
             applySgrOne 0
         else
-            for p in parms do
-                applySgrOne p
+            let rec walk i =
+                if i >= parms.Length then () else
+                match parms.[i] with
+                | 38 when i + 4 < parms.Length && parms.[i + 1] = 2 ->
+                    currentAttrs <-
+                        { currentAttrs with
+                            Fg = Rgb(byte parms.[i + 2], byte parms.[i + 3], byte parms.[i + 4]) }
+                    walk (i + 5)
+                | 38 when i + 2 < parms.Length && parms.[i + 1] = 5 ->
+                    currentAttrs <-
+                        { currentAttrs with Fg = Indexed(byte parms.[i + 2]) }
+                    walk (i + 3)
+                | 48 when i + 4 < parms.Length && parms.[i + 1] = 2 ->
+                    currentAttrs <-
+                        { currentAttrs with
+                            Bg = Rgb(byte parms.[i + 2], byte parms.[i + 3], byte parms.[i + 4]) }
+                    walk (i + 5)
+                | 48 when i + 2 < parms.Length && parms.[i + 1] = 5 ->
+                    currentAttrs <-
+                        { currentAttrs with Bg = Indexed(byte parms.[i + 2]) }
+                    walk (i + 3)
+                | n ->
+                    applySgrOne n
+                    walk (i + 1)
+            walk 0
+
+    /// CSI private-marker dispatch: handles sequences emitted
+    /// when the parser sees a `?` private byte (DECSET / DECRESET
+    /// for terminal modes). Stage 4.5 PR-A wires DECTCEM (`?25h/l`,
+    /// cursor visibility); PR-B wires alt-screen (`?1049h/l`).
+    /// Stage 6 will add DECCKM (`?1`), bracketed paste (`?2004`),
+    /// and focus reporting (`?1004`).
+    ///
+    /// Unknown private modes are silently dropped — they're
+    /// non-malicious extensions whose UIA implications need a
+    /// stage to land.
+    let csiPrivateDispatch (parms: int[]) (finalByte: char) =
+        if parms.Length = 0 then () else
+        let n = parms.[0]
+        match finalByte, n with
+        | 'h', 25 -> modes.CursorVisible <- true
+        | 'l', 25 -> modes.CursorVisible <- false
+        // PR-B will add: | 'h', 1049 -> enterAltScreen ()
+        //                | 'l', 1049 -> exitAltScreen ()
+        // Stage 6 will add: ?1 (DECCKM), ?2004 (bracketed paste),
+        //                   ?1004 (focus reporting)
+        | _ -> ()
+
+    /// ESC dispatch (bare `ESC <intermediates> <final>`): handles
+    /// DECSC (`ESC 7`) and DECRC (`ESC 8`) for cursor save/restore.
+    /// Other ESC sequences (DECKPAM `ESC =`, DECKPNM `ESC >`, etc.)
+    /// are silently dropped — Stage 6 territory.
+    let escDispatch (intermediates: byte[]) (finalByte: char) =
+        if intermediates.Length = 0 then
+            match finalByte with
+            | '7' ->
+                // DECSC — push current cursor + attrs onto the stack.
+                cursor.SaveStack <-
+                    { Row = cursor.Row
+                      Col = cursor.Col
+                      Attrs = currentAttrs }
+                    :: cursor.SaveStack
+            | '8' ->
+                // DECRC — pop and restore. Empty-stack behaviour:
+                // xterm restores to (0, 0) with default attrs;
+                // alacritty matches; we do the same.
+                match cursor.SaveStack with
+                | [] ->
+                    cursor.Row <- 0
+                    cursor.Col <- 0
+                    currentAttrs <- SgrAttrs.defaults
+                | top :: rest ->
+                    cursor.Row <- top.Row
+                    cursor.Col <- top.Col
+                    currentAttrs <- top.Attrs
+                    cursor.SaveStack <- rest
+            | _ -> ()
 
     let csiDispatch (parms: int[]) (finalByte: char) =
         // For most CSI sequences, missing params default to 1.
@@ -216,12 +337,19 @@ type Screen(rows: int, cols: int) =
     member _.Rows = rows
     member _.Cols = cols
 
-    /// Cursor position and visibility. Mutating this directly is
-    /// fine; tests do it for setup convenience.
+    /// Cursor position and save stack. Mutating this directly is
+    /// fine; tests do it for setup convenience. Cursor visibility
+    /// (DECTCEM) lives on `Modes`, not here.
     member _.Cursor = cursor
 
     /// Currently-active SGR attributes (carried into the next Print).
     member _.CurrentAttrs = currentAttrs
+
+    /// Stage 4.5 PR-A: terminal mode bits (cursor visibility,
+    /// alt-screen, DECCKM, bracketed paste, focus reporting).
+    /// Stage 5/6/7 read this when they need a mode-bit decision;
+    /// today only `CursorVisible` is wired (DECTCEM `?25h/l`).
+    member _.Modes = modes
 
     /// Read-only access to a cell. (row, col) are 0-indexed.
     member _.GetCell(row: int, col: int) : Cell = cells.[row, col]
@@ -260,12 +388,49 @@ type Screen(rows: int, cols: int) =
             match event with
             | Print rune -> printRune rune
             | Execute b -> executeC0 b
-            | CsiDispatch(parms, _, finalByte, _priv) ->
-                // Private-marker sequences (DECSET ?h/?l) are ignored
-                // in Stage 3a; alt-screen and friends arrive later.
-                csiDispatch parms finalByte
-            | EscDispatch _
-            | OscDispatch _
+            | CsiDispatch(parms, _, finalByte, priv) ->
+                // Stage 4.5 PR-A: route private-marker CSI to a
+                // dedicated dispatch so DECTCEM / alt-screen /
+                // DECCKM stay separate from the public-marker
+                // CSI vocabulary in `csiDispatch`.
+                match priv with
+                | Some '?' -> csiPrivateDispatch parms finalByte
+                | _ -> csiDispatch parms finalByte
+            | EscDispatch(intermediates, finalByte) ->
+                // Stage 4.5 PR-A: DECSC (`ESC 7`) and DECRC
+                // (`ESC 8`) cursor save/restore; other ESC
+                // sequences are silently dropped.
+                escDispatch intermediates finalByte
+            | OscDispatch(parms, _) ->
+                // SECURITY-CRITICAL: silently dropping all OSC
+                // dispatches today. The OSC 52 case
+                // (parms.[0] = "52"B) is a known hostile-input
+                // vector — a child writing
+                //     `\x1b]52;c;<base64>\x07`
+                // could write attacker-controlled bytes into the
+                // user's clipboard if we forwarded it to the OS
+                // clipboard API. See SECURITY.md row TC-2 and
+                // audit-cycle SR-1 (PR #76, the parser-side
+                // hardening that caps OSC payload growth).
+                //
+                // Other OSC dispatches (0/2 title, 8 hyperlinks)
+                // are non-malicious but their UIA exposure is
+                // deferred:
+                //   - OSC 0/2: Phase 2 verbosity-profile
+                //     decision (does the user want title
+                //     narration?).
+                //   - OSC 8: requires `ITextProvider2` migration,
+                //     which Stage 4 explicitly deferred and which
+                //     the strategic review §B sequenced as a
+                //     post-Stage-10 PR.
+                //
+                // Reviewers: re-enabling any OSC dispatch here
+                // MUST come with a SECURITY.md update describing
+                // the new mitigation strategy plus a
+                // security-test row. Do NOT collapse the explicit
+                // arm back into a generic catch-all — the comment
+                // is grep-bait for future audits.
+                ignore parms
             | DcsHook _
             | DcsPut _
             | DcsUnhook -> ())  // Not yet handled — Stage 4+
