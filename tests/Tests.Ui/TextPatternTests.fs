@@ -27,13 +27,14 @@ let private locateTerminalAppExe () : string =
     exePath
 
 /// Walk an element + its descendants looking for the first
-/// element that exposes the UIA Text pattern. The raw provider
-/// installed in `WindowSubclassNative` returns `TerminalTextProvider`
-/// for `UIA_TextPatternId` on the OBJID_CLIENT fragment, which
-/// UIA fuses with the WPF host provider for the same HWND — that
-/// fusion's exact placement in the FlaUI tree (root window vs.
-/// some descendant) is dependent on UIA's internal merge rules,
-/// so the test searches rather than asserting a fixed location.
+/// element that exposes the UIA Text pattern. With Stage 4's
+/// architecture (since PR #56), the Text pattern lives on
+/// the WPF `TerminalAutomationPeer`'s `GetPattern` override
+/// for `PatternInterface.Text`, which UIA3 reaches through
+/// the standard WPF peer tree. The exact element where
+/// FlaUI's tree walk lands the pattern is an implementation
+/// detail of WPF's UIA peer hierarchy, so the test searches
+/// rather than asserting a fixed location.
 let rec private findTextPattern
         (element: AutomationElement) : FlaUI.Core.Patterns.ITextPattern option =
     match element.Patterns.Text.PatternOrDefault with
@@ -47,25 +48,26 @@ let rec private findTextPattern
         children |> Array.tryPick findTextPattern
     | pattern -> Some pattern
 
-/// Stage 4 PR C — end-to-end verification that the
-/// `WM_GETOBJECT` → `TerminalRawProvider` → `TerminalTextProvider`
-/// chain installed by PRs #54 (hook) and #55 (raw provider)
-/// actually surfaces the UIA Text pattern to a real UIA client.
+/// Stage 4 end-to-end verification that the WPF
+/// `TerminalAutomationPeer.GetPattern` override for
+/// `PatternInterface.Text` actually surfaces the UIA Text
+/// pattern to a real UIA3 client (PR #56's ship architecture).
 ///
 /// Verification chain:
 ///   1. Launch `Terminal.App.exe`. `Program.compose` calls
 ///      `TerminalSurface.SetScreen(Screen(30, 120))` synchronously
 ///      during composition, so by the time the main window is
 ///      visible to UIA the snapshot source is wired up.
-///   2. Attach via UIA3. FlaUI queries the window via
-///      `WM_GETOBJECT(OBJID_CLIENT)`, which our subclass hook
-///      intercepts; `UiaReturnRawElementProvider` hands UIA our
-///      `TerminalRawProvider`, which advertises Text pattern
-///      support through `GetPatternProvider(10014)`.
+///   2. Attach via UIA3. FlaUI walks the WPF UIA peer tree;
+///      `TerminalAutomationPeer.GetPattern(PatternInterface.Text)`
+///      returns `TerminalTextProvider`. UIA3 surfaces it on the
+///      peer element directly — no WM_GETOBJECT raw-provider
+///      indirection. (Audit-cycle PR-C deleted that indirection;
+///      see commit history if you need the WM_GETOBJECT path
+///      back for some reason.)
 ///   3. Walk the tree searching for any element that exposes the
-///      Text pattern. The Text pattern lands at whichever node
-///      UIA chooses to attach our raw provider's patterns to —
-///      typically the OBJID_CLIENT fragment root, but UIA's merge
+///      Text pattern. The pattern lands on whichever element
+///      WPF's peer tree assigns to it; UIA3's merge
 ///      semantics with the WPF host provider make the exact node
 ///      identity an implementation detail not worth pinning.
 ///   4. Read `DocumentRange.GetText(-1)`. The 30×120 blank screen
@@ -86,32 +88,22 @@ let ``UIA Text pattern is reachable and DocumentRange.GetText reflects the scree
     let mainWindow =
         match app.GetMainWindow(automation, TimeSpan.FromSeconds(10.0)) with
         | null ->
-            failwith "Main window did not appear within 10 seconds. The app may have crashed during MainWindow's SourceInitialized handler — check the WindowSubclassNative.InstallHook call site for a regression."
+            failwith "Main window did not appear within 10 seconds. The app may have crashed during MainWindow construction or the F# composition root (Program.compose). Check the SetScreen / channel-construction / focus-on-Loaded path."
         | mw -> mw
 
     let textPattern =
         match findTextPattern mainWindow with
         | None ->
-            // Diagnostic: read the WM_GETOBJECT log the hook
-            // writes to and dump it into the failure message so
-            // we can see exactly which OBJID values UIA queries
-            // with — separates "hook never fired" from "fired
-            // but our OBJID_CLIENT branch didn't match" from
-            // "fired and matched but UIA didn't surface our
-            // patterns." Also surfaces what patterns FlaUI does
-            // see on the main window so we can tell if the
-            // host-fragment fusion is happening at all.
-            let logPath =
-                Path.Combine(
-                    Path.GetTempPath(),
-                    sprintf "ptyspeak-wm-getobject-%d.log" app.ProcessId)
-            let logContent =
-                if File.Exists logPath then
-                    try File.ReadAllText(logPath)
-                    with ex -> sprintf "<read error: %s>" ex.Message
-                else
-                    "<log file does not exist>"
-
+            // Diagnostic: surface what patterns FlaUI does see
+            // on the main window. Audit-cycle PR-C deleted the
+            // WM_GETOBJECT log dump that lived here previously
+            // (the WM_GETOBJECT hook itself was dead-code MSAA
+            // fallback after the Stage 4 architectural pivot in
+            // PR #56). Today the Text pattern lives on the WPF
+            // peer's `GetPattern` override; if it's missing,
+            // the regression is most likely on
+            // `TerminalAutomationPeer.GetPattern` returning the
+            // wrong thing for `PatternInterface.Text`.
             let mainWindowPatternNames =
                 let p = mainWindow.Patterns
                 let pairs : (string * bool) list = [
@@ -131,17 +123,13 @@ let ``UIA Text pattern is reachable and DocumentRange.GetText reflects the scree
                 MainWindow class=%s, name=%s\n\
                 MainWindow.Patterns: %s\n\
                 \n\
-                WM_GETOBJECT hook log (%s):\n\
-                %s\n\
-                \n\
-                If the log is empty the hook never fired (regression in MainWindow.SourceInitialized).\n\
-                If the log has entries but none with lParam=0xFFFFFFFFFFFFFFFC or 0x00000000FFFFFFFC the OBJID_CLIENT branch never matched (likely a sign-extension issue in the lParam comparison).\n\
-                If the log has OBJID_CLIENT entries but the Text pattern still isn't surfaced, UIA isn't fusing the raw provider's patterns with the host fragment."
+                Suspect (in priority order):\n\
+                  1. TerminalAutomationPeer.GetPattern is no longer returning the TextProvider for PatternInterface.Text.\n\
+                  2. TerminalView.OnCreateAutomationPeer no longer constructs the peer.\n\
+                  3. TerminalView.TextProvider is null at peer construction time."
                 mainWindow.ClassName
                 mainWindow.Name
                 mainWindowPatternNames
-                logPath
-                logContent
         | Some tp -> tp
 
     // FlaUI annotates `ITextPattern.DocumentRange` and

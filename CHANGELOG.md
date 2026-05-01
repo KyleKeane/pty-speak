@@ -15,6 +15,68 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Removed
+
+- **Audit-cycle PR-C: deleted dead-code MSAA fallback path
+  (`WindowSubclassNative.cs`, `TerminalRawProvider.cs`,
+  `WindowSubclassTests.fs`).** Stage 4's architectural pivot
+  to `AutomationPeer.GetPattern` override (PR #56) made the
+  WM_GETOBJECT subclass hook + `IRawElementProviderSimple`
+  raw provider a "kept just in case" MSAA-only fallback. The
+  audit found no real consumers and the maintainer
+  authorised outright deletion (vs. `[Obsolete]`-deprecation
+  with a tracking issue). Removed three files plus the
+  `SourceInitialized` / `Closed` handlers in
+  `MainWindow.xaml.cs` that installed and uninstalled the
+  hook. Updated cross-references in `TerminalView.cs`,
+  `TerminalAutomationPeer.fs` (docstring), `TextPatternTests.fs`
+  (diagnostic message + verification-chain doc), and
+  `docs/ACCESSIBILITY-TESTING.md` (diagnostic decoder no
+  longer points at the deleted file).
+
+  Stage 4's UIA Document role + Text pattern + review-cursor
+  navigation chain is unaffected — that path lives entirely
+  in `TerminalAutomationPeer` (Terminal.Accessibility) and
+  `TerminalView.OnCreateAutomationPeer`. UIA3 clients
+  (NVDA, Inspect.exe, FlaUI) reach the Text pattern through
+  the WPF peer tree as designed.
+
+### Changed
+
+- **Audit-cycle PR-C: tightened `Terminal.Accessibility` API
+  surface via `internal` + `InternalsVisibleTo`.**
+  `TerminalAutomationPeer`, `TerminalTextProvider`,
+  `TerminalTextRange`, and the `SnapshotText` module are now
+  marked `internal` (were public by F# default). Two
+  `[<assembly: InternalsVisibleTo>]` declarations grant access
+  to `PtySpeak.Views` (the C# WPF library that constructs
+  the peer in `TerminalView.OnCreateAutomationPeer`) and
+  `PtySpeak.Tests.Unit` (so future Stage-5+ unit tests can
+  reach into the accessibility types without re-exposing them
+  publicly). `TerminalView.TextProvider` lowered from `public`
+  to `internal` to match its now-internal type.
+
+  Net effect: Stage 5+ contributors have the freedom to
+  break these signatures without an external breaking-change
+  concern. If the project ever publishes `Terminal.Accessibility`
+  as a NuGet for third parties, the `internal` becomes the
+  stable contract and we promote a curated subset to `public`
+  intentionally.
+
+- **Audit-cycle PR-C: Stage 11 `runUpdateFlow` test coverage
+  scoped out of this PR; logged in
+  `docs/SESSION-HANDOFF.md` item 6 as a focused follow-up.**
+  The audit identified `runUpdateFlow` (~80 lines, three
+  exception branches) as the largest untested surface in
+  the codebase. The cheapest test approach needs an
+  `IUpdateManager` adapter wrapping Velopack's concrete
+  `UpdateManager` class — adapter scaffold big enough to
+  warrant its own PR. SESSION-HANDOFF item 6 captures the
+  recommended approach (full adapter OR a simpler
+  pure-function extraction of the exception-to-message
+  mapping) so the next contributor doesn't have to
+  reverse-engineer the design decision.
+
 ### Added
 
 - **Audit-cycle PR-B: pre-Stage-5 architectural seams +

@@ -172,6 +172,43 @@ disconnects mid-session.
    key picks up the lock files automatically once they exist —
    no separate cache-key change needed.
 
+6. **Stage 11 `runUpdateFlow` test coverage** (deferred from
+   audit-cycle PR-C). The audit identified
+   `src/Terminal.App/Program.fs:runUpdateFlow` (~80 lines,
+   three exception branches) as the largest untested surface
+   in the codebase. PR-C scoped this out because the cheapest
+   test approach needs an `IUpdateManager` adapter wrapping
+   Velopack's concrete `UpdateManager` class so tests can
+   inject a fake — that's adapter scaffold large enough to
+   warrant its own focused PR. Recommended approach when
+   landing this:
+
+   - Define `IUpdateManager` in
+     `src/Terminal.App/Program.fs` (or a sibling F# file)
+     mirroring the methods used (`IsInstalled`,
+     `CheckForUpdatesAsync`, `DownloadUpdatesAsync`,
+     `ApplyUpdatesAndRestart`).
+   - Wrap Velopack's concrete `UpdateManager` in a
+     `VelopackUpdateManager : IUpdateManager` adapter.
+   - `runUpdateFlow` takes a factory (or the
+     `IUpdateManager` directly) so tests inject a fake.
+   - Tests in a new
+     `tests/Tests.Unit/UpdateFlowTests.fs` cover:
+     `HttpRequestException` → "cannot reach GitHub Releases";
+     `TaskCanceledException` → "Update check timed out";
+     `IOException` → "Update could not be written to disk";
+     repeat keypress while in-flight → dedup announcement.
+   - **Alternative (simpler)**: extract the
+     exception-to-message mapping into a pure function
+     `announcementForUpdateException : exn -> string` and
+     test that directly without mocking UpdateManager. This
+     covers the regression class that matters most (the
+     user-facing message for each exception class) without
+     the adapter scaffold cost. Either approach is
+     acceptable; pick based on whether other tests will
+     also need an `IUpdateManager` adapter (e.g. if Stage
+     11 grows new flows).
+
 ## Working conventions on this repo
 
 The written rules live in [`CONTRIBUTING.md`](../CONTRIBUTING.md):

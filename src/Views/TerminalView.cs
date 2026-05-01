@@ -50,13 +50,25 @@ public class TerminalView : FrameworkElement
     /// <c>this</c> so it sees screen attachments that happen
     /// after construction.
     ///
-    /// Consumed by <c>TerminalRawProvider</c> when WM_GETOBJECT
-    /// asks for OBJID_CLIENT — the Win32 subclass hook installed
-    /// in <see cref="MainWindow"/> hands UIA the raw provider,
-    /// which in turn returns this provider for
-    /// UIA_TextPatternId.
+    /// Consumed by the F#
+    /// <see cref="Terminal.Accessibility.TerminalAutomationPeer"/>
+    /// returned from <see cref="OnCreateAutomationPeer"/>: the
+    /// peer's <c>GetPattern</c> override returns this provider
+    /// for <c>PatternInterface.Text</c>, which UIA3 clients
+    /// (NVDA, Inspect.exe, FlaUI) read directly through WPF's
+    /// existing peer tree. Audit-cycle PR-C deleted the
+    /// alternative WM_GETOBJECT raw-provider path; this is
+    /// the only Text-pattern surface now.
     /// </summary>
-    public TerminalTextProvider TextProvider { get; }
+    // Audit-cycle PR-C lowered this from `public` to
+    // `internal` matching its newly-internal type. The only
+    // consumer was the deleted `TerminalRawProvider`; the
+    // peer's `OnCreateAutomationPeer` call site below still
+    // works because it passes the value through to
+    // `TerminalAutomationPeer`'s constructor which takes
+    // `ITextProvider` (a system-public interface, not the
+    // internal type).
+    internal TerminalTextProvider TextProvider { get; }
 
     /// <summary>Default background fill for the terminal grid.
     /// FrameworkElement (unlike Control / Panel) does not expose

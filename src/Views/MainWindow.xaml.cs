@@ -1,7 +1,6 @@
 using System.Reflection;
 using System.Windows;
 using System.Windows.Automation;
-using System.Windows.Interop;
 
 namespace PtySpeak.Views;
 
@@ -42,30 +41,6 @@ public partial class MainWindow : Window
             AutomationProperties.SetName(this, $"pty-speak terminal {version}");
         }
 
-        // Install the WM_GETOBJECT subclass hook as soon as the
-        // HWND exists. SourceInitialized fires after CreateWindow
-        // but before the window is shown, which is the documented
-        // earliest safe point for native interop. The companion
-        // Closed handler removes the subclass so the retained
-        // delegate can be released — strictly belt-and-suspenders
-        // since the process is exiting anyway, but keeps the
-        // pattern clean for future windows that don't have the
-        // process-exit guarantee.
-        SourceInitialized += (_, _) =>
-        {
-            var hwnd = new WindowInteropHelper(this).Handle;
-            var rawProvider = new TerminalRawProvider(
-                hwnd,
-                TerminalSurface.TextProvider);
-            WindowSubclassNative.InstallHook(hwnd, rawProvider);
-        };
-
-        Closed += (_, _) =>
-        {
-            var hwnd = new WindowInteropHelper(this).Handle;
-            WindowSubclassNative.UninstallHook(hwnd);
-        };
-
         // Move keyboard focus into the TerminalSurface as soon
         // as the window is loaded. Without this, focus stays on
         // the Window itself: NVDA announces "pty-speak terminal,
@@ -86,5 +61,18 @@ public partial class MainWindow : Window
         // attachment in `Window.Loaded`; this fits naturally
         // alongside.
         Loaded += (_, _) => TerminalSurface.Focus();
+
+        // Audit-cycle PR-C deleted the SourceInitialized +
+        // Closed handlers that installed and uninstalled the
+        // WM_GETOBJECT subclass hook (`WindowSubclassNative`).
+        // The Stage 4 architectural pivot to
+        // `AutomationPeer.GetPattern` override (PR #56) made
+        // the subclass hook a "kept just in case" MSAA-only
+        // fallback path; the audit found no real consumers and
+        // the maintainer authorised deletion. The Document-role
+        // peer + Text pattern surface UIA3 clients use lives in
+        // `TerminalAutomationPeer` (Terminal.Accessibility) and
+        // is reached via `TerminalView.OnCreateAutomationPeer`
+        // — no native-interop window subclass involved.
     }
 }
