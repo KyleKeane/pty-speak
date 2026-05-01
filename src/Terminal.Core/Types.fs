@@ -127,3 +127,30 @@ type Earcon =
 /// Accessibility markers / regions. Stage 6 expands this DU.
 type AccessibilityMarker =
     | Placeholder
+
+/// Notifications emitted by the parser/screen subsystem onto
+/// a `Channel<ScreenNotification>` consumed by the UIA peer
+/// for `RaiseNotificationEvent`. The audit-cycle PR-B added
+/// this DU as the **seam** Stage 5's coalescer plugs into:
+/// today every parser-applied batch produces one
+/// `RowsChanged`, and Stage 5 will insert a coalescer between
+/// the parser and this channel that batches / dedups /
+/// rate-limits without changing the channel's contract.
+///
+/// The companion `ParserError` case closes the cross-cutting
+/// "parser exceptions are silently swallowed" gap that the
+/// audit identified in `startReaderLoop`'s `with | _ -> ()`
+/// branch — instead of dropping unexpected exceptions, the
+/// reader publishes one and NVDA hears about it.
+type ScreenNotification =
+    /// Rows in the screen buffer changed since the last
+    /// notification. The list is the row indices that changed
+    /// in this batch (typically contiguous, but not required).
+    /// Stage 5's coalescer collapses many of these into one
+    /// before they reach the UIA peer.
+    | RowsChanged of int list
+    /// The parser / reader loop hit an unexpected exception
+    /// that would otherwise have been swallowed. Surfaced via
+    /// NVDA so the user knows something went wrong rather
+    /// than the terminal silently freezing.
+    | ParserError of string

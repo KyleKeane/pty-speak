@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Automation.Peers;
+using System.Windows.Input;
 using System.Windows.Media;
 using Terminal.Accessibility;
 using Terminal.Core;
@@ -133,6 +134,79 @@ public class TerminalView : FrameworkElement
                 message,
                 "pty-speak.update");
         }
+    }
+
+    /// <summary>
+    /// App-reserved hotkey list. Stage 6 (keyboard input to PTY)
+    /// MUST preserve every entry here — its <c>PreviewKeyDown</c>
+    /// filter must NOT mark these key combinations
+    /// <c>e.Handled = true</c>, so WPF's <c>InputBindings</c>
+    /// machinery on the parent window processes them before any
+    /// forwarding to the PTY child. The corresponding clause in
+    /// <c>spec/tech-plan.md</c> §6 ("App-reserved hotkey
+    /// preservation contract") makes this contract normative.
+    ///
+    /// Each entry is documented with the stage that owns it and
+    /// the binding's command target. New app-level hotkeys
+    /// added in future stages append to this list AND the spec
+    /// §6 clause; the two are co-equal sources of truth.
+    /// </summary>
+    public static readonly (Key Key, ModifierKeys Modifiers, string Description)[]
+        AppReservedHotkeys =
+        [
+            // Stage 11 — Velopack auto-update (shipped, PR #63).
+            // Bound in `setupAutoUpdateKeybinding` in
+            // `src/Terminal.App/Program.fs`.
+            (Key.U, ModifierKeys.Control | ModifierKeys.Shift, "Stage 11 self-update"),
+
+            // Future entries (NOT yet bound; commented for
+            // forward-planning):
+            //   (Key.M, ModifierKeys.Control | ModifierKeys.Shift,
+            //    "Stage 9 earcon mute"),
+            //   (Key.R, ModifierKeys.Alt | ModifierKeys.Shift,
+            //    "Stage 10 review-mode toggle"),
+        ];
+
+    /// <summary>
+    /// Pre-Stage-5 routing stub for keyboard input. Today this
+    /// override does nothing visible — Stage 6 (keyboard input
+    /// to PTY) will fill it in with the NVDA-modifier filter
+    /// and PTY-forwarding pipeline. The stub exists now to
+    /// guarantee that when Stage 6 lands, the
+    /// <see cref="AppReservedHotkeys"/> contract is honoured:
+    /// the override checks each reserved hotkey first and
+    /// leaves <c>e.Handled</c> alone for them, ensuring WPF's
+    /// <c>InputBindings</c> see them before any PTY forwarding.
+    ///
+    /// Until Stage 6 ships, no key forwarding happens at all
+    /// (the cmd.exe child receives no input) — that's the
+    /// pre-Stage-6 reality. NVDA review-cursor commands aren't
+    /// keyboard input to the PTY; they're handled by NVDA
+    /// itself and don't reach this method.
+    /// </summary>
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        base.OnPreviewKeyDown(e);
+
+        // App-reserved hotkey check: any match short-circuits
+        // and explicitly does NOT mark the event handled, so
+        // the parent Window's InputBindings can process the
+        // gesture and the corresponding command fires
+        // (Ctrl+Shift+U → runUpdateFlow today).
+        var pressedModifiers = Keyboard.Modifiers;
+        foreach (var (key, modifiers, _) in AppReservedHotkeys)
+        {
+            if (e.Key == key && pressedModifiers == modifiers)
+            {
+                // Explicitly leave Handled = false so
+                // InputBindings see this key combination.
+                return;
+            }
+        }
+
+        // No PTY forwarding until Stage 6 ships. Future Stage 6
+        // implementation must respect the reserved-hotkey
+        // contract (see spec/tech-plan.md §6).
     }
 
     /// <summary>

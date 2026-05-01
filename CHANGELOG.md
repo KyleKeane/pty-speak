@@ -15,6 +15,63 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added
+
+- **Audit-cycle PR-B: pre-Stage-5 architectural seams +
+  Stage 6 spec ADR.** Two seams Stage 5+ contributors can
+  plug into without rebuilding the foundation:
+
+  1. **Parser-thread → UIA-peer notification channel.** New
+     `ScreenNotification` discriminated union in
+     `src/Terminal.Core/Types.fs` (`RowsChanged of int list
+     | ParserError of string`). `compose` in
+     `src/Terminal.App/Program.fs` constructs a bounded
+     `Channel<ScreenNotification>` (256 capacity, DropOldest)
+     and starts a consumer task that drains 1:1 onto the
+     existing `TerminalSurface.Announce` raise path
+     (PR #63). `startReaderLoop` now takes the channel
+     writer and publishes one `RowsChanged` per applied
+     event batch. Stage 5 inserts the coalescer (debounce
+     ~200ms, hash dedup, single notification per coalesced
+     batch) between the parser publish and the consumer
+     without changing the channel contract. Bonus: the
+     loop's previous `with | _ -> ()` exception swallow
+     becomes `ParserError` publish — closes the
+     cross-cutting "parser exceptions are silently
+     swallowed" gap from the audit. The "ConPTY child
+     failed to start" path also publishes `ParserError`
+     so users hear about it via NVDA rather than staring
+     at a silent terminal.
+
+  2. **`PreviewKeyDown` routing stub on `TerminalView`.**
+     New override in `src/Views/TerminalView.cs` plus a
+     public `AppReservedHotkeys` static list. The list
+     seeds with `Ctrl+Shift+U` (Stage 11 self-update,
+     shipped) and documents future entries as code comments
+     (`Ctrl+Shift+M` Stage 9, `Alt+Shift+R` Stage 10).
+     The override checks each reserved hotkey first and
+     leaves `e.Handled = false` so WPF's `InputBindings`
+     on the parent window can process the gesture before
+     any future PTY forwarding. No PTY forwarding happens
+     today — that's Stage 6 — but the seam is in place so
+     the contract is enforceable at review time when Stage
+     6 lands.
+
+  3. **`spec/tech-plan.md` §6 ADR amendment** (maintainer-
+     authorised; immutable-spec exception). Adds an "App-
+     reserved hotkey preservation contract" clause at the
+     top of Stage 6 making the contract normative: Stage 6's
+     keyboard layer MUST preserve every entry in
+     `TerminalView.AppReservedHotkeys` and MUST NOT mark
+     them `e.Handled = true`. The list and the spec clause
+     are co-equal sources of truth; new app-level hotkeys
+     append to both. Failure mode if violated is captured
+     in the spec text (silent loss of app-level hotkeys).
+
+  Companion PRs in the audit cycle: PR-A (docs truth-up,
+  shipped); PR-C (hygiene cleanup — MSAA delete +
+  InternalsVisibleTo + Stage 11 tests; queued).
+
 ### Changed
 
 - **Audit-cycle PR-A: documentation truth-up after Stage 4 +
