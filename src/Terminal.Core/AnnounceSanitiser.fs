@@ -51,17 +51,18 @@ module AnnounceSanitiser =
     /// `\n` (U+000A) to pass through; today's announcements
     /// are all single-line so the strip-all default is safe.
     let sanitise (s: string | null) : string =
-        match s with
-        | null -> ""
-        | s when s.Length = 0 -> s
-        | s ->
-            let sb = StringBuilder(s.Length)
-            for ch in s do
-                let code = int ch
-                let isControl =
-                    code < 0x20
-                    || code = 0x7F
-                    || (code >= 0x80 && code <= 0x9F)
-                if not isControl then
-                    sb.Append(ch) |> ignore
-            sb.ToString()
+        if isNull s then ""
+        else
+            let s = nonNull s
+            if s.Length = 0 then s
+            else
+                let sb = StringBuilder(s.Length)
+                for ch in s do
+                    let code = int ch
+                    let isControl =
+                        code < 0x20
+                        || code = 0x7F
+                        || (code >= 0x80 && code <= 0x9F)
+                    if not isControl then
+                        sb.Append(ch) |> ignore
+                sb.ToString()

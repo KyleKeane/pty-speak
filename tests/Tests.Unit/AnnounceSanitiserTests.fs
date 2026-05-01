@@ -15,6 +15,12 @@ open Terminal.Core
 /// (U+007F), and C1 control (U+0080..U+009F). Printable Unicode,
 /// including BMP and non-BMP characters via UTF-16 surrogates,
 /// is preserved verbatim.
+///
+/// All non-ASCII characters are written as `\u`/`\U` escapes
+/// rather than literal source-file bytes so the source itself
+/// is plain ASCII -- avoids triggering the F# 9 Trojan-Source
+/// compiler warning on embedded BiDi controls (which would
+/// fail under `TreatWarningsAsErrors=true`).
 
 [<Fact>]
 let ``empty input returns empty`` () =
@@ -52,37 +58,38 @@ let ``strips DEL (0x7F)`` () =
 [<Fact>]
 let ``strips C1 control characters`` () =
     // U+0080..U+009F. Includes CSI (U+009B), ST (U+009C),
-    // OSC (U+009D) — the 8-bit-encoded versions of the
+    // OSC (U+009D) -- the 8-bit-encoded versions of the
     // sequences SR-1 already caps in the parser.
     let input = "xyzwq"
     Assert.Equal("xyzwq", AnnounceSanitiser.sanitise input)
 
 [<Fact>]
 let ``preserves BiDi override (printable Unicode)`` () =
-    // U+202E is RIGHT-TO-LEFT OVERRIDE — a printable Unicode
+    // U+202E is RIGHT-TO-LEFT OVERRIDE -- a printable Unicode
     // character (in the General-Punctuation block), NOT a
     // control byte. The strip-all-controls rule preserves it.
     // A stricter homograph-defence policy belongs in a
     // separate sanitiser if Stage 5 wants one.
-    let input = "abc‮def"
+    let input = "abc\u202Edef"
     Assert.Equal(input, AnnounceSanitiser.sanitise input)
 
 [<Fact>]
 let ``preserves multi-byte UTF-8 high-plane characters`` () =
-    // U+1F600 GRINNING FACE — non-BMP, encoded as a UTF-16
+    // U+1F600 GRINNING FACE -- non-BMP, encoded as a UTF-16
     // surrogate pair. The sanitiser walks `char` (UTF-16
     // code units), so each surrogate's code-point value is
     // in the surrogate range (0xD800..0xDFFF), well outside
     // the C0/DEL/C1 strip ranges.
-    let emoji = "😀"  // U+1F600
+    let emoji = "\U0001F600"
     let input = sprintf "before %s after" emoji
     Assert.Equal(input, AnnounceSanitiser.sanitise input)
 
 [<Fact>]
 let ``preserves combining marks`` () =
-    // U+0301 COMBINING ACUTE ACCENT. Not a control character;
-    // sanitiser must leave combining marks intact so the
-    // rendered "é" still composes correctly.
+    // U+0301 COMBINING ACUTE ACCENT applied to U+0065 (`e`).
+    // Not a control character; the sanitiser must leave
+    // combining marks intact so the decomposed `e + acute`
+    // form renders correctly.
     let input = "é"
     Assert.Equal(input, AnnounceSanitiser.sanitise input)
 

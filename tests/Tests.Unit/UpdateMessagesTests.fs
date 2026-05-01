@@ -94,7 +94,7 @@ let ``BiDi override in exception message is stripped before announcement`` () =
     // U+202E. Pin the contract: the *control-byte* class is
     // gone; printable BiDi characters survive (Stage 5 may
     // revisit if we want a stricter Unicode policy).
-    let inner = "host ‮moc.lave@‬ resolves wrong"
+    let inner = "host \u202Emoc.lave@\u202C resolves wrong"
     let ex = HttpRequestException(inner)
     let msg = UpdateMessages.announcementForException ex
     // No C0 / C1 / DEL bytes anywhere in the output.
