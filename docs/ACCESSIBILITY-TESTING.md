@@ -498,6 +498,43 @@ pattern at the right element.
   backwards-compat shim; if it regresses, the delta-update path
   is the suspect.
 
+### App-reserved hotkey launchers (run on every release that bundles them)
+
+Two diagnostic / convenience hotkeys ride alongside the auto-update
+keybinding. They aren't tied to a specific stage but were added in
+the post-Stage-11 audit-cycle work to make manual NVDA-side testing
+easier. Stage 6's keyboard layer must continue to honour these per
+the app-reserved-hotkey contract in `spec/tech-plan.md` §6.
+
+| Test                              | Procedure                                       | Expected behaviour                                               |
+|-----------------------------------|-------------------------------------------------|------------------------------------------------------------------|
+| Diagnostic launcher               | From running pty-speak, press `Ctrl+Shift+D`    | NVDA reads "Diagnostic launched in a separate PowerShell window. Switch to that window to follow the test."; PowerShell window opens; bundled `test-process-cleanup.ps1` runs; on Alt+Tab to that window NVDA reads its plain-text progress |
+| Diagnostic two-pass               | After the launcher: follow the script's prompts | Pass 1 (Alt+F4 close) and Pass 2 (X-button close, with `Alt+Space`/`Enter` keyboard-equivalent) both report PASS; final summary line `OVERALL: PASS` |
+| Release-notes launcher            | From running pty-speak, press `Ctrl+Shift+R`    | NVDA reads "Opened release notes in default browser: <url>"; default browser opens to the GitHub Releases page |
+| Release-notes URL is correct      | Inspect the browser's address bar               | URL is `https://github.com/KyleKeane/pty-speak/releases` (or whatever fork's `UpdateRepoUrl` was configured to) |
+
+**Diagnostic decoder for the launcher hotkeys:**
+
+- **`Ctrl+Shift+D` silent, no PowerShell window** → Either the
+  `setupDiagnosticKeybinding` wiring regressed in `Program.fs`, OR
+  the bundled `test-process-cleanup.ps1` is missing from the
+  install. Check `%LocalAppData%\pty-speak\current\` for the
+  script file; if missing, the `Content` include in
+  `Terminal.App.fsproj` regressed (which Velopack pack picks up).
+- **`Ctrl+Shift+D` opens PowerShell but the script bails immediately
+  with "pty-speak already running, abort"** → PR #82's fix
+  regressed; the script's `Run-Pass` should detect-and-reuse, not
+  abort.
+- **`Ctrl+Shift+R` silent, no browser** → Either the
+  `setupReleasesKeybinding` wiring regressed, OR the user has no
+  default browser handler registered for `https:` URLs (rare on
+  Windows). NVDA should announce a sanitised exception message in
+  the second case.
+- **`Ctrl+Shift+R` opens the wrong URL** → `UpdateRepoUrl` constant
+  in `Program.fs` was changed without updating the release-notes
+  flow. The two share the same constant by design (single source
+  of truth for the repo URL).
+
 ## Recording results
 
 For each release tag:

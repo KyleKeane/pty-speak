@@ -263,11 +263,27 @@ defaults; they shouldn't be the only options.
 
 ### Current state
 
-Two app-level keybindings shipped today:
+Four app-level keybindings shipped today:
 
 - **`Ctrl+Shift+U`** — Velopack auto-update (Stage 11, PR #63).
   Wired in `setupAutoUpdateKeybinding` in
   `src/Terminal.App/Program.fs`.
+- **`Ctrl+Shift+D`** — process-cleanup diagnostic launcher
+  (PR #81). Spawns `scripts/test-process-cleanup.ps1` (bundled
+  next to `Terminal.App.exe`) in a separate PowerShell window
+  so the screen-reader user can audibly verify ConPTY child
+  cleanup on app close — added because Task Manager's
+  Processes-tab chevron-expand affordance isn't NVDA-accessible.
+  Wired in `setupDiagnosticKeybinding`.
+- **`Ctrl+Shift+R`** — release-notes browser launcher (PR #83).
+  Opens the GitHub Releases page (`UpdateRepoUrl` +
+  `/releases`) in the user's default web browser. Useful as
+  a one-keypress answer to "what changed in this version?"
+  before deciding whether to press `Ctrl+Shift+U`. Wired in
+  `setupReleasesKeybinding`. Note: `Ctrl+Shift+R` and
+  `Alt+Shift+R` (Stage 10 review-mode toggle, reserved) are
+  distinct WPF gestures — different modifier sets — so there
+  is no actual keypress conflict, only a mnemonic similarity.
 - (planned) **`Ctrl+Shift+M`** — earcon mute toggle (Stage 9).
 - (planned) **`Alt+Shift+R`** — review-mode toggle (Stage 10).
 
