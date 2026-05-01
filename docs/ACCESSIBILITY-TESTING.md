@@ -112,6 +112,44 @@ loudly when wrong.
 | Quit via Alt+F4 closes cleanly    | Press Alt+F4                                    | Same as above — clean exit, no orphans.                           |
 | Re-launch after exit              | Launch from Start menu again                    | New window opens cleanly. (Catches state-file corruption / single-instance regressions if those ship later.) |
 
+**Lifecycle inflection points — when to re-run this whole
+section, not just the "every install" cadence:**
+
+The "Window closes cleanly" + "Quit via Alt+F4" rows are
+the long-deferred "Test 8 / process cleanup on close" check
+flagged throughout `docs/SESSION-HANDOFF.md`. The strategic
+review on 2026-05-01 made these a **recurring acceptance
+check** rather than a single v0.1.0 gate. Re-run this entire
+section against:
+
+1. **Current `v0.0.1-preview.26` baseline.** Establishes
+   whether the shipped code already has any orphan-process
+   issues independent of upcoming work. Run before Stage 4.5
+   starts so any failure here gets diagnosed against
+   pre-Stage-4.5 code, not bundled into 4.5's diffs.
+2. **After Stage 4.5 ships.** Confirms the alt-screen
+   back-buffer rework didn't introduce process leaks (the
+   buffer-switching code itself is in F# and shouldn't
+   touch ConPTY lifetime, but verifying is cheap).
+3. **After Stage 6 ships.** Stage 6 is the natural home for
+   Job Object lifecycle (per `spec/tech-plan.md` §160's
+   note); this is the most important pass — if Job Object
+   lands here, this section verifies it works.
+4. **After Stage 7 ships.** Stage 7 lets Claude Code
+   spawn its own subprocesses (npm install, etc.); verify
+   the cascade cleanup path works for grandchild
+   processes, not just the immediate ConPTY child.
+5. **Final firm gate before any v0.1.0+ tag.** Per
+   `SECURITY.md` row PO-2 (Job Object lifecycle); a v0.1.0
+   release with orphan-process accumulation is a
+   regression we can't ship.
+
+Record each pass in the "Recording results" section below
+with a per-stage note (e.g. "preview.26 baseline: PASS",
+"post-Stage-4.5 v0.0.1-preview.27: PASS"). If a pass
+fails, file it as a regression issue against the most
+recent stage that touched lifecycle.
+
 **Diagnostic decoder for launch and process hygiene:**
 
 - **Two windows appear, second is an empty console** → `OutputType`
