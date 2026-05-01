@@ -507,3 +507,47 @@ The companion entry in
 [`CONTRIBUTING.md`](../CONTRIBUTING.md) ("Consider
 configurability when iterating") and the PR template's
 checklist enforce this at review time.
+
+## Intentionally not user-configurable
+
+Some hardcoded values in the codebase look like config
+candidates but are deliberately not exposed because the choice
+is bound to external invariants (specs, library compatibility,
+proven defaults from upstream implementations). Listing them
+here so future contributors don't waste effort proposing config
+knobs that would only introduce footguns.
+
+### VT500 parser limits (`src/Terminal.Parser/StateMachine.fs`)
+
+- **`MAX_INTERMEDIATES = 2`** — Maximum number of intermediate
+  bytes (0x20–0x2F) collected during CSI / DCS / ESC sequences.
+- **`MAX_OSC_PARAMS = 16`** — Maximum number of
+  semicolon-separated OSC fields.
+- **`MAX_OSC_RAW = 1024`** — Total bytes in the OSC payload
+  across all params.
+- **`MAX_PARAMS = 16`** — Maximum number of CSI parameters.
+
+These caps match the alacritty / vte parser invariants. They
+are deliberately fixed to maintain bytewise-equivalent dispatch
+behaviour with the canonical Williams VT500 implementation
+that the rest of the terminal ecosystem relies on. Making
+them configurable would let a user opt into incompatible
+parser behaviour with no realistic upside.
+
+If a real-world terminal sequence ever exceeds these limits in
+a way that pty-speak should handle differently from
+alacritty / vte, the right fix is a parser-level investigation
+and (if warranted) a coordinated change to the canonical caps,
+not a per-user override.
+
+### Earcon frequency / amplitude defaults (Stage 9, planned)
+
+The `spec/tech-plan.md` §9 constraints (≤ 180 Hz or
+≥ 1.5 kHz, ≤ 200 ms duration, ≤ -12 dBFS amplitude) are
+**evidence-based defaults from accessibility research on
+auditory icons in screen-reader contexts** — not arbitrary
+preferences. The defaults stay defaults; the "Audio (earcons +
+interface sounds)" section above describes which knobs around
+them become user-configurable. The frequency / duration /
+amplitude bounds themselves are not freely overridable because
+violating them is known to interfere with TTS comprehension.

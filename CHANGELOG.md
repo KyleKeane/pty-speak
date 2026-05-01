@@ -15,7 +15,50 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed
+
+- **Audit-cycle PR-A: documentation truth-up after Stage 4 +
+  Stage 11 verification.** Three CRITICAL doc errors fixed
+  in one focused PR: `README.md`'s status block referenced
+  `v0.0.1-preview.15` and described "next preview will show
+  live cmd.exe output" (was Stage 3 era language); now
+  reflects Stages 0-4 + 11 shipped on `v0.0.1-preview.26`
+  with NVDA verification. `docs/ROADMAP.md` Stage 11 row
+  marked "shipped" instead of "next"; "Stage ordering"
+  subsection rewritten to past tense. `docs/ARCHITECTURE.md`
+  module table: `Terminal.Accessibility` row updated from
+  "placeholder" to "implemented (4)" with the actual type
+  surface; the `Terminal.Update *(future)*` row replaced
+  with a row pointing at the actual `runUpdateFlow` location
+  in `Terminal.App/Program.fs` (per walking-skeleton
+  discipline, kept in the composition root).
+
+  Bundled MEDIUM/LOW doc fixes: `docs/SESSION-HANDOFF.md`
+  "from this point forward" phrasing replaced with
+  "deprecated for in-place updates"; next-stage pointer
+  updated to call out the PR-B notification-channel seam
+  Stage 5 will plug into. `CONTRIBUTING.md` USER-SETTINGS
+  cross-reference strengthened with explicit reviewer-block
+  rule. `docs/USER-SETTINGS.md` gains an "Intentionally not
+  user-configurable" subsection covering parser limits
+  (alacritty/vte parity rationale) and earcon
+  frequency/duration defaults (evidence-based from
+  accessibility research; not arbitrary).
+
 ### Added
+
+- **`docs/UPDATE-FAILURES.md` — Stage 11 NVDA failure
+  announcements reference.** Standalone reference doc
+  cataloguing the structured failure announcements PR #66
+  introduced (HttpRequestException → "cannot reach GitHub
+  Releases", TaskCanceledException → "Update check timed
+  out", IOException → "Update could not be written to
+  disk", catch-all → "Update failed: ...", in-flight dedup
+  → "Update already in progress", IsInstalled false →
+  "Auto-update only available in installed builds"). Each
+  entry has cause, what to do, and what NOT to interpret
+  it as. Cross-linked from README, ARCHITECTURE.md, and
+  this CHANGELOG.
 
 - **`docs/USER-SETTINGS.md` — forward-looking catalog of
   hardcoded decisions that could become user-configurable

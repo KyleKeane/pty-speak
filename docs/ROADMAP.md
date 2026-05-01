@@ -38,8 +38,8 @@ for ANSI color/style changes.*
 | 1     | ConPTY hello world                     | `dir` bytes returned from cmd.exe via PTY       | merged on `main` |
 | 2     | VT500 parser                           | Golden tests + FsCheck never-throws property    | merged on `main` |
 | 3     | Screen model + WPF rendering           | `cmd` runs visibly inside the WPF window        | merged on `main` (split as 3a + 3b — see [`docs/CHECKPOINTS.md`](CHECKPOINTS.md)) |
-| 4     | First UIA provider (text exposure)     | NVDA review cursor reads the buffer             | merged on `main` (PRs #54-#56, #59, #60); awaiting external NVDA verification on the preview that bundles them |
-| 11    | Velopack auto-update                   | `Ctrl+Shift+U` updates from GitHub Releases     | **next** (re-prioritised — see "Stage ordering" note below) |
+| 4     | First UIA provider (text exposure)     | NVDA review cursor reads the buffer             | **shipped** (`v0.0.1-preview.22`+ for first NVDA verification, `v0.0.1-preview.26` after word-nav + focus + version-suffix follow-ups; PRs #54-#56, #59, #60, #66, #68) |
+| 11    | Velopack auto-update                   | `Ctrl+Shift+U` updates from GitHub Releases     | **shipped** (`v0.0.1-preview.26`, NVDA-verified end-to-end via `preview.25 → preview.26` self-update) |
 | 5     | Streaming output notifications         | NVDA reads `dir` line by line; spinner doesn't flood | pending |
 | 6     | Keyboard input to PTY                  | PowerShell, vim, Ctrl+C all work; NVDA keys still work | pending |
 | 7     | Run Claude Code end-to-end             | Roundtrip prompt → response, NVDA reads it      | pending |
@@ -56,13 +56,15 @@ stage), see [`docs/CHECKPOINTS.md`](CHECKPOINTS.md).
 
 ### Stage ordering
 
-The original ordering put Stage 11 (Velopack auto-update) last because
-auto-update is feature-completeness rather than core functionality.
-After Stage 4's manual-NVDA verification cycle made the install
-friction's recurring cost visible (each iterative preview is
-download → SmartScreen prompts → install, several screen-reader
-steps per loop), Stage 11 was re-prioritised to land **next** —
-ahead of Stages 5-10. The justification:
+The original ordering put Stage 11 (Velopack auto-update) last
+because auto-update is feature-completeness rather than core
+functionality. After Stage 4's manual-NVDA verification cycle
+made the install friction's recurring cost visible (each
+iterative preview was download → SmartScreen prompts → install,
+several screen-reader steps per loop), Stage 11 was
+re-prioritised to land ahead of Stages 5-10 and **has now
+shipped** (`v0.0.1-preview.26`, NVDA-verified end-to-end). The
+justification:
 
 - Stage 11 has **no architectural dependency** on Stages 5-10. It's
   Velopack's `UpdateManager` API + a `KeyBinding` on the Window's
@@ -72,12 +74,15 @@ ahead of Stages 5-10. The justification:
   and each loop pays the install-friction tax under the current
   flow. Shipping Stage 11 first amortises that cost across all
   remaining stages.
-- The standalone `scripts/install-latest-preview.ps1` (PR #61) is
-  the bridge until Stage 11 lands; once it does, that script is
-  deprecated for in-place updates.
+- The standalone `scripts/install-latest-preview.ps1` (PR #61)
+  was the bridge until Stage 11 shipped; it is now **deprecated
+  for in-place updates** (use `Ctrl+Shift+U` instead) but
+  remains useful for fresh installs and dev-environment
+  workflows.
 
-Stage 4's verification can complete in parallel with Stage 11
-shipping — they don't block each other.
+Stage 4's verification completed in parallel with Stage 11
+shipping — both are now NVDA-verified end-to-end on
+`v0.0.1-preview.26`.
 
 ## Phase 2 — accessibility depth (v0.2.0 onward)
 

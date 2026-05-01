@@ -91,7 +91,10 @@ See [`docs/BUILD.md`](docs/BUILD.md) for build instructions.
 - **[`docs/USER-SETTINGS.md`](docs/USER-SETTINGS.md) tracks
   candidate user settings** — anything currently hardcoded that
   users might plausibly want to control later. See "Consider
-  configurability when iterating" below for the working rule.
+  configurability when iterating" below for the working rule;
+  **reviewers will request changes on PRs that introduce
+  config-shaped values without updating the catalog or noting
+  "no candidate settings introduced" in the PR description.**
 
 ## Consider configurability when iterating
 

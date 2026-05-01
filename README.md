@@ -6,14 +6,24 @@ with Anthropic's Claude Code (and other Ink/React TUIs) as the primary
 target workload.
 
 > Status: **pre-alpha.** Last shipped preview is
-> [`v0.0.1-preview.15`](../../releases/tag/v0.0.1-preview.15) — Stage 0,
-> an empty WPF window proving the deployment pipe (build → Velopack pack →
-> GitHub Releases). On `main` since: Stage 1 (ConPTY host),
-> Stage 2 (Williams VT500 parser), and Stage 3 (screen model + WPF
-> rendering); the next preview will show live `cmd.exe` output in the
-> window. See [`docs/ROADMAP.md`](docs/ROADMAP.md) and
-> [`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md) for the per-stage state.
-> Follow [Releases](../../releases) for new builds.
+> [`v0.0.1-preview.26`](../../releases/tag/v0.0.1-preview.26).
+> Shipped on `main` and NVDA-verified on Windows 11:
+> Stage 0 (skeleton + CI + Velopack pipe), Stage 1 (ConPTY
+> host), Stage 2 (Williams VT500 parser), Stage 3a (screen
+> model), Stage 3b (WPF rendering — live `cmd.exe` output
+> visible in the window), Stage 4 (UIA Document role + Text
+> pattern + Line/Word/Character review-cursor navigation +
+> focus into TerminalSurface), and Stage 11 (Velopack
+> auto-update via `Ctrl+Shift+U` from inside the running
+> app). Stages 5–10 (streaming output notifications, keyboard
+> input to PTY, Claude Code roundtrip, list detection,
+> earcons, review mode) are pending. Stage 11 was
+> re-prioritised ahead of Stages 5–10 because install
+> friction was a meaningful tax on iterative NVDA
+> verification — see [`docs/ROADMAP.md`](docs/ROADMAP.md)
+> "Stage ordering" for the rationale. Follow
+> [Releases](../../releases) for new builds; once installed,
+> `Ctrl+Shift+U` updates in place.
 
 ## Why this exists
 
@@ -72,6 +82,7 @@ docs/                    Living developer documentation
   RELEASE-PROCESS.md     Cutting a Velopack release to GitHub Releases
   ACCESSIBILITY-TESTING.md   Comprehensive manual smoke-test matrix (artifact integrity, process hygiene, NVDA, earcons, auto-update) with per-row diagnostic decoders
   USER-SETTINGS.md       Catalog of current hardcoded values that may become user-configurable later (word boundaries, font, colors, audio, keybindings, etc.)
+  UPDATE-FAILURES.md     Reference for the NVDA announcements Stage 11's Ctrl+Shift+U self-update produces on each failure mode
   CHECKPOINTS.md         Stable-baseline tags per shipped stage
   CONPTY-NOTES.md        Observed Windows ConPTY platform quirks
   SESSION-HANDOFF.md     Bridge between Claude Code coding sessions
@@ -96,6 +107,7 @@ tests/                   xUnit + FsCheck.Xunit + FlaUI placeholder
 - **Session handoff (for picking up between Claude Code sessions):** [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)
 - **Manual smoke-test matrix (every release):** [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
 - **User settings catalog (current and planned):** [`docs/USER-SETTINGS.md`](docs/USER-SETTINGS.md)
+- **Stage 11 update-failure announcements (NVDA reference):** [`docs/UPDATE-FAILURES.md`](docs/UPDATE-FAILURES.md)
 - **Install latest preview (PowerShell helper):** [`scripts/install-latest-preview.ps1`](scripts/install-latest-preview.ps1) — see [`scripts/README.md`](scripts/README.md)
 - **Security and trust model:** [`SECURITY.md`](SECURITY.md)
 - **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md)

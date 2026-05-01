@@ -94,14 +94,14 @@ stage shown in parentheses.
 | `Terminal.Pty`                  | Host         | `CreatePseudoConsole` lifecycle, `ConPtyHost`, stdin `FileStream`, `Channel<byte[]>` reader | implemented (1); Job Object lifecycle deferred |
 | `Terminal.Parser`               | Stateful     | Williams VT500 state machine; emits `VtEvent`                                        | implemented (2)       |
 | `Terminal.Audio`                | Audio        | Placeholder; `IAudioSink`, `WasapiSink` arrive in Stage 9                            | placeholder           |
-| `Terminal.Accessibility`        | UIA          | Placeholder; `TerminalAutomationPeer`, `ITextProvider`, `ITextRangeProvider` in Stage 4 | placeholder           |
+| `Terminal.Accessibility`        | UIA          | `TerminalAutomationPeer` (Document role + `GetPattern` override returning Text pattern), `TerminalTextProvider` (`ITextProvider`), `TerminalTextRange` (`ITextRangeProvider` with Line / Word / Character review-cursor navigation) | implemented (4) |
 | `Views` (C# WPF library)        | UI           | `MainWindow.xaml`, `App.cs : Application`, `TerminalView : FrameworkElement` (custom `OnRender` over `Screen`) | implemented (0, 3b) |
 | `Terminal.App` (F# EXE)         | Composition  | `[<EntryPoint>]`, `VelopackApp.Build().Run()`, `ConPtyHost → Parser → Screen → TerminalView` wiring | implemented (0, 3b) |
 | `Terminal.Semantics` *(future)* | Stateful     | `VtEvent → SemanticEvent` (spinner detection, list detection, OSC sanitisation)      | Stage 5+              |
 | `Terminal.EventBus` *(future)*  | Plumbing     | `BroadcastBlock<SemanticEvent>` + per-consumer `Channel<T>`                          | Stage 5+              |
 | `Terminal.Tts` *(future)*       | Audio        | Piper subprocess sink, SAPI5 sink                                                    | Phase 2               |
 | `Terminal.Osc` *(future)*       | Audio        | Rug.Osc → SuperCollider sink                                                         | Phase 3               |
-| `Terminal.Update` *(future)*    | Distribution | Velopack `UpdateManager` wrapper; Ed25519 manifest verification                      | Stage 11              |
+| (Velopack `UpdateManager` lives in `Terminal.App`) | Distribution | `runUpdateFlow` + `setupAutoUpdateKeybinding` in `src/Terminal.App/Program.fs`; `Ctrl+Shift+U` triggers the flow; Ed25519 manifest verification returns at v0.1.0+ per `docs/RELEASE-PROCESS.md` | implemented (11) — kept in `Terminal.App` (composition root) rather than a dedicated `Terminal.Update` project, per walking-skeleton discipline |
 
 ## Threading model
 
@@ -201,3 +201,6 @@ Coming attractions worth knowing about in advance:
 - Release process: [`RELEASE-PROCESS.md`](RELEASE-PROCESS.md)
 - ConPTY platform notes (observed quirks): [`CONPTY-NOTES.md`](CONPTY-NOTES.md)
 - Stable checkpoints / rollback: [`CHECKPOINTS.md`](CHECKPOINTS.md)
+- Stage 11 update-failure NVDA reference: [`UPDATE-FAILURES.md`](UPDATE-FAILURES.md)
+- User settings catalog (current and planned): [`USER-SETTINGS.md`](USER-SETTINGS.md)
+- Manual smoke-test matrix: [`ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
