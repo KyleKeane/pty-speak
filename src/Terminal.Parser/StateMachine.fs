@@ -21,16 +21,26 @@ type VtState =
     | DcsPassthrough
     | DcsIgnore
     | OscString
+    | OscIgnore
     | SosPmApcString
 
 /// alacritty/vte caps copied verbatim. Anything beyond these limits is
 /// silently dropped — the alternative (allocating without bound for an
 /// adversarial input stream) is a memory-DoS surface.
+///
+/// Audit-cycle SR-1 added `MAX_DCS_RAW` (4096, alacritty parity for the
+/// Hook→Unhook DCS payload window) and `MAX_PARAM_VALUE` (65535,
+/// alacritty / vte parity to keep `currentParam` from overflowing
+/// int32 under inputs like `\x1b[999999999999999999m`). The
+/// SECURITY.md `Application surfaces` section row A-1 references
+/// these constants.
 module internal Limits =
     let MAX_INTERMEDIATES = 2
     let MAX_OSC_PARAMS = 16
     let MAX_OSC_RAW = 1024
+    let MAX_DCS_RAW = 4096
     let MAX_PARAMS = 16
+    let MAX_PARAM_VALUE = 65535
 
 /// Stateful single-byte-at-a-time parser. Encapsulates Williams'
 /// state machine plus a small UTF-8 decoder for `Print` events.
@@ -54,6 +64,13 @@ type StateMachine() =
     let intermediates = ResizeArray<byte>()
     let oscParams = ResizeArray<ResizeArray<byte>>()
     let mutable oscTotalLen = 0
+    /// Audit-cycle SR-1: tracks total bytes emitted in the current
+    /// DCS Hook→Unhook window so the parser stops emitting `DcsPut`
+    /// events past `Limits.MAX_DCS_RAW`. The DCS dispatch pair
+    /// (`DcsHook` / `DcsUnhook`) still fires; only the per-byte
+    /// stream is bounded. Reset on `DcsHook` dispatch.
+    /// See SECURITY.md A-1.
+    let mutable dcsTotalLen = 0
     let mutable privateMarker: char option = None
 
     // Small UTF-8 decoder. We intentionally avoid System.Text.Encoding
@@ -263,7 +280,16 @@ type StateMachine() =
         | CsiParam ->
             if b >= 0x30uy && b <= 0x39uy then
                 if currentParam < 0 then currentParam <- 0
-                currentParam <- currentParam * 10 + int (b - 0x30uy)
+                // Audit-cycle SR-1: clamp at MAX_PARAM_VALUE
+                // (65535, alacritty / vte parity) so input
+                // like `\x1b[999999999999999999m` can't
+                // overflow int32 to a negative value and
+                // mistrigger an SGR / cursor handler. See
+                // SECURITY.md A-1 (Application surfaces).
+                if currentParam < Limits.MAX_PARAM_VALUE then
+                    currentParam <- currentParam * 10 + int (b - 0x30uy)
+                    if currentParam > Limits.MAX_PARAM_VALUE then
+                        currentParam <- Limits.MAX_PARAM_VALUE
                 None
             elif b = 0x3Buy then
                 pushParam ()
@@ -341,6 +367,31 @@ type StateMachine() =
                 None
             else
                 oscAppend b
+                // Audit-cycle SR-1: once the payload cap fires,
+                // transition to OscIgnore so the parser stops
+                // accumulating but stays in a deterministic
+                // state. An embedded 0x1B in dropped bytes
+                // could otherwise be misread as ST and
+                // desynchronise the state machine. See
+                // SECURITY.md A-1.
+                if oscTotalLen >= Limits.MAX_OSC_RAW then
+                    state <- OscIgnore
+                None
+        | OscIgnore ->
+            // SR-1: consume bytes until terminator. Then dispatch
+            // an empty OscDispatch so downstream consumers still
+            // see the OSC framing (just without payload).
+            if b = 0x07uy then
+                state <- Ground
+                Some(OscDispatch([||], true))
+            elif b = 0x1Buy then
+                state <- Escape
+                resetSequence ()
+                Some(OscDispatch([||], false))
+            elif b = 0x18uy || b = 0x1Auy then
+                state <- Ground
+                Some(Execute b)
+            else
                 None
         | DcsEntry ->
             if b >= 0x30uy && b <= 0x39uy then
@@ -360,6 +411,7 @@ type StateMachine() =
                 let p = snapshotParams ()
                 let i = snapshotIntermediates ()
                 state <- DcsPassthrough
+                dcsTotalLen <- 0  // SR-1: reset DCS payload counter on Hook
                 Some(DcsHook(p, i, char b))
             elif b = 0x18uy || b = 0x1Auy then
                 state <- Ground
@@ -370,7 +422,16 @@ type StateMachine() =
         | DcsParam ->
             if b >= 0x30uy && b <= 0x39uy then
                 if currentParam < 0 then currentParam <- 0
-                currentParam <- currentParam * 10 + int (b - 0x30uy)
+                // Audit-cycle SR-1: clamp at MAX_PARAM_VALUE
+                // (65535, alacritty / vte parity) so input
+                // like `\x1b[999999999999999999m` can't
+                // overflow int32 to a negative value and
+                // mistrigger an SGR / cursor handler. See
+                // SECURITY.md A-1 (Application surfaces).
+                if currentParam < Limits.MAX_PARAM_VALUE then
+                    currentParam <- currentParam * 10 + int (b - 0x30uy)
+                    if currentParam > Limits.MAX_PARAM_VALUE then
+                        currentParam <- Limits.MAX_PARAM_VALUE
                 None
             elif b = 0x3Buy then
                 pushParam ()
@@ -389,6 +450,7 @@ type StateMachine() =
                 let p = snapshotParams ()
                 let i = snapshotIntermediates ()
                 state <- DcsPassthrough
+                dcsTotalLen <- 0  // SR-1: reset DCS payload counter on Hook
                 Some(DcsHook(p, i, char b))
             elif b = 0x18uy || b = 0x1Auy then
                 state <- Ground
@@ -404,6 +466,7 @@ type StateMachine() =
                 let p = snapshotParams ()
                 let i = snapshotIntermediates ()
                 state <- DcsPassthrough
+                dcsTotalLen <- 0  // SR-1: reset DCS payload counter on Hook
                 Some(DcsHook(p, i, char b))
             elif b = 0x18uy || b = 0x1Auy then
                 state <- Ground
@@ -422,7 +485,18 @@ type StateMachine() =
             elif b = 0x7Fuy then
                 None
             else
-                Some(DcsPut b)
+                // SR-1: bound DCS payload at MAX_DCS_RAW (4 KiB,
+                // alacritty parity). Beyond the cap, byte
+                // accounting still runs but no event emits, so
+                // a child sending GBs of DCS doesn't allocate
+                // GBs of `DcsPut` records. The Hook/Unhook
+                // dispatch pair still fires unchanged.
+                // See SECURITY.md A-1.
+                if dcsTotalLen < Limits.MAX_DCS_RAW then
+                    dcsTotalLen <- dcsTotalLen + 1
+                    Some(DcsPut b)
+                else
+                    None
         | DcsIgnore ->
             if b = 0x1Buy then
                 state <- Escape

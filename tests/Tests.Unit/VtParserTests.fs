@@ -284,3 +284,86 @@ let ``valid Unicode scalars round-trip through UTF-8 as a single Print``
         (match events.[0] with
          | Print decoded -> decoded = r
          | _ -> false)
+
+// ---------------------------------------------------------------------
+// SR-1 (audit-cycle security hardening): bounds against malicious or
+// adversarially-shaped input. Each test pins a contract enforced by
+// changes in `Terminal.Parser/StateMachine.fs` and
+// `Terminal.Core/Screen.fs`. See SECURITY.md row A-1 for the surface.
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``CSI param accumulator clamps int32 overflow at MAX_PARAM_VALUE`` () =
+    // SR-1: `\x1b[999999999999999999m` previously overflowed int32 to a
+    // negative value. Now it clamps at 65535 and an SGR dispatch
+    // fires with a non-negative param. The exact value is
+    // implementation detail (clamped or 0); the contract is
+    // never-negative.
+    let events = parse (ascii "\x1b[999999999999999999m")
+    let dispatched =
+        events
+        |> Array.choose (function
+            | CsiDispatch(parms, _, 'm', _) -> Some parms
+            | _ -> None)
+        |> Array.tryHead
+    match dispatched with
+    | None -> failwith "expected an SGR (CSI m) dispatch"
+    | Some parms ->
+        Assert.True(parms.Length >= 1)
+        Assert.True(parms.[0] >= 0, sprintf "param[0]=%d, should not be negative" parms.[0])
+        Assert.True(parms.[0] <= 65535, sprintf "param[0]=%d, should be clamped at 65535" parms.[0])
+
+[<Fact>]
+let ``DCS payload caps at MAX_DCS_RAW; DcsHook + DcsUnhook still fire`` () =
+    // SR-1: 8 KiB of DCS payload should produce DcsHook then ≤ 4096
+    // DcsPut events then DcsUnhook on ESC \. The cap protects
+    // against ANSI-bomb DoS while preserving DCS framing.
+    let header = ascii "\x1bP1$q"  // DCS hook (DECRQSS shape)
+    let payload = Array.create 8192 (byte 'x')
+    let terminator = ascii "\x1b\\"
+    let bytes = Array.concat [ header; payload; terminator ]
+    let events = parse bytes
+    let hookCount = events |> Array.filter (function DcsHook _ -> true | _ -> false) |> Array.length
+    let putCount = events |> Array.filter (function DcsPut _ -> true | _ -> false) |> Array.length
+    let unhookCount = events |> Array.filter (function DcsUnhook -> true | _ -> false) |> Array.length
+    Assert.Equal(1, hookCount)
+    Assert.Equal(1, unhookCount)
+    Assert.True(putCount <= 4096, sprintf "DcsPut count = %d, should be capped at 4096" putCount)
+    Assert.True(putCount > 0, "expected at least some DcsPut emit")
+
+[<Fact>]
+let ``OSC overflow transitions to OscIgnore and dispatches empty payload`` () =
+    // SR-1: 8 KiB of OSC payload should produce exactly one
+    // OscDispatch on BEL — empty payload because the parser
+    // transitions to OscIgnore once MAX_OSC_RAW (1024 bytes) is
+    // hit. Parser ends in Ground (verified by feeding a Print
+    // after the BEL and seeing it emit).
+    let header = ascii "\x1b]0;"  // OSC start, set window title
+    let payload = Array.create 8192 (byte 'x')
+    let terminator = [| 0x07uy |]  // BEL
+    let bytes = Array.concat [ header; payload; terminator ]
+    let events = parse bytes
+    let oscDispatches =
+        events
+        |> Array.choose (function OscDispatch(parms, bel) -> Some(parms, bel) | _ -> None)
+    Assert.Equal(1, oscDispatches.Length)
+    let parms, bellTerminated = oscDispatches.[0]
+    Assert.True(bellTerminated)
+    // Empty payload: after overflow we don't carry forward the
+    // partially-collected bytes. (Pinned: NEVER carry the
+    // truncated payload — that's the desync risk SR-1 closed.)
+    let nonEmptyParam = parms |> Array.exists (fun p -> p.Length > 0)
+    Assert.False(nonEmptyParam, "OSC overflow should dispatch with empty params")
+
+[<Fact>]
+let ``OSC overflow leaves parser in Ground after terminator`` () =
+    // After overflow + BEL terminator, feeding a Print byte should
+    // produce a Print event — confirms parser is back in Ground.
+    let header = ascii "\x1b]0;"
+    let payload = Array.create 4096 (byte 'x')
+    let terminator = [| 0x07uy |]  // BEL
+    let after = ascii "Z"
+    let bytes = Array.concat [ header; payload; terminator; after ]
+    let events = parse bytes
+    let lastPrint = events |> Array.tryFindBack (function Print _ -> true | _ -> false)
+    Assert.Equal(Some (Print(rune 'Z')), lastPrint)
