@@ -15,6 +15,43 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added
+
+- **`Ctrl+Shift+D` diagnostic-launcher hotkey.** Press
+  `Ctrl+Shift+D` from inside pty-speak to launch the bundled
+  process-cleanup diagnostic (`scripts/test-process-cleanup.ps1`)
+  in a separate PowerShell window. NVDA narrates "Diagnostic
+  launched in a separate PowerShell window. Switch to that
+  window to follow the test." The diagnostic auto-detects when
+  the user closes pty-speak (no Enter prompt), reports
+  PASS/FAIL plain-text output one-fact-per-line for screen-
+  reader audible follow-along, and runs both close paths
+  (Alt+F4 and X button). Added because Task Manager's
+  Processes-tab chevron-expand affordance is not screen-
+  reader-accessible, so the long-deferred Stage 4 process-
+  cleanup test could not be exercised by an NVDA-using
+  maintainer via the original Task Manager walkthrough.
+
+  The script is bundled into the Velopack install via
+  `Terminal.App.fsproj`'s `Content` include; the hotkey
+  resolves the script path via `AppContext.BaseDirectory`
+  so no install path is hardcoded. PowerShell is launched
+  with `-NoExit` so the window stays open after the test
+  completes; the user reads the output and closes that
+  window manually.
+
+  Future diagnostics (UIA peer health, ConPTY child status,
+  version dump) can be added as additional bundled scripts
+  reached either through the same hotkey via a sub-menu or
+  via additional reserved hotkeys following the
+  app-reserved-hotkey contract in `spec/tech-plan.md` §6.
+  The reserved-hotkey list is now: `Ctrl+Shift+U` (update),
+  `Ctrl+Shift+D` (diagnostic), `Ctrl+Shift+M` (Stage 9 mute,
+  reserved), `Alt+Shift+R` (Stage 10 review, reserved).
+
+  `SECURITY.md` row A-3 (pre-Stage-6 keyboard contract)
+  updated to reflect the new app-reserved hotkey.
+
 ### Security
 
 - **Security audit cycle SR-3: SECURITY.md audit response.**
