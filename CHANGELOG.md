@@ -17,6 +17,77 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Security
 
+- **Security audit cycle SR-3: SECURITY.md audit response.**
+  Brings the vulnerability inventory and narrative into sync
+  with the shipped code from SR-1 and SR-2, plus closes the
+  documentation gaps the comprehensive audit identified.
+  Companion to SR-1 (#76, parser hardening) and SR-2 (#77,
+  accessibility hardening). The audit cycle is complete with
+  this PR.
+
+  - **6 new inventory rows.** `A-1`/`A-2`/`A-3` cover
+    application-surface findings (jagged-snapshot bounds in
+    word-boundary helpers, `Move(Character)` int32 underflow,
+    pre-Stage-6 keyboard contract). `D-1`/`D-2` cover
+    developer-tooling and operational mitigations
+    (`install-latest-preview.ps1` Mark-of-the-Web strip,
+    burned-tag visibility in public release history). `C-1`
+    covers the deferred-to-Phase-2 hardcoded `UpdateRepoUrl`
+    configuration item.
+
+  - **3 inventory rows updated.** `TC-1` (response-generating
+    sequences) annotated with the SR-1 catch-all-drop
+    documentation. `TC-5` (control characters in NVDA
+    `displayString`) flipped from `planned` to `partial`,
+    citing SR-2's `AnnounceSanitiser` for the
+    exception-message interpolation chokepoint. `TC-6`
+    (output-rate ANSI-bomb DoS) updated to credit SR-1's
+    parser-state caps (`MAX_PARAM_VALUE`, `MAX_DCS_RAW`,
+    `OscIgnore`) and clarify that the Stage 5 ingestion-rate
+    cap is still the remaining work.
+
+  - **2 new narrative items.** `T-10` paragraph in the
+    auto-update threat model elaborates the Mark-of-the-Web
+    strip rationale (cross-references T-3); `D-2` bullet
+    appears under "Out of scope for the update path" for
+    burned-tag visibility.
+
+  - **New `PO-5` row** documents the ConPTY environment
+    inheritance accepted-risk: parent's full env block
+    reaches the child via `lpEnvironment=IntPtr.Zero`,
+    leaking sensitive vars (`GITHUB_TOKEN`,
+    `OPENAI_API_KEY`, etc.) to the child shell. Significant
+    change to close; tracked in `docs/SESSION-HANDOFF.md`
+    item 5 alongside two other deferred follow-ups.
+
+  - **New "Application surfaces" inventory section** between
+    Process / OS and Update path, plus a new "Configuration"
+    mini-section for the C-prefix.
+
+  - **Lead-paragraph legend** explains the row-prefix
+    naming (`TC-`, `PO-`, `A-`, `T-`, `B-`, `D-`, `C-`)
+    so audit-grep queries stay consistent across surfaces.
+
+  - **Doc-drift fix.** Tense agreement on the Ed25519
+    public-key publication sentence (`is published as ...
+    (it will be added)` -> `will be published as ... (it
+    will be added)`).
+
+  - **3 deferred-follow-up rows added to
+    `docs/SESSION-HANDOFF.md`** (item 5) tracking the
+    findings the audit identified but didn't close inline:
+    PO-5 ConPTY env scrub, D-1 install-script TOCTOU
+    between `Unblock-File` and `Start-Process`, Acc/9
+    `TerminalView.OnRender` lock decision (deferred to
+    Stage 5's parser-off-dispatcher rework).
+
+  Vulnerability inventory now has 31 rows: TC-1..TC-6,
+  PO-1..PO-5, A-1..A-3, T-1..T-10, B-1..B-4, D-1..D-2,
+  C-1. All HIGH-severity findings from the November-December
+  2025 audit are CLOSED in code (SR-1 + SR-2); all MEDIUM
+  findings are either CLOSED or have an inventory row
+  pointing at the deferred work.
+
 - **Security audit cycle SR-2: accessibility hardening against
   malformed snapshots and untrusted exception messages.**
   Closes three HIGH/MEDIUM findings from the comprehensive

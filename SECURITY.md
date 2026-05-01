@@ -65,6 +65,14 @@ corresponding stage in [`spec/tech-plan.md`](spec/tech-plan.md).
   see [`docs/CONPTY-NOTES.md`](docs/CONPTY-NOTES.md). The "we never
   run elevated with an unelevated child" guarantee is also future
   work; until enforced in code, do not run pty-speak elevated.
+- **Pre-Stage-6 keyboard contract.** *(planned, Stage 6.)*
+  `TerminalView.OnPreviewKeyDown` today is a stub that passes every
+  non-reserved key through unfiltered; the only gestures captured at
+  the window level are app shortcuts (`Ctrl+Shift+U` for update). The
+  child cmd.exe therefore does not currently receive typed input.
+  Stage 6 introduces the NVDA-modifier filter and the actual PTY
+  routing per [`spec/tech-plan.md`](spec/tech-plan.md) §6; row A-3
+  in the inventory tracks the gap until then.
 
 The full mitigation matrix will live in `Terminal.Parser` and be
 covered by parser-level unit tests. PRs that disable any of the above
@@ -336,6 +344,37 @@ a privacy concern, not a security vulnerability.
 **Future mitigation:** Could rotate / cap log size if it becomes a
 concern.
 
+### T-10. Mark-of-the-Web stripped by `install-latest-preview.ps1`
+
+**Risk:** `scripts/install-latest-preview.ps1` calls `Unblock-File`
+on the Velopack `Setup.exe` immediately after download to suppress
+SmartScreen's first-run warning. This strips the Zone.Identifier
+NTFS alternate data stream that marks the file as "from the
+internet." A user running the script implicitly trusts that the
+binary they're about to execute is the legitimate maintainer-built
+release; SmartScreen's reputation check is bypassed by design.
+
+**Severity:** Medium. The script is opt-in and lives in `scripts/`
+under guidance documented in [`scripts/README.md`](scripts/README.md);
+the in-app `Ctrl+Shift+U` flow (Stage 11) is the canonical update
+path and does NOT call `Unblock-File`. The risk is concentrated on
+the dev-iteration audience the script targets.
+
+**Mitigation today:** The script is a **knowingly-accepted
+operational mitigation**: it exists because the unsigned-preview
+line has no Authenticode signature, and SmartScreen warns on every
+download. Without `Unblock-File` the script would require the user
+to right-click → Properties → Unblock for each release, which is
+prohibitive for the iteration workflow the script supports. The
+trust root is the same as for T-3 (the maintainer's GitHub
+account); a compromised release would deliver malicious bytes
+through both the script AND the in-app update path.
+
+**Future mitigation (`v0.1.0`+):** Authenticode signing returns
+SmartScreen reputation, so `Unblock-File` becomes unnecessary.
+The script can drop the call once signing lands; track this in
+the row D-1 in the inventory.
+
 ### Out of scope for the update path
 
 We do not defend against:
@@ -354,6 +393,15 @@ We do not defend against:
 - A user who has chosen to disable Windows Update / antivirus and
   install with SmartScreen overridden. Self-elected trust
   reductions are out of scope.
+- **Burned-tag visibility** (D-2). Releases that were tagged then
+  walked back during the preview line (`preview.{14, 16, 17, 23,
+  24}`) are still visible in the public release history. Velopack's
+  version-comparison rejects downgrade attempts and `release.yml`'s
+  walk-back logic skips these tags when computing delta sources, so
+  the visibility is an operational-confusion risk rather than a
+  security one. Cleaning up the public history would require
+  rewriting Git history, which has its own trust-root cost; we
+  accept the cosmetic drift.
 
 ## Release signing and verification
 
@@ -375,11 +423,11 @@ Every published `v0.1.0`+ release is signed in two layers:
    verify, even if Authenticode passes. This is defense in depth
    against a compromised GitHub release without a stolen private key.
 
-The public Ed25519 key is published as `docs/release-pubkey.txt` (it
-will be added to the repository as part of the one-time release setup,
-see [`docs/RELEASE-PROCESS.md`](docs/RELEASE-PROCESS.md)) and in the
-release notes of every signed release. If the key needs to be rotated
-we will issue an explicit out-of-band advisory.
+The public Ed25519 key will be published as `docs/release-pubkey.txt`
+(it will be added to the repository as part of the one-time release
+setup, see [`docs/RELEASE-PROCESS.md`](docs/RELEASE-PROCESS.md)) and
+in the release notes of every signed release. If the key needs to be
+rotated we will issue an explicit out-of-band advisory.
 
 To verify a release manually:
 
@@ -400,20 +448,35 @@ remaining gaps. Read this together with the narrative sections
 above; the table is the audit-trail summary, the narrative is where
 the rationale lives.
 
+Row IDs are prefixed by surface: `TC-` covers terminal core (parser
++ screen), `PO-` covers process / OS isolation, `A-` covers
+application/runtime surfaces (UIA peer, accessibility, in-app
+keyboard contract), `T-` covers the auto-update threat model, `B-`
+covers build and CI surfaces, `D-` covers developer-tooling and
+operational mitigations, and `C-` covers configuration items
+deferred to a later phase. The audit-cycle SR-1..SR-3 work
+(November-December 2025) added the `A-`, `D-`, and `C-` prefixes
+when those surfaces became code-bearing.
+
 | ID | Threat class | Severity | Mitigated today by | Closed at v0.1.0+ by | Status |
 |----|--------------|----------|--------------------|----------------------|--------|
 | **Terminal core** ||||||
-| TC-1 | Response-generating sequences (DSR, DA1/2/3, DECRQM, DECRQSS, cursor / title / font reports) | High (RCE class — see CVE-2003-0063, CVE-2022-45872, CVE-2024-50349/52005) | Not yet — Stage 2+ parser hardening pass | n/a (parser-level, not signing-related) | **planned** |
+| TC-1 | Response-generating sequences (DSR, DA1/2/3, DECRQM, DECRQSS, cursor / title / font reports) | High (RCE class — see CVE-2003-0063, CVE-2022-45872, CVE-2024-50349/52005) | Catch-all drop in `Screen.csiDispatch` documented as security-critical (audit-cycle SR-1, PR #76); explicit handlers still pending Stage 2+ parser hardening pass | n/a (parser-level, not signing-related) | **partial** (drop intent documented; explicit drop handlers still planned) |
 | TC-2 | OSC 52 clipboard write from child | High (one-paste-from-RCE class) | Not yet — parser hardening pass | n/a | **planned** |
 | TC-3 | OSC 0/2 window title escape injection (CVE-2022-44702) | Medium | Not yet — parser hardening pass | n/a | **planned** |
 | TC-4 | OSC 8 hyperlink with non-allowlisted scheme (`javascript:`, `data:`, etc.) | Medium | Not yet — Stage 4+ when OSC 8 surface lands | n/a | **planned** |
-| TC-5 | Control characters in NVDA `displayString` | Low (defense in depth) | Not yet — Stage 5 streaming notifications | n/a | **planned** |
-| TC-6 | Output-rate ANSI bomb DoS | Medium | Not yet — Stage 5 ingestion cap (~10 MB/s) | n/a | **planned** |
+| TC-5 | Control characters in NVDA `displayString` | Low (defense in depth) | `Terminal.Core.AnnounceSanitiser.sanitise` strips C0/DEL/C1 from every announcement-bound exception message (audit-cycle SR-2, PR #77); Stage 5 coalescer-side stripping still pending | n/a | **partial** (exception-message interpolations sanitised; streaming-notification path still planned) |
+| TC-6 | Output-rate ANSI bomb DoS | Medium | Parser-state caps prevent unbounded accumulation: `MAX_PARAM_VALUE = 65535` clamp on CSI/DCS digit accumulators, `MAX_DCS_RAW = 4096` cap on DCS payload emission, `OscIgnore` overflow state on OSC payload past `MAX_OSC_RAW = 1024` (audit-cycle SR-1, PR #76); Stage 5 will add the ingestion-rate cap (~10 MB/s) | n/a | **partial** (parser-state ANSI-bomb closed; ingestion-rate cap planned for Stage 5) |
 | **Process / OS** ||||||
 | PO-1 | Pipe handle inheritance to child (allowing child to write back into our pipes) | High | `bInheritHandles=FALSE`; ConPTY duplicates via attribute list (Stage 1, **shipped**) | n/a | **shipped** |
 | PO-2 | Orphan child process after parent exit | Medium (resource / accountability) | Not yet — Job Object lifecycle deferred from Stage 1 | n/a | **planned** |
 | PO-3 | Child running with elevated privileges relative to parent | High (privilege confusion) | Not yet — "we never run elevated with unelevated child" planned | n/a | **planned** |
 | PO-4 | Per-user install elevation (UAC) on update | Low | `asInvoker` manifest (Stage 11, **shipped**) | n/a | **shipped** |
+| PO-5 | ConPTY child inherits parent process environment block | Medium (env-var leak: `GITHUB_TOKEN`, `OPENAI_API_KEY`, etc., reach the child shell) | None specific — `lpEnvironment=IntPtr.Zero` in `CreateProcess` causes the child to inherit the full parent environment. Allow/deny-list scrubbing requires non-trivial F# wrapper around the ConPTY env block; tracked in `docs/SESSION-HANDOFF.md` | n/a | **accepted risk** (significant change required; defer until env-handling becomes user-facing) |
+| **Application surfaces** ||||||
+| A-1 | Jagged-snapshot `IndexOutOfRangeException` in word-boundary helpers | Medium (DoS in the screen-reader read path; today's `Screen.SnapshotRows` returns uniform rows, but `TerminalTextRange` constructor doesn't enforce uniformity) | `c >= rows.[r].Length` guards added inside `WordEndFrom`, `NextWordStart`, `PrevWordStart` in `TerminalAutomationPeer.fs` (audit-cycle SR-2, PR #77) | n/a | **shipped** |
+| A-2 | `Move(Character, count)` int32 underflow when `count = int.MinValue` | Medium (wrong-direction range mutation slips past the `max 0` clamp via wraparound) | `int64` widening before the `curIdx + count` add, applied to both `Move` and `MoveEndpointByUnit` Character arms (audit-cycle SR-2, PR #77) | n/a | **shipped** |
+| A-3 | Pre-Stage-6 keyboard contract: `OnPreviewKeyDown` stub passes all non-reserved keys through unfiltered | Low (by design until Stage 6 — child cmd.exe receives no typed input today; only the `Ctrl+Shift+U` app shortcut is captured) | Stage 6's keyboard layer will add the NVDA-modifier filter and PTY routing per `spec/tech-plan.md` §6 | n/a | **planned (Stage 6)** |
 | **Update path (Stage 11)** ||||||
 | T-1 | Passive network observer of update flow | Low | TLS to GitHub | n/a (cost not justified) | **shipped** |
 | T-2 | Active MITM substituting update bytes | High | TLS + Velopack per-nupkg SHA hash in releases.win.json | + Ed25519 manifest signing (consistent forgery resistance) | **partial** (TLS+hash today; signing v0.1.0+) |
@@ -424,11 +487,16 @@ the rationale lives.
 | T-7 | Time-of-check vs time-of-use during apply | Low | Velopack's atomic-ish stage-then-move | n/a | **shipped (inherited from Velopack)** |
 | T-8 | Resource exhaustion on update | Low | User-initiated only; in-flight dedup; structured failure handling | n/a | **shipped** |
 | T-9 | Velopack log path/info disclosure | Low | None specific | n/a | **accepted risk** |
+| T-10 | `Unblock-File` MOTW strip in `install-latest-preview.ps1` | Medium | Knowingly-accepted operational mitigation; trust root is the same as T-3 (maintainer GitHub account); cross-link to D-1 | + Authenticode signing returns SmartScreen reputation; `Unblock-File` becomes unnecessary and the script can drop the call | **accepted risk** |
 | **Build and supply chain** ||||||
 | B-1 | Stale-branch release publishing (preview.{14, 23, 24} pattern) | Medium (operational) | Workflow target-branch gate + RELEASE-PROCESS.md hardened guidance + walk-back logic for burned-tag delta source (PRs #44, #64, #65) | n/a | **shipped** |
 | B-2 | CHANGELOG / version mismatch on release | Low (operational) | Workflow extracts version from tag; CHANGELOG `[Unreleased]` rewrite step (PR #37) | n/a | **shipped** |
 | B-3 | Velopack pack producing incomplete artifact set | Medium (silent ship of broken installer) | Defense-in-depth artifact-existence gate after vpk pack (PR #41) | n/a | **shipped** |
 | B-4 | Malicious / unreviewed merge to `main` | Critical | Branch protection requires PR + review | + (organisational policy) at v0.1.0+ | **partial** |
+| D-1 | `scripts/install-latest-preview.ps1` strips Mark-of-the-Web via `Unblock-File` | Medium | Knowingly-accepted operational mitigation: avoids per-release SmartScreen warnings during the unsigned-preview line. Trust root shared with T-3 (maintainer GitHub account). Deprecates once Stage 11's in-app `Ctrl+Shift+U` is the canonical update path AND signing returns at `v0.1.0+`. See narrative under T-10 | + Signing returns and `Unblock-File` becomes unnecessary | **accepted risk** |
+| D-2 | Burned-tag releases visible in public history (`preview.{14, 16, 17, 23, 24}`) | Low | Velopack's version-comparison rejects downgrades; `release.yml`'s walk-back logic skips them when computing delta sources. Public visibility is an operational-confusion risk, not a security risk | n/a | **accepted risk** |
+| **Configuration** ||||||
+| C-1 | Hardcoded `UpdateRepoUrl` in `src/Terminal.App/Program.fs` | Low (restricts forks / self-hosting) | None — by design today; Phase 2's Tomlyn config substrate will expose this. Making it user-configurable introduces a new attack surface (untrusted TOML input) which the future config-loader contributor must threat-model | n/a | **deferred to Phase 2** |
 
 ### Severity glossary
 

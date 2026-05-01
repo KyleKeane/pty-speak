@@ -177,6 +177,45 @@ disconnects mid-session.
    key picks up the lock files automatically once they exist —
    no separate cache-key change needed.
 
+5. **Audit-cycle SR-3 deferred follow-ups (not coded, tracked).**
+   The security-audit cycle (SR-1..SR-3, November-December 2025)
+   identified three items genuinely worth deferring rather than
+   shipping inline. Each is tracked in `SECURITY.md`'s inventory;
+   the items below are the action handles a future maintainer
+   needs to actually close them.
+
+   1. **ConPTY environment scrub (PO-5).** Parent's full env
+      block inherits to the child via `lpEnvironment=IntPtr.Zero`
+      in `CreateProcess`, so sensitive vars (`GITHUB_TOKEN`,
+      `OPENAI_API_KEY`, etc.) reach the child shell. To close:
+      build an allow/deny-list inside `Terminal.Pty/Native.fs`,
+      construct an env block from filtered entries, pass to
+      `CreateProcess` via the `lpEnvironment` parameter. Risks:
+      breaking developer workflows that depend on inherited
+      `PATH` / locale variables; getting the F# string-block
+      marshalling exactly right (must be double-NUL terminated,
+      sorted order matters for some tools).
+   2. **`install-latest-preview.ps1` TOCTOU (D-1, T-10).**
+      A local attacker can swap the `Setup.exe` in `%TEMP%`
+      between `Unblock-File` and `Start-Process`. Mitigation
+      options: download to a path the attacker process can't
+      write to (e.g. via per-user `%LocalAppData%` with strict
+      ACLs); compute SHA-256 of the downloaded bytes and verify
+      before running; or sign the file before run (which is the
+      same v0.1.0+ work that makes the script unnecessary
+      altogether). The script is dev-iteration tooling per
+      `scripts/README.md`; defer until it's used outside that
+      context.
+   3. **`TerminalView.OnRender` `_screen` lock (Acc/9).**
+      `OnRender` reads `_screen` without holding any lock;
+      Stage 3b is safe because the parser runs on the
+      dispatcher and the read happens on the same thread.
+      Stage 5 will move the parser off the dispatcher and
+      rework snapshot-on-render; the lock decision belongs in
+      that work, not in a one-liner now. A one-line forward-
+      reference comment in `OnRender` deferring to Stage 5 is
+      the lightweight handle.
+
 ## Working conventions on this repo
 
 The written rules live in [`CONTRIBUTING.md`](../CONTRIBUTING.md):
