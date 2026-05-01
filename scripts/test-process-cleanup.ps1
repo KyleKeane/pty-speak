@@ -80,20 +80,21 @@ function Run-Pass {
     Write-Host "----- Pass: close via $CloseMethod -----"
     Write-Host ""
 
-    # Defensive: confirm nothing is already running.
+    # If pty-speak is already running (the typical case when this
+    # script is launched from inside the app via Ctrl+Shift+D), skip
+    # the launch step and use the existing instance. Otherwise launch
+    # a fresh one.
     $existing = Get-PtySpeakProcesses
     if ($existing.Main.Count -gt 0) {
-        Write-Host "ERROR: pty-speak is already running before this pass starts."
-        Write-Host "       Close it manually, then re-run the script."
-        return @{ Pass = $false; Reason = "pre-existing process" }
+        Write-Host "pty-speak is already running ($($existing.Main.Count) instance) - using current."
+    } else {
+        Write-Host "Launching pty-speak..."
+        Start-Process -FilePath $ExePath
+        Start-Sleep -Seconds 3
     }
 
-    Write-Host "Launching pty-speak..."
-    Start-Process -FilePath $ExePath
-    Start-Sleep -Seconds 3
-
     $running = Get-PtySpeakProcesses
-    Write-Host "After launch:"
+    Write-Host "Process state before close:"
     Write-Host "    Terminal.App.exe instances: $($running.Main.Count)"
     if ($running.Children) {
         $names = ($running.Children | ForEach-Object { $_.Name }) -join ', '
@@ -113,12 +114,12 @@ function Run-Pass {
 
     Write-Host ""
     Write-Host "ACTION NEEDED: switch to the pty-speak window and close it via $CloseMethod."
-    Write-Host "               Script will detect the close automatically."
+    Write-Host "               Script will detect the close automatically and continue."
     Write-Host ""
 
-    $exited = Wait-ForExit -TimeoutSeconds 60
+    $exited = Wait-ForExit -TimeoutSeconds 120
     if (-not $exited) {
-        Write-Host "TIMEOUT: pty-speak still running after 60 seconds. Skipping this pass."
+        Write-Host "TIMEOUT: pty-speak still running after 2 minutes. Skipping this pass."
         return @{ Pass = $false; Reason = "timeout waiting for close" }
     }
 
@@ -126,7 +127,7 @@ function Run-Pass {
     Start-Sleep -Seconds 3
 
     $after = Get-PtySpeakProcesses
-    Write-Host "After close:"
+    Write-Host "Process state after close:"
     Write-Host "    Terminal.App.exe instances: $($after.Main.Count)"
     Write-Host "    Child process count: $($after.Children.Count)"
 
@@ -158,6 +159,25 @@ if (-not $exePath) {
     exit 1
 }
 Write-Host "Found pty-speak at: $exePath"
+Write-Host ""
+Write-Host "This test runs two passes."
+Write-Host ""
+Write-Host "Pass 1 - Alt+F4 close:"
+Write-Host "  If pty-speak is already running (typical when launched"
+Write-Host "  via Ctrl+Shift+D), the test uses that instance."
+Write-Host "  Otherwise the script launches one for you."
+Write-Host "  When prompted, switch to pty-speak and press Alt+F4."
+Write-Host ""
+Write-Host "Pass 2 - X button close:"
+Write-Host "  Pass 1 will have closed pty-speak; this pass launches"
+Write-Host "  a fresh instance for you. When prompted, switch to"
+Write-Host "  pty-speak and click the X button on the title bar."
+Write-Host "  (If clicking is awkward, Alt+Space then Enter on"
+Write-Host "  'Close' is keyboard-equivalent to the X button.)"
+Write-Host ""
+Write-Host "After each close the script auto-detects exit and"
+Write-Host "continues without you needing to switch back."
+Write-Host ""
 
 $results = @{}
 
