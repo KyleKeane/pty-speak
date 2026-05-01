@@ -15,6 +15,60 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Security
+
+- **Security audit cycle SR-1: parser bounds against malicious
+  input.** Closes three HIGH/MEDIUM findings from the
+  comprehensive code-level security audit. All three are
+  ANSI-bomb-class DoS protections — they don't change
+  behaviour for legitimate input, just cap the parser-state
+  accumulators so an adversarially-shaped byte stream
+  can't allocate without bound or wrap into negative
+  values.
+
+  - **`currentParam` int32 clamp at 65535** (alacritty / vte
+    parity). Input like `\x1b[999999999999999999m` previously
+    overflowed int32 to a negative SGR param; now it clamps.
+    Applied at both CSI and DCS digit-accumulation sites in
+    `src/Terminal.Parser/StateMachine.fs`.
+
+  - **`MAX_DCS_RAW = 4096` cap** on DCS payload emission.
+    `DcsPassthrough` now tracks `dcsTotalLen` and stops
+    emitting `DcsPut` events past the cap (DCS Hook + Unhook
+    pair still fires, so the framing stays intact). Matches
+    the ANSI-bomb resistance pattern Sixel / ReGIS terminal
+    emulators use.
+
+  - **OSC overflow transitions to `OscIgnore`.** Previously
+    the parser silently truncated OSC payloads at
+    `MAX_OSC_RAW = 1024` but stayed in `OscString`, where an
+    embedded `\x1B` in dropped bytes could be misread as ST
+    and desynchronise the state machine. New `OscIgnore`
+    sub-state mirrors the existing `DcsIgnore` pattern:
+    consumes bytes until ST/BEL terminator, then dispatches
+    an empty `OscDispatch`.
+
+  - **`Screen.csiDispatch` catch-all comment** documents that
+    response-generating sequences (DSR, DA1/2/3, DECRQM,
+    DECRQSS, CPR, title/font reports) are deliberately
+    dropped per `SECURITY.md` row TC-1. Reviewers are
+    instructed to block any PR that adds a handler in this
+    match without a matching `SECURITY.md` update.
+
+  Four new tests in `tests/Tests.Unit/VtParserTests.fs` pin
+  each contract: SGR param clamp returns non-negative;
+  8 KiB DCS payload produces ≤ 4096 `DcsPut` events with
+  Hook+Unhook intact; 8 KiB OSC payload dispatches once
+  with empty params; parser returns to `Ground` after OSC
+  overflow + terminator.
+
+  Companion PRs in this audit cycle (queued):
+  SR-2 (accessibility hardening: jagged-array bounds,
+  control-char `AnnounceSanitiser`, `Move` overflow guard);
+  SR-3 (`SECURITY.md` audit response: 6 new inventory rows
+  + cross-references). The full plan is in
+  `/root/.claude/plans/replicated-riding-sketch.md`.
+
 ### Changed
 
 - **Audit-cycle PR-E: cache `~/.dotnet/tools` across CI

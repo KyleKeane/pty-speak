@@ -197,7 +197,21 @@ type Screen(rows: int, cols: int) =
         | 'J' -> eraseDisplay p0Default0
         | 'K' -> eraseLine p0Default0
         | 'm' -> applySgr parms
-        | _ -> ()  // Unsupported CSI final — silently ignored
+        | _ ->
+            // Audit-cycle SR-1: this catch-all is intentional and
+            // SECURITY-CRITICAL. It silently drops final bytes
+            // for the response-generating sequences listed in
+            // SECURITY.md row TC-1 (DSR `n`, DA1/2/3 `c`, CPR
+            // built on DSR, DECRQM `$p`, DECRQSS `$q`, title
+            // report `21 t`, font-size report). Re-enabling any
+            // of these (writing back through the PTY, building
+            // a response packet, etc.) re-opens the CVE class
+            // covering CVE-2003-0063, CVE-2022-45872,
+            // CVE-2024-50349/52005. Reviewers MUST block any PR
+            // that adds a handler in this match without a
+            // matching SECURITY.md update describing the new
+            // mitigation strategy.
+            ()
 
     member _.Rows = rows
     member _.Cols = cols
