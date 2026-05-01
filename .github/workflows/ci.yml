@@ -59,7 +59,24 @@ jobs:
         # restore step doesn't produce.
         run: dotnet publish src/Terminal.App/Terminal.App.fsproj --configuration Release --runtime win-x64 --self-contained true --output publish
 
+      - name: Cache Velopack CLI (vpk) global install
+        # Audit-cycle PR-E. Caches `~/.dotnet/tools` so the
+        # Velopack CLI doesn't re-download (~10s saved) on
+        # every run. Cache key is statically versioned (`v1`)
+        # rather than tied to a specific vpk version because
+        # `dotnet tool install -g vpk` (no --version) installs
+        # latest — the cache lives until vpk has a release we
+        # actually want to pull, at which point bump v1 → v2.
+        # PATH already includes ~/.dotnet/tools (setup-dotnet
+        # puts it there) so cached or fresh, `vpk` is callable.
+        id: cache-vpk
+        uses: actions/cache@v5
+        with:
+          path: ~/.dotnet/tools
+          key: ${{ runner.os }}-dotnet-tools-vpk-v1
+
       - name: Install Velopack CLI (vpk)
+        if: steps.cache-vpk.outputs.cache-hit != 'true'
         run: dotnet tool install -g vpk
 
       - name: Velopack pack smoke

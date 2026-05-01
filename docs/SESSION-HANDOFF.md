@@ -116,33 +116,43 @@ disconnects mid-session.
    override regression on `TerminalAutomationPeer` per
    the Stage-4 diagnostic decoder.
 
-3. **Small CI / release timing optimisation pass** (low priority,
-   pure cleanup). Current CI per-PR job times are reasonable but
-   not tight: actionlint ~12 s, markdown link check ~56 s,
-   Build+test (windows-latest) ~2 min. Candidate trims that don't
-   compromise the utility of any check:
+3. **CI / release timing optimisation — partial completion.**
+   Audit-cycle PR-E shipped the highest-leverage optimisation:
+   `~/.dotnet/tools` is now cached across CI runs in both
+   `ci.yml` and `release.yml`, so `dotnet tool install -g vpk`
+   no longer re-downloads (~10s saved per run). Cache key is
+   statically versioned; bump `v1 → v2` in the cache key
+   when a new vpk version is wanted.
 
-   - Merge the two sequential `gaurav-nelson/github-action-markdown-link-check`
-     steps in `markdown-link-check` into one invocation that
-     covers both `docs/` and the root markdown files. Saves one
-     Node container start (~15–20 s) without changing what's
-     checked.
-   - Cache the `dotnet tool install -g vpk` step in the build
-     job (the Velopack CLI is stable across runs). Today it
-     re-downloads on every CI run; ~10 s saved with a global
-     tools cache or by pinning vpk into a `dotnet-tools.json`
-     manifest restored under `~/.nuget/packages` cache.
-   - Audit `.github/workflows/release.yml` for the same kinds of
-     wins (e.g. is the `vpk pack` step's input directory
-     restored from cache? Does the prior-release nupkg fetch
-     from PR #45 retry on transient `gh` 5xx?).
+   Two candidate trims investigated and DEFERRED (low-value
+   relative to restructuring cost):
 
-   Constraint: do not weaken any check's effectiveness. Keep
-   `continue-on-error: true` on the link checks (they're
-   advisory by design); keep `--locked-mode` once NuGet lock
-   files land (item 5); keep the Velopack pack smoke step
-   (it's the only thing that catches packaging regressions
-   before release day).
+   - **Merge two `gaurav-nelson/github-action-markdown-link-check`
+     steps into one invocation.** The action takes either
+     `folder-path` OR `file-path` (not both), so combining
+     would require enumerating all 14 markdown files
+     explicitly OR scanning the whole repo (which would
+     break the deliberate `spec/` exclusion documented in
+     the workflow comments). Savings: ~15-20s. Cost:
+     either ugly file enumeration that drifts from reality
+     as docs are added, or losing the `spec/`-immutable
+     URLs exclusion. Not worth it; revisit if the action
+     gains a multi-folder option.
+
+   - **Audit `release.yml` for similar wins** (vpk pack
+     input cache, gh release-download retry on transient
+     5xx). The vpk-pack input is per-build artefacts (no
+     cache opportunity). The gh-fetch retry would help
+     on transient flakes but hasn't actually flaked in any
+     of our release runs to date — defer until a flake
+     happens. PR-E added a doc note in this file rather
+     than guess-coding for a non-issue.
+
+   Constraint preserved: `continue-on-error: true` on
+   link checks (advisory by design), Velopack pack smoke
+   step (catches packaging regressions before release
+   day), `--locked-mode` once NuGet lock files land
+   (item 4) all unchanged.
 
 4. **Enable NuGet lock files (deferred from PR #41).** The
    investigation in PR #41 settled on enabling
