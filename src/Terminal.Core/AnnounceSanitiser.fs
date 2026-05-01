@@ -40,19 +40,21 @@ module AnnounceSanitiser =
     /// via UTF-16 surrogates and combining marks) is preserved.
     /// Empty input returns empty.
     ///
-    /// The signature is `string -> string` (non-null). Callers
-    /// supplying `Exception.Message` get the .NET 6+ non-null
-    /// annotation; the audit-cycle SR-2 plan documented null
-    /// tolerance as defensive but the actual call sites all
-    /// pass annotated-non-null strings, so the simpler contract
-    /// matches reality.
+    /// Accepts `string | null` to match the codebase's existing
+    /// handling of nullable string params (see `Terminal.Pty/Native.fs`).
+    /// Today's call sites pass `Exception.Message` which is
+    /// non-null per .NET 6+ annotation, but the explicit
+    /// nullable signature documents the defensive contract:
+    /// null in returns empty out.
     ///
     /// Stage 5 may revisit if multi-line announcements need
     /// `\n` (U+000A) to pass through; today's announcements
     /// are all single-line so the strip-all default is safe.
-    let sanitise (s: string) : string =
-        if s.Length = 0 then s
-        else
+    let sanitise (s: string | null) : string =
+        match s with
+        | null -> ""
+        | s when s.Length = 0 -> s
+        | s ->
             let sb = StringBuilder(s.Length)
             for ch in s do
                 let code = int ch

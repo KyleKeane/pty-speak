@@ -21,6 +21,15 @@ let ``empty input returns empty`` () =
     Assert.Equal("", AnnounceSanitiser.sanitise "")
 
 [<Fact>]
+let ``null input returns empty`` () =
+    // Defensive null handling matches the codebase's
+    // `string | null` pattern (see Terminal.Pty/Native.fs).
+    // Today's call sites pass `Exception.Message` which is
+    // non-null per .NET 6+ annotation, but the function
+    // tolerates null and converts to empty string.
+    Assert.Equal("", AnnounceSanitiser.sanitise null)
+
+[<Fact>]
 let ``pure-ASCII printable input is unchanged`` () =
     let s = "Hello, world! Path: C:\\Users\\test (#1)"
     Assert.Equal(s, AnnounceSanitiser.sanitise s)
