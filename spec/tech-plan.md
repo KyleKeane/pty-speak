@@ -378,6 +378,36 @@ The “spinner problem” is real (Claude Code’s Ink renderer redraws the same
 
 **Goal.** Typing into the WPF window sends correct VT byte sequences to the child. Arrow keys, Tab, Enter, Ctrl+C, Ctrl+L, Esc, function keys all work. NVDA shortcuts (anything with Insert/CapsLock) are NOT swallowed.
 
+> **App-reserved hotkey preservation contract** (ADR-style
+> amendment, audit-cycle PR-B 2026-05-01, maintainer-authorised
+> per the immutable-spec policy).
+>
+> Stage 6's keyboard layer MUST preserve every entry in the
+> `TerminalView.AppReservedHotkeys` list defined in
+> `src/Views/TerminalView.cs`. The list is the canonical source
+> of truth for app-level hotkeys; Stage 6's `PreviewKeyDown`
+> filter MUST NOT mark these key combinations
+> `e.Handled = true`, so WPF's `InputBindings` machinery on
+> the parent `MainWindow` processes them before any forwarding
+> to the PTY child.
+>
+> Initial entries (as of audit-cycle PR-B):
+>   - `Ctrl+Shift+U` — Stage 11 self-update (shipped, PR #63;
+>     bound in `setupAutoUpdateKeybinding` in
+>     `src/Terminal.App/Program.fs`).
+>
+> Future entries (declared as code comments today; activated
+> when their owning stage ships):
+>   - `Ctrl+Shift+M` — Stage 9 earcon mute toggle.
+>   - `Alt+Shift+R` — Stage 10 review-mode toggle.
+>
+> Failure mode if violated: app-level hotkeys silently stop
+> working — `Ctrl+Shift+U` no longer triggers self-update,
+> the user can no longer update the app from inside it
+> without going back to the install script. Catch this at
+> review time; reviewers must verify any Stage 6 keyboard-
+> filter PR honours the contract.
+
 ### 6.1 Capture model
 
 Use **two events** on the `TerminalView` ([Microsoft Learn: Input Overview](https://learn.microsoft.com/en-us/dotnet/desktop/wpf/advanced/input-overview)):

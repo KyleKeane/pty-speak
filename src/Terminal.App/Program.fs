@@ -34,16 +34,28 @@ module Program =
 
     /// Wire a freshly-spawned ConPtyHost into the screen + view. Spawns
     /// a single background task that pulls byte chunks off the host's
-    /// stdout channel, feeds them through the parser, and applies the
+    /// stdout channel, feeds them through the parser, applies the
     /// resulting VtEvents to the screen (on the WPF dispatcher thread
-    /// for Stage 3b — Stage 5 will move parser mutation onto a
-    /// dedicated thread with snapshot-on-render semantics).
+    /// for Stage 3b), and publishes a `RowsChanged` to the
+    /// notification channel so the UIA peer can `RaiseNotificationEvent`
+    /// for NVDA. Per the audit-cycle PR-B plan, this is the seam
+    /// Stage 5's coalescer plugs into: today every applied batch
+    /// produces one notification, and Stage 5 will insert a
+    /// debounce/dedup layer between this publish and the consumer
+    /// without changing the contract.
+    ///
+    /// Unexpected exceptions in the loop publish a `ParserError`
+    /// rather than being swallowed (closes the cross-cutting
+    /// "parser exceptions are silently swallowed" gap from the
+    /// audit). `OperationCanceledException` is still treated as
+    /// the normal shutdown path and not surfaced to the user.
     let private startReaderLoop
             (dispatcher: Dispatcher)
             (host: ConPtyHost)
             (parser: Parser)
             (screen: Screen)
             (view: TerminalView)
+            (notifications: System.Threading.Channels.ChannelWriter<ScreenNotification>)
             (ct: CancellationToken) : Task =
         Task.Run(fun () ->
             task {
@@ -60,10 +72,23 @@ module Program =
                                     dispatcher
                                         .InvokeAsync(Action(action))
                                         .Task
+                                // Stage 5 will refine "which rows
+                                // changed" once the coalescer lands;
+                                // for the seam we publish an empty
+                                // list (the consumer treats it as
+                                // "something changed, you decide what
+                                // to read"). A future revision can
+                                // compute the row-set from screen
+                                // sequence number deltas.
+                                let _ = notifications.TryWrite(RowsChanged [])
                                 ()
                 with
                 | :? OperationCanceledException -> ()
-                | _ -> ()
+                | ex ->
+                    let _ =
+                        notifications.TryWrite(
+                            ParserError(sprintf "Parser/reader loop: %s" ex.Message))
+                    ()
             } :> Task)
 
     /// Run the Velopack auto-update flow on a background task,
@@ -201,6 +226,60 @@ module Program =
         // user's first keypress.
         setupAutoUpdateKeybinding window
 
+        // Pre-Stage-5 seam (audit-cycle PR-B): bounded
+        // notification channel from the parser thread to the
+        // UIA peer. Today the consumer drains 1:1 onto
+        // `TerminalSurface.Announce`. Stage 5 will insert a
+        // coalescer between `startReaderLoop`'s publish and
+        // this consumer (debounce ~200ms, hash dedup, single
+        // notification per coalesced batch) without changing
+        // the channel's contract. The channel is bounded with
+        // DropOldest so a very fast parser can't grow the
+        // backlog without bound — rate-limiting at the source
+        // is Stage 5's job, but bounded-with-drop-oldest is
+        // the safe default for the seam.
+        let notificationChannel =
+            let opts =
+                System.Threading.Channels.BoundedChannelOptions(256,
+                    FullMode =
+                        System.Threading.Channels.BoundedChannelFullMode.DropOldest)
+            System.Threading.Channels.Channel.CreateBounded<ScreenNotification>(opts)
+
+        // Drain the channel onto the WPF dispatcher, calling
+        // `TerminalSurface.Announce` (which raises a UIA
+        // Notification event via the existing path PR #63
+        // wired for Stage 11). Each consumed notification
+        // produces one announcement.
+        let _ =
+            Task.Run(fun () ->
+                task {
+                    try
+                        let reader = notificationChannel.Reader
+                        let mutable keepGoing = true
+                        while keepGoing && not cts.Token.IsCancellationRequested do
+                            let! got = reader.WaitToReadAsync(cts.Token).AsTask()
+                            if not got then
+                                keepGoing <- false
+                            else
+                                let mutable peek = Unchecked.defaultof<ScreenNotification>
+                                while reader.TryRead(&peek) do
+                                    let msg =
+                                        match peek with
+                                        | RowsChanged _ ->
+                                            "Terminal output updated"
+                                        | ParserError s ->
+                                            sprintf "Terminal parser error: %s" s
+                                    let action () = window.TerminalSurface.Announce(msg)
+                                    let! _ =
+                                        window.Dispatcher
+                                            .InvokeAsync(Action(action))
+                                            .Task
+                                    ()
+                    with
+                    | :? OperationCanceledException -> ()
+                    | _ -> ()
+                } :> Task)
+
         let cfg : PtyConfig =
             { Cols = int16 ScreenCols
               Rows = int16 ScreenRows
@@ -214,9 +293,12 @@ module Program =
         window.Loaded.Add(fun _ ->
             match ConPtyHost.start cfg with
             | Error _ ->
-                // Stage 3b: silently ignore the failure for now —
-                // the empty terminal still renders. Stage 5 will add
-                // a UIA notification announcing the failure.
+                // Publish a ParserError so the user hears about
+                // ConPTY spawn failures via NVDA rather than
+                // staring at a silent empty terminal.
+                let _ =
+                    notificationChannel.Writer.TryWrite(
+                        ParserError "ConPTY child process failed to start.")
                 ()
             | Ok host ->
                 hostHandle <- Some host
@@ -227,11 +309,15 @@ module Program =
                         parser
                         screen
                         window.TerminalSurface
+                        notificationChannel.Writer
                         cts.Token
                 ())
 
         app.Exit.Add(fun _ ->
             try cts.Cancel() with _ -> ()
+            // Complete the writer so the consumer drain task
+            // exits cleanly when the channel runs dry.
+            try notificationChannel.Writer.TryComplete() |> ignore with _ -> ()
             match hostHandle with
             | Some h -> (h :> IDisposable).Dispose()
             | None -> ()
