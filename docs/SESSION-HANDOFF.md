@@ -19,10 +19,10 @@ A new session should read this **first**, then
 
 | | |
 |---|---|
-| **Last merged stages** | **Stage 4** (UIA Document + Text pattern + Line/Character/Word navigation + focus-into-TerminalSurface fix, PRs #54-#56, #59, #60, #68) and **Stage 11** (Velopack auto-update via `Ctrl+Shift+U`, PRs #63, #66). Both **NVDA-verified working** on a clean Windows 11 install — Stage 4 on `v0.0.1-preview.22` and `.26`, Stage 11 via a successful `preview.25 → preview.26` self-update. |
-| **Last shipped release** | `v0.0.1-preview.26` (or whichever preview the maintainer last cut — release cadence is ad-hoc during the unsigned-preview line). The auto-update path replaces the `scripts/install-latest-preview.ps1` bridge for in-place updates; the script is now **deprecated for in-place updates** but remains useful for fresh installs and dev-environment workflows. |
-| **In-flight branch** | None. Stages 4 and 11 are both fully merged and verified. Word-navigation (the only Stage 4 follow-up that needed code) shipped in PR #68. Process-cleanup smoke (the only Stage 4 row not yet exercised in NVDA verification) is logged as a maintainer pending item. |
-| **Next stage** | **Stage 5 — Streaming output notifications.** First stage where the user gets passive narration as terminal output streams in, rather than active review-cursor exploration. Validation: NVDA reads `dir` line-by-line; spinner-class redraws don't flood NVDA's speech queue; busy loops printing dots don't get NVDA stuck. Substrate: the `Screen.SequenceNumber` + `Screen.SnapshotRows` primitives (PR #38), the parser→UIA notification channel seam shipped in the audit-cycle PR-B, and Stage 11's existing `TerminalView.Announce` raise path (PR #63). Stage 5 plugs the coalescer (Channel<int> per-row tickets + 200ms debounce + hash dedup) between the parser and that channel — the seams are in place; only the coalescing logic is new. |
+| **Last merged stages** | **Stage 4** (UIA Document + Text pattern + Line/Character/Word navigation + focus-into-TerminalSurface fix, PRs #54-#56, #59, #60, #68) and **Stage 11** (Velopack auto-update via `Ctrl+Shift+U`, PRs #63, #66). Both **NVDA-verified working** on a clean Windows 11 install — Stage 4 on `v0.0.1-preview.22` and `.26`, Stage 11 via a successful `preview.25 → preview.26` self-update. **Security-audit cycle SR-1/SR-2/SR-3** (PRs #76, #77, #78) merged after that, closing every HIGH-severity finding from the comprehensive code-level audit. |
+| **Last shipped release** | `v0.0.1-preview.26` (or whichever preview the maintainer last cut — release cadence is ad-hoc during the unsigned-preview line). The auto-update path replaces the `scripts/install-latest-preview.ps1` bridge for in-place updates; the script is now **deprecated for in-place updates** but remains useful for fresh installs and dev-environment workflows. The next preview cut will pick up the SR-1/SR-2/SR-3 hardening + the Stage 4.5 substrate work once that ships. |
+| **In-flight branch** | None. SR-1/SR-2/SR-3 audit cycle merged. The 2026-05-01 strategic stage review (`/root/.claude/plans/replicated-riding-sketch.md`) committed the maintainer to a separate **Stage 4.5 — Claude Code rendering substrate** stage between Stages 4 and 5. Process-cleanup test (the only Stage 4 row not yet exercised) is now a recurring acceptance check — see "Pending action items" item 2 below. |
+| **Next stage** | **Stage 4.5 — Claude Code rendering substrate.** Closes the latent gap where the parser correctly emits VT events that `Screen.fs` silently drops at its `_ -> ()` catch-all arms: alt-screen 1049 (DECSET `?1049h/l`), cursor visibility (DECTCEM `?25h/l`), DECSC/DECRC cursor save/restore (`ESC 7`/`ESC 8`), 256-colour SGR (`38;5;n`), and truecolor SGR (`38;2;r;g;b`). Adds a new `TerminalModes` record in `Types.fs` to centralise mode bits (alt-screen, cursor-visible, DECCKM, bracketed-paste, focus-reporting) so Stages 5/6/7 don't smear them across files. Without 4.5, Stage 7's Claude Code roundtrip will fail because Claude sends `?1049h` + `?25l` + truecolor on startup. After 4.5, **Stage 5 — Streaming output notifications** (Channel-based coalescer with 200ms debounce + frame-hash + per-row hash dedup; the frame-hash layer is a Stage 5 design refinement from the strategic review to compose with Claude Ink's full-frame redraws). |
 
 The end-to-end pipeline now reaches the auto-update boundary:
 launching the app spawns `cmd.exe` under ConPTY, parses its
@@ -31,9 +31,11 @@ in a custom WPF `FrameworkElement`, exposes that buffer to NVDA
 via UIA Document role + Text pattern with working Line / Word /
 Character / Document review-cursor navigation, and self-updates
 to subsequent previews via `Ctrl+Shift+U` with NVDA progress
-narration plus an audible version-flip on restart. Stage 5 is
-the first stage where output starts narrating itself instead of
-waiting for the user to navigate to it.
+narration plus an audible version-flip on restart. Stage 4.5
+is the immediate next cycle (close the latent VT gaps so Stage
+7 can actually render Claude Code), and Stage 5 is the first
+stage where output starts narrating itself instead of waiting
+for the user to navigate to it.
 
 ## Pending action items (maintainer)
 
@@ -65,15 +67,29 @@ disconnects mid-session.
      "pty-speak terminal {version}" (version suffix shipped
      in PR #66).
    - ✓ Re-launch from Start menu works cleanly.
-   - ↻ **Still deferred — Test 8 "Process cleanup on close":**
+   - ↻ **Process-cleanup acceptance check — recurring cadence
+     starting now (per 2026-05-01 strategic review).**
      Alt+F4 the running app, wait ~3 s, open Task Manager →
      Details, confirm neither `Terminal.App.exe` nor orphan
-     `cmd.exe` remains. Pass condition is in the
-     "Launch and process hygiene" section of the matrix.
-     Low priority because no orphan accumulation has been
-     observed in repeated launch / close cycles during
-     Stage 4 + 11 verification, but should be checked once
-     before any non-prerelease (`v0.1.0`+) tag.
+     `cmd.exe` remains. Full procedure + lifecycle inflection
+     points (when to re-run vs. just on every install) are in
+     the "Launch and process hygiene" section of
+     [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md).
+     Run order:
+     1. Baseline against current `v0.0.1-preview.26` (next
+        manual session — establishes whether the shipped code
+        already has issues independent of upcoming work).
+     2. After Stage 4.5 ships (alt-screen back-buffer rework
+        is a low-risk change to lifecycle but verify cheap).
+     3. After Stage 6 ships (most important pass — Stage 6 is
+        where Job Object lifecycle lands per
+        `spec/tech-plan.md` §160).
+     4. After Stage 7 ships (Claude Code spawns subprocesses;
+        verify cascade cleanup).
+     5. **Firm gate before any v0.1.0+ tag** (per
+        `SECURITY.md` row PO-2). Until v0.1.0, prior passes
+        accumulate evidence; if any regression appears, file
+        against the most recent stage that touched lifecycle.
 
    **Stage 11 (Velopack auto-update):**
 
@@ -182,7 +198,12 @@ disconnects mid-session.
    identified three items genuinely worth deferring rather than
    shipping inline. Each is tracked in `SECURITY.md`'s inventory;
    the items below are the action handles a future maintainer
-   needs to actually close them.
+   needs to actually close them. The 2026-05-01 strategic stage
+   review (logged at
+   `/root/.claude/plans/replicated-riding-sketch.md`) made
+   refinements to where each lands — see "Recommended adjustments"
+   §E (PO-5 env scrub bundles into Stage 7's env contract per
+   `spec/tech-plan.md` §7.2).
 
    1. **ConPTY environment scrub (PO-5).** Parent's full env
       block inherits to the child via `lpEnvironment=IntPtr.Zero`
