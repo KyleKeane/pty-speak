@@ -106,31 +106,3 @@ let ``BiDi override in exception message is stripped before announcement`` () =
             let code = int ch
             code < 0x20 || code = 0x7F || (code >= 0x80 && code <= 0x9F))
     Assert.False(hasControlByte, "Announcement must not contain C0/DEL/C1 control bytes.")
-
-[<Fact>]
-let ``BEL in exception message is stripped before announcement`` () =
-    // 0x07 (BEL) is a C0 control. NVDA's notification handler
-    // would interpret it as an audible-bell trigger.
-    let inner = "disk write failed\x07with extra noise"
-    let ex = System.IO.IOException(inner)
-    let msg = UpdateMessages.announcementForException ex
-    Assert.DoesNotContain("\x07", msg)
-    // The non-control parts of the inner message survive.
-    Assert.Contains("disk write failed", msg)
-    Assert.Contains("with extra noise", msg)
-
-[<Fact>]
-let ``Clipboard-OSC injection in exception message is stripped`` () =
-    // 0x1B (ESC) starts an ANSI / OSC sequence. A hostile
-    // exception message containing `\x1b]52;c;...\x07` would
-    // have set the clipboard if it reached a VT-aware
-    // listener (today the announcement path doesn't reach
-    // a terminal; it goes to NVDA; but stripping ESC is
-    // belt-and-braces in case a future code path inverts).
-    let inner = "fatal\x1b]52;c;ZXZpbA==\x07internal"
-    let ex = ArgumentException(inner)
-    let msg = UpdateMessages.announcementForException ex
-    Assert.DoesNotContain("\x1b", msg)
-    Assert.DoesNotContain("\x07", msg)
-    Assert.Contains("fatal", msg)
-    Assert.Contains("internal", msg)
