@@ -17,6 +17,94 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Stage 4.5 PR-A: VT mode coverage + SGR table fills.**
+  Closes the latent gap where the parser correctly emits
+  events that `Screen.fs` silently dropped at its `_ -> ()`
+  catch-all arms. Without these, Stage 7's Claude Code
+  roundtrip fails because Claude's Ink reconciler sends
+  `?25l` (hide cursor) + truecolor SGR + DECSC/DECRC on
+  every state change. PR-B will follow with alt-screen
+  1049 (the architectural piece — separate buffer +
+  swap dispatch); PR-A is the catch-all-arm fills plus
+  the substrate (`TerminalModes` record, private-CSI /
+  ESC dispatch split, SGR walker refactor) that PR-B
+  plugs into.
+
+  - **`TerminalModes` record** in `Terminal.Core/Types.fs`
+    centralises the mode bits Stage 5/6/7 need. Wired
+    today: `CursorVisible` (DECTCEM `?25h/l`). Stubbed for
+    Stage 6: `DECCKM`, `BracketedPaste`, `FocusReporting`.
+    `AltScreen` is wired by PR-B.
+
+  - **`Cursor` record refactored.** Dropped the dead
+    `Visible: bool` field (single source of truth via
+    `Modes.CursorVisible`). Replaced
+    `SaveStack: (int * int) list` with
+    `SaveStack: CursorSave list` where `CursorSave` is a
+    record `{ Row; Col; Attrs }` so DECSC also saves SGR
+    attrs (matches xterm convention; forward-compatible
+    for Stage 6 origin mode / character-set selection).
+
+  - **`InternalsVisibleTo("PtySpeak.Tests.Unit")`** added
+    to `Terminal.Core` (top of `Types.fs`) so tests can
+    introspect `TerminalModes` flags, `Cursor.SaveStack`
+    depth, and the alt-screen back-buffer that PR-B will
+    add. Mirrors the precedent in
+    `Terminal.Accessibility/TerminalAutomationPeer.fs:22-23`.
+
+  - **DECTCEM (`?25h` / `?25l`)** wired via a new
+    `csiPrivateDispatch` helper in `Screen.fs`, dispatched
+    from `Apply`'s `CsiDispatch` arm when the parser
+    passes the `?` private marker. Public-marker CSI
+    sequences continue to flow through the existing
+    `csiDispatch`. Stage 6 will plug DECCKM (`?1`),
+    bracketed paste (`?2004`), and focus reporting
+    (`?1004`) into the same `csiPrivateDispatch`.
+
+  - **DECSC (`ESC 7`) and DECRC (`ESC 8`)** wired via a
+    new `escDispatch` helper in `Screen.fs`. DECSC pushes
+    `{ Row; Col; Attrs }` onto `Cursor.SaveStack`. DECRC
+    pops and restores; on empty stack, restores to
+    (0, 0) with default attrs (xterm convention).
+
+  - **256-colour SGR (`\x1b[38;5;n m` / `\x1b[48;5;n m`)
+    and truecolor SGR (`\x1b[38;2;r;g;b m` /
+    `\x1b[48;2;r;g;b m`)** wired via a refactored `applySgr`
+    that walks the parameter array index-by-index,
+    consuming sub-parameters when it sees a `38` or `48`
+    trigger followed by `5` or `2`. Bounds-guards inline
+    on each arm so a malformed `\x1b[38;5m` (missing index)
+    degrades to "ignore" rather than throw — hostile-input
+    parity with audit-cycle SR-1's `MAX_PARAM_VALUE`
+    clamps. Colon-separated sub-params (`38:5:n`,
+    `38:2:r:g:b`) require parser-side support and are
+    Stage 6 territory; tracked as a `// TODO Stage 6:
+    colon-separated sub-params` comment in the walker.
+
+  - **OSC 52 defensive comment** in `Apply`'s `OscDispatch`
+    arm. No behaviour change — every OSC dispatch is still
+    silently dropped — but the explicit arm with a
+    SECURITY-CRITICAL long-form comment (mirroring SR-1
+    TC-1's style at `Screen.fs` lines 201-214) makes the
+    reasoning grep-able for future audits. `SECURITY.md`
+    row TC-2 cross-references the new chokepoint.
+
+  18 new tests in `tests/Tests.Unit/ScreenTests.fs` exercise
+  every arm: DECTCEM toggle, DECTCEM-vs-non-private
+  isolation, DECSC/DECRC round-trip, DECSC-saves-attrs,
+  DECRC-on-empty-stack, multi-level DECSC LIFO, 256-colour
+  Fg/Bg, truecolor Fg/Bg, Print-carries-Indexed-into-cell,
+  malformed `38;5` doesn't throw, malformed `38;2;...`
+  doesn't throw, mixed SGR with truecolor in the middle,
+  OSC 52 bumps SequenceNumber but doesn't mutate cells.
+  The existing `fresh screen cursor is at 0,0 visible` test
+  was migrated from `screen.Cursor.Visible` to
+  `screen.Modes.CursorVisible`.
+
+  Companion PR: PR-B (alt-screen 1049 back-buffer) lands
+  on top of this. The full Stage 4.5 plan is in
+  `/root/.claude/plans/replicated-riding-sketch.md`.
+
 - **`Ctrl+Shift+R` release-notes browser hotkey.** Press
   `Ctrl+Shift+R` (mnemonic: **R**eleases) from inside pty-speak
   to open the GitHub Releases page for the configured

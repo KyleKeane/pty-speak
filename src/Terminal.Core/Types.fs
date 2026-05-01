@@ -2,6 +2,14 @@ namespace Terminal.Core
 
 open System.Text
 
+// Stage 4.5 — expose `internal` types in Terminal.Core to the
+// xUnit assembly so tests can introspect alt-screen back-buffer
+// state, `TerminalModes` flags, and `Cursor.SaveStack` depth
+// without polluting the public API. Mirrors the precedent in
+// `src/Terminal.Accessibility/TerminalAutomationPeer.fs:22-23`.
+[<assembly: System.Runtime.CompilerServices.InternalsVisibleTo("PtySpeak.Tests.Unit")>]
+do ()
+
 /// Marker type used by smoke tests to verify the assembly loads.
 type Marker = class end
 
@@ -49,20 +57,62 @@ module Cell =
     /// A blank cell — space character with default SGR.
     let blank : Cell = { Ch = Rune(int ' '); Attrs = SgrAttrs.defaults }
 
-/// Cursor position and visibility state. Row/Col are 0-indexed
-/// internally even though VT sequences address them 1-indexed.
+/// Snapshot of a `Cursor`'s saveable state, pushed onto
+/// `Cursor.SaveStack` by DECSC (`ESC 7`) and popped by DECRC
+/// (`ESC 8`). Forward-compatible: Stage 6 can extend with
+/// origin-mode flag, character-set selection, etc., without
+/// breaking the stack shape (the field list grows; existing
+/// consumers keep working).
+type CursorSave =
+    { Row: int
+      Col: int
+      Attrs: SgrAttrs }
+
+/// Cursor position state. Row/Col are 0-indexed internally
+/// even though VT sequences address them 1-indexed. Visibility
+/// (DECTCEM `?25h/l`) lives in `TerminalModes.CursorVisible`,
+/// not here, so there is a single source of truth.
 type Cursor =
     { mutable Row: int
       mutable Col: int
-      mutable Visible: bool
-      mutable SaveStack: (int * int) list }
+      mutable SaveStack: CursorSave list }
 
 module Cursor =
     let create () : Cursor =
         { Row = 0
           Col = 0
-          Visible = true
           SaveStack = [] }
+
+/// Terminal mode bits centralised so Stages 5/6/7 don't smear
+/// them across files. Stage 4.5 wires only `CursorVisible`
+/// (DECTCEM `?25h/l`) and `AltScreen` (DECSET `?1049h/l`); the
+/// others are stubbed for Stage 6 to flip on the corresponding
+/// DECSET dispatches:
+///
+///   * `DECCKM` (`?1`) — cursor-key application mode; controls
+///     whether arrows emit `\x1b[A` (Normal) or `\x1bOA`
+///     (Application). Stage 6 reads it from here when
+///     translating arrow keys to PTY bytes.
+///   * `BracketedPaste` (`?2004`) — when set, pasted text is
+///     wrapped in `\x1b[200~ ... \x1b[201~`. Stage 6 reads it.
+///   * `FocusReporting` (`?1004`) — when set, the host emits
+///     `\x1b[I` / `\x1b[O` on focus gain / loss. Stage 6 reads it.
+type TerminalModes =
+    { mutable AltScreen: bool
+      mutable CursorVisible: bool
+      mutable DECCKM: bool
+      mutable BracketedPaste: bool
+      mutable FocusReporting: bool }
+
+module TerminalModes =
+    /// Default mode set: alt-screen off, cursor visible, every
+    /// other bit at its DECSET-default-reset value.
+    let defaults : TerminalModes =
+        { AltScreen = false
+          CursorVisible = true
+          DECCKM = false
+          BracketedPaste = false
+          FocusReporting = false }
 
 /// Events emitted by the VT500 state machine in `Terminal.Parser`.
 ///
