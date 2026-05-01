@@ -21,15 +21,6 @@ let ``empty input returns empty`` () =
     Assert.Equal("", AnnounceSanitiser.sanitise "")
 
 [<Fact>]
-let ``null input returns null`` () =
-    // The function is null-tolerant by design: callers
-    // interpolating `ex.Message` may receive null from
-    // exception types that override Message to return null
-    // (rare, but legal in .NET).
-    let result = AnnounceSanitiser.sanitise null
-    Assert.True(isNull result)
-
-[<Fact>]
 let ``pure-ASCII printable input is unchanged`` () =
     let s = "Hello, world! Path: C:\\Users\\test (#1)"
     Assert.Equal(s, AnnounceSanitiser.sanitise s)

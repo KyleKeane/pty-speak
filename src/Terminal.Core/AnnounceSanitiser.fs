@@ -38,14 +38,20 @@ module AnnounceSanitiser =
     /// Returns a fresh string with the offending code points
     /// removed. Printable Unicode (including non-BMP characters
     /// via UTF-16 surrogates and combining marks) is preserved.
-    /// `null` input returns `null`; empty input returns empty.
+    /// Empty input returns empty.
+    ///
+    /// The signature is `string -> string` (non-null). Callers
+    /// supplying `Exception.Message` get the .NET 6+ non-null
+    /// annotation; the audit-cycle SR-2 plan documented null
+    /// tolerance as defensive but the actual call sites all
+    /// pass annotated-non-null strings, so the simpler contract
+    /// matches reality.
     ///
     /// Stage 5 may revisit if multi-line announcements need
     /// `\n` (U+000A) to pass through; today's announcements
     /// are all single-line so the strip-all default is safe.
     let sanitise (s: string) : string =
-        if isNull s then null
-        elif s.Length = 0 then s
+        if s.Length = 0 then s
         else
             let sb = StringBuilder(s.Length)
             for ch in s do
