@@ -15,6 +15,33 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed
+
+- **Audit-cycle PR-E: cache `~/.dotnet/tools` across CI
+  runs.** Both `.github/workflows/ci.yml` (Build and test
+  job) and `.github/workflows/release.yml` (release-pack
+  job) now cache the global dotnet tools directory before
+  `dotnet tool install -g vpk`. The install step gates on
+  `cache-hit != 'true'` so a cached run skips the install
+  entirely. Saves ~10s per CI run. Cache key is statically
+  versioned (`v1`); bump to `v2` when a new vpk version is
+  wanted (the cache key change forces a fresh install,
+  which pulls latest from NuGet, then re-caches).
+
+  Two other CI optimisations from SESSION-HANDOFF item 3
+  investigated and **deferred**: merging the two
+  `gaurav-nelson/github-action-markdown-link-check` steps
+  into one invocation (the action doesn't support both
+  `folder-path` and `file-path`; combining would either
+  drop the `spec/` exclusion or require enumerating 14
+  files explicitly that would drift); release.yml audit
+  for vpk-pack input cache (per-build artefacts have no
+  cache opportunity) and gh-download 5xx retry (no flakes
+  observed yet, defer until a flake happens). Both
+  trade-offs are documented in `docs/SESSION-HANDOFF.md`
+  item 3 so a future contributor doesn't redo the
+  investigation.
+
 ### Added
 
 - **Audit-cycle PR-D: deferred-test burn-down.** Closes the

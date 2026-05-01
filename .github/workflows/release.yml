@@ -74,7 +74,21 @@ jobs:
       - name: Publish (self-contained win-x64)
         run: dotnet publish src/Terminal.App/Terminal.App.fsproj -c Release -r win-x64 --self-contained -o publish /p:Version=${{ steps.version.outputs.version }}
 
+      - name: Cache Velopack CLI global install
+        # Audit-cycle PR-E. Mirrors the cache strategy in
+        # ci.yml's build job: caches `~/.dotnet/tools` so vpk
+        # doesn't re-download on every release run. The cache
+        # is shared across both workflows by using the same
+        # key. Bump v1 → v2 when we want to force-pull a new
+        # vpk version.
+        id: cache-vpk
+        uses: actions/cache@v5
+        with:
+          path: ~/.dotnet/tools
+          key: ${{ runner.os }}-dotnet-tools-vpk-v1
+
       - name: Install Velopack CLI
+        if: steps.cache-vpk.outputs.cache-hit != 'true'
         run: dotnet tool install -g vpk
 
       - name: Fetch prior release full nupkg for delta generation
