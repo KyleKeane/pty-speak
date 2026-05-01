@@ -9,6 +9,20 @@ open System.Windows.Automation.Provider
 open System.Windows.Automation.Text
 open Terminal.Core
 
+// Audit-cycle PR-C — restrict accessibility types to the
+// internal callers that actually use them. The Stage 4 design
+// shipped them as `public` because F# defaults to public, but
+// the only consumer is `PtySpeak.Views` (the C# WPF library
+// that constructs the peer in `TerminalView.OnCreateAutomationPeer`).
+// Marking them `internal` + exposing to Views via
+// `InternalsVisibleTo` prevents accidental third-party API
+// dependency on these types and gives Stage 5+ contributors
+// the freedom to break their signatures without an external
+// breaking-change concern.
+[<assembly: System.Runtime.CompilerServices.InternalsVisibleTo("PtySpeak.Views")>]
+[<assembly: System.Runtime.CompilerServices.InternalsVisibleTo("PtySpeak.Tests.Unit")>]
+do ()
+
 /// Stage 4 — UIA peer that exposes `TerminalView` to the WPF
 /// Automation tree as a Document with the Text pattern.
 ///
@@ -23,9 +37,12 @@ open Terminal.Core
 ///     (`OBJID_CLIENT`) but breaks UIA3 (`UiaRootObjectId`):
 ///     UIA3 expects an `IRawElementProviderFragmentRoot` there,
 ///     and a simple provider can't supply the fragment-root
-///     navigation surface — CI's `AutomationPeerTests` and
-///     `WindowSubclassTests` regressed when we matched
-///     `UiaRootObjectId`.
+///     navigation surface — CI regressed when we matched
+///     `UiaRootObjectId`. (Audit-cycle PR-C deleted the dead
+///     `WindowSubclassNative` + `TerminalRawProvider` files
+///     that were kept "just in case" after the pivot; if you
+///     ever need that path back, see git history before this
+///     PR for the implementation.)
 ///   * `public virtual GetPattern(PatternInterface)` IS
 ///     reachable from external assemblies (it's the public
 ///     entry point that calls `GetPatternCore` internally).
@@ -39,7 +56,7 @@ open Terminal.Core
 /// the peer doesn't have to know about the screen-snapshot
 /// machinery; the view holds the closure over its own `_screen`
 /// field and the peer just hands the provider through to UIA.
-type TerminalAutomationPeer(owner: FrameworkElement, textProvider: ITextProvider) =
+type internal TerminalAutomationPeer(owner: FrameworkElement, textProvider: ITextProvider) =
     inherit FrameworkElementAutomationPeer(owner)
 
     override _.GetAutomationControlTypeCore() = AutomationControlType.Document
@@ -80,7 +97,7 @@ type TerminalAutomationPeer(owner: FrameworkElement, textProvider: ITextProvider
 /// Kept module-level so test code (and any future range types)
 /// can reuse the row-flattening rule without going through the
 /// range API.
-module SnapshotText =
+module internal SnapshotText =
 
     /// Flatten a `Cell[][]` snapshot into a single string with
     /// `\n` between rows. Trailing whitespace inside a row is
@@ -119,7 +136,7 @@ module SnapshotText =
 /// "blank" because NVDA's `ExpandToEnclosingUnit(Line)` was
 /// silently dropped, leaving the range collapsed at start
 /// with no text to read).
-type TerminalTextRange(
+type internal TerminalTextRange(
         sequence: int64,
         rows: Cell[][],
         cols: int,
@@ -674,7 +691,7 @@ type TerminalTextRange(
 /// be `null` for early UIA queries. The delegate is invoked on
 /// the UIA RPC thread; `Screen.SnapshotRows` takes the screen's
 /// internal lock so the read is safe across threads.
-type TerminalTextProvider(screenSource: Func<Screen | null>) =
+type internal TerminalTextProvider(screenSource: Func<Screen | null>) =
 
     /// Build a range that covers every cell currently in the
     /// screen. Returns an empty range when `screenSource`

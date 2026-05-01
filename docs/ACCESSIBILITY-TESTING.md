@@ -196,19 +196,29 @@ the WPF `TextBlock`-equivalent output via its fallback diff path.
 
 ### Stage 4 — UIA Document role + Text pattern (shipped through PR #56)
 
-The Stage 4 architecture settled across four PRs:
+The Stage 4 architecture settled across four primary PRs and
+later cleanup. The shipping architecture is the
+`AutomationPeer.GetPattern` override path — the WM_GETOBJECT
+subclass hook + raw provider that Stages 4 PR A / PR B added
+were kept as MSAA-only fallback after the PR #56 pivot, then
+deleted in audit-cycle PR-C as dead-code that no real consumer
+exercised. If you're spelunking commit history for the
+WM_GETOBJECT path, look at the merge commits between
+`v0.0.1-preview.20` and PR-C's merge (May 2026).
 
 - **PR #48 (Stage 4a)** — `TerminalAutomationPeer` exposes Document
   role, ClassName, Name, IsControlElement, IsContentElement.
-- **PR #54 (PR A)** — `WM_GETOBJECT` subclass hook (kept as a
-  legacy MSAA fallback path, not the primary route).
-- **PR #55 (PR B)** — `IRawElementProviderSimple` /
-  `TerminalRawProvider`, F# `TerminalTextProvider` /
-  `TerminalTextRange` over `Screen.SnapshotRows`.
-- **PR #56 (PR C)** — pivot to `AutomationPeer.GetPattern` override
-  (the public-virtual entry point that's reachable from external
-  assemblies, vs. `GetPatternCore` which isn't), plus a FlaUI
-  integration test pinning `DocumentRange.GetText`.
+- **PR #54 / #55** — exploratory WM_GETOBJECT subclass hook +
+  `IRawElementProviderSimple` raw provider; **deleted in
+  audit-cycle PR-C**.
+- **PR #56** — pivot to `AutomationPeer.GetPattern` override
+  (the public-virtual entry point that's reachable from
+  external assemblies, vs. `GetPatternCore` which isn't),
+  plus a FlaUI integration test pinning `DocumentRange.GetText`.
+  This is the shipping path.
+- **PR #59 / #60 / #66 / #68** — navigation (Line, Character,
+  Word), focus-into-TerminalSurface, version-suffix in
+  Title / AutomationProperties.Name, real word-navigation.
 
 The architectural finding from PR #56 is that UIA3 clients
 (NVDA, Inspect.exe, FlaUI.UIA3) dispatch `WM_GETOBJECT` with
@@ -252,11 +262,15 @@ pattern at the right element.
   attached to the wrong WPF element (check `TerminalView.OnCreateAutomationPeer`),
   or NVDA is in browse mode (press NVDA+Space to toggle).
 - **Inspect.exe crashes when hovering the terminal** → A
-  WM_GETOBJECT handler is misbehaving or returning a bad provider.
-  Most likely the raw-provider hook in `WindowSubclassNative.cs`
-  was re-enabled for `UiaRootObjectId` (-25) which is the failure
-  mode PR #56 found and reverted; confirm `OBJID_CLIENT` (-4) is
-  the only id matched.
+  WPF UIA peer is returning a bad provider. Most likely
+  `TerminalAutomationPeer.GetPattern` is throwing, or
+  `TerminalTextProvider`'s `DocumentRange` access is throwing
+  on a null `Screen`. Check the F# source first; the WPF
+  exception will be surfaced in Inspect.exe's status bar.
+  (Audit-cycle PR-C deleted the WM_GETOBJECT raw-provider
+  fallback path that used to live here; if you somehow
+  reintroduce it, the failure mode PR #56 found around
+  `UiaRootObjectId == -25` is the one to watch.)
 - **CI's `TextPatternTests` passes but manual NVDA reads stale
   text** → `TerminalTextRange` is currently a snapshot at
   capture time; future stages add stale-detection via
