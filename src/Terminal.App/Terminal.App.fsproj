@@ -31,6 +31,22 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!--
+      Bundle the process-cleanup diagnostic script next to the
+      Terminal.App.exe in the publish output. Velopack pack picks
+      it up automatically. The Ctrl+Shift+D hotkey in Program.fs
+      resolves the script via AppContext.BaseDirectory so the
+      install path doesn't need to be hardcoded. `<Link>` keeps
+      the file flat in the output directory rather than nesting
+      under `..\..\scripts\`.
+    -->
+    <Content Include="..\..\scripts\test-process-cleanup.ps1">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>test-process-cleanup.ps1</Link>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="FSharp.Core" />
     <PackageReference Include="Velopack" />
     <ProjectReference Include="..\Terminal.Core\Terminal.Core.fsproj" />

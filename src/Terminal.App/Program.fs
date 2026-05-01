@@ -197,6 +197,71 @@ module Program =
                 ExecutedRoutedEventHandler(fun _ _ -> runUpdateFlow window)))
         |> ignore
 
+    /// Launch the bundled process-cleanup diagnostic script in a
+    /// separate PowerShell window. Triggered by `Ctrl+Shift+D` —
+    /// added because Task Manager's Processes-tab chevron-expand
+    /// affordance is not screen-reader-accessible, so a maintainer
+    /// running the deferred Stage 4 process-cleanup test on
+    /// NVDA cannot navigate the Task Manager UI to verify the
+    /// process tree by hand. The diagnostic script lives next to
+    /// `Terminal.App.exe` (bundled via `Terminal.App.fsproj`'s
+    /// `Content` include) and emits one-fact-per-line stdout that
+    /// NVDA reads aloud naturally.
+    ///
+    /// The PowerShell process is launched with `-NoExit` so the
+    /// spawned window stays open after the test completes; the
+    /// user reads the result, then closes that window manually.
+    /// This is intentional — auto-closing would lose the output.
+    ///
+    /// Future: more diagnostics (UIA peer health, ConPTY child
+    /// status, version dump) can be added as additional scripts
+    /// next to this one and routed through the same hotkey via
+    /// a sub-menu, OR added as their own hotkeys following the
+    /// app-reserved-hotkey contract in `spec/tech-plan.md` §6.
+    let private runDiagnostic (window: MainWindow) : unit =
+        let scriptPath =
+            System.IO.Path.Combine(
+                System.AppContext.BaseDirectory,
+                "test-process-cleanup.ps1")
+        if not (System.IO.File.Exists scriptPath) then
+            window.TerminalSurface.Announce(
+                sprintf
+                    "Diagnostic script not found at %s. Re-install pty-speak or report this as a packaging regression."
+                    scriptPath)
+        else
+            try
+                let psi = System.Diagnostics.ProcessStartInfo()
+                psi.FileName <- "powershell.exe"
+                psi.Arguments <-
+                    sprintf
+                        "-ExecutionPolicy Bypass -NoExit -File \"%s\""
+                        scriptPath
+                psi.UseShellExecute <- true
+                System.Diagnostics.Process.Start(psi) |> ignore
+                window.TerminalSurface.Announce(
+                    "Diagnostic launched in a separate PowerShell window. Switch to that window to follow the test.")
+            with ex ->
+                let safe = AnnounceSanitiser.sanitise ex.Message
+                window.TerminalSurface.Announce(
+                    sprintf "Could not launch diagnostic: %s" safe)
+
+    /// Wire `Ctrl+Shift+D` to trigger `runDiagnostic`. Same
+    /// pattern as `setupAutoUpdateKeybinding` above. Per the
+    /// app-reserved-hotkey contract, this gesture is in the
+    /// reserved list (Ctrl+Shift+U for update, Ctrl+Shift+D
+    /// for diagnostic, Ctrl+Shift+M for Stage 9 mute, Alt+Shift+R
+    /// for Stage 10 review mode) and Stage 6's keyboard layer
+    /// must continue to honour the priority order.
+    let private setupDiagnosticKeybinding (window: MainWindow) : unit =
+        let cmd = RoutedCommand("RunDiagnostic", typeof<MainWindow>)
+        let gesture = KeyGesture(Key.D, ModifierKeys.Control ||| ModifierKeys.Shift)
+        window.InputBindings.Add(KeyBinding(cmd, gesture)) |> ignore
+        window.CommandBindings.Add(
+            CommandBinding(
+                cmd,
+                ExecutedRoutedEventHandler(fun _ _ -> runDiagnostic window)))
+        |> ignore
+
     /// Composition seam — Stage 4+ plugs Elmish.WPF and the UIA peer
     /// in here. For Stage 3b we just hold references to the long-lived
     /// pieces and ensure they're disposed on Application.Exit.
@@ -212,6 +277,11 @@ module Program =
         // window is loaded so the keybinding is live for the
         // user's first keypress.
         setupAutoUpdateKeybinding window
+
+        // Wire Ctrl+Shift+D to launch the bundled process-cleanup
+        // diagnostic script in a separate PowerShell window.
+        // Same install-before-window-load reasoning as above.
+        setupDiagnosticKeybinding window
 
         // Pre-Stage-5 seam (audit-cycle PR-B): bounded
         // notification channel from the parser thread to the
