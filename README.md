@@ -132,6 +132,27 @@ Once Stage 11 (Velopack auto-update) lands, the GA flow is:
 4. Self-update from inside the app with `Ctrl+Shift+U` (this checks GitHub
    Releases and applies the delta in ~2 seconds).
 
+### App-reserved hotkeys (currently shipped)
+
+These are captured by pty-speak at the window level before any future
+Stage-6 keyboard layer routes input to the child shell. Stage 6 will
+preserve this list per the app-reserved-hotkey contract in
+[`spec/tech-plan.md`](spec/tech-plan.md) §6.
+
+- **`Ctrl+Shift+U`** — self-update via Velopack (Stage 11). Checks
+  GitHub Releases and applies the delta in ~2 seconds.
+- **`Ctrl+Shift+D`** — launch the bundled process-cleanup diagnostic
+  in a separate PowerShell window. Verifies that closing pty-speak
+  via Alt+F4 or the X button leaves no orphan `Terminal.App.exe` /
+  ConPTY child processes. Output is plain text NVDA reads aloud
+  naturally.
+- **`Ctrl+Shift+R`** — open the GitHub Releases page in your default
+  browser. One-keypress answer to "what changed in this version?"
+  before deciding whether to update.
+
+Reserved but not yet implemented: `Ctrl+Shift+M` (Stage 9 mute toggle),
+`Alt+Shift+R` (Stage 10 review-mode toggle).
+
 The historical Stage 0 preview installer opens an empty window. Once
 the next preview is cut from the current `main`, the installer launches
 `cmd.exe` under ConPTY and renders its output in the window — input

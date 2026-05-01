@@ -17,6 +17,37 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **`Ctrl+Shift+R` release-notes browser hotkey.** Press
+  `Ctrl+Shift+R` (mnemonic: **R**eleases) from inside pty-speak
+  to open the GitHub Releases page for the configured
+  `UpdateRepoUrl` (today
+  `https://github.com/KyleKeane/pty-speak/releases`) in the
+  user's default web browser. NVDA narrates "Opened release
+  notes in default browser: <url>". Useful as a one-keypress
+  answer to "what changed in this version?" without leaving
+  pty-speak. The browser's own accessibility surface handles
+  the release-notes navigation; pty-speak just hands the URL
+  to the OS shell. URL is derived from `UpdateRepoUrl` so a
+  fork / self-hosted variant only needs to update one
+  constant (Phase 2's TOML config will make `UpdateRepoUrl`
+  user-configurable per `SECURITY.md` row C-1; this hotkey
+  inherits whatever the user configures).
+
+  Note on the `Ctrl+Shift+R` vs `Alt+Shift+R` (Stage 10
+  review-mode toggle, reserved) mnemonic overlap: WPF treats
+  the two as distinct `KeyGesture`s (different modifier
+  sets), so there is no actual keypress conflict. The R-vs-R
+  mnemonic similarity is the only cost; the maintainer chose
+  Ctrl+Shift+R explicitly for the "R for Releases" parallel.
+
+  The reserved-hotkey list now reads: `Ctrl+Shift+U` (update),
+  `Ctrl+Shift+D` (diagnostic), `Ctrl+Shift+R` (release notes),
+  `Ctrl+Shift+M` (Stage 9 mute, reserved), `Alt+Shift+R`
+  (Stage 10 review, reserved). `SECURITY.md` row A-3 +
+  "What we defend against" bullet updated to reflect; the
+  reserved-hotkey list in `docs/USER-SETTINGS.md` Keybindings
+  section also updated.
+
 - **`Ctrl+Shift+D` diagnostic-launcher hotkey.** Press
   `Ctrl+Shift+D` from inside pty-speak to launch the bundled
   process-cleanup diagnostic (`scripts/test-process-cleanup.ps1`)
