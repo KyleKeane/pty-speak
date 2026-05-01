@@ -19,10 +19,10 @@ A new session should read this **first**, then
 
 | | |
 |---|---|
-| **Last merged stages** | **Stage 4** (UIA Document + Text pattern + Line/Character/Word navigation + focus-into-TerminalSurface fix, PRs #54-#56, #59, #60, #68) and **Stage 11** (Velopack auto-update via `Ctrl+Shift+U`, PRs #63, #66). Both **NVDA-verified working** on a clean Windows 11 install — Stage 4 on `v0.0.1-preview.22` and `.26`, Stage 11 via a successful `preview.25 → preview.26` self-update. **Security-audit cycle SR-1/SR-2/SR-3** (PRs #76, #77, #78) merged after that, closing every HIGH-severity finding from the comprehensive code-level audit. |
-| **Last shipped release** | `v0.0.1-preview.26` (or whichever preview the maintainer last cut — release cadence is ad-hoc during the unsigned-preview line). The auto-update path replaces the `scripts/install-latest-preview.ps1` bridge for in-place updates; the script is now **deprecated for in-place updates** but remains useful for fresh installs and dev-environment workflows. The next preview cut will pick up the SR-1/SR-2/SR-3 hardening + the Stage 4.5 substrate work once that ships. |
-| **In-flight branch** | None. SR-1/SR-2/SR-3 audit cycle merged. The 2026-05-01 strategic stage review (`/root/.claude/plans/replicated-riding-sketch.md`) committed the maintainer to a separate **Stage 4.5 — Claude Code rendering substrate** stage between Stages 4 and 5. Process-cleanup test (the only Stage 4 row not yet exercised) is now a recurring acceptance check — see "Pending action items" item 2 below. |
-| **Next stage** | **Stage 4.5 — Claude Code rendering substrate.** Closes the latent gap where the parser correctly emits VT events that `Screen.fs` silently drops at its `_ -> ()` catch-all arms: alt-screen 1049 (DECSET `?1049h/l`), cursor visibility (DECTCEM `?25h/l`), DECSC/DECRC cursor save/restore (`ESC 7`/`ESC 8`), 256-colour SGR (`38;5;n`), and truecolor SGR (`38;2;r;g;b`). Adds a new `TerminalModes` record in `Types.fs` to centralise mode bits (alt-screen, cursor-visible, DECCKM, bracketed-paste, focus-reporting) so Stages 5/6/7 don't smear them across files. Without 4.5, Stage 7's Claude Code roundtrip will fail because Claude sends `?1049h` + `?25l` + truecolor on startup. After 4.5, **Stage 5 — Streaming output notifications** (Channel-based coalescer with 200ms debounce + frame-hash + per-row hash dedup; the frame-hash layer is a Stage 5 design refinement from the strategic review to compose with Claude Ink's full-frame redraws). |
+| **Last merged stages** | **Stage 4** (UIA Document + Text pattern + Line/Character/Word navigation + focus-into-TerminalSurface fix, PRs #54-#56, #59, #60, #68), **Stage 11** (Velopack auto-update via `Ctrl+Shift+U`, PRs #63, #66), **Security-audit cycle SR-1/SR-2/SR-3** (PRs #76, #77, #78), and **Stage 4.5 — Claude Code rendering substrate** (PR-A #85 mode coverage + SGR walker + DECTCEM + DECSC/DECRC + OSC 52 chokepoint, PR-B alt-screen 1049 back-buffer). Stage 4 + 11 NVDA-verified on `v0.0.1-preview.26`; Stage 4.5 verified by xUnit (27 new tests across PR-A + PR-B); manual NVDA verification on the next preview cut is the acceptance gate. |
+| **Last shipped release** | `v0.0.1-preview.26` (or whichever preview the maintainer last cut — release cadence is ad-hoc during the unsigned-preview line). The auto-update path replaces the `scripts/install-latest-preview.ps1` bridge for in-place updates; the script is now **deprecated for in-place updates** but remains useful for fresh installs and dev-environment workflows. The next preview cut picks up the SR-1/SR-2/SR-3 hardening + the Stage 4.5 substrate work (PR-A + PR-B). |
+| **In-flight branch** | None. Stage 4.5 PR-A and PR-B merged. The 2026-05-01 strategic stage review (`/root/.claude/plans/replicated-riding-sketch.md`) sequenced Stage 5 next. Process-cleanup test (the deferred Stage 4 row) is the recurring acceptance check tracked in "Pending action items" item 2; should re-run after the post-Stage-4.5 preview cut. |
+| **Next stage** | **Stage 5 — Streaming output notifications.** First stage where the user gets passive narration as terminal output streams in, rather than active review-cursor exploration. Validation: NVDA reads `dir` line-by-line; spinner-class redraws don't flood NVDA's speech queue; busy loops printing dots don't get NVDA stuck. Substrate: the `Screen.SequenceNumber` + `Screen.SnapshotRows` primitives (PR #38), the parser→UIA notification channel seam (audit-cycle PR-B), Stage 11's existing `TerminalView.Announce` raise path (PR #63), and Stage 4.5's `TerminalModes` + alt-screen flush-barrier semantics (PRs #85 + Stage 4.5 PR-B). Stage 5 plugs the coalescer between the parser and the channel: per-row hash dedup PLUS a frame-hash layer (added per the strategic review §C to compose with Claude Ink's full-frame redraws — without it, every row hash changes per redraw and per-row dedup never fires) PLUS a 200ms debounce. Alt-screen toggle is a hard flush barrier per the Stage 4.5 PR-B test contract. The seams are in place; only the coalescing logic is new. |
 
 The end-to-end pipeline now reaches the auto-update boundary:
 launching the app spawns `cmd.exe` under ConPTY, parses its
@@ -32,10 +32,11 @@ via UIA Document role + Text pattern with working Line / Word /
 Character / Document review-cursor navigation, and self-updates
 to subsequent previews via `Ctrl+Shift+U` with NVDA progress
 narration plus an audible version-flip on restart. Stage 4.5
-is the immediate next cycle (close the latent VT gaps so Stage
-7 can actually render Claude Code), and Stage 5 is the first
-stage where output starts narrating itself instead of waiting
-for the user to navigate to it.
+shipped in two PRs (mode coverage + alt-screen back-buffer);
+the Screen layer now applies DECTCEM, DECSC/DECRC, 256/truecolor
+SGR, alt-screen 1049, and the OSC 52 SECURITY-CRITICAL silent
+drop. Stage 5 is the first stage where output starts narrating
+itself instead of waiting for the user to navigate to it.
 
 ## Pending action items (maintainer)
 
