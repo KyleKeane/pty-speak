@@ -105,9 +105,21 @@ type TerminalModes =
       mutable FocusReporting: bool }
 
 module TerminalModes =
-    /// Default mode set: alt-screen off, cursor visible, every
-    /// other bit at its DECSET-default-reset value.
-    let defaults : TerminalModes =
+    /// Fresh `TerminalModes` instance with the default mode set:
+    /// alt-screen off, cursor visible, every other bit at its
+    /// DECSET-default-reset value.
+    ///
+    /// **Must be a `unit -> TerminalModes` factory, NOT a
+    /// `let defaults : TerminalModes = { ... }` static value.**
+    /// `TerminalModes` is a regular record (reference semantics),
+    /// so a static `let` binding would return the SAME instance
+    /// to every caller — and mutations from one `Screen` instance
+    /// would leak into every other `Screen`. The static-value
+    /// pattern is safe for `SgrAttrs.defaults` and `Cell.blank`
+    /// because those are `[<Struct>]` (value semantics, copied
+    /// on assignment), but for `TerminalModes` we need a fresh
+    /// instance per construction. This mirrors `Cursor.create ()`.
+    let create () : TerminalModes =
         { AltScreen = false
           CursorVisible = true
           DECCKM = false

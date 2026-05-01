@@ -92,7 +92,7 @@ type Screen(rows: int, cols: int) =
     // DECCKM, bracketed paste, focus reporting). Centralised
     // here so Stage 5/6/7 don't smear them across files. PR-B
     // wires `AltScreen`; Stage 6 wires the keyboard-side bits.
-    let mutable modes: TerminalModes = TerminalModes.defaults
+    let mutable modes: TerminalModes = TerminalModes.create ()
 
     // Mutation gate. Apply takes this lock; SnapshotRows takes it to
     // capture (sequence, rows) atomically. Stage 3b feeds Apply on the
