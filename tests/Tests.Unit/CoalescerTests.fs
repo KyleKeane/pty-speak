@@ -409,3 +409,68 @@ let ``runLoop emits OutputBatch end-to-end via real Screen + FakeTimeProvider`` 
     | other -> Assert.Fail(sprintf "Expected OutputBatch; got %A" other)
     cts.Cancel()
     task.Wait(TimeSpan.FromSeconds 2.0) |> ignore
+
+[<Fact>]
+let ``runLoop survives multiple consecutive reader-wins without crashing the PeriodicTimer`` () =
+    // Regression test for "Coalescer crashed: Operation is not
+    // valid due to the state of the object" surfaced during
+    // post-Stage-6 manual NVDA verification.
+    //
+    // Cause: PeriodicTimer.WaitForNextTickAsync throws
+    // InvalidOperationException ("Operation is not valid due to
+    // the state of the object") when called concurrently — i.e.
+    // a second call before the previous one has completed. The
+    // pre-fix runLoop called WaitForNextTickAsync at the top of
+    // every loop iteration; when the reader won Task.WhenAny,
+    // the timer's pending wait was abandoned but not cancelled,
+    // and the next iteration's WaitForNextTickAsync crashed.
+    //
+    // Repro: pump events through the reader channel faster than
+    // the 200ms timer would fire. Every iteration, the reader
+    // wins. The pre-fix code crashed on the second iteration.
+    let inCh, outCh = buildChannels ()
+    let screen = Screen(rows = 3, cols = 10)
+    // Apply enough content so each push produces a unique frame
+    // hash (avoiding the dedup short-circuit).
+    let parser = Terminal.Parser.Parser.create ()
+    let mutable applyCount = 0
+    let pushUniqueChunk () =
+        applyCount <- applyCount + 1
+        let chunk =
+            Encoding.ASCII.GetBytes(sprintf "x%d " applyCount)
+        let events = Terminal.Parser.Parser.feedArray parser chunk
+        for e in events do screen.Apply(e)
+    pushUniqueChunk ()
+    let cts = new CancellationTokenSource()
+    let timeProvider = FakeTimeProvider(epoch)
+    let task =
+        Coalescer.runLoop
+            inCh.Reader
+            outCh.Writer
+            screen
+            (timeProvider :> TimeProvider)
+            cts.Token
+    // Push 20 events as fast as we can; under the pre-fix code
+    // the loop crashes on iteration 2 with InvalidOperationException
+    // and the task transitions to Faulted.
+    for _ in 1 .. 20 do
+        pushUniqueChunk ()
+        Assert.True(inCh.Writer.TryWrite(RowsChanged []))
+    // Drain a few notifications to ensure the loop is making
+    // progress, NOT crashing.
+    let mutable got = 0
+    let drainCts = new CancellationTokenSource(TimeSpan.FromSeconds 3.0)
+    try
+        while got < 3 && not drainCts.IsCancellationRequested do
+            let readTask = outCh.Reader.ReadAsync(drainCts.Token).AsTask()
+            if readTask.Wait(500) then
+                got <- got + 1
+    with
+    | _ -> ()
+    Assert.True(
+        got >= 1,
+        sprintf "Expected runLoop to deliver at least one notification under reader-bursts; got %d. Task state: %A"
+            got task.Status)
+    Assert.NotEqual(TaskStatus.Faulted, task.Status)
+    cts.Cancel()
+    task.Wait(TimeSpan.FromSeconds 2.0) |> ignore
