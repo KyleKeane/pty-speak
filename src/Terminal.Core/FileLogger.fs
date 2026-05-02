@@ -190,7 +190,16 @@ type FileLoggerSink (options: FileLoggerOptions) =
                     elif today <> currentDate then
                         // Daily roll: close yesterday's writer,
                         // open today's, run retention sweep again.
-                        try (writer :> IDisposable).Dispose() with _ -> ()
+                        // Pattern-match `writer` to satisfy F# 9
+                        // strict-null: even though we know writer
+                        // is non-null in this elif branch, the
+                        // compiler's flow analysis doesn't carry
+                        // that across the `today <> currentDate`
+                        // condition.
+                        (match writer with
+                         | null -> ()
+                         | w ->
+                             try (w :> IDisposable).Dispose() with _ -> ())
                         writer <- openWriter today
                         currentDate <- today
                         runRetention ()
