@@ -687,3 +687,186 @@ let ``ModeChanged subscriber can call SnapshotRows without deadlock`` () =
         observedSeq <- seq)
     feed screen (ascii "\x1b[?1049h")
     Assert.True(observedSeq > 0L)
+
+// ---------------------------------------------------------------------
+// Stage 6 PR-A — DECCKM (?1) application-cursor mode
+// ---------------------------------------------------------------------
+//
+// Stage 6 PR-B's KeyEncoding module reads `Modes.DECCKM` to decide
+// arrow-key encoding (`\x1b[A` normal vs `\x1bOA` application).
+// PR-A wires the parser side: the flag flips on `?1h/l`, with the
+// same idempotence + post-lock-release ModeChanged-emit contract
+// that Stage 4.5's alt-screen toggle pinned. These tests are the
+// xUnit gate; PR-B's manual NVDA tests will exercise the encoder
+// behaviour end-to-end.
+
+[<Fact>]
+let ``DECCKM ?1h sets Modes.DECCKM and fires ModeChanged`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    let received = ResizeArray<TerminalModeFlag * bool>()
+    screen.ModeChanged.Add(fun pair -> received.Add(pair))
+    Assert.False(screen.Modes.DECCKM)
+    feed screen (ascii "\x1b[?1h")
+    Assert.True(screen.Modes.DECCKM)
+    Assert.Equal(1, received.Count)
+    Assert.Equal((DECCKM, true), received.[0])
+
+[<Fact>]
+let ``DECCKM ?1l clears Modes.DECCKM and fires ModeChanged`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    feed screen (ascii "\x1b[?1h")  // prime; no subscriber yet
+    let received = ResizeArray<TerminalModeFlag * bool>()
+    screen.ModeChanged.Add(fun pair -> received.Add(pair))
+    feed screen (ascii "\x1b[?1l")
+    Assert.False(screen.Modes.DECCKM)
+    Assert.Equal(1, received.Count)
+    Assert.Equal((DECCKM, false), received.[0])
+
+[<Fact>]
+let ``DECCKM idempotent ?1h while already application-mode does NOT fire`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    feed screen (ascii "\x1b[?1h")
+    let received = ResizeArray<TerminalModeFlag * bool>()
+    screen.ModeChanged.Add(fun pair -> received.Add(pair))
+    feed screen (ascii "\x1b[?1h")
+    Assert.True(screen.Modes.DECCKM)
+    Assert.Equal(0, received.Count)
+
+[<Fact>]
+let ``DECCKM idempotent ?1l while already normal-mode does NOT fire`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    let received = ResizeArray<TerminalModeFlag * bool>()
+    screen.ModeChanged.Add(fun pair -> received.Add(pair))
+    feed screen (ascii "\x1b[?1l")
+    Assert.False(screen.Modes.DECCKM)
+    Assert.Equal(0, received.Count)
+
+// ---------------------------------------------------------------------
+// Stage 6 PR-A — bracketed paste (?2004)
+// ---------------------------------------------------------------------
+//
+// Stage 6 PR-B's WPF paste handler wraps clipboard text in
+// `\x1b[200~` ... `\x1b[201~` when `Modes.BracketedPaste` is true.
+// PR-A pins the parser-side flag flip + ModeChanged emit.
+
+[<Fact>]
+let ``bracketed paste ?2004h sets Modes.BracketedPaste and fires ModeChanged`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    let received = ResizeArray<TerminalModeFlag * bool>()
+    screen.ModeChanged.Add(fun pair -> received.Add(pair))
+    Assert.False(screen.Modes.BracketedPaste)
+    feed screen (ascii "\x1b[?2004h")
+    Assert.True(screen.Modes.BracketedPaste)
+    Assert.Equal(1, received.Count)
+    Assert.Equal((BracketedPaste, true), received.[0])
+
+[<Fact>]
+let ``bracketed paste ?2004l clears Modes.BracketedPaste and fires ModeChanged`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    feed screen (ascii "\x1b[?2004h")
+    let received = ResizeArray<TerminalModeFlag * bool>()
+    screen.ModeChanged.Add(fun pair -> received.Add(pair))
+    feed screen (ascii "\x1b[?2004l")
+    Assert.False(screen.Modes.BracketedPaste)
+    Assert.Equal(1, received.Count)
+    Assert.Equal((BracketedPaste, false), received.[0])
+
+[<Fact>]
+let ``bracketed paste idempotent ?2004h while already on does NOT fire`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    feed screen (ascii "\x1b[?2004h")
+    let received = ResizeArray<TerminalModeFlag * bool>()
+    screen.ModeChanged.Add(fun pair -> received.Add(pair))
+    feed screen (ascii "\x1b[?2004h")
+    Assert.True(screen.Modes.BracketedPaste)
+    Assert.Equal(0, received.Count)
+
+[<Fact>]
+let ``bracketed paste idempotent ?2004l while already off does NOT fire`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    let received = ResizeArray<TerminalModeFlag * bool>()
+    screen.ModeChanged.Add(fun pair -> received.Add(pair))
+    feed screen (ascii "\x1b[?2004l")
+    Assert.False(screen.Modes.BracketedPaste)
+    Assert.Equal(0, received.Count)
+
+// ---------------------------------------------------------------------
+// Stage 6 PR-A — focus reporting (?1004)
+// ---------------------------------------------------------------------
+//
+// Stage 6 PR-B's WPF GotKeyboardFocus / LostKeyboardFocus handlers
+// emit `\x1b[I` / `\x1b[O` to the PTY when `Modes.FocusReporting`
+// is true. PR-A pins the parser-side flag flip + ModeChanged emit.
+
+[<Fact>]
+let ``focus reporting ?1004h sets Modes.FocusReporting and fires ModeChanged`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    let received = ResizeArray<TerminalModeFlag * bool>()
+    screen.ModeChanged.Add(fun pair -> received.Add(pair))
+    Assert.False(screen.Modes.FocusReporting)
+    feed screen (ascii "\x1b[?1004h")
+    Assert.True(screen.Modes.FocusReporting)
+    Assert.Equal(1, received.Count)
+    Assert.Equal((FocusReporting, true), received.[0])
+
+[<Fact>]
+let ``focus reporting ?1004l clears Modes.FocusReporting and fires ModeChanged`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    feed screen (ascii "\x1b[?1004h")
+    let received = ResizeArray<TerminalModeFlag * bool>()
+    screen.ModeChanged.Add(fun pair -> received.Add(pair))
+    feed screen (ascii "\x1b[?1004l")
+    Assert.False(screen.Modes.FocusReporting)
+    Assert.Equal(1, received.Count)
+    Assert.Equal((FocusReporting, false), received.[0])
+
+[<Fact>]
+let ``focus reporting idempotent ?1004h while already on does NOT fire`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    feed screen (ascii "\x1b[?1004h")
+    let received = ResizeArray<TerminalModeFlag * bool>()
+    screen.ModeChanged.Add(fun pair -> received.Add(pair))
+    feed screen (ascii "\x1b[?1004h")
+    Assert.True(screen.Modes.FocusReporting)
+    Assert.Equal(0, received.Count)
+
+[<Fact>]
+let ``focus reporting idempotent ?1004l while already off does NOT fire`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    let received = ResizeArray<TerminalModeFlag * bool>()
+    screen.ModeChanged.Add(fun pair -> received.Add(pair))
+    feed screen (ascii "\x1b[?1004l")
+    Assert.False(screen.Modes.FocusReporting)
+    Assert.Equal(0, received.Count)
+
+// ---------------------------------------------------------------------
+// Stage 6 PR-A — independence between new mode flags
+// ---------------------------------------------------------------------
+//
+// Pin that flipping one of the new modes does NOT accidentally
+// flip another (defence against a future refactor that might
+// share a backing field by mistake).
+
+[<Fact>]
+let ``DECCKM toggle does not affect BracketedPaste or FocusReporting`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    feed screen (ascii "\x1b[?1h")
+    Assert.True(screen.Modes.DECCKM)
+    Assert.False(screen.Modes.BracketedPaste)
+    Assert.False(screen.Modes.FocusReporting)
+
+[<Fact>]
+let ``BracketedPaste toggle does not affect DECCKM or FocusReporting`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    feed screen (ascii "\x1b[?2004h")
+    Assert.False(screen.Modes.DECCKM)
+    Assert.True(screen.Modes.BracketedPaste)
+    Assert.False(screen.Modes.FocusReporting)
+
+[<Fact>]
+let ``FocusReporting toggle does not affect DECCKM or BracketedPaste`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    feed screen (ascii "\x1b[?1004h")
+    Assert.False(screen.Modes.DECCKM)
+    Assert.False(screen.Modes.BracketedPaste)
+    Assert.True(screen.Modes.FocusReporting)

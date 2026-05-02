@@ -338,8 +338,12 @@ type Screen(rows: int, cols: int) =
     /// when the parser sees a `?` private byte (DECSET / DECRESET
     /// for terminal modes). Stage 4.5 PR-A wires DECTCEM (`?25h/l`,
     /// cursor visibility); PR-B wires alt-screen (`?1049h/l`).
-    /// Stage 6 will add DECCKM (`?1`), bracketed paste (`?2004`),
-    /// and focus reporting (`?1004`).
+    /// Stage 6 PR-A adds DECCKM (`?1`), bracketed paste (`?2004`),
+    /// and focus reporting (`?1004`) with the same idempotence-
+    /// guard + post-lock-release `ModeChanged` emit pattern that
+    /// `enterAltScreen` / `exitAltScreen` use, so Stage 5's
+    /// coalescer handles the new mode-change events without any
+    /// further wiring.
     ///
     /// Unknown private modes are silently dropped — they're
     /// non-malicious extensions whose UIA implications need a
@@ -352,8 +356,45 @@ type Screen(rows: int, cols: int) =
         | 'l', 25 -> modes.CursorVisible <- false
         | 'h', 1049 -> enterAltScreen ()
         | 'l', 1049 -> exitAltScreen ()
-        // Stage 6 will add: ?1 (DECCKM), ?2004 (bracketed paste),
-        //                   ?1004 (focus reporting)
+        // Stage 6 PR-A: DECCKM (?1) — application vs normal cursor mode.
+        // Stage 6 PR-B's KeyEncoding module reads `modes.DECCKM` to
+        // decide arrow-key encoding (`\x1b[A` normal vs `\x1bOA`
+        // application). Idempotence guard mirrors `enterAltScreen`'s
+        // — without it Stage 5's coalescer would see spurious
+        // ModeChanged events on no-op toggles.
+        | 'h', 1 ->
+            if not modes.DECCKM then
+                modes.DECCKM <- true
+                pendingModeChanges.Add((DECCKM, true))
+        | 'l', 1 ->
+            if modes.DECCKM then
+                modes.DECCKM <- false
+                pendingModeChanges.Add((DECCKM, false))
+        // Stage 6 PR-A: bracketed paste (?2004). When set,
+        // PR-B's paste handler wraps clipboard text in
+        // `\x1b[200~` ... `\x1b[201~`. PR-A just lets the parser
+        // flip the flag so xUnit can pin the toggle in
+        // isolation; PR-B reads the flag from the WPF paste
+        // CommandBinding.
+        | 'h', 2004 ->
+            if not modes.BracketedPaste then
+                modes.BracketedPaste <- true
+                pendingModeChanges.Add((BracketedPaste, true))
+        | 'l', 2004 ->
+            if modes.BracketedPaste then
+                modes.BracketedPaste <- false
+                pendingModeChanges.Add((BracketedPaste, false))
+        // Stage 6 PR-A: focus reporting (?1004). When set,
+        // PR-B's WPF GotKeyboardFocus / LostKeyboardFocus
+        // handlers emit `\x1b[I` / `\x1b[O` to the PTY.
+        | 'h', 1004 ->
+            if not modes.FocusReporting then
+                modes.FocusReporting <- true
+                pendingModeChanges.Add((FocusReporting, true))
+        | 'l', 1004 ->
+            if modes.FocusReporting then
+                modes.FocusReporting <- false
+                pendingModeChanges.Add((FocusReporting, false))
         | _ -> ()
 
     /// ESC dispatch (bare `ESC <intermediates> <final>`): handles

@@ -15,6 +15,38 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added
+
+- **Stage 6 PR-A: parser arms for DECCKM, bracketed paste, and
+  focus reporting.** The first half of Stage 6 lands the
+  parser-side mode-flag plumbing for the three remaining
+  `TerminalModes` flags that were declared-but-inert in
+  Stage 4.5: `DECCKM` (`?1`, application vs normal cursor
+  mode), `BracketedPaste` (`?2004`), and `FocusReporting`
+  (`?1004`). Each new arm in
+  `src/Terminal.Core/Screen.fs csiPrivateDispatch` follows
+  the Stage 4.5 alt-screen template exactly: idempotence
+  guard (a no-op flip silently returns) + flag mutation +
+  `pendingModeChanges.Add` for the post-lock-release
+  `ModeChanged` event fire that Stage 5's coalescer
+  subscribes to. The flags are now toggleable from
+  child-shell escape sequences but the consumer-side
+  behaviour (key encoder reading `Modes.DECCKM`, paste
+  handler reading `Modes.BracketedPaste`, focus events
+  reading `Modes.FocusReporting`) lands in Stage 6 PR-B
+  alongside the WPF input wiring + `ResizePseudoConsole` +
+  Job Object lifecycle. PR-A is pure F#, no WPF, no Win32
+  — splitting the stage along that line lowers review cost
+  and keeps the bisect surface small if NVDA validation
+  catches something later.
+
+  Tests: 15 new `ScreenTests` (3 modes × 4 cases:
+  set-fires, reset-fires, idempotent-set-no-fire,
+  idempotent-reset-no-fire — plus 3 cross-flag
+  independence tests defending against future
+  shared-backing-field refactors). Templates from the
+  Stage 5 alt-screen `ModeChanged` test triplet.
+
 ### Changed
 
 - **`Ctrl+Shift+R` flipped from "open releases page" to "open
