@@ -15,89 +15,109 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
-### Added
+### Changed
 
-- **Streaming-path instrumentation.** Diagnostic log entries at
-  the five stages the streaming-output pipeline can silently
-  fail at. Each stage now leaves a metadata-only trace at INFO
-  level so a future bug-report log captures the exact stage
-  where the chain broke down rather than a black-box silence.
-  Stages instrumented:
+- **Log-copy hotkey rebound from `Ctrl+Alt+L` to
+  `Ctrl+Shift+;`** (the semicolon / colon key, immediately
+  to the right of `L` on a US-layout keyboard).
+  Maintainer-reported regressions on the post-#109 preview
+  drove the move:
 
-  1. **Reader publish** (`Terminal.App.startReaderLoop`) —
-     `Reader published RowsChanged. ChunkBytes={N} Events={M} ChannelAccepted={true|false}`
-  2. **Coalescer suppress / emit** (`Terminal.Core.Coalescer.processRowsChanged`,
-     `onTimerTick`) — distinguishes frame-dedup, spinner-
-     suppress, accumulate-into-debounce, leading-edge emit,
-     and trailing-edge emit. Each branch logs the frame hash
-     and (when emitting) the rendered text length.
-  3. **Drain dispatch** (`Terminal.App.Program.drain`) —
-     `Drain → Announce. ActivityId={tag} MsgLen={N}` for
-     non-empty messages; explicit `Drain skipped empty msg`
-     for ModeBarrier passes.
-  4. **Peer raise** (`PtySpeak.Views.TerminalView.Announce`) —
-     `RaiseNotificationEvent firing. ActivityId={tag}
-     MsgLen={N} Processing={MostRecent|ImportantAll|...}`
-     when peer is non-null; **`Announce skipped: peer was
-     null`** at WARN level when peer hasn't been created yet
-     (this would mean NVDA / a UIA client hasn't connected
-     and notifications are silently dropped — a critical
-     diagnostic signal).
+  1. `Ctrl+Alt+L` collides with the **Windows Magnifier**
+     zoom-in shortcut on some default Magnifier configs;
+     the OS swallowed the gesture before pty-speak saw it.
+  2. The original fix for `Ctrl+Alt+L` not firing (PR #108)
+     introduced a `SystemKey`-aware filter at the top of
+     `OnPreviewKeyDown` so that `Alt`-modified gestures (which
+     WPF reports as `e.Key == Key.System` + `e.SystemKey ==
+     Key.L`) were unwrapped to the underlying key. Side
+     effect: `Alt+F4` was unwrapped to `Key.F4 + Alt`, the
+     encoder produced bytes, `e.Handled` became `true`, and
+     the OS window-close gesture stopped working.
 
-  All log entries are metadata-only (counts, hashes,
-  activity-IDs, levels). The streamed text content itself
-  is never logged, per the `docs/LOGGING.md` "What pty-speak
-  NEVER logs" policy and the `SECURITY.md` "Logging
-  chokepoint" entry.
+  `Ctrl+Shift+;` is a clean Ctrl+Shift gesture: no Alt path,
+  no Magnifier collision, no SystemKey unwrap needed in the
+  filter chain. Removing the SystemKey unwrap restored
+  `Alt+F4` because `Key.System` falls through to
+  `KeyCode.Unhandled`, the encoder returns null, `e.Handled`
+  stays false, and WPF's default close handler fires.
 
-  Volume: at typing speed (~5 coalesced batches per second)
-  this adds ~25 log entries/second across all stages — a few
-  thousand lines for a 30-second `dir`-and-friends test
-  session. Acceptable for a diagnostic period; can be
-  lowered to Debug after the streaming bug is verified
-  fixed.
+  Mnemonic: physical proximity. The semicolon / colon key
+  sits right next to `L`, so `Ctrl+Shift+L` (open the logs
+  folder) and `Ctrl+Shift+;` (copy the active session log)
+  live under one hand position. `Ctrl+Shift+C` was
+  considered as the natural "copy" mnemonic but reserved
+  for a future copy-latest-command-output feature (the
+  cross-terminal convention for that gesture). `Ctrl+Shift+M`
+  was considered but stays reserved for the Stage 9 earcon
+  mute toggle. Layout caveat: on non-US keyboards the
+  `OemSemicolon` virtual-key sits in a different physical
+  position; remap support is on the Phase 2 user-settings
+  roadmap.
 
-  Together with PR #106's `PeriodicTimer` reuse fix and the
-  drain-task error-surfacing from earlier work, the
-  streaming-output pipeline is now fully observable: any
-  silence has a definite cause that the next captured log
-  will pinpoint.
+  Updated everywhere it was documented: README,
+  `docs/LOGGING.md`, `docs/USER-SETTINGS.md`,
+  `docs/ACCESSIBILITY-INTERACTION-MODEL.md`, the
+  `AppReservedHotkeys` table in `TerminalView.cs`, the
+  `setupCopyLatestLogKeybinding` wiring in `Program.fs`, and
+  the `HandleAppLevelShortcut` direct-dispatch path. The
+  `Ctrl+Shift+L` open-folder primary is unchanged.
+
+- **Streaming-path instrumentation demoted from `Information`
+  to `Debug`** so the production default sees no per-frame
+  log I/O. The PR #109 instrumentation at typing speed
+  produced ~25 entries/second across all stages, which
+  manifested as visible WPF dispatcher lag during streaming
+  output. Demoting the per-event entries (reader publish,
+  coalescer suppress / accumulate / emit, drain dispatch,
+  peer-present raise) leaves the trail intact for diagnosis
+  — set `PTYSPEAK_LOG_LEVEL=Debug` before launch to capture
+  the full chain — but keeps the steady-state log silent.
+  The peer-NULL `WARN` stays at `WARN` (rare, and the
+  smoking-gun signal that a UIA client never connected and
+  notifications are silently dropping). One-time entries
+  (runLoop start, cancellation, hotkey invocations) stay at
+  `Information`.
 
 ### Fixed
 
-- **`Ctrl+Alt+L` clipboard-copy hotkey didn't fire.** Maintainer
-  reported pressing the gesture on a current-main build and not
-  hearing the "Log copied to clipboard. N bytes" announcement;
-  the session log confirmed the handler never ran (no
-  `Ctrl+Alt+L pressed — copying active log to clipboard` entry).
+- **Log-copy hotkey didn't fire on the post-#103 preview.**
+  Maintainer reported pressing the gesture and not hearing the
+  "Log copied to clipboard. N bytes" announcement; the session
+  log confirmed the handler never ran. The Window-level
+  `KeyBinding` for the gesture was registered, but WPF's
+  `CommandManager` class-handler routing on a custom
+  `FrameworkElement` (`TerminalView`) didn't reliably fire
+  `runCopyLatestLog` — same family of routing flakiness that
+  bit `Ctrl+V` earlier in Stage 6.
 
-  Root cause: WPF's input pipeline reports `Alt`-modified key
-  events with `e.Key == Key.System` and the actual key in
-  `e.SystemKey`. The Window-level `KeyBinding` on
-  `Ctrl+Alt+L` *should* match via `KeyGesture.MatchesImpl`
-  (which honours `SystemKey`), but in practice the
-  `CommandManager` class-handler routing for that gesture
-  doesn't reliably fire `runCopyLatestLog` on a custom
-  `FrameworkElement` like `TerminalView`. Same family of
-  routing-flakiness we hit on Ctrl+V earlier in Stage 6.
-
-  Fix: handle Ctrl+Alt+L directly in
+  Fix: handle the gesture directly in
   `TerminalView.HandleAppLevelShortcut`, the same path that
-  handles Ctrl+V and Ctrl+L. New `SetCopyLogToClipboardHandler`
-  callback wired by `Program.fs compose ()` invokes the
-  existing `runCopyLatestLog` handler. Both the direct path
-  AND the Window-level `KeyBinding` are wired now; whichever
-  fires first wins. Direct path is reliable; Window-level is
-  defence in depth.
+  handles `Ctrl+V` and `Ctrl+L`. New
+  `SetCopyLogToClipboardHandler` callback wired by
+  `Program.fs compose ()` invokes the existing
+  `runCopyLatestLog` handler. Both the direct path AND the
+  Window-level `KeyBinding` are wired; whichever fires first
+  wins. Direct path is reliable; Window-level is defence in
+  depth.
 
-  Also fixed a related issue while in the area: the
-  `OnPreviewKeyDown` filter (AppReservedHotkeys check + NVDA-
-  modifier filter + HandleAppLevelShortcut) was reading
-  `e.Key` rather than the actual key, meaning `Alt`-modified
-  gestures (like the future Stage 10 `Alt+Shift+R` review-
-  mode toggle) would have failed similarly. Now reads
-  `(e.Key == Key.System) ? e.SystemKey : e.Key` everywhere
-  in the filter chain.
+- **`Alt+F4` window-close gesture stopped working** under the
+  PR #108 SystemKey-aware filter. WPF reports Alt-modified
+  gestures with `e.Key == Key.System` + the actual key in
+  `e.SystemKey`. The PR #108 filter unwrapped that to make
+  the original `Ctrl+Alt+L` reach the handler — but the same
+  unwrap converted `Alt+F4` into `Key.F4 + Alt`, the encoder
+  produced bytes, `e.Handled` became `true`, and the OS
+  window-close gesture died.
+
+  Fix: drop the SystemKey unwrap and rebind the log-copy
+  hotkey to `Ctrl+Shift+;` (a clean Ctrl+Shift gesture that
+  doesn't need the unwrap). `Key.System` now falls through
+  to `KeyCode.Unhandled`, the encoder returns null, `e.Handled`
+  stays false, and the OS default `Alt+F4` close handler
+  fires. If a future Alt-modified reserved hotkey (Stage 10's
+  `Alt+Shift+R`) is added, the unwrap can come back with an
+  explicit `Alt+F4` fall-through.
 
 - **Streaming-silence root cause: `PeriodicTimer` reuse bug in
   `Coalescer.runLoop`.** Diagnosed via the maintainer's manual
@@ -140,26 +160,33 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
-- **`Ctrl+Alt+L` copies the active session's log file content to
-  the clipboard.** Bundled with the logging-restructure work.
-  Pressing the hotkey reads the active log file (the one
+- **`Ctrl+Shift+;` copies the active session's log file content
+  to the clipboard.** Bundled with the logging-restructure
+  work. Pressing the hotkey reads the active log file (the one
   `FileLoggerSink.ActiveLogPath` points to), sets the OS
   clipboard, and announces the byte count via NVDA ("Log
   copied to clipboard. N bytes; ready to paste."). Fastest
   path to send a session log to a maintainer for bug-report
-  diagnosis — no File Explorer navigation required. Mnemonic:
-  alt-action paired with the existing `Ctrl+Shift+L` open-folder
-  primary.
+  diagnosis — no File Explorer navigation required.
 
-  Hotkey choice rationale: NOT `Ctrl+Shift+C`. The latter looks
-  intuitive (`C` = copy) but Ctrl-letter encoding folds Shift
-  in the keyboard pipeline, meaning `Ctrl+Shift+C` currently
-  sends `0x03` to the shell — that's the standard SIGINT /
-  Ctrl-Break gesture for interrupting a running command (e.g.
-  `ping localhost -t`). Claiming `Ctrl+Shift+C` for log-copy
-  would break shell-interrupt UX. `Ctrl+Alt+L` doesn't collide
-  with any shell encoding and isn't a printable on US
-  keyboards.
+  Hotkey-choice rationale. The semicolon / colon key sits
+  immediately to the right of `L` on a US-layout keyboard,
+  so it pairs by physical proximity with `Ctrl+Shift+L`
+  (open logs folder) — same hand position, two adjacent keys.
+  Other candidates considered and declined: `Ctrl+Alt+L` (the
+  original; collides with the Windows Magnifier zoom-in
+  shortcut, AND the `Alt`-modifier path through WPF's input
+  pipeline required a SystemKey-aware filter that broke
+  `Alt+F4`); `Ctrl+Shift+C` (the cross-terminal "copy"
+  convention but reserved here for a future
+  copy-latest-command-output feature, plus today it folds to
+  `0x03` / SIGINT in the keyboard encoder — claiming it
+  would lose the `Ctrl+Shift+C`-as-interrupt habit some
+  users have); `Ctrl+Shift+M` (stays reserved for the Stage 9
+  earcon mute toggle). Layout caveat: on non-US keyboards
+  the `OemSemicolon` virtual-key sits in a different
+  physical position; remap support is on the Phase 2
+  user-settings roadmap.
 
   Added to `AppReservedHotkeys`; wired in
   `setupCopyLatestLogKeybinding` in `Program.fs`. The handler
@@ -171,7 +198,7 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   Documentation: README, USER-SETTINGS.md, and LOGGING.md
   updated with the new hotkey, the rationale, and a refreshed
   "Sharing logs with a maintainer" section that promotes
-  Ctrl+Alt+L as the fastest path.
+  `Ctrl+Shift+;` as the fastest path.
 
 ### Changed
 

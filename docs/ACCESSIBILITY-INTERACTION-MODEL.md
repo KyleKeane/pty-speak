@@ -477,9 +477,12 @@ config substrate (catalogued in
 and send to a maintainer / contributor.
 
 **Current state:** Logging shipped (PR #102; logs at
-`%LOCALAPPDATA%\PtySpeak\logs\`). PR #103 in flight to
-add per-session files + `Ctrl+Alt+L` clipboard copy for
-one-keypress sharing.
+`%LOCALAPPDATA%\PtySpeak\logs\`). PR #103 added per-session
+files + `Ctrl+Shift+;` clipboard copy (semicolon key, next
+to `L` for proximity-pairing with `Ctrl+Shift+L` open-folder)
+for one-keypress sharing. The original `Ctrl+Alt+L` binding
+was moved because of a Windows Magnifier collision and a
+SystemKey-filter side effect on `Alt+F4`.
 
 ### W14 — Interrupt a stuck process
 

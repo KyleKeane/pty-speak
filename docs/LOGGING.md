@@ -6,11 +6,14 @@ the logs easy to grab when reporting a bug or reviewing a
 session:
 
 - **`Ctrl+Shift+L`** — open the logs folder in File Explorer.
-- **`Ctrl+Alt+L`** — copy the active session's log file content
-  to the clipboard as a single string. NVDA announces the byte
-  count on success ("Log copied to clipboard. N bytes; ready to
-  paste."). Most efficient way to send a log to a maintainer:
-  press the hotkey, switch to the chat / email / issue, paste.
+- **`Ctrl+Shift+;`** — copy the active session's log file content
+  to the clipboard as a single string. The semicolon / colon
+  key is physically adjacent to `L` on a US-layout keyboard,
+  so the open-folder + copy-active-file pair lives under one
+  hand position. NVDA announces the byte count on success
+  ("Log copied to clipboard. N bytes; ready to paste."). Most
+  efficient way to send a log to a maintainer: press the hotkey,
+  switch to the chat / email / issue, paste.
 
 ## Where the logs live
 
@@ -142,14 +145,27 @@ any log site that risks leaking these categories.
 
 ## Sharing logs with a maintainer
 
-**Fastest path** — `Ctrl+Alt+L`:
+**Fastest path** — `Ctrl+Shift+;`:
 
 1. Reproduce the issue (or wait for it to happen — for the
    intermittent ones).
-2. **Press `Ctrl+Alt+L`.** NVDA announces "Log copied to
-   clipboard. N bytes; ready to paste." The active session's
-   entire log file is now on the clipboard.
+2. **Press `Ctrl+Shift+;`** (the semicolon / colon key, right
+   next to `L`). NVDA announces "Log copied to clipboard. N
+   bytes; ready to paste." The active session's entire log
+   file is now on the clipboard.
 3. Switch to the chat / email / issue and paste.
+
+> **Note:** the previous binding was `Ctrl+Alt+L`. It was moved
+> because (a) it collides with the Windows Magnifier zoom-in
+> shortcut on some Magnifier configs and (b) the Alt-modifier
+> path required a SystemKey-aware filter that interfered with
+> the OS `Alt+F4` window-close gesture. `Ctrl+Shift+C` was
+> considered as the natural "copy" mnemonic but reserved for
+> a future copy-latest-command-output feature; `Ctrl+Shift+;`
+> wins on physical proximity to `Ctrl+Shift+L` instead.
+> Layout caveat: on non-US keyboards the `OemSemicolon`
+> virtual-key sits in a different physical position; remap
+> support is on the Phase 2 user-settings roadmap.
 
 **Manual path** — `Ctrl+Shift+L`:
 
