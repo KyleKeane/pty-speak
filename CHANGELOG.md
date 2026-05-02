@@ -15,6 +15,69 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Three post-Stage-6 regressions surfaced during manual NVDA
+  verification on the post-Stage-6 preview**, all targeted in a
+  single follow-up PR:
+
+  - **Ctrl+V didn't paste; sent `^V` to the shell instead.**
+    `TerminalView`'s constructor added a `CommandBinding` for
+    `ApplicationCommands.Paste`, which tells WPF "if Paste is
+    invoked on me, here's the handler" — but did NOT add an
+    `InputBinding` mapping `Ctrl+V` (or `Shift+Insert`) to the
+    Paste command. Without the gesture-to-command map, Ctrl+V
+    flowed through `OnPreviewKeyDown` → encoder → `0x16` → and
+    cmd.exe echoed `^V` per its control-character display
+    convention. Adding the two `InputBinding`s
+    (`Ctrl+V` and `Shift+Insert`) wires the gestures to the
+    existing `OnPasteExecuted` handler so the paste-injection
+    chokepoint actually fires.
+
+  - **Window resize didn't reflow; text cut off the right
+    edge.** `TerminalView.MeasureOverride` returned the FIXED
+    preferred size (`Cols × Rows × cellSize`), so the view
+    never tracked window resize, so `OnRenderSizeChanged`
+    never fired, so the Stage 6 `SizeChanged` →
+    `DispatcherTimer` debounce → `ResizePseudoConsole` chain
+    was dead. Changed `MeasureOverride` to honour
+    `availableSize` (fall back to preferred size only when
+    availableSize is unbounded, e.g. inside a `ScrollViewer`).
+    The Screen buffer stays at construction-time 30×120 cells
+    internally — full grid runtime resize is a documented
+    Phase 2 stage — but cmd.exe now sees and adapts to the
+    window's actual dimensions via `ResizePseudoConsole`,
+    fixing the visible "text cuts off" symptom.
+
+  - **Stage 5 streaming output announcements were silent.**
+    `TerminalView.Announce` was hardcoded to use
+    `AutomationNotificationProcessing.MostRecent`. That's the
+    right choice for hotkey-style one-shot announcements
+    (Ctrl+Shift+U / D / R, Velopack progress) where each new
+    notification SHOULD supersede any in-flight one. But for
+    Stage 5's streaming-PTY-output path it was wrong: rapid
+    chunks arrive faster than NVDA can speak them, and under
+    `MostRecent` each new chunk discards the in-flight speech
+    of the previous one — typed-character echoes and command
+    output were silently superseded before NVDA could read
+    any of them. The two-arg `Announce(message, activityId)`
+    overload now selects processing per activityId:
+    `pty-speak.output` uses `ImportantAll` (queue all chunks);
+    everything else keeps `MostRecent`. A new three-arg
+    overload (`message, activityId, processing`) is exposed
+    for any future caller that needs to override.
+
+- **Diagnostic safety net for the coalescer drain task.**
+  Previously the `Program.fs compose ()` drain task swallowed
+  every unexpected exception silently with `| _ -> ()`. A
+  crashed drain looked identical to a working-but-silent one,
+  which made post-Stage-6 streaming-silence diagnosis hard
+  ("is the drain dying or is NVDA filtering?"). The catch-all
+  now sanitises the exception message through SR-2's
+  chokepoint and emits one final `Announce(..., pty-speak.error)`
+  before the task exits, so a future drain crash announces
+  itself rather than disappearing into the void.
+
 ### Added
 
 - **Stage 6 PR-B: keyboard input, paste, focus reporting, dynamic
