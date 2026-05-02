@@ -154,15 +154,17 @@ preserve this list per the app-reserved-hotkey contract in
 - **`Ctrl+Shift+L`** — open the logs folder
   (`%LOCALAPPDATA%\PtySpeak\logs\`) in File Explorer. Useful for
   grabbing a previous session's log when reporting a bug.
-- **`Ctrl+Alt+L`** — copy the active session's log file content
-  to the clipboard. NVDA announces the byte count; switch to
-  the chat / email / issue and paste. The fastest way to send
-  a session log to a maintainer. See
-  [`docs/LOGGING.md`](docs/LOGGING.md) for what is and isn't
-  logged.
+- **`Ctrl+Shift+;`** — copy the active session's log file content
+  to the clipboard. The semicolon / colon key sits right next
+  to `L` on a US-layout keyboard, so it pairs by physical
+  proximity with the `Ctrl+Shift+L` open-folder primary. NVDA
+  announces the byte count; switch to the chat / email / issue
+  and paste. The fastest way to send a session log to a
+  maintainer. See [`docs/LOGGING.md`](docs/LOGGING.md) for what
+  is and isn't logged.
 
-Reserved but not yet implemented: `Ctrl+Shift+M` (Stage 9 mute toggle),
-`Alt+Shift+R` (Stage 10 review-mode toggle).
+Reserved but not yet implemented: `Ctrl+Shift+M` (Stage 9 mute
+toggle), `Alt+Shift+R` (Stage 10 review-mode toggle).
 
 The historical Stage 0 preview installer opens an empty window. Once
 the next preview is cut from the current `main`, the installer launches

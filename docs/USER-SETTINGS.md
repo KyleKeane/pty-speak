@@ -301,15 +301,20 @@ for future stages — listed inline below):
   (typed input, paste content, full screen contents,
   environment variables — never). Wired in
   `setupOpenLogsKeybinding`.
-- **`Ctrl+Alt+L`** — copy the active session's log file content
-  to the clipboard as a single string (Logging-restructure PR).
-  NVDA announces the byte count on success ("Log copied to
-  clipboard. N bytes; ready to paste."). Fastest path to send
-  a session log to a maintainer. NOT `Ctrl+Shift+C` —
-  Ctrl+Shift+C currently sends `0x03` (SIGINT) to the shell
-  via the Ctrl-letter encoding, and overriding that would
-  break the standard "press Ctrl+C to interrupt a running
-  command" gesture. Wired in `setupCopyLatestLogKeybinding`.
+- **`Ctrl+Shift+;`** — copy the active session's log file content
+  to the clipboard as a single string. The semicolon / colon
+  key is physically next to `L` on a US-layout keyboard, so it
+  pairs with the `Ctrl+Shift+L` open-folder primary by
+  proximity. NVDA announces the byte count on success ("Log
+  copied to clipboard. N bytes; ready to paste."). Fastest
+  path to send a session log to a maintainer. Hotkey-choice
+  history: the original binding was `Ctrl+Alt+L` (Magnifier
+  collision + the SystemKey filter for the Alt path broke
+  `Alt+F4`); `Ctrl+Shift+C` was considered but reserved for a
+  future copy-latest-command-output feature. Layout caveat:
+  on non-US keyboards the `OemSemicolon` virtual-key sits in
+  a different physical position. Wired in
+  `setupCopyLatestLogKeybinding`.
 - (planned) **`Ctrl+Shift+M`** — earcon mute toggle (Stage 9).
 - (planned) **`Alt+Shift+R`** — review-mode toggle (Stage 10).
 

@@ -254,14 +254,16 @@ module Coalescer =
             (state: State)
             (now: DateTimeOffset)
             (snapshot: Cell[][]) : CoalescedNotification list =
-        // Streaming-path instrumentation. Defaults to NullLogger
-        // before Logger.configure runs (production sets this in
-        // Program.fs compose(); tests that don't configure get
-        // NullLogger and pay no cost). Each branch below logs the
-        // suppression reason or the emit so the diagnosis trail
-        // distinguishes "Coalescer dropped the event by design"
-        // from "Coalescer didn't see the event" from "Coalescer
-        // emitted but Drain didn't pick up".
+        // Streaming-path instrumentation. Per-event entries are
+        // emitted at Debug so the production default (Information)
+        // sees no per-frame I/O. Set the min-level to Debug via
+        // env-var override when reproducing a streaming-silence
+        // bug; the trail then distinguishes "Coalescer dropped
+        // the event by design" from "Coalescer didn't see the
+        // event" from "Coalescer emitted but Drain didn't pick
+        // up". Information-level was tried in PR #109 but
+        // produced enough log I/O at typing speed to lag the WPF
+        // dispatcher visibly; demoted to Debug here.
         let logger = Logger.get "Terminal.Core.Coalescer.processRowsChanged"
         let frameHash = hashFrame snapshot
         // Frame-level dedup: identical content → suppress
@@ -269,7 +271,7 @@ module Coalescer =
         // Ink's full-frame redraws.
         match state.LastFrameHash with
         | ValueSome prev when prev = frameHash ->
-            logger.LogInformation(
+            logger.LogDebug(
                 "Suppressed (frame-dedup). FrameHash=0x{Hash:X16}", frameHash)
             []
         | _ ->
@@ -286,7 +288,7 @@ module Coalescer =
                 // Update LastFrameHash so we don't re-suppress
                 // when content actually changes again.
                 state.LastFrameHash <- ValueSome frameHash
-                logger.LogInformation(
+                logger.LogDebug(
                     "Suppressed (spinner). FrameHash=0x{Hash:X16}", frameHash)
                 []
             else
@@ -302,7 +304,7 @@ module Coalescer =
                     state.PendingFrame <- ValueNone
                     state.PendingHash <- ValueNone
                     let rendered = renderRows snapshot
-                    logger.LogInformation(
+                    logger.LogDebug(
                         "Emit OutputBatch (leading-edge). FrameHash=0x{Hash:X16} TextLen={Len}",
                         frameHash, rendered.Length)
                     [ OutputBatch rendered ]
@@ -311,7 +313,7 @@ module Coalescer =
                     // edge will flush.
                     state.PendingFrame <- ValueSome snapshot
                     state.PendingHash <- ValueSome frameHash
-                    logger.LogInformation(
+                    logger.LogDebug(
                         "Accumulated (within debounce window). FrameHash=0x{Hash:X16}",
                         frameHash)
                     []
@@ -334,7 +336,7 @@ module Coalescer =
                 state.PendingFrame <- ValueNone
                 state.PendingHash <- ValueNone
                 let rendered = renderRows snapshot
-                logger.LogInformation(
+                logger.LogDebug(
                     "Emit OutputBatch (trailing-edge). FrameHash=0x{Hash:X16} TextLen={Len}",
                     hash, rendered.Length)
                 [ OutputBatch rendered ]

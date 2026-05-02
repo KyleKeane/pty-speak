@@ -62,21 +62,31 @@ public class TerminalView : FrameworkElement
     private Action<int, int>? _resize;
 
     /// <summary>
-    /// Post-PR-#106 fix — direct callback for the
-    /// `Ctrl+Alt+L` "copy active log to clipboard" hotkey.
-    /// Wired by <see cref="SetCopyLogToClipboardHandler"/> from
-    /// <c>Program.fs compose ()</c>. Bypasses the Window-level
-    /// `KeyBinding` route because that route doesn't reliably
-    /// fire for `Alt`-modified gestures on a custom
-    /// <see cref="FrameworkElement"/>: WPF reports
-    /// <c>e.Key == Key.System</c> + <c>e.SystemKey == Key.L</c>
-    /// for these events, and the `CommandManager`'s class
-    /// handler routing through Window-level `InputBindings`
-    /// has been observed to NOT fire `runCopyLatestLog` even
-    /// though `KeyGesture.MatchesImpl` should handle SystemKey.
-    /// Direct handling at the top of <see cref="OnPreviewKeyDown"/>
-    /// guarantees the gesture is processed regardless of the
-    /// vagaries of the WPF input pipeline.
+    /// Direct callback for the `Ctrl+Shift+;` "copy active log
+    /// to clipboard" hotkey. Wired by
+    /// <see cref="SetCopyLogToClipboardHandler"/> from
+    /// <c>Program.fs compose ()</c>. Defence-in-depth path
+    /// alongside the Window-level `KeyBinding`, which has been
+    /// observed to flake for custom <see cref="FrameworkElement"/>s
+    /// (see the Ctrl+V family of bugs). Direct handling at the
+    /// top of <see cref="OnPreviewKeyDown"/> guarantees the
+    /// gesture reaches <c>runCopyLatestLog</c> regardless of
+    /// any quirks in WPF's CommandManager class routing.
+    ///
+    /// Hotkey-choice history: `Ctrl+Alt+L` was the original
+    /// binding but collided with the Windows Magnifier zoom-in
+    /// shortcut on some default Magnifier configs, AND required
+    /// a SystemKey-aware filter in this method that in turn
+    /// intercepted `Alt+F4`. `Ctrl+Shift+;` (the semicolon /
+    /// colon key, <see cref="Key.OemSemicolon"/>) was chosen for
+    /// proximity recall — physically adjacent to `L` (the
+    /// `Ctrl+Shift+L` open-folder primary) on a US-layout
+    /// keyboard. Reserves `Ctrl+Shift+C` for a future
+    /// copy-latest-command-output feature, which is the cross-
+    /// terminal convention for that gesture. Layout caveat: on
+    /// non-US layouts the `OemSemicolon` virtual-key may sit in
+    /// a different physical position; remap when configurable
+    /// keybindings ship in Phase 2.
     /// </summary>
     private Action? _copyActiveLogToClipboard;
 
@@ -189,12 +199,12 @@ public class TerminalView : FrameworkElement
     }
 
     /// <summary>
-    /// Post-PR-#106 fix — wire the Ctrl+Alt+L handler. Called
-    /// from <c>Program.fs compose ()</c> with a closure that
-    /// invokes <c>runCopyLatestLog</c>. The handler must run on
-    /// the WPF dispatcher thread (it touches the clipboard);
-    /// our caller in OnPreviewKeyDown already runs on the
-    /// dispatcher so no marshalling needed.
+    /// Wire the Ctrl+Shift+; handler. Called from
+    /// <c>Program.fs compose ()</c> with a closure that invokes
+    /// <c>runCopyLatestLog</c>. The handler must run on the WPF
+    /// dispatcher thread (it touches the clipboard); our caller
+    /// in OnPreviewKeyDown already runs on the dispatcher so no
+    /// marshalling needed.
     /// </summary>
     public void SetCopyLogToClipboardHandler(Action handler)
     {
@@ -299,17 +309,20 @@ public class TerminalView : FrameworkElement
         string activityId,
         AutomationNotificationProcessing processing)
     {
-        // Streaming-path instrumentation: log whether the UIA peer
-        // is actually present (peer creation is lazy — UIA clients
-        // like NVDA trigger it on first query) and whether the
-        // RaiseNotificationEvent call fired. Metadata only:
+        // Streaming-path instrumentation. The peer-present path
+        // logs at Debug (off by default; flip min-level via env
+        // override for diagnosis) so streaming output doesn't
+        // generate per-batch I/O on the dispatcher thread. The
+        // peer-NULL path stays at WARN — that's the diagnostic
+        // smoking gun (UIA client never connected; notifications
+        // silently dropping) and it's rare. Metadata only:
         // activityId + length; never the message text itself, per
         // SECURITY.md "Logging chokepoint" policy.
         var log = Terminal.Core.Logger.get("PtySpeak.Views.TerminalView.Announce");
         var peer = UIElementAutomationPeer.FromElement(this);
         if (peer is not null)
         {
-            Microsoft.Extensions.Logging.LoggerExtensions.LogInformation(
+            Microsoft.Extensions.Logging.LoggerExtensions.LogDebug(
                 log,
                 "RaiseNotificationEvent firing. ActivityId={ActivityId} MsgLen={MsgLen} Processing={Processing}",
                 activityId, message.Length, processing);
@@ -372,12 +385,19 @@ public class TerminalView : FrameworkElement
 
             // Logging-restructure PR — copy active session log to
             // clipboard. Bound in `setupCopyLatestLogKeybinding`.
-            // Mnemonic: alt-action paired with Ctrl+Shift+L
-            // open-folder primary. NOT Ctrl+Shift+C (that would
-            // collide with the Ctrl-letter shell-interrupt
-            // encoding, where Ctrl+Shift+C currently sends
-            // 0x03 / SIGINT to the running command).
-            (Key.L, ModifierKeys.Control | ModifierKeys.Alt, "Copy active log to clipboard"),
+            // Mnemonic: physical proximity — the semicolon /
+            // colon key sits right next to `L`, the
+            // `Ctrl+Shift+L` open-folder primary, on a US-layout
+            // keyboard. The pair "open the folder | copy the
+            // active file" lives under one hand position.
+            // Originally bound to Ctrl+Alt+L but moved because
+            // that gesture collides with the Windows Magnifier
+            // zoom-in shortcut AND required a SystemKey-aware
+            // filter that broke Alt+F4. Ctrl+Shift+C is left
+            // unclaimed for a future copy-latest-command-output
+            // feature (the cross-terminal convention for that
+            // gesture).
+            (Key.OemSemicolon, ModifierKeys.Control | ModifierKeys.Shift, "Copy active log to clipboard"),
 
             // Future entries (NOT yet bound; commented for
             // forward-planning):
@@ -395,8 +415,8 @@ public class TerminalView : FrameworkElement
     ///   <item><description><b>App-reserved hotkeys first.</b> Any match in
     ///   <see cref="AppReservedHotkeys"/> short-circuits and does NOT mark
     ///   the event handled, so the parent Window's InputBindings can fire
-    ///   the corresponding command (Ctrl+Shift+U / D / R today; future
-    ///   Ctrl+Shift+M, Alt+Shift+R when Stage 9 / 10 land).</description></item>
+    ///   the corresponding command (Ctrl+Shift+U / D / R / L / ; today;
+    ///   future Ctrl+Shift+M, Alt+Shift+R when Stage 9 / 10 land).</description></item>
     ///   <item><description><b>NVDA / screen-reader modifier filter
     ///   second.</b> Bare Insert / CapsLock presses, and Numpad presses
     ///   with NumLock off, return without Handled so NVDA / JAWS / Narrator
@@ -432,24 +452,31 @@ public class TerminalView : FrameworkElement
 
         var pressedModifiers = Keyboard.Modifiers;
 
-        // For Alt-modified gestures, WPF reports e.Key = Key.System
-        // and the actual key in e.SystemKey. Reading the "actual"
-        // key here makes downstream filters and HandleAppLevelShortcut
-        // work for Ctrl+Alt+L (and any future Alt-modified gesture
-        // like Stage 10's reserved Alt+Shift+R).
-        var actualKey = (e.Key == Key.System) ? e.SystemKey : e.Key;
+        // For Alt-modified gestures WPF reports e.Key == Key.System
+        // and the actual key in e.SystemKey. We deliberately do NOT
+        // unwrap that here: every reserved hotkey today is a clean
+        // Ctrl+Shift gesture (no Alt path), and unwrapping was found
+        // to intercept Alt+F4 — F4 reaches the encoder, gets bytes
+        // produced, e.Handled becomes true, and the OS window-close
+        // gesture dies. Letting Key.System fall through to
+        // TranslateKey returns KeyCode.Unhandled, the encoder
+        // returns null, e.Handled stays false, and WPF's default
+        // Alt+F4 close handler fires. If a future Alt-modified
+        // reserved hotkey (Stage 10's Alt+Shift+R review-mode
+        // toggle) lands, reintroduce the unwrap with an explicit
+        // Alt+F4 fall-through.
 
         // 1. App-reserved hotkey check.
         foreach (var (key, modifiers, _) in AppReservedHotkeys)
         {
-            if (actualKey == key && pressedModifiers == modifiers)
+            if (e.Key == key && pressedModifiers == modifiers)
             {
                 return;
             }
         }
 
         // 2. NVDA / screen-reader modifier filter.
-        if (IsScreenReaderCandidate(actualKey))
+        if (IsScreenReaderCandidate(e.Key))
         {
             return;
         }
@@ -467,7 +494,7 @@ public class TerminalView : FrameworkElement
         // CommandManager / InputBinding routing — that route doesn't
         // fire reliably for a custom FrameworkElement, and any
         // CanExecute=false branch falls through to the encoder.
-        if (HandleAppLevelShortcut(actualKey, pressedModifiers))
+        if (HandleAppLevelShortcut(e.Key, pressedModifiers))
         {
             e.Handled = true;
             return;
@@ -475,7 +502,7 @@ public class TerminalView : FrameworkElement
 
         // 3. Translate.
         var keyMods = TranslateModifiers(pressedModifiers);
-        var keyCode = TranslateKey(actualKey);
+        var keyCode = TranslateKey(e.Key);
 
         // 4. Defer plain typing to OnPreviewTextInput.
         var ctrlOrAltHeld =
@@ -618,15 +645,15 @@ public class TerminalView : FrameworkElement
     /// </summary>
     private bool HandleAppLevelShortcut(Key key, ModifierKeys modifiers)
     {
-        // Ctrl+Alt+L → copy active log to clipboard.
-        // Handled FIRST and independent of _writeBytes because this
+        // Ctrl+Shift+; → copy active log to clipboard. Handled
+        // FIRST and independent of _writeBytes because this
         // gesture is meaningful even when no PTY host is attached
-        // (e.g. early in app lifecycle if compose() hasn't finished
-        // wiring SetPtyHost). Window-level KeyBinding routing for
-        // Alt-modified gestures has been observed not to fire on
-        // a custom FrameworkElement; direct handling here is the
-        // reliable path.
-        if (key == Key.L && modifiers == (ModifierKeys.Control | ModifierKeys.Alt))
+        // (e.g. early in app lifecycle if compose() hasn't
+        // finished wiring SetPtyHost). Window-level KeyBinding
+        // routing has been observed to flake on custom
+        // FrameworkElements; direct handling here is the reliable
+        // path.
+        if (key == Key.OemSemicolon && modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
         {
             _copyActiveLogToClipboard?.Invoke();
             return true;
