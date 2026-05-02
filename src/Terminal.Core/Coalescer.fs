@@ -39,10 +39,18 @@ open Microsoft.Extensions.Logging
 ///     layer, every row hash changes per redraw and
 ///     per-row dedup never fires).
 ///   * **Spinner heuristic.** Sliding window keyed by
-///     `(rowIdx, hash)` AND a generic
-///     "any-hash-anywhere ≥5 in last 1s" gate. Suppresses
-///     repeated frames at high rate (e.g. spinners that
-///     wrap row indices).
+///     `(rowIdx, hash)`. Suppresses repeated frames at high
+///     rate (e.g. spinners that overwrite the same row's
+///     content with cycling characters — `|/-\` etc.). The
+///     original Stage 5 design also included a generic
+///     "any-hash-anywhere" gate intended to catch cross-row
+///     spinners, but its count-of-total-entries threshold
+///     was fundamentally incompatible with the per-row scan
+///     (every event added one entry per row of the screen,
+///     and 30 rows instantly exceeded the 20-entry threshold,
+///     producing permanent silence). Removed in the post-#114
+///     fix; cross-row spinner detection is a future
+///     improvement tracked separately.
 ///   * **Debounce.** Leading-edge + trailing-edge: first
 ///     event in an idle period (no flush in last 200ms)
 ///     emits immediately for fast single-event UX
@@ -182,9 +190,11 @@ module Coalescer =
         | ModeBarrier of flag: TerminalModeFlag * value: bool
 
     /// Spinner-suppression key: the per-row hash plus the row
-    /// index it came from. The "any-hash-anywhere" generic
-    /// gate uses just the hash (key-by-uint64-hash without
-    /// the index).
+    /// index it came from. A spinner that overwrites the same
+    /// cell with cycling characters (`|/-\` etc.) generates
+    /// the same `(rowIdx, hash)` tuple repeatedly across each
+    /// cycle, which the per-key history catches once the
+    /// recurrence count crosses the threshold.
     type private SpinnerKey = int * uint64
 
     /// Coalescer's mutable state. Owned by the single reader
@@ -196,16 +206,14 @@ module Coalescer =
           mutable LastFlushAt: DateTimeOffset voption
           mutable PendingFrame: Cell[][] voption
           mutable PendingHash: uint64 voption
-          PerRowHistory: Dictionary<SpinnerKey, ResizeArray<DateTimeOffset>>
-          AllHashHistory: ResizeArray<DateTimeOffset> }
+          PerRowHistory: Dictionary<SpinnerKey, ResizeArray<DateTimeOffset>> }
 
     let internal createState () : State =
         { LastFrameHash = ValueNone
           LastFlushAt = ValueNone
           PendingFrame = ValueNone
           PendingHash = ValueNone
-          PerRowHistory = Dictionary()
-          AllHashHistory = ResizeArray() }
+          PerRowHistory = Dictionary() }
 
     /// Trim history older than `spinnerWindow`. Mutates in
     /// place. Called on every event arrival to keep histories
@@ -218,7 +226,6 @@ module Coalescer =
             if kvp.Value.Count = 0 then staleKeys.Add(kvp.Key)
         for k in staleKeys do
             state.PerRowHistory.Remove(k) |> ignore
-        state.AllHashHistory.RemoveAll(fun ts -> ts < cutoff) |> ignore
 
     /// Test whether this frame should be suppressed by the
     /// spinner heuristic. Records the timestamps even on
@@ -237,9 +244,7 @@ module Coalescer =
                 state.PerRowHistory.[key] <- h
                 h
         history.Add(now)
-        state.AllHashHistory.Add(now)
         history.Count >= spinnerThreshold
-        || state.AllHashHistory.Count >= spinnerThreshold * 4
 
     /// Decide what (if anything) to emit for an incoming
     /// `RowsChanged []` notification. Reads the current
@@ -371,7 +376,6 @@ module Coalescer =
         state.LastFrameHash <- ValueNone
         state.LastFlushAt <- ValueSome now
         state.PerRowHistory.Clear()
-        state.AllHashHistory.Clear()
         flushed @ [ ModeBarrier (flag, value) ]
 
     /// Pass-through for parser errors. No coalescing — errors

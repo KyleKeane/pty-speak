@@ -17,6 +17,43 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Fixed
 
+- **Streaming output was permanently silent.** Root cause:
+  the coalescer's "any-hash-anywhere" spinner gate was
+  fundamentally broken. It triggered when
+  `AllHashHistory.Count >= 20`, but every call to
+  `processRowsChanged` iterates all 30 screen rows and
+  appends to that same history — so a single user event
+  added 30 entries, instantly exceeding the 20-entry
+  threshold. Once tripped, every subsequent event added
+  another 30 entries faster than the 1-second sliding
+  window could drain them, so the gate stayed permanently
+  triggered for the entire session. Net effect: the
+  cmd.exe banner, every typed character, and every command
+  output were all silently suppressed at the coalescer
+  before the dispatcher / NVDA path ever saw them.
+
+  Diagnosed from a `PTYSPEAK_LOG_LEVEL=Debug` capture on
+  the post-#114 preview where every `Reader published
+  RowsChanged` entry was followed by `Suppressed (spinner)`
+  — including the very first 16-byte cmd.exe banner chunk.
+  No real spinner was running; the heuristic was firing on
+  legitimate output.
+
+  Fix: remove the broken any-hash-anywhere gate entirely.
+  The per-`(rowIdx, hash)` gate (the OTHER spinner check,
+  which fires when the same row state recurs ≥5 times in
+  1s) handles the common spinner case (`|/-\` cycling on
+  one cell) correctly and stays in place. Cross-row
+  spinner detection — the original motivation for the
+  any-hash gate — is filed as a follow-up issue with a
+  proper redesign brief: count unique-hash recurrences,
+  not total entries.
+
+  Tests unchanged: existing `CoalescerTests.fs` covers
+  the per-key gate; nothing covered the broken any-hash
+  gate, so removing it doesn't regress any tested
+  behaviour.
+
 - **`Ctrl+Shift+;` log-copy failed with "file is in use by
   another process".** Maintainer-reported on the post-#111
   preview. The clipboard handler used `File.ReadAllText(path)`
