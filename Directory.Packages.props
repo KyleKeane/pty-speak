@@ -34,7 +34,7 @@
       to assert debounce + spinner-window behaviour without
       sleeping.
     -->
-    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.5.0" />
   </ItemGroup>
 
 </Project>
