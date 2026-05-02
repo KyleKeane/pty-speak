@@ -340,25 +340,29 @@ public class TerminalView : FrameworkElement
         }
 
         // 3. Translate.
-        var modifiers = TranslateModifiers(pressedModifiers);
+        var keyMods = TranslateModifiers(pressedModifiers);
         var keyCode = TranslateKey(e.Key);
 
         // 4. Defer plain typing to OnPreviewTextInput.
         var ctrlOrAltHeld =
-            modifiers.HasFlag(KeyModifiers.Control) ||
-            modifiers.HasFlag(KeyModifiers.Alt);
+            keyMods.HasFlag(KeyModifiers.Control) ||
+            keyMods.HasFlag(KeyModifiers.Alt);
         if (keyCode.IsChar && !ctrlOrAltHeld)
         {
             return;
         }
 
-        // 5. Encode and write.
-        if (_writeBytes is null)
+        // 5. Encode and write. If the screen isn't attached yet
+        // (very early init / teardown) drop the key gracefully —
+        // there's nowhere meaningful to send it. _screen is set
+        // by Program.fs's compose() before window.Loaded fires
+        // and the user is realistically able to press a key, so
+        // this branch is defence in depth rather than expected.
+        if (_writeBytes is null || _screen is null)
         {
             return;
         }
-        var modes = _screen?.Modes ?? TerminalModes.create();
-        var bytes = KeyEncoding.encodeOrNull(keyCode, modifiers, modes);
+        var bytes = KeyEncoding.encodeOrNull(keyCode, keyMods, _screen.Modes);
         if (bytes is null)
         {
             return;

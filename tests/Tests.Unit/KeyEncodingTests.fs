@@ -212,15 +212,15 @@ let ``Ctrl+Alt+'a' encodes as ESC + 0x01`` () =
             (modesNoneSet ()))
 
 [<Fact>]
-let ``Ctrl+@ encodes as NUL (0x00)`` () =
+let ``Ctrl plus at-sign encodes as NUL (0x00)`` () =
     bytesEq [| 0x00uy |] (encode (KeyCode.Char '@') KeyModifiers.Control (modesNoneSet ()))
 
 [<Fact>]
-let ``Ctrl+[ encodes as ESC (0x1B)`` () =
+let ``Ctrl plus open-bracket encodes as ESC (0x1B)`` () =
     bytesEq [| 0x1Buy |] (encode (KeyCode.Char '[') KeyModifiers.Control (modesNoneSet ()))
 
 [<Fact>]
-let ``Ctrl+? encodes as DEL (0x7F)`` () =
+let ``Ctrl plus question-mark encodes as DEL (0x7F)`` () =
     bytesEq [| 0x7Fuy |] (encode (KeyCode.Char '?') KeyModifiers.Control (modesNoneSet ()))
 
 [<Fact>]
