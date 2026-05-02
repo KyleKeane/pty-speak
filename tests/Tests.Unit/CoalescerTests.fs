@@ -118,7 +118,10 @@ let ``frame dedup releases when content actually changes`` () =
 [<Fact>]
 let ``first event in idle period emits immediately (leading edge)`` () =
     let state = Coalescer.createState ()
-    let snap = snapshotOf 3 5 [ "echo hello" ]
+    // Width must accommodate the full string; the rowOf helper
+    // truncates at cols-1 and renderRows trims trailing blanks,
+    // so a 5-col screen would render "echo hello" as "echo".
+    let snap = snapshotOf 3 20 [ "echo hello" ]
     let result = Coalescer.processRowsChanged state (at 0) snap
     Assert.Equal(1, result.Length)
     match result.[0] with
