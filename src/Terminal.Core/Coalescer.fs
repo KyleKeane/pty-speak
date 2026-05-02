@@ -304,7 +304,12 @@ module Coalescer =
                     state.PendingFrame <- ValueNone
                     state.PendingHash <- ValueNone
                     let rendered = renderRows snapshot
-                    logger.LogDebug(
+                    // INFO — emit entries are bounded by the
+                    // 200ms debounce (~5/sec max) and are the
+                    // primary signal that the streaming pipeline
+                    // is alive. Suppress / accumulate entries
+                    // stay at Debug.
+                    logger.LogInformation(
                         "Emit OutputBatch (leading-edge). FrameHash=0x{Hash:X16} TextLen={Len}",
                         frameHash, rendered.Length)
                     [ OutputBatch rendered ]
@@ -336,7 +341,7 @@ module Coalescer =
                 state.PendingFrame <- ValueNone
                 state.PendingHash <- ValueNone
                 let rendered = renderRows snapshot
-                logger.LogDebug(
+                logger.LogInformation(
                     "Emit OutputBatch (trailing-edge). FrameHash=0x{Hash:X16} TextLen={Len}",
                     hash, rendered.Length)
                 [ OutputBatch rendered ]

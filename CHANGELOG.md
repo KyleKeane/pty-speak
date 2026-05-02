@@ -15,7 +15,41 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Ctrl+Shift+;` log-copy failed with "file is in use by
+  another process".** Maintainer-reported on the post-#111
+  preview. The clipboard handler used `File.ReadAllText(path)`
+  which opens the file with `FileShare.Read` (the overload's
+  default) — meaning "I tolerate other readers but no
+  writers." Since the `FileLogger` writer holds the file
+  open with `FileAccess.Write`, the OS rejected the read
+  open because it couldn't honor the reader's "no writers"
+  requirement when the writer was already there.
+
+  Fix: open the file via an explicit `FileStream` with
+  `FileShare.ReadWrite`, matching the writer's policy. The
+  writer is happy to coexist with concurrent readers
+  (Notepad, NVDA, the Ctrl+Shift+; handler), so the OS
+  grants the handle.
+
 ### Changed
+
+- **Restored two strategic INFO log entries that PR #111
+  over-demoted.** Coalescer "Emit OutputBatch (leading-edge
+  | trailing-edge)" and `TerminalView.Announce`
+  "RaiseNotificationEvent firing" are back at `Information`.
+  These are bounded by the coalescer's 200ms debounce
+  (~5 events/sec at typing speed; far below any I/O lag
+  threshold) and constitute the primary "is the streaming
+  pipeline alive?" signal at default log level — without
+  them, default logs show nothing of the streaming path,
+  and a streaming-silence bug requires the user to launch
+  with `PTYSPEAK_LOG_LEVEL=Debug` to capture any trace at
+  all. The other PR #109 entries (reader publish, suppress,
+  accumulate, drain dispatch) stay at `Debug` to keep the
+  steady-state volume low; flip to Debug for full-chain
+  diagnosis when needed.
 
 - **Log-copy hotkey rebound from `Ctrl+Alt+L` to
   `Ctrl+Shift+;`** (the semicolon / colon key, immediately

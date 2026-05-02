@@ -310,19 +310,21 @@ public class TerminalView : FrameworkElement
         AutomationNotificationProcessing processing)
     {
         // Streaming-path instrumentation. The peer-present path
-        // logs at Debug (off by default; flip min-level via env
-        // override for diagnosis) so streaming output doesn't
-        // generate per-batch I/O on the dispatcher thread. The
-        // peer-NULL path stays at WARN — that's the diagnostic
-        // smoking gun (UIA client never connected; notifications
-        // silently dropping) and it's rare. Metadata only:
-        // activityId + length; never the message text itself, per
-        // SECURITY.md "Logging chokepoint" policy.
+        // logs at INFO — bounded by the coalescer's 200ms
+        // debounce (~5 emits/sec max), so the volume is well
+        // below any I/O lag threshold and the entry is the
+        // primary "did the announcement actually fire?" signal
+        // for streaming-silence diagnosis. The peer-NULL path
+        // stays at WARN: rare, and the smoking-gun signal that
+        // a UIA client never connected and notifications are
+        // silently dropping. Metadata only: activityId + length;
+        // never the message text itself, per SECURITY.md
+        // "Logging chokepoint" policy.
         var log = Terminal.Core.Logger.get("PtySpeak.Views.TerminalView.Announce");
         var peer = UIElementAutomationPeer.FromElement(this);
         if (peer is not null)
         {
-            Microsoft.Extensions.Logging.LoggerExtensions.LogDebug(
+            Microsoft.Extensions.Logging.LoggerExtensions.LogInformation(
                 log,
                 "RaiseNotificationEvent firing. ActivityId={ActivityId} MsgLen={MsgLen} Processing={Processing}",
                 activityId, message.Length, processing);
