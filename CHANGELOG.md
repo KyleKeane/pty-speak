@@ -15,6 +15,37 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Ctrl+Shift+D` and `Ctrl+Shift+R` announcements no longer get
+  cut off by the spawned window's focus-grab.** Discovered during
+  Stage 5 manual NVDA verification: pressing `Ctrl+Shift+D` started
+  the diagnostic announcement but NVDA was interrupted as soon as
+  the new PowerShell window activated and stole focus (NVDA's
+  default interrupt-on-focus-change). Same shape for
+  `Ctrl+Shift+R` once the browser activated. Pre-existing since
+  the diagnostic hotkey shipped in PR #81 and the releases hotkey
+  shipped in PR #84; latent because no NVDA verification cycle
+  before today exercised the announce path end-to-end.
+
+  Fix in `src/Terminal.App/Program.fs runDiagnostic` and
+  `runOpenReleases`: announce a SHORT cue ("Launching
+  diagnostic.", "Opening release notes.") FIRST, then schedule
+  the actual `Process.Start` on a ~700ms `Task.Delay` so NVDA's
+  speech queue has time to play the cue before the new window's
+  title takes over. The longer guidance ("Switch to that window
+  to follow the test.") is dropped from the cue — once the
+  user hears the spawned window's title, they have all the
+  context the long version provided. Both announces are also
+  re-tagged with the proper `ActivityIds.diagnostic` /
+  `ActivityIds.releases` per-class tags introduced in Stage 5
+  (replacing the back-compat default `pty-speak.update`).
+
+  No new hotkey contract; same `Ctrl+Shift+D/R` behaviour from
+  the user's side, just audible. Phase 2 TOML config will make
+  the 700ms delay configurable alongside the Stage 5 coalescer
+  constants.
+
 ### Added
 
 - **Stage 5: streaming-output coalescer.** First stage where
