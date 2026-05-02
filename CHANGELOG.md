@@ -17,6 +17,40 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Fixed
 
+- **`Ctrl+Alt+L` clipboard-copy hotkey didn't fire.** Maintainer
+  reported pressing the gesture on a current-main build and not
+  hearing the "Log copied to clipboard. N bytes" announcement;
+  the session log confirmed the handler never ran (no
+  `Ctrl+Alt+L pressed — copying active log to clipboard` entry).
+
+  Root cause: WPF's input pipeline reports `Alt`-modified key
+  events with `e.Key == Key.System` and the actual key in
+  `e.SystemKey`. The Window-level `KeyBinding` on
+  `Ctrl+Alt+L` *should* match via `KeyGesture.MatchesImpl`
+  (which honours `SystemKey`), but in practice the
+  `CommandManager` class-handler routing for that gesture
+  doesn't reliably fire `runCopyLatestLog` on a custom
+  `FrameworkElement` like `TerminalView`. Same family of
+  routing-flakiness we hit on Ctrl+V earlier in Stage 6.
+
+  Fix: handle Ctrl+Alt+L directly in
+  `TerminalView.HandleAppLevelShortcut`, the same path that
+  handles Ctrl+V and Ctrl+L. New `SetCopyLogToClipboardHandler`
+  callback wired by `Program.fs compose ()` invokes the
+  existing `runCopyLatestLog` handler. Both the direct path
+  AND the Window-level `KeyBinding` are wired now; whichever
+  fires first wins. Direct path is reliable; Window-level is
+  defence in depth.
+
+  Also fixed a related issue while in the area: the
+  `OnPreviewKeyDown` filter (AppReservedHotkeys check + NVDA-
+  modifier filter + HandleAppLevelShortcut) was reading
+  `e.Key` rather than the actual key, meaning `Alt`-modified
+  gestures (like the future Stage 10 `Alt+Shift+R` review-
+  mode toggle) would have failed similarly. Now reads
+  `(e.Key == Key.System) ? e.SystemKey : e.Key` everywhere
+  in the filter chain.
+
 - **Streaming-silence root cause: `PeriodicTimer` reuse bug in
   `Coalescer.runLoop`.** Diagnosed via the maintainer's manual
   NVDA verification on the post-Stage-6 preview, where typing

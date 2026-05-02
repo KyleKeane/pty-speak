@@ -62,6 +62,25 @@ public class TerminalView : FrameworkElement
     private Action<int, int>? _resize;
 
     /// <summary>
+    /// Post-PR-#106 fix — direct callback for the
+    /// `Ctrl+Alt+L` "copy active log to clipboard" hotkey.
+    /// Wired by <see cref="SetCopyLogToClipboardHandler"/> from
+    /// <c>Program.fs compose ()</c>. Bypasses the Window-level
+    /// `KeyBinding` route because that route doesn't reliably
+    /// fire for `Alt`-modified gestures on a custom
+    /// <see cref="FrameworkElement"/>: WPF reports
+    /// <c>e.Key == Key.System</c> + <c>e.SystemKey == Key.L</c>
+    /// for these events, and the `CommandManager`'s class
+    /// handler routing through Window-level `InputBindings`
+    /// has been observed to NOT fire `runCopyLatestLog` even
+    /// though `KeyGesture.MatchesImpl` should handle SystemKey.
+    /// Direct handling at the top of <see cref="OnPreviewKeyDown"/>
+    /// guarantees the gesture is processed regardless of the
+    /// vagaries of the WPF input pipeline.
+    /// </summary>
+    private Action? _copyActiveLogToClipboard;
+
+    /// <summary>
     /// Stage 6 PR-B — 200ms trailing-edge debounce for
     /// SizeChanged → ResizePseudoConsole. WPF SizeChanged fires
     /// per pixel during a window drag (60Hz); resizing the PTY
@@ -167,6 +186,19 @@ public class TerminalView : FrameworkElement
     {
         _writeBytes = writeBytes ?? throw new ArgumentNullException(nameof(writeBytes));
         _resize = resize ?? throw new ArgumentNullException(nameof(resize));
+    }
+
+    /// <summary>
+    /// Post-PR-#106 fix — wire the Ctrl+Alt+L handler. Called
+    /// from <c>Program.fs compose ()</c> with a closure that
+    /// invokes <c>runCopyLatestLog</c>. The handler must run on
+    /// the WPF dispatcher thread (it touches the clipboard);
+    /// our caller in OnPreviewKeyDown already runs on the
+    /// dispatcher so no marshalling needed.
+    /// </summary>
+    public void SetCopyLogToClipboardHandler(Action handler)
+    {
+        _copyActiveLogToClipboard = handler ?? throw new ArgumentNullException(nameof(handler));
     }
 
     /// <summary>
@@ -376,17 +408,24 @@ public class TerminalView : FrameworkElement
 
         var pressedModifiers = Keyboard.Modifiers;
 
+        // For Alt-modified gestures, WPF reports e.Key = Key.System
+        // and the actual key in e.SystemKey. Reading the "actual"
+        // key here makes downstream filters and HandleAppLevelShortcut
+        // work for Ctrl+Alt+L (and any future Alt-modified gesture
+        // like Stage 10's reserved Alt+Shift+R).
+        var actualKey = (e.Key == Key.System) ? e.SystemKey : e.Key;
+
         // 1. App-reserved hotkey check.
         foreach (var (key, modifiers, _) in AppReservedHotkeys)
         {
-            if (e.Key == key && pressedModifiers == modifiers)
+            if (actualKey == key && pressedModifiers == modifiers)
             {
                 return;
             }
         }
 
         // 2. NVDA / screen-reader modifier filter.
-        if (IsScreenReaderCandidate(e.Key))
+        if (IsScreenReaderCandidate(actualKey))
         {
             return;
         }
@@ -404,7 +443,7 @@ public class TerminalView : FrameworkElement
         // CommandManager / InputBinding routing — that route doesn't
         // fire reliably for a custom FrameworkElement, and any
         // CanExecute=false branch falls through to the encoder.
-        if (HandleAppLevelShortcut(e.Key, pressedModifiers))
+        if (HandleAppLevelShortcut(actualKey, pressedModifiers))
         {
             e.Handled = true;
             return;
@@ -412,7 +451,7 @@ public class TerminalView : FrameworkElement
 
         // 3. Translate.
         var keyMods = TranslateModifiers(pressedModifiers);
-        var keyCode = TranslateKey(e.Key);
+        var keyCode = TranslateKey(actualKey);
 
         // 4. Defer plain typing to OnPreviewTextInput.
         var ctrlOrAltHeld =
@@ -555,6 +594,20 @@ public class TerminalView : FrameworkElement
     /// </summary>
     private bool HandleAppLevelShortcut(Key key, ModifierKeys modifiers)
     {
+        // Ctrl+Alt+L → copy active log to clipboard.
+        // Handled FIRST and independent of _writeBytes because this
+        // gesture is meaningful even when no PTY host is attached
+        // (e.g. early in app lifecycle if compose() hasn't finished
+        // wiring SetPtyHost). Window-level KeyBinding routing for
+        // Alt-modified gestures has been observed not to fire on
+        // a custom FrameworkElement; direct handling here is the
+        // reliable path.
+        if (key == Key.L && modifiers == (ModifierKeys.Control | ModifierKeys.Alt))
+        {
+            _copyActiveLogToClipboard?.Invoke();
+            return true;
+        }
+
         if (_writeBytes is null) return false;
 
         // Ctrl+V / Shift+Insert → paste.
