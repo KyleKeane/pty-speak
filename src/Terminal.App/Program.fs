@@ -473,7 +473,30 @@ module Program =
                         "Active log file does not exist yet; press a key or wait for an event first.",
                         ActivityIds.error)
                 else
-                    let content = System.IO.File.ReadAllText(path)
+                    // Read with FileShare.ReadWrite to match the
+                    // FileLogger writer's open mode. Using
+                    // File.ReadAllText here previously failed with
+                    // "The process cannot access the file because
+                    // it is being used by another process" — the
+                    // overload defaults to FileShare.Read, which
+                    // means "I tolerate other readers but no
+                    // writers." Since the writer IS holding the
+                    // file with write access, the OS rejected the
+                    // read open. FileShare.ReadWrite advertises
+                    // "I tolerate readers AND writers", which
+                    // matches the writer's policy and lets the
+                    // OS grant the handle.
+                    let content =
+                        use stream =
+                            new System.IO.FileStream(
+                                path,
+                                System.IO.FileMode.Open,
+                                System.IO.FileAccess.Read,
+                                System.IO.FileShare.ReadWrite)
+                        use reader =
+                            new System.IO.StreamReader(
+                                stream, System.Text.Encoding.UTF8)
+                        reader.ReadToEnd()
                     // Clipboard.SetText must run on the WPF
                     // dispatcher thread (STA). The hotkey
                     // handler already runs there, so direct
