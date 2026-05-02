@@ -263,7 +263,8 @@ defaults; they shouldn't be the only options.
 
 ### Current state
 
-Four app-level keybindings shipped today:
+Three app-level keybindings shipped today (plus two reserved
+for future stages — listed inline below):
 
 - **`Ctrl+Shift+U`** — Velopack auto-update (Stage 11, PR #63).
   Wired in `setupAutoUpdateKeybinding` in

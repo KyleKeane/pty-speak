@@ -15,6 +15,43 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed
+
+- **Repo-hygiene cleanup (post-Stage-4.5 sweep).** Two
+  small documentation fixes, a future-proofing convention
+  added to `CONTRIBUTING.md`, and a one-time cleanup
+  script for the maintainer to run on their workstation:
+
+  - `docs/USER-SETTINGS.md` Keybindings section: corrected
+    "Four app-level keybindings shipped today" to "Three"
+    (the bullet list correctly enumerates three shipped
+    `Ctrl+Shift+U/D/R` plus two reserved `Ctrl+Shift+M`,
+    `Alt+Shift+R`; the prose count was off by one).
+
+  - `CONTRIBUTING.md` Branching and pull requests: new
+    bullet documenting the post-merge convention to
+    delete the source branch (both remote and local).
+    The repo had accumulated 75+ stale post-merge
+    branches over the project's history; the codified
+    convention prevents recurrence.
+
+  - `scripts/cleanup-stale-branches.sh`: bundled
+    maintainer-side script that deletes the 77 accumulated
+    stale post-merge branches in one go. The agent
+    sandbox cannot delete remote refs (proxy returns
+    HTTP 403 on `git push --delete`), so this is a
+    one-time maintainer action. Idempotent
+    (`git ls-remote --exit-code` check skips branches
+    that have already been deleted). The script can be
+    deleted from the repo after the one-time cleanup
+    finishes.
+
+  - `docs/SESSION-HANDOFF.md` "Pending action items"
+    item 7 tracks the cleanup-script run as a
+    maintainer-side action.
+
+  No code paths touched.
+
 ### Added
 
 - **Stage 4.5 PR-B: alt-screen 1049 back-buffer.** Closes the
