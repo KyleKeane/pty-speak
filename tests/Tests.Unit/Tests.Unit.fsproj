@@ -28,6 +28,7 @@
     <Compile Include="AnnounceSanitiserTests.fs" />
     <Compile Include="CoalescerTests.fs" />
     <Compile Include="KeyEncodingTests.fs" />
+    <Compile Include="FileLoggerTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
@@ -48,6 +49,8 @@
       Microsoft's official TimeProvider testing package.
     -->
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <!-- Logging-PR — FileLoggerTests use ILogger / LogLevel directly. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <ProjectReference Include="..\..\src\Terminal.Core\Terminal.Core.fsproj" />
     <ProjectReference Include="..\..\src\Terminal.Pty\Terminal.Pty.fsproj" />
     <ProjectReference Include="..\..\src\Terminal.Parser\Terminal.Parser.fsproj" />

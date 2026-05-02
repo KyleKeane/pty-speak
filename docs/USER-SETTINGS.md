@@ -292,6 +292,14 @@ for future stages — listed inline below):
   reserved) are distinct WPF gestures — different modifier
   sets — so there is no actual keypress conflict, only a
   mnemonic similarity.
+- **`Ctrl+Shift+L`** — open the logs folder
+  (`%LOCALAPPDATA%\PtySpeak\logs\`) in File Explorer (Logging-PR).
+  Useful for grabbing the latest log file when reporting a bug.
+  Logs are daily-rolled with 7-day retention. See
+  [`LOGGING.md`](LOGGING.md) for the full description of what's
+  logged and what isn't (typed input, paste content, full screen
+  contents, environment variables — never). Wired in
+  `setupOpenLogsKeybinding`.
 - (planned) **`Ctrl+Shift+M`** — earcon mute toggle (Stage 9).
 - (planned) **`Alt+Shift+R`** — review-mode toggle (Stage 10).
 

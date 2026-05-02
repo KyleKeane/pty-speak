@@ -310,6 +310,10 @@ public class TerminalView : FrameworkElement
             // Bound in `setupNewReleaseKeybinding`.
             (Key.R, ModifierKeys.Control | ModifierKeys.Shift, "Draft new release form"),
 
+            // Logging PR — open the logs folder in File Explorer.
+            // Bound in `setupOpenLogsKeybinding`.
+            (Key.L, ModifierKeys.Control | ModifierKeys.Shift, "Open logs folder"),
+
             // Future entries (NOT yet bound; commented for
             // forward-planning):
             //   (Key.M, ModifierKeys.Control | ModifierKeys.Shift,

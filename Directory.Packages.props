@@ -10,6 +10,14 @@
     <PackageVersion Include="FSharp.Core" Version="9.0.100" />
     <PackageVersion Include="Velopack" Version="0.0.1298" />
     <PackageVersion Include="NAudio" Version="2.2.1" />
+    <!--
+      Logging — first-party Microsoft abstractions. We implement
+      our own ILoggerProvider in Terminal.Core/FileLogger.fs to
+      keep the dependency surface minimal; only the abstraction
+      package is referenced. Ships with the .NET 9 SDK; safe to
+      assume present on any user machine running pty-speak.
+    -->
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
 
     <!-- Test -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />

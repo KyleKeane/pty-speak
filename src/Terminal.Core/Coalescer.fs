@@ -6,6 +6,10 @@ open System.Text
 open System.Threading
 open System.Threading.Channels
 open System.Threading.Tasks
+// Logging-PR — needed for the LogInformation / LogError
+// extension methods on ILogger (defined in the
+// LoggerExtensions static class in this namespace).
+open Microsoft.Extensions.Logging
 
 /// Stage 5 — streaming-output coalescer.
 ///
@@ -357,6 +361,12 @@ module Coalescer =
             (ct: CancellationToken) : Task =
         Task.Run(fun () ->
             task {
+                let logger = Logger.get "Terminal.Core.Coalescer"
+                logger.LogInformation(
+                    "runLoop starting. debounceWindow={Debounce} spinnerWindow={Spinner} spinnerThreshold={Threshold}",
+                    debounceWindow,
+                    spinnerWindow,
+                    spinnerThreshold)
                 let state = createState ()
                 let mutable lastSnapshotSeq = -1L
                 use timer = new PeriodicTimer(debounceWindow, timeProvider)
@@ -413,8 +423,18 @@ module Coalescer =
                             let! got = readWait
                             if not got then keepGoing <- false
                 with
-                | :? OperationCanceledException -> ()
+                | :? OperationCanceledException ->
+                    logger.LogInformation("runLoop cancelled cleanly.")
                 | ex ->
+                    // Log the FULL exception (type, message, stack
+                    // trace, inner exception chain) BEFORE the
+                    // sanitised user-facing announcement. This is
+                    // the diagnostic path for the post-Stage-6
+                    // intermittent crash.
+                    logger.LogError(
+                        ex,
+                        "Coalescer runLoop crashed at lastSnapshotSeq={LastSeq}.",
+                        lastSnapshotSeq)
                     // Surface as parser-error so the user hears
                     // about coalescer-internal failures rather
                     // than the channel just going silent.

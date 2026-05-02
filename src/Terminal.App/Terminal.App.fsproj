@@ -48,6 +48,7 @@
 
   <ItemGroup>
     <PackageReference Include="FSharp.Core" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Velopack" />
     <ProjectReference Include="..\Terminal.Core\Terminal.Core.fsproj" />
     <ProjectReference Include="..\Terminal.Pty\Terminal.Pty.fsproj" />
