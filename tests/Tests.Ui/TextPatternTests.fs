@@ -86,9 +86,12 @@ let ``UIA Text pattern is reachable and DocumentRange.GetText reflects the scree
 
     use automation = new UIA3Automation()
     let mainWindow =
-        match app.GetMainWindow(automation, TimeSpan.FromSeconds(10.0)) with
+        // Timeout bumped from 10s to 30s after observed flakiness
+        // on the windows-2025 runner image (see AutomationPeerTests
+        // for details).
+        match app.GetMainWindow(automation, TimeSpan.FromSeconds(30.0)) with
         | null ->
-            failwith "Main window did not appear within 10 seconds. The app may have crashed during MainWindow construction or the F# composition root (Program.compose). Check the SetScreen / channel-construction / focus-on-Loaded path."
+            failwith "Main window did not appear within 30 seconds. The app may have crashed during MainWindow construction or the F# composition root (Program.compose). Check the SetScreen / channel-construction / focus-on-Loaded path."
         | mw -> mw
 
     let textPattern =
@@ -202,8 +205,10 @@ let ``Text-pattern range navigation can pin to a single line and advance`` () =
     use app = Application.Launch(exePath)
     use automation = new UIA3Automation()
     let mainWindow =
-        match app.GetMainWindow(automation, TimeSpan.FromSeconds(10.0)) with
-        | null -> failwith "Main window did not appear within 10 seconds."
+        // Timeout bumped from 10s to 30s — see notes elsewhere in
+        // this file and in AutomationPeerTests.
+        match app.GetMainWindow(automation, TimeSpan.FromSeconds(30.0)) with
+        | null -> failwith "Main window did not appear within 30 seconds."
         | mw -> mw
 
     let textPattern =
