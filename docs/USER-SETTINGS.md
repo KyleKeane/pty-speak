@@ -276,15 +276,22 @@ for future stages — listed inline below):
   cleanup on app close — added because Task Manager's
   Processes-tab chevron-expand affordance isn't NVDA-accessible.
   Wired in `setupDiagnosticKeybinding`.
-- **`Ctrl+Shift+R`** — release-notes browser launcher (PR #83).
-  Opens the GitHub Releases page (`UpdateRepoUrl` +
-  `/releases`) in the user's default web browser. Useful as
-  a one-keypress answer to "what changed in this version?"
-  before deciding whether to press `Ctrl+Shift+U`. Wired in
-  `setupReleasesKeybinding`. Note: `Ctrl+Shift+R` and
-  `Alt+Shift+R` (Stage 10 review-mode toggle, reserved) are
-  distinct WPF gestures — different modifier sets — so there
-  is no actual keypress conflict, only a mnemonic similarity.
+- **`Ctrl+Shift+R`** — "draft a new release" form launcher
+  (PR #83 originally shipped this as a release-notes browser;
+  flipped to the new-release form path during the post-Stage-5
+  manual NVDA verification cycle when the maintainer realised
+  the create-release flow is the actual daily-use path during
+  the preview line). Opens the GitHub draft-release form
+  (`UpdateRepoUrl` + `/releases/new`) in the user's default web
+  browser. The maintainer's release flow per
+  `docs/RELEASE-PROCESS.md` is to publish a release in the
+  Releases UI (which creates the tag and triggers the Velopack
+  build/upload workflow); this hotkey skips the navigation
+  step. Wired in `setupNewReleaseKeybinding`. Note:
+  `Ctrl+Shift+R` and `Alt+Shift+R` (Stage 10 review-mode toggle,
+  reserved) are distinct WPF gestures — different modifier
+  sets — so there is no actual keypress conflict, only a
+  mnemonic similarity.
 - (planned) **`Ctrl+Shift+M`** — earcon mute toggle (Stage 9).
 - (planned) **`Alt+Shift+R`** — review-mode toggle (Stage 10).
 

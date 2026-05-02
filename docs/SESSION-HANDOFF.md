@@ -108,16 +108,16 @@ disconnects mid-session.
         Pending the next manual session on a preview that
         carries PR-B (already shipped to `main` via PR #86;
         cut whichever preview corresponds and run).
-     3. ↻ **After Stage 5 ships (post-Stage-5 preview)** —
-        re-run via `Ctrl+Shift+D` to confirm the new
-        coalescer task + Acc/9 OnRender refactor didn't
-        introduce a lifecycle regression. The coalescer is
-        a new background `Task.Run`; verify it cancels
-        cleanly on app exit (the `cts.Cancel()` +
-        `coalescedChannel.Writer.TryComplete()` ordering
-        in `Program.fs compose ()`'s `app.Exit.Add` is the
-        intended shutdown path). Pending the next manual
-        session on a preview that carries Stage 5.
+     3. ✓ **Post-Stage-5 preview — PASS** (2026-05-02, via
+        `Ctrl+Shift+D` diagnostic on the preview that carries
+        Stage 5 + the announce-before-launch fix). Both close
+        paths (Alt+F4 and X-button) returned no orphans.
+        Confirms the new coalescer task + Acc/9 OnRender
+        refactor introduced no process-lifecycle regression
+        (the coalescer's `cts.Cancel()` +
+        `coalescedChannel.Writer.TryComplete()` ordering in
+        `Program.fs compose ()`'s `app.Exit.Add` is the
+        intended shutdown path and works correctly).
      4. After Stage 6 ships (most important pass — Stage 6
         is where Job Object lifecycle lands per
         `spec/tech-plan.md` §160).
