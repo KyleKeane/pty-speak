@@ -15,6 +15,47 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed
+
+- **`Ctrl+Shift+R` flipped from "open releases page" to "open
+  draft-a-new-release form".** The original PR #83 hotkey opened
+  `UpdateRepoUrl + "/releases"` (the listing). During post-Stage-5
+  manual NVDA verification on the just-cut preview, the maintainer
+  realised the daily-use path during the preview line is creating
+  a release (publishing in the GitHub Releases UI triggers the
+  Velopack build/upload workflow per `docs/RELEASE-PROCESS.md`),
+  not browsing existing releases. Flipping the URL to
+  `/releases/new` makes the hotkey a one-keypress shortcut to the
+  cadence step that matters every preview cut. Mnemonic stays "R
+  for **R**elease".
+
+  Renames that follow the behaviour change:
+
+  - `Program.fs runOpenReleases` → `runOpenNewRelease`
+  - `Program.fs setupReleasesKeybinding` → `setupNewReleaseKeybinding`
+  - `RoutedCommand("OpenReleases", ...)` → `"OpenNewRelease"`
+  - `Terminal.Core.ActivityIds.releases` (`"pty-speak.releases"`)
+    → `ActivityIds.newRelease` (`"pty-speak.new-release"`).
+    The activity-ID rename is a soft breaking change for any NVDA
+    user who already configured per-tag handling for the old
+    string, but Stage 5's tag vocabulary just shipped on the
+    preceding preview and is documented to accept renames until
+    v0.1.0+.
+  - Announce text: "Opened release notes in default browser:
+    {url}" → "Opening new release form."
+  - Doc updates: `README.md`, `SECURITY.md` (A-3 row + the
+    pre-Stage-6 keyboard contract paragraph), `docs/USER-SETTINGS.md`.
+
+  No hotkey contract change from the user's perspective; same
+  `Ctrl+Shift+R`, different (more useful) URL.
+
+- **SESSION-HANDOFF item 2 step 3 closed.** Post-Stage-5
+  process-cleanup re-run via `Ctrl+Shift+D` on the post-Stage-5
+  preview returned PASS for both close paths (Alt+F4 and
+  X-button) per the maintainer's manual NVDA verification.
+  Item 2 step 3 flips from "↻ pending" to "✓ PASS"; step 4
+  ("After Stage 6 ships") is now the next pending pass.
+
 ### Fixed
 
 - **`Ctrl+Shift+D` and `Ctrl+Shift+R` announcements no longer get
@@ -29,16 +70,16 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   before today exercised the announce path end-to-end.
 
   Fix in `src/Terminal.App/Program.fs runDiagnostic` and
-  `runOpenReleases`: announce a SHORT cue ("Launching
-  diagnostic.", "Opening release notes.") FIRST, then schedule
-  the actual `Process.Start` on a ~700ms `Task.Delay` so NVDA's
-  speech queue has time to play the cue before the new window's
-  title takes over. The longer guidance ("Switch to that window
-  to follow the test.") is dropped from the cue — once the
-  user hears the spawned window's title, they have all the
-  context the long version provided. Both announces are also
-  re-tagged with the proper `ActivityIds.diagnostic` /
-  `ActivityIds.releases` per-class tags introduced in Stage 5
+  `runOpenNewRelease`: announce a SHORT cue ("Launching
+  diagnostic.", "Opening new release form.") FIRST, then
+  schedule the actual `Process.Start` on a ~700ms `Task.Delay`
+  so NVDA's speech queue has time to play the cue before the
+  new window's title takes over. The longer guidance ("Switch
+  to that window to follow the test.") is dropped from the cue
+  — once the user hears the spawned window's title, they have
+  all the context the long version provided. Both announces
+  are also re-tagged with the proper `ActivityIds.diagnostic` /
+  `ActivityIds.newRelease` per-class tags introduced in Stage 5
   (replacing the back-compat default `pty-speak.update`).
 
   No new hotkey contract; same `Ctrl+Shift+D/R` behaviour from

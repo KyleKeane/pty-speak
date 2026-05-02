@@ -264,8 +264,10 @@ module ActivityIds =
     /// Diagnostic launcher (`Ctrl+Shift+D` → process-cleanup
     /// PowerShell script).
     let diagnostic = "pty-speak.diagnostic"
-    /// Release-notes browser launcher (`Ctrl+Shift+R`).
-    let releases = "pty-speak.releases"
+    /// "Draft a new release" form launcher (`Ctrl+Shift+R`).
+    /// Opens the GitHub `/releases/new` page so the maintainer
+    /// can cut a preview without leaving pty-speak.
+    let newRelease = "pty-speak.new-release"
     /// Terminal-mode transition (alt-screen, etc.) — emitted
     /// when Stage 5's coalescer flushes around a `ModeChanged`
     /// event. Today the announcement is empty (silent flush

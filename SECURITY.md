@@ -70,7 +70,7 @@ corresponding stage in [`spec/tech-plan.md`](spec/tech-plan.md).
   non-reserved key through unfiltered; the only gestures captured at
   the window level are app shortcuts (`Ctrl+Shift+U` for update,
   `Ctrl+Shift+D` for the process-cleanup diagnostic launcher,
-  `Ctrl+Shift+R` for the release-notes browser launcher). The
+  `Ctrl+Shift+R` for the "draft a new release" form launcher). The
   child cmd.exe therefore does not currently receive typed input.
   Stage 6 introduces the NVDA-modifier filter and the actual PTY
   routing per [`spec/tech-plan.md`](spec/tech-plan.md) §6; row A-3
@@ -478,7 +478,7 @@ when those surfaces became code-bearing.
 | **Application surfaces** ||||||
 | A-1 | Jagged-snapshot `IndexOutOfRangeException` in word-boundary helpers | Medium (DoS in the screen-reader read path; today's `Screen.SnapshotRows` returns uniform rows, but `TerminalTextRange` constructor doesn't enforce uniformity) | `c >= rows.[r].Length` guards added inside `WordEndFrom`, `NextWordStart`, `PrevWordStart` in `TerminalAutomationPeer.fs` (audit-cycle SR-2, PR #77) | n/a | **shipped** |
 | A-2 | `Move(Character, count)` int32 underflow when `count = int.MinValue` | Medium (wrong-direction range mutation slips past the `max 0` clamp via wraparound) | `int64` widening before the `curIdx + count` add, applied to both `Move` and `MoveEndpointByUnit` Character arms (audit-cycle SR-2, PR #77) | n/a | **shipped** |
-| A-3 | Pre-Stage-6 keyboard contract: `OnPreviewKeyDown` stub passes all non-reserved keys through unfiltered | Low (by design until Stage 6 — child cmd.exe receives no typed input today; only the app-reserved hotkeys are captured: `Ctrl+Shift+U` for update, `Ctrl+Shift+D` for diagnostic launcher, `Ctrl+Shift+R` for release-notes browser launcher) | Stage 6's keyboard layer will add the NVDA-modifier filter and PTY routing per `spec/tech-plan.md` §6, preserving the app-reserved hotkey list | n/a | **planned (Stage 6)** |
+| A-3 | Pre-Stage-6 keyboard contract: `OnPreviewKeyDown` stub passes all non-reserved keys through unfiltered | Low (by design until Stage 6 — child cmd.exe receives no typed input today; only the app-reserved hotkeys are captured: `Ctrl+Shift+U` for update, `Ctrl+Shift+D` for diagnostic launcher, `Ctrl+Shift+R` for "draft a new release" form launcher) | Stage 6's keyboard layer will add the NVDA-modifier filter and PTY routing per `spec/tech-plan.md` §6, preserving the app-reserved hotkey list | n/a | **planned (Stage 6)** |
 | **Update path (Stage 11)** ||||||
 | T-1 | Passive network observer of update flow | Low | TLS to GitHub | n/a (cost not justified) | **shipped** |
 | T-2 | Active MITM substituting update bytes | High | TLS + Velopack per-nupkg SHA hash in releases.win.json | + Ed25519 manifest signing (consistent forgery resistance) | **partial** (TLS+hash today; signing v0.1.0+) |

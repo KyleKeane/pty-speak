@@ -146,9 +146,11 @@ preserve this list per the app-reserved-hotkey contract in
   via Alt+F4 or the X button leaves no orphan `Terminal.App.exe` /
   ConPTY child processes. Output is plain text NVDA reads aloud
   naturally.
-- **`Ctrl+Shift+R`** — open the GitHub Releases page in your default
-  browser. One-keypress answer to "what changed in this version?"
-  before deciding whether to update.
+- **`Ctrl+Shift+R`** — open the GitHub "draft a new release" form in
+  your default browser. Maintainer shortcut — the normal release flow
+  is to publish a release in the Releases UI (which creates the tag
+  and triggers the Velopack workflow), and this hotkey skips the
+  navigation step.
 
 Reserved but not yet implemented: `Ctrl+Shift+M` (Stage 9 mute toggle),
 `Alt+Shift+R` (Stage 10 review-mode toggle).

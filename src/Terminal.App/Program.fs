@@ -277,7 +277,7 @@ module Program =
     /// pattern as `setupAutoUpdateKeybinding` above. Per the
     /// app-reserved-hotkey contract, this gesture is in the
     /// reserved list (Ctrl+Shift+U for update, Ctrl+Shift+D
-    /// for diagnostic, Ctrl+Shift+R for release notes,
+    /// for diagnostic, Ctrl+Shift+R for new-release form,
     /// Ctrl+Shift+M for Stage 9 mute, Alt+Shift+R for Stage 10
     /// review mode) and Stage 6's keyboard layer must continue
     /// to honour the priority order.
@@ -291,20 +291,24 @@ module Program =
                 ExecutedRoutedEventHandler(fun _ _ -> runDiagnostic window)))
         |> ignore
 
-    /// Open the GitHub Releases page for this repository in the
-    /// user's default web browser. Triggered by `Ctrl+Shift+R`
-    /// (mnemonic: **R**eleases). Useful as a one-keypress answer
-    /// to "what changed in this version?" without leaving
-    /// pty-speak — the screen reader can navigate the rendered
-    /// release notes in the browser, which has its own
-    /// well-tested accessibility surface.
+    /// Open the GitHub "draft a new release" form for this
+    /// repository in the user's default web browser. Triggered
+    /// by `Ctrl+Shift+R` (mnemonic: **R**elease).
+    ///
+    /// The maintainer's normal release flow per
+    /// `docs/RELEASE-PROCESS.md` is to publish a release in the
+    /// GitHub Releases UI (which creates the tag), and the
+    /// `release: published` event then triggers the Velopack
+    /// build/upload workflow. This hotkey shortcuts directly to
+    /// that form so the release-cut step is one keypress
+    /// from inside pty-speak — saving a tab-and-click trip
+    /// every cadence.
     ///
     /// `Ctrl+Shift+R` and `Alt+Shift+R` (Stage 10 review-mode
     /// toggle, reserved) are different gestures — different
     /// modifier sets — so WPF treats them as distinct
     /// `KeyGesture`s. The mnemonic overlap (both R) is the only
-    /// cost; the maintainer chose Ctrl+Shift+R explicitly for
-    /// the "R for Releases" parallel.
+    /// cost.
     ///
     /// The URL is derived from `UpdateRepoUrl` (the same
     /// constant the Velopack auto-update flow uses) so a fork
@@ -312,16 +316,16 @@ module Program =
     /// constant. Phase 2's TOML config will make `UpdateRepoUrl`
     /// user-configurable per `SECURITY.md` row C-1; this hotkey
     /// inherits whatever the user configures.
-    let private runOpenReleases (window: MainWindow) : unit =
-        let url = UpdateRepoUrl + "/releases"
+    let private runOpenNewRelease (window: MainWindow) : unit =
+        let url = UpdateRepoUrl + "/releases/new"
         // Same announce-before-focus-grab pattern as `runDiagnostic`
         // above (the launched browser will steal focus and NVDA's
         // interrupt-on-focus-change will truncate the queued speech
         // unless we give it ~700ms head start).
         // TODO Phase 2: TOML-configurable delay.
         window.TerminalSurface.Announce(
-            "Opening release notes.",
-            ActivityIds.releases)
+            "Opening new release form.",
+            ActivityIds.newRelease)
         let _ =
             task {
                 do! Task.Delay(700)
@@ -334,23 +338,23 @@ module Program =
                     with ex ->
                         let safe = AnnounceSanitiser.sanitise ex.Message
                         window.TerminalSurface.Announce(
-                            sprintf "Could not open release notes: %s" safe,
+                            sprintf "Could not open new release form: %s" safe,
                             ActivityIds.error)
                 do! window.Dispatcher.InvokeAsync(Action(action)).Task
                 ()
             }
         ()
 
-    /// Wire `Ctrl+Shift+R` to trigger `runOpenReleases`. Same
+    /// Wire `Ctrl+Shift+R` to trigger `runOpenNewRelease`. Same
     /// pattern as the other reserved hotkeys above.
-    let private setupReleasesKeybinding (window: MainWindow) : unit =
-        let cmd = RoutedCommand("OpenReleases", typeof<MainWindow>)
+    let private setupNewReleaseKeybinding (window: MainWindow) : unit =
+        let cmd = RoutedCommand("OpenNewRelease", typeof<MainWindow>)
         let gesture = KeyGesture(Key.R, ModifierKeys.Control ||| ModifierKeys.Shift)
         window.InputBindings.Add(KeyBinding(cmd, gesture)) |> ignore
         window.CommandBindings.Add(
             CommandBinding(
                 cmd,
-                ExecutedRoutedEventHandler(fun _ _ -> runOpenReleases window)))
+                ExecutedRoutedEventHandler(fun _ _ -> runOpenNewRelease window)))
         |> ignore
 
     /// Composition seam — Stage 4+ plugs Elmish.WPF and the UIA peer
@@ -374,9 +378,9 @@ module Program =
         // Same install-before-window-load reasoning as above.
         setupDiagnosticKeybinding window
 
-        // Wire Ctrl+Shift+R to open the GitHub Releases page in
-        // the user's default browser.
-        setupReleasesKeybinding window
+        // Wire Ctrl+Shift+R to open the GitHub "draft a new
+        // release" form in the user's default browser.
+        setupNewReleaseKeybinding window
 
         // Stage 5 — two-channel pipeline:
         //
