@@ -15,6 +15,23 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed
+
+- **UI test flakiness on the windows-2025 runner.** The
+  FlaUI-driven tests in `tests/Tests.Ui/` launch the actual
+  `Terminal.App.exe` and wait for the WPF main window to
+  appear. The previous 10-second timeout was tight; under
+  parallel xUnit-test load on a freshly-provisioned
+  Windows Server 2025 runner image, Velopack initialisation
+  + WPF subsystem startup + ConPTY spawn could exceed it.
+  Confirmed flake (not a code regression) by observing the
+  same failure mode on PR #104, a markdown-only PR with
+  zero code changes. Bumped to 30 seconds in three call
+  sites: `AutomationPeerTests.fs`, two locations in
+  `TextPatternTests.fs`. Same diagnostic messages preserved
+  with the new timeout value. No application code touched;
+  no behavioural change for users.
+
 ### Added
 
 - **File-based structured logging.** New

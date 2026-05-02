@@ -60,9 +60,17 @@ let ``TerminalView is exposed as a UIA Document with the correct ClassName and N
         // null check. Pattern-match for null AND give a useful
         // failure message in one step — beats Assert.NotNull both
         // for nullability narrowing and for diagnostic value.
-        match app.GetMainWindow(automation, TimeSpan.FromSeconds(10.0)) with
+        //
+        // Timeout bumped from 10s to 30s after observed flakiness on
+        // the windows-2025 runner image: under parallel xUnit-test
+        // load, Velopack initialisation + WPF subsystem startup +
+        // ConPTY spawn can exceed 10s on a freshly-provisioned VM.
+        // PRs that touched only docs (#104) hit this same timeout
+        // failure mode, ruling out code regressions; the fix is
+        // runner-tolerance, not changing application behaviour.
+        match app.GetMainWindow(automation, TimeSpan.FromSeconds(30.0)) with
         | null ->
-            failwith "Main window did not appear within 10 seconds. Possible causes: Velopack startup hang, WPF subsystem misconfiguration, or runner desktop session not available."
+            failwith "Main window did not appear within 30 seconds. Possible causes: Velopack startup hang, WPF subsystem misconfiguration, or runner desktop session not available."
         | mw -> mw
 
     let cf = automation.ConditionFactory
