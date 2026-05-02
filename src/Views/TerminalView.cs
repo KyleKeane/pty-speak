@@ -5,6 +5,7 @@ using System.Windows.Automation;
 using System.Windows.Automation.Peers;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Terminal.Accessibility;
 using Terminal.Core;
 
@@ -42,6 +43,38 @@ public class TerminalView : FrameworkElement
     private double _cellHeight;
 
     private Screen? _screen;
+
+    /// <summary>
+    /// Stage 6 PR-B — sink for keyboard / paste / focus bytes. Set
+    /// by <see cref="SetPtyHost"/> from <c>Program.fs compose ()</c>
+    /// after the ConPtyHost is up. Until set (and during teardown),
+    /// key events drop silently — Stage 6 cannot route input
+    /// without a live PTY.
+    /// </summary>
+    private Action<byte[]>? _writeBytes;
+
+    /// <summary>
+    /// Stage 6 PR-B — resize callback. Receives the new
+    /// (cols, rows) cell dimensions after the WPF SizeChanged
+    /// debounce settles; the implementation in Program.fs
+    /// translates to <c>ConPtyHost.Resize</c>.
+    /// </summary>
+    private Action<int, int>? _resize;
+
+    /// <summary>
+    /// Stage 6 PR-B — 200ms trailing-edge debounce for
+    /// SizeChanged → ResizePseudoConsole. WPF SizeChanged fires
+    /// per pixel during a window drag (60Hz); resizing the PTY
+    /// at that rate causes the child shell to re-layout for
+    /// every tick, which floods Stage 5's output coalescer with
+    /// redraws and dilutes its spinner heuristic. The timer
+    /// fires on the WPF dispatcher (DispatcherTimer), so the
+    /// resize callback runs on the same thread as keyboard
+    /// writes — single-threaded write discipline.
+    /// </summary>
+    // TODO Phase 2: TOML-configurable debounce window alongside
+    // the Stage 5 coalescer constants in Coalescer.fs.
+    private readonly DispatcherTimer _resizeDebounceTimer;
 
     /// <summary>
     /// UIA Text-pattern provider that exposes the current
@@ -91,6 +124,41 @@ public class TerminalView : FrameworkElement
         _cellHeight = sample.Height;
 
         TextProvider = new TerminalTextProvider(() => _screen);
+
+        // Stage 6 PR-B — paste hook. ApplicationCommands.Paste fires
+        // for Ctrl+V, right-click → Paste, and Edit menu → Paste; one
+        // CommandBinding covers all paste sources. The handler reads
+        // the clipboard, runs it through KeyEncoding.encodePaste
+        // (which strips embedded \x1b[201~ for paste-injection
+        // defence and conditionally wraps in bracketed-paste markers),
+        // and writes to the PTY.
+        CommandBindings.Add(new CommandBinding(
+            ApplicationCommands.Paste,
+            OnPasteExecuted,
+            OnPasteCanExecute));
+
+        // Stage 6 PR-B — resize debounce timer. Stopped initially;
+        // OnRenderSizeChanged restarts it on each WPF SizeChanged tick.
+        _resizeDebounceTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(200),
+        };
+        _resizeDebounceTimer.Tick += OnResizeDebounceTick;
+    }
+
+    /// <summary>
+    /// Stage 6 PR-B — wire the PTY write + resize sinks. Called
+    /// once from <c>Program.fs compose ()</c> after the
+    /// <c>ConPtyHost</c> spawns successfully. The <paramref name="writeBytes"/>
+    /// callback is invoked from the WPF dispatcher thread (PreviewKeyDown,
+    /// TextInput, paste, focus events all fire there), so the
+    /// implementation can synchronously call
+    /// <c>ConPtyHost.WriteBytes</c> without further marshalling.
+    /// </summary>
+    public void SetPtyHost(Action<byte[]> writeBytes, Action<int, int> resize)
+    {
+        _writeBytes = writeBytes ?? throw new ArgumentNullException(nameof(writeBytes));
+        _resize = resize ?? throw new ArgumentNullException(nameof(resize));
     }
 
     /// <summary>
@@ -194,6 +262,15 @@ public class TerminalView : FrameworkElement
             // `src/Terminal.App/Program.fs`.
             (Key.U, ModifierKeys.Control | ModifierKeys.Shift, "Stage 11 self-update"),
 
+            // Audit-cycle PR-#81 — process-cleanup diagnostic launcher
+            // (shipped). Bound in `setupDiagnosticKeybinding`.
+            (Key.D, ModifierKeys.Control | ModifierKeys.Shift, "Process-cleanup diagnostic"),
+
+            // PR-#83 / PR-#91 — draft-a-new-release form launcher
+            // (shipped; URL flipped to /releases/new in PR #91).
+            // Bound in `setupNewReleaseKeybinding`.
+            (Key.R, ModifierKeys.Control | ModifierKeys.Shift, "Draft new release form"),
+
             // Future entries (NOT yet bound; commented for
             // forward-planning):
             //   (Key.M, ModifierKeys.Control | ModifierKeys.Shift,
@@ -203,45 +280,312 @@ public class TerminalView : FrameworkElement
         ];
 
     /// <summary>
-    /// Pre-Stage-5 routing stub for keyboard input. Today this
-    /// override does nothing visible — Stage 6 (keyboard input
-    /// to PTY) will fill it in with the NVDA-modifier filter
-    /// and PTY-forwarding pipeline. The stub exists now to
-    /// guarantee that when Stage 6 lands, the
-    /// <see cref="AppReservedHotkeys"/> contract is honoured:
-    /// the override checks each reserved hotkey first and
-    /// leaves <c>e.Handled</c> alone for them, ensuring WPF's
-    /// <c>InputBindings</c> see them before any PTY forwarding.
+    /// Stage 6 PR-B — keyboard input pipeline. Filter ordering is
+    /// LOAD-BEARING and pinned by xUnit + behavioural tests:
     ///
-    /// Until Stage 6 ships, no key forwarding happens at all
-    /// (the cmd.exe child receives no input) — that's the
-    /// pre-Stage-6 reality. NVDA review-cursor commands aren't
-    /// keyboard input to the PTY; they're handled by NVDA
-    /// itself and don't reach this method.
+    /// <list type="number">
+    ///   <item><description><b>App-reserved hotkeys first.</b> Any match in
+    ///   <see cref="AppReservedHotkeys"/> short-circuits and does NOT mark
+    ///   the event handled, so the parent Window's InputBindings can fire
+    ///   the corresponding command (Ctrl+Shift+U / D / R today; future
+    ///   Ctrl+Shift+M, Alt+Shift+R when Stage 9 / 10 land).</description></item>
+    ///   <item><description><b>NVDA / screen-reader modifier filter
+    ///   second.</b> Bare Insert / CapsLock presses, and Numpad presses
+    ///   with NumLock off, return without Handled so NVDA / JAWS / Narrator
+    ///   can receive them. Conservative on purpose — the cost (a few key
+    ///   presses don't reach the shell when the user genuinely meant them
+    ///   for the shell) is tiny vs. the cost of breaking review-cursor
+    ///   navigation (catastrophic UX for the target audience).</description></item>
+    ///   <item><description><b>Translate WPF Key + ModifierKeys to
+    ///   <see cref="KeyCode"/> + <see cref="KeyModifiers"/></b> via the
+    ///   small adapter at the bottom of this file. Unknown keys map to
+    ///   <c>KeyCode.Unhandled</c> and the encoder returns <c>None</c>
+    ///   — silently dropped, no crash on a future WPF Key value.</description></item>
+    ///   <item><description><b>Defer plain printable typing to
+    ///   <see cref="OnPreviewTextInput"/></b>. For letters / digits /
+    ///   space without Ctrl or Alt held, leave Handled = false so WPF's
+    ///   text-composition pipeline (which handles IME, AltGr, dead keys
+    ///   correctly) routes the keystroke into TextInput.</description></item>
+    ///   <item><description><b>Encode and write</b> via
+    ///   <see cref="KeyEncoding.encodeOrNull"/>. The encoder reads
+    ///   <c>_screen.Modes.DECCKM</c> for arrow-key encoding (normal
+    ///   <c>\x1b[A</c> vs application <c>\x1bOA</c>).</description></item>
+    /// </list>
+    ///
+    /// If reordering is ever proposed: confirm with maintainer first.
+    /// Step 1 must come before step 2 (otherwise NVDA filter would eat
+    /// Ctrl+Shift+U via the app-reserved table); step 2 must come
+    /// before step 3 (otherwise we'd encode bare Insert and send it
+    /// to the shell, bypassing NVDA's modifier).
     /// </summary>
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
         base.OnPreviewKeyDown(e);
 
-        // App-reserved hotkey check: any match short-circuits
-        // and explicitly does NOT mark the event handled, so
-        // the parent Window's InputBindings can process the
-        // gesture and the corresponding command fires
-        // (Ctrl+Shift+U → runUpdateFlow today).
         var pressedModifiers = Keyboard.Modifiers;
+
+        // 1. App-reserved hotkey check.
         foreach (var (key, modifiers, _) in AppReservedHotkeys)
         {
             if (e.Key == key && pressedModifiers == modifiers)
             {
-                // Explicitly leave Handled = false so
-                // InputBindings see this key combination.
                 return;
             }
         }
 
-        // No PTY forwarding until Stage 6 ships. Future Stage 6
-        // implementation must respect the reserved-hotkey
-        // contract (see spec/tech-plan.md §6).
+        // 2. NVDA / screen-reader modifier filter.
+        if (IsScreenReaderCandidate(e.Key))
+        {
+            return;
+        }
+
+        // 3. Translate.
+        var modifiers = TranslateModifiers(pressedModifiers);
+        var keyCode = TranslateKey(e.Key);
+
+        // 4. Defer plain typing to OnPreviewTextInput.
+        var ctrlOrAltHeld =
+            modifiers.HasFlag(KeyModifiers.Control) ||
+            modifiers.HasFlag(KeyModifiers.Alt);
+        if (keyCode.IsChar && !ctrlOrAltHeld)
+        {
+            return;
+        }
+
+        // 5. Encode and write.
+        if (_writeBytes is null)
+        {
+            return;
+        }
+        var modes = _screen?.Modes ?? TerminalModes.create();
+        var bytes = KeyEncoding.encodeOrNull(keyCode, modifiers, modes);
+        if (bytes is null)
+        {
+            return;
+        }
+        _writeBytes(bytes);
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Stage 6 PR-B — IME / printable-typing input. Plain typing
+    /// (letters, digits, space, AltGr-composed characters, dead-key
+    /// composed characters, IME-committed text) arrives here with
+    /// the final composed string. UTF-8 encode and write to the
+    /// PTY directly — no need to route through KeyEncoding because
+    /// these are already finished printable characters.
+    /// </summary>
+    protected override void OnPreviewTextInput(TextCompositionEventArgs e)
+    {
+        base.OnPreviewTextInput(e);
+        if (string.IsNullOrEmpty(e.Text))
+        {
+            return;
+        }
+        if (_writeBytes is null)
+        {
+            return;
+        }
+        var bytes = System.Text.Encoding.UTF8.GetBytes(e.Text);
+        _writeBytes(bytes);
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Stage 6 PR-B — focus reporting. When the child shell has set
+    /// DECSET ?1004 (BracketedPaste-mode-style focus events), emit
+    /// <c>\x1b[I</c> on focus and <c>\x1b[O</c> on blur. Editors
+    /// like nano / vim / Emacs / Claude Code use these to know when
+    /// to suspend their cursor blink, save unsaved buffers, etc.
+    /// </summary>
+    protected override void OnGotKeyboardFocus(KeyboardFocusChangedEventArgs e)
+    {
+        base.OnGotKeyboardFocus(e);
+        if (_writeBytes is null) return;
+        if (_screen?.Modes.FocusReporting == true)
+        {
+            _writeBytes(KeyEncoding.focusGained);
+        }
+    }
+
+    /// <inheritdoc cref="OnGotKeyboardFocus"/>
+    protected override void OnLostKeyboardFocus(KeyboardFocusChangedEventArgs e)
+    {
+        base.OnLostKeyboardFocus(e);
+        if (_writeBytes is null) return;
+        if (_screen?.Modes.FocusReporting == true)
+        {
+            _writeBytes(KeyEncoding.focusLost);
+        }
+    }
+
+    /// <summary>
+    /// Stage 6 PR-B — paste handler bound to
+    /// <see cref="ApplicationCommands.Paste"/>. Reads the
+    /// clipboard text, runs it through
+    /// <see cref="KeyEncoding.encodePaste"/> (which strips
+    /// embedded <c>\x1b[201~</c> for paste-injection defence and
+    /// wraps in <c>\x1b[200~</c>...<c>\x1b[201~</c> when the
+    /// child has set DECSET ?2004), and writes to the PTY.
+    /// </summary>
+    private void OnPasteExecuted(object sender, ExecutedRoutedEventArgs e)
+    {
+        if (_writeBytes is null) return;
+        if (!Clipboard.ContainsText()) return;
+        var text = Clipboard.GetText();
+        if (string.IsNullOrEmpty(text)) return;
+        var bracketed = _screen?.Modes.BracketedPaste == true;
+        var bytes = KeyEncoding.encodePaste(text, bracketed);
+        _writeBytes(bytes);
+        e.Handled = true;
+    }
+
+    private void OnPasteCanExecute(object sender, CanExecuteRoutedEventArgs e)
+    {
+        e.CanExecute = _writeBytes is not null && Clipboard.ContainsText();
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Stage 6 PR-B — restart the resize debounce on every WPF
+    /// SizeChanged tick. Final call to <see cref="_resize"/> happens
+    /// 200ms after the last SizeChanged settles.
+    /// </summary>
+    protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
+    {
+        base.OnRenderSizeChanged(sizeInfo);
+        if (_resize is null)
+        {
+            return;
+        }
+        _resizeDebounceTimer.Stop();
+        _resizeDebounceTimer.Start();
+    }
+
+    private void OnResizeDebounceTick(object? sender, EventArgs e)
+    {
+        _resizeDebounceTimer.Stop();
+        if (_resize is null) return;
+        // ActualWidth/Height are in DIPs; _cellWidth/_cellHeight are
+        // computed from the same FormattedText pipeline, also in DIPs,
+        // so the ratio yields cell counts directly. Clamp to >= 1 so
+        // a zero-size pre-layout pass doesn't ask the PTY for a 0×0
+        // grid (which Win32 rejects).
+        var cols = (int)Math.Max(1, ActualWidth / _cellWidth);
+        var rows = (int)Math.Max(1, ActualHeight / _cellHeight);
+        _resize(cols, rows);
+    }
+
+    /// <summary>
+    /// Returns true when a key press should be left to the screen
+    /// reader rather than forwarded to the PTY. Conservative: filters
+    /// bare Insert / CapsLock (NVDA / JAWS / Narrator modifier
+    /// candidates) and Numpad keys when NumLock is off (NVDA review-
+    /// cursor numpad layout). Side effect: a user pressing bare Insert
+    /// or CapsLock to send the corresponding shell key gets nothing,
+    /// and Numpad-as-arrow with NumLock off is suppressed. Both
+    /// trade-offs are accepted to preserve screen-reader navigation.
+    /// </summary>
+    private static bool IsScreenReaderCandidate(Key key)
+    {
+        if (key == Key.Insert) return true;
+        if (key == Key.CapsLock) return true;
+        // Numpad with NumLock off — NVDA review-cursor layout.
+        var isNumpad =
+            (key >= Key.NumPad0 && key <= Key.NumPad9)
+            || key == Key.Decimal
+            || key == Key.Multiply
+            || key == Key.Add
+            || key == Key.Subtract
+            || key == Key.Divide
+            || key == Key.Separator;
+        if (isNumpad && !Keyboard.IsKeyToggled(Key.NumLock))
+        {
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Translate WPF <see cref="ModifierKeys"/> to
+    /// <see cref="KeyModifiers"/>. The Windows key is silently
+    /// dropped — pty-speak doesn't forward it; Win+letter is OS-shell
+    /// territory.
+    /// </summary>
+    private static KeyModifiers TranslateModifiers(ModifierKeys m)
+    {
+        var result = KeyModifiers.None;
+        if ((m & ModifierKeys.Shift) != 0) result |= KeyModifiers.Shift;
+        if ((m & ModifierKeys.Alt) != 0) result |= KeyModifiers.Alt;
+        if ((m & ModifierKeys.Control) != 0) result |= KeyModifiers.Control;
+        return result;
+    }
+
+    /// <summary>
+    /// Translate WPF <see cref="Key"/> to <see cref="KeyCode"/>.
+    /// Returns <c>KeyCode.Unhandled</c> for any key the encoder
+    /// doesn't know about — the encoder then returns null and
+    /// the keystroke is dropped silently rather than crashing.
+    /// New WPF Key values can ship without breaking us.
+    /// </summary>
+    private static KeyCode TranslateKey(Key key)
+    {
+        // Cursor keys.
+        if (key == Key.Up) return KeyCode.Up;
+        if (key == Key.Down) return KeyCode.Down;
+        if (key == Key.Right) return KeyCode.Right;
+        if (key == Key.Left) return KeyCode.Left;
+        // Editing keypad.
+        if (key == Key.Delete) return KeyCode.Delete;
+        if (key == Key.Home) return KeyCode.Home;
+        if (key == Key.End) return KeyCode.End;
+        if (key == Key.PageUp) return KeyCode.PageUp;
+        if (key == Key.PageDown) return KeyCode.PageDown;
+        // Note: Key.Insert is filtered upstream as a screen-reader
+        // candidate; we never reach this branch for it. Listed here
+        // for completeness if the filter is ever loosened.
+        if (key == Key.Insert) return KeyCode.Insert;
+        // Whitespace / control.
+        if (key == Key.Tab) return KeyCode.Tab;
+        if (key == Key.Enter) return KeyCode.Enter;
+        if (key == Key.Escape) return KeyCode.Escape;
+        if (key == Key.Back) return KeyCode.Backspace;
+        // Function keys.
+        if (key == Key.F1) return KeyCode.F1;
+        if (key == Key.F2) return KeyCode.F2;
+        if (key == Key.F3) return KeyCode.F3;
+        if (key == Key.F4) return KeyCode.F4;
+        if (key == Key.F5) return KeyCode.F5;
+        if (key == Key.F6) return KeyCode.F6;
+        if (key == Key.F7) return KeyCode.F7;
+        if (key == Key.F8) return KeyCode.F8;
+        if (key == Key.F9) return KeyCode.F9;
+        if (key == Key.F10) return KeyCode.F10;
+        if (key == Key.F11) return KeyCode.F11;
+        if (key == Key.F12) return KeyCode.F12;
+        // Letters → Char(lowercase). Encoder folds Shift for Ctrl-letter.
+        if (key >= Key.A && key <= Key.Z)
+        {
+            return KeyCode.NewChar((char)('a' + (key - Key.A)));
+        }
+        // Top-row digits.
+        if (key >= Key.D0 && key <= Key.D9)
+        {
+            return KeyCode.NewChar((char)('0' + (key - Key.D0)));
+        }
+        // Numpad digits when NumLock is on (NumLock-off case is filtered
+        // upstream by IsScreenReaderCandidate).
+        if (key >= Key.NumPad0 && key <= Key.NumPad9)
+        {
+            return KeyCode.NewChar((char)('0' + (key - Key.NumPad0)));
+        }
+        if (key == Key.Space) return KeyCode.NewChar(' ');
+        // Anything else — punctuation, OEM keys, media keys, etc. — flow
+        // through TextInput (which handles layout-specific characters
+        // correctly) for plain typing, or get dropped here for Ctrl-combos
+        // that don't map cleanly. Future-proof: new Key values land in
+        // Unhandled rather than crashing.
+        return KeyCode.Unhandled;
     }
 
     /// <summary>

@@ -19,10 +19,10 @@ A new session should read this **first**, then
 
 | | |
 |---|---|
-| **Last merged stages** | **Stage 4** (UIA Document + Text pattern + Line/Character/Word navigation + focus-into-TerminalSurface fix, PRs #54-#56, #59, #60, #68), **Stage 11** (Velopack auto-update via `Ctrl+Shift+U`, PRs #63, #66), **Security-audit cycle SR-1/SR-2/SR-3** (PRs #76, #77, #78), **Stage 4.5 — Claude Code rendering substrate** (PR-A #85 mode coverage + SGR walker + DECTCEM + DECSC/DECRC + OSC 52 chokepoint, PR-B alt-screen 1049 back-buffer), and **Stage 5 — Streaming output notifications** (single PR: `Coalescer` module + `ModeChanged` event + two-channel composition + `Acc/9` OnRender lock fix bundled). Stage 4 + 11 NVDA-verified on `v0.0.1-preview.26`; Stage 4.5 verified by xUnit (27 new tests across PR-A + PR-B); Stage 5 verified by xUnit (24 new `CoalescerTests` + 5 new `ScreenTests` for the `ModeChanged` emit contract); manual NVDA verification of Stage 4.5 + Stage 5 on the next preview cut is the acceptance gate. |
-| **Last shipped release** | `v0.0.1-preview.26` (or whichever preview the maintainer last cut — release cadence is ad-hoc during the unsigned-preview line). The auto-update path replaces the `scripts/install-latest-preview.ps1` bridge for in-place updates; the script is now **deprecated for in-place updates** but remains useful for fresh installs and dev-environment workflows. The next preview cut picks up the SR-1/SR-2/SR-3 hardening + the Stage 4.5 substrate work + Stage 5's streaming-output coalescer. |
-| **In-flight branch** | None. Stage 5 merged. The next stage per the 2026-05-01 strategic review (`/root/.claude/plans/replicated-riding-sketch.md`) is Stage 6 (keyboard input to PTY + DECCKM + bracketed paste + focus reporting + `ResizePseudoConsole` + Job Object lifecycle + the env-scrub work piggybacking onto Stage 7). Process-cleanup test (the deferred Stage 4 row) is the recurring acceptance check tracked in "Pending action items" item 2; should re-run after the post-Stage-5 preview cut. |
-| **Next stage** | **Stage 6 — Keyboard input + DECCKM + bracketed paste + focus reporting.** Wires WPF `KeyDown` / `TextInput` events through `ConPtyHost.WriteAsync` so the user can drive the child shell. Honours DECCKM application-cursor mode (which Stage 4.5's `TerminalModes` already exposes — Stage 6 just reads the flag), bracketed paste (wrap clipboard pastes in `\x1b[200~`...`\x1b[201~`), focus reporting (emit `\x1b[I` / `\x1b[O` on WPF Activated/Deactivated). Adds `ResizePseudoConsole` so cmd / Claude Code see the right cell grid when the WPF window resizes. Adds Job Object child-process containment so closing pty-speak guarantees the child shell tree dies (replaces today's "best-effort kill" path). The reserved-hotkey contract (Ctrl+Shift+U/D/R/M, Alt+Shift+R) MUST take priority over PTY input. Stage 4.5's mode flags + Stage 5's `ModeChanged` event already support DECCKM / BracketedPaste / FocusReporting in the type system; Stage 6 wires the parser arms + key encoding. |
+| **Last merged stages** | **Stage 4** (UIA Document + Text pattern + Line/Character/Word navigation + focus-into-TerminalSurface fix, PRs #54-#56, #59, #60, #68), **Stage 11** (Velopack auto-update via `Ctrl+Shift+U`, PRs #63, #66), **Security-audit cycle SR-1/SR-2/SR-3** (PRs #76, #77, #78), **Stage 4.5 — Claude Code rendering substrate** (PR-A #85, PR-B alt-screen back-buffer), **Stage 5 — Streaming output notifications** (single PR: `Coalescer` module + `ModeChanged` event + two-channel composition + Acc/9 OnRender lock fix bundled), and **Stage 6 — Keyboard input, paste, focus reporting, dynamic resize, Job Object lifecycle** (PR-A parser arms for DECCKM/BracketedPaste/FocusReporting, PR-B `KeyEncoding` module + WPF input wiring + `ResizePseudoConsole` debounce + Job Object child-process containment). Stage 4 + 11 NVDA-verified on `v0.0.1-preview.26`; Stage 4.5 + Stage 5 verified end-to-end on the post-Stage-5 preview (streaming output, frame-hash dedup, alt-screen, hotkey announces); Stage 6 verified by xUnit (35 new `KeyEncodingTests` + 15 new `ScreenTests` for the new mode arms + 2 new `ConPtyHostTests` for resize and Job Object); manual NVDA verification of Stage 6 typed-input gates + Job Object cleanup on the next preview cut is the acceptance gate. |
+| **Last shipped release** | `v0.0.1-preview.26` (or whichever preview the maintainer last cut — release cadence is ad-hoc during the unsigned-preview line). The auto-update path replaces the `scripts/install-latest-preview.ps1` bridge for in-place updates; the script is now **deprecated for in-place updates** but remains useful for fresh installs and dev-environment workflows. The next preview cut picks up Stage 5 + Stage 6 (the first preview where pty-speak is interactive — the user can type into the cmd.exe child). |
+| **In-flight branch** | None. Stage 6 merged. The next stage per the 2026-05-01 strategic review is **Stage 7 — Claude Code roundtrip + env-scrub**. Process-cleanup test (the deferred Stage 4 row) is the recurring acceptance check tracked in "Pending action items" item 2; should re-run after the post-Stage-6 preview cut, this time exercising the new Job Object cleanup path including a Task-Manager kill of `Terminal.App.exe` to confirm KILL_ON_JOB_CLOSE works under hard-crash conditions. |
+| **Next stage** | **Stage 7 — Claude Code roundtrip + env-scrub.** All substrate is in place after Stage 6: alt-screen + cursor visibility (Stage 4.5), streaming announcements (Stage 5), keyboard input + bracketed paste + DECCKM + focus reporting (Stage 6 — Claude Code uses application-cursor mode and bracketed paste both). Stage 7 wires `claude` as the spawned shell command, adds the deferred env-scrub PO-5 (strip `TERM_PROGRAM`, `GITHUB_TOKEN`, `OPENAI_API_KEY`, etc. from the child's environment block via `lpEnvironment` on `CreateProcess` — currently inheriting the parent's full env block), and runs the Claude Code conversation flow end-to-end. Strategic review §G also assigned the "command output complete" prompt-redraw signal to Stage 8, but if Claude's redraw rhythm benefits, it can land in Stage 7's tail. **Open follow-up logged for a future stage**: Screen-buffer runtime resize. Stage 6 resizes the PTY (so cmd.exe and Claude Code see the right column count), but the in-process `Cell[,]` Screen grid stays at construction-time 30×120 — oversize windows have empty padding, undersize windows clip. Spec §6 says "ResizePseudoConsole", which Stage 6 satisfies; full grid resize is a Phase 2 stage. |
 
 The end-to-end pipeline now reaches the auto-update boundary:
 launching the app spawns `cmd.exe` under ConPTY, parses its
@@ -45,11 +45,30 @@ sliding-window spinner suppression, leading- + trailing-edge
 fanning out to `TerminalView.Announce(message, activityId)`
 using the new `ActivityIds` vocabulary so NVDA users can
 configure per-tag handling. The Stage 5 PR also bundled the
-Acc/9 OnRender lock fix (item 5.3 below) so the WPF render
-path takes ONE locked snapshot per frame instead of
-re-entering the screen gate per cell. Stage 6 (keyboard input
-to the PTY, plus DECCKM / bracketed paste / focus reporting)
-is the next user-facing milestone.
+Acc/9 OnRender lock fix so the WPF render path takes ONE
+locked snapshot per frame instead of re-entering the screen
+gate per cell. Stage 6 makes pty-speak interactive: the new
+pure-F# `KeyEncoding` module (decoupled from
+`System.Windows.Input.Key` so it survives a future Linux /
+macOS port unchanged) translates keystrokes into xterm-style
+VT byte sequences honouring DECCKM application-cursor mode,
+the SGR-modifier protocol, F1-F12 SS3/CSI conventions, and
+Ctrl-letter / Alt-prefix encoding; an `ApplicationCommands.Paste`
+handler wraps clipboard text in bracketed-paste markers when
+`?2004` is set (and strips embedded `\x1b[201~` for paste-
+injection defence, an accessibility-first divergence from
+xterm); `OnGotKeyboardFocus` / `OnLostKeyboardFocus` emit
+`\x1b[I` / `\x1b[O` when `?1004` is set; window resize debounces
+through a 200ms `DispatcherTimer` to `ResizePseudoConsole`;
+and a kernel Job Object with `KILL_ON_JOB_CLOSE` semantics
+contains the entire child-process tree so even a hard parent
+crash leaves no orphans. The reserved-hotkey contract
+(Ctrl+Shift+U / D / R shipped, Ctrl+Shift+M and Alt+Shift+R
+future-reserved) takes priority over PTY input via the
+load-bearing `OnPreviewKeyDown` filter ordering pinned in
+the inline doc-comment + behavioural tests. Stage 7 (Claude
+Code roundtrip + the deferred env-scrub work) is the next
+user-facing milestone.
 
 ## Pending action items (maintainer)
 

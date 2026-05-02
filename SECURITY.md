@@ -52,6 +52,21 @@ corresponding stage in [`spec/tech-plan.md`](spec/tech-plan.md).
   UIA Hyperlink-pattern surface, Stage 4+.)* Only `http`, `https`, and
   `file` schemes will be exposed; `javascript:`, `data:`, custom URI
   schemes dropped silently.
+- **Bracketed-paste injection defence.** *(shipped, Stage 6 PR-B.)*
+  When the user pastes clipboard content into pty-speak, the
+  `KeyEncoding.encodePaste` chokepoint strips embedded `\x1b[201~`
+  byte sequences from the clipboard text **before** wrapping in
+  `\x1b[200~` ... `\x1b[201~`. xterm and Windows Terminal don't strip
+  — but for screen-reader users who can't easily inspect their
+  clipboard before pasting, an attacker-crafted paste containing
+  `\x1b[201~` followed by a malicious shell command would otherwise
+  close the bracket-paste frame early and execute the post-paste
+  portion as if typed (out-of-band shell injection via clipboard).
+  Defence-in-depth: stripping happens even when DECSET ?2004 is
+  clear, since no legitimate shell content contains that exact
+  byte sequence and the cost of stripping is essentially zero.
+  Deliberate accessibility-first posture divergence from xterm's
+  permissive default.
 - **Control-character stripping in `displayString`.** *(planned with
   Stage 5 streaming notifications.)* Everything passed to
   `UiaRaiseNotificationEvent` will have C0 / C1 / DEL stripped first.
@@ -65,16 +80,27 @@ corresponding stage in [`spec/tech-plan.md`](spec/tech-plan.md).
   see [`docs/CONPTY-NOTES.md`](docs/CONPTY-NOTES.md). The "we never
   run elevated with an unelevated child" guarantee is also future
   work; until enforced in code, do not run pty-speak elevated.
-- **Pre-Stage-6 keyboard contract.** *(planned, Stage 6.)*
-  `TerminalView.OnPreviewKeyDown` today is a stub that passes every
-  non-reserved key through unfiltered; the only gestures captured at
-  the window level are app shortcuts (`Ctrl+Shift+U` for update,
-  `Ctrl+Shift+D` for the process-cleanup diagnostic launcher,
-  `Ctrl+Shift+R` for the "draft a new release" form launcher). The
-  child cmd.exe therefore does not currently receive typed input.
-  Stage 6 introduces the NVDA-modifier filter and the actual PTY
-  routing per [`spec/tech-plan.md`](spec/tech-plan.md) §6; row A-3
-  in the inventory tracks the gap until then.
+- **Keyboard input contract.** *(shipped, Stage 6.)*
+  `TerminalView.OnPreviewKeyDown` translates WPF
+  `Key + ModifierKeys` into the platform-neutral
+  `KeyCode + KeyModifiers` then routes through the pure-F#
+  `KeyEncoding.encode` chokepoint, which produces xterm-style VT
+  byte sequences (DECCKM-aware arrows, SGR-modifier protocol for
+  modified cursor / function keys, Ctrl-letter folding, Alt-prefix
+  for ESC-modifier). Filter ordering is load-bearing and pinned
+  by inline doc-comment + the test suite: (1) `AppReservedHotkeys`
+  short-circuits first so app-level hotkeys (Ctrl+Shift+U / D / R
+  shipped, Ctrl+Shift+M and Alt+Shift+R future-reserved) reach
+  the parent window's `InputBindings` without forwarding to the
+  PTY; (2) the screen-reader-modifier filter (bare Insert /
+  CapsLock + Numpad-with-NumLock-off) returns without `Handled`
+  so NVDA / JAWS / Narrator review-cursor keys keep working; (3)
+  printable typing without Ctrl/Alt defers to
+  `OnPreviewTextInput` for IME / AltGr / dead-key correctness.
+  Job Object containment with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`
+  guarantees the entire child-process tree dies when pty-speak
+  exits — even on a hard parent crash that doesn't run
+  `IDisposable`. Closes audit-inventory row A-3.
 
 The full mitigation matrix will live in `Terminal.Parser` and be
 covered by parser-level unit tests. PRs that disable any of the above
@@ -478,7 +504,7 @@ when those surfaces became code-bearing.
 | **Application surfaces** ||||||
 | A-1 | Jagged-snapshot `IndexOutOfRangeException` in word-boundary helpers | Medium (DoS in the screen-reader read path; today's `Screen.SnapshotRows` returns uniform rows, but `TerminalTextRange` constructor doesn't enforce uniformity) | `c >= rows.[r].Length` guards added inside `WordEndFrom`, `NextWordStart`, `PrevWordStart` in `TerminalAutomationPeer.fs` (audit-cycle SR-2, PR #77) | n/a | **shipped** |
 | A-2 | `Move(Character, count)` int32 underflow when `count = int.MinValue` | Medium (wrong-direction range mutation slips past the `max 0` clamp via wraparound) | `int64` widening before the `curIdx + count` add, applied to both `Move` and `MoveEndpointByUnit` Character arms (audit-cycle SR-2, PR #77) | n/a | **shipped** |
-| A-3 | Pre-Stage-6 keyboard contract: `OnPreviewKeyDown` stub passes all non-reserved keys through unfiltered | Low (by design until Stage 6 — child cmd.exe receives no typed input today; only the app-reserved hotkeys are captured: `Ctrl+Shift+U` for update, `Ctrl+Shift+D` for diagnostic launcher, `Ctrl+Shift+R` for "draft a new release" form launcher) | Stage 6's keyboard layer will add the NVDA-modifier filter and PTY routing per `spec/tech-plan.md` §6, preserving the app-reserved hotkey list | n/a | **planned (Stage 6)** |
+| A-3 | Keyboard contract: `OnPreviewKeyDown` translates → `KeyEncoding.encode` → PTY write, with screen-reader-modifier filter and load-bearing filter ordering (AppReservedHotkeys first → screen-reader filter → translate → defer printable typing → encode + write). Job Object lifecycle (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`) contains the child-process tree even on hard parent crash. | Low (filter ordering pinned by xUnit + behavioural tests; encoder is pure F# with ~35-fact test coverage; KILL_ON_JOB_CLOSE is kernel-enforced) | Stage 6 PR-A (parser arms) + PR-B (KeyEncoding module + WPF wiring + ResizePseudoConsole + Job Object); ongoing manual NVDA verification per the post-Stage-6 preview cycle. | n/a | **shipped (Stage 6)** |
 | **Update path (Stage 11)** ||||||
 | T-1 | Passive network observer of update flow | Low | TLS to GitHub | n/a (cost not justified) | **shipped** |
 | T-2 | Active MITM substituting update bytes | High | TLS + Velopack per-nupkg SHA hash in releases.win.json | + Ed25519 manifest signing (consistent forgery resistance) | **partial** (TLS+hash today; signing v0.1.0+) |

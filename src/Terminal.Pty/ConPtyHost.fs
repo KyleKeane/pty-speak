@@ -39,6 +39,38 @@ type ConPtyHost internal (session: PtySession,
 
     member _.ProcessId: uint32 = session.ProcessId
 
+    /// Stage 6 PR-B — write bytes to the child's stdin. Convenience
+    /// wrapper around `Stdin.Write` so callers don't have to reach
+    /// through the FileStream property. Synchronous (the underlying
+    /// FileStream is non-async per ConPTY's OVERLAPPED-I/O ban) and
+    /// must be called from a single thread — Stage 6's wiring funnels
+    /// every write through the WPF dispatcher thread, so serialisation
+    /// is structural rather than enforced here.
+    member _.WriteBytes(bytes: byte[]) : unit =
+        if bytes.Length > 0 then
+            stdin.Write(bytes, 0, bytes.Length)
+            // Flush so the child sees the keystroke immediately —
+            // the FileStream's 4-KB write buffer would otherwise
+            // hold a single-byte arrow keypress until the next
+            // write or close.
+            stdin.Flush()
+
+    /// Stage 6 PR-B — resize the underlying pseudo-console grid.
+    /// Returns Ok on success, Error with the Win32 HRESULT
+    /// otherwise. Idempotent and thread-safe per
+    /// `ResizePseudoConsole`'s documented contract; production
+    /// callers debounce upstream so the child shell isn't asked
+    /// to re-layout for every WPF SizeChanged tick.
+    member _.Resize(cols: int16, rows: int16) : Result<unit, int> =
+        PseudoConsole.resize session cols rows
+
+    /// Stage 6 PR-B — the Job Object handle owning the child +
+    /// any process the child spawns. Exposed so tests can assert
+    /// the handle is valid post-spawn; production code never
+    /// interacts with this directly (lifecycle binds to the
+    /// `PtySession` dispose path inside this host).
+    member _.JobHandle = session.JobHandle
+
     /// Convenience: wait for the child process to exit. Returns when
     /// WaitForSingleObject signals on the process handle. Does not
     /// itself stop the reader — that happens when the pipe drains.
