@@ -69,21 +69,34 @@ disconnects mid-session.
      in PR #66).
    - ✓ Re-launch from Start menu works cleanly.
    - ↻ **Process-cleanup acceptance check — recurring cadence
-     starting now (per 2026-05-01 strategic review).**
-     Alt+F4 the running app, wait ~3 s, open Task Manager →
-     Details, confirm neither `Terminal.App.exe` nor orphan
-     `cmd.exe` remains. Full procedure + lifecycle inflection
-     points (when to re-run vs. just on every install) are in
-     the "Launch and process hygiene" section of
+     (per 2026-05-01 strategic review).** Alt+F4 / X-button
+     close, then confirm neither `Terminal.App.exe` nor orphan
+     `cmd.exe` remains. The bundled `Ctrl+Shift+D` hotkey runs
+     the diagnostic via `scripts/test-process-cleanup.ps1`
+     automatically; full procedure + lifecycle inflection
+     points are in the "Launch and process hygiene" section of
      [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md).
      Run order:
-     1. Baseline against current `v0.0.1-preview.26` (next
-        manual session — establishes whether the shipped code
-        already has issues independent of upcoming work).
-     2. After Stage 4.5 ships (alt-screen back-buffer rework
-        is a low-risk change to lifecycle but verify cheap).
-     3. After Stage 6 ships (most important pass — Stage 6 is
-        where Job Object lifecycle lands per
+     1. ✓ **Baseline on `v0.0.1-preview.27` — PASS**
+        (2026-05-01, via `Ctrl+Shift+D` diagnostic). Both
+        close paths (Alt+F4 and X-button) reported no
+        orphans. Confirms the shipped code through Stage
+        4.5 PR-A had no pre-existing leak. (Note: NVDA
+        reading of the spawned PowerShell window is
+        unreliable in practice — `docs/SESSION-HANDOFF.md`
+        item 6 tracks the screen-reader-native replacement
+        path; the underlying script's PASS/FAIL output is
+        the source of truth and was confirmed by the
+        maintainer.)
+     2. ↻ **After Stage 4.5 PR-B ships (`v0.0.1-preview.28`+
+        carry the alt-screen back-buffer)** — re-run via
+        `Ctrl+Shift+D` to confirm the alt-screen rework
+        didn't introduce a process-lifecycle regression.
+        Pending the next manual session on a preview that
+        carries PR-B (already shipped to `main` via PR #86;
+        cut whichever preview corresponds and run).
+     3. After Stage 6 ships (most important pass — Stage 6
+        is where Job Object lifecycle lands per
         `spec/tech-plan.md` §160).
      4. After Stage 7 ships (Claude Code spawns subprocesses;
         verify cascade cleanup).
