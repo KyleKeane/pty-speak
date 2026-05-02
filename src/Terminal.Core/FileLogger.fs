@@ -275,13 +275,27 @@ type FileLoggerSink (options: FileLoggerOptions) =
             try drainTask.Wait(2000) |> ignore with _ -> ()
             try cts.Dispose() with _ -> ()
 
+/// No-op `IDisposable` returned from `BeginScope`. Singleton —
+/// scopes are unused by this logger but the contract demands a
+/// non-null return value (F# 9 reads the C# `IDisposable?` as
+/// non-null in the abstractions package), so a do-nothing
+/// instance keeps the type checker happy without allocating
+/// per call.
+type private NoopDisposable() =
+    static let instance = new NoopDisposable() :> IDisposable
+    static member Instance : IDisposable = instance
+    interface IDisposable with
+        member _.Dispose() = ()
+
 /// `ILogger` implementation scoped to one category. Pushes to
 /// the shared sink.
 type internal FileLogger (sink: FileLoggerSink, category: string) =
 
     interface ILogger with
-        member _.BeginScope<'TState when 'TState : not null> (state: 'TState) : IDisposable | null =
-            null  // No scope support; structured properties land in the message text.
+        member _.BeginScope<'TState when 'TState : not null> (_state: 'TState) : IDisposable =
+            // Scopes aren't used by this logger — structured
+            // properties land in the message text directly.
+            NoopDisposable.Instance
 
         member _.IsEnabled (level: LogLevel) : bool =
             sink.IsEnabled level

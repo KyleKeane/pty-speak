@@ -6,6 +6,10 @@ open System.Text
 open System.Threading
 open System.Threading.Channels
 open System.Threading.Tasks
+// Logging-PR — needed for the LogInformation / LogError
+// extension methods on ILogger (defined in the
+// LoggerExtensions static class in this namespace).
+open Microsoft.Extensions.Logging
 
 /// Stage 5 — streaming-output coalescer.
 ///
