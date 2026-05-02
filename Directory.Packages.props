@@ -7,7 +7,7 @@
 
   <ItemGroup>
     <!-- Runtime / framework -->
-    <PackageVersion Include="FSharp.Core" Version="9.0.100" />
+    <PackageVersion Include="FSharp.Core" Version="10.1.203" />
     <PackageVersion Include="Velopack" Version="0.0.1298" />
     <PackageVersion Include="NAudio" Version="2.2.1" />
     <!--
