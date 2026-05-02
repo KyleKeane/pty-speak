@@ -483,7 +483,30 @@ module Program =
                                         ()
                     with
                     | :? OperationCanceledException -> ()
-                    | _ -> ()
+                    | ex ->
+                        // Post-Stage-6 diagnostic safety net.
+                        // Previously this was `| _ -> ()` — any
+                        // exception killed the drain task silently
+                        // and streaming announcements stopped
+                        // forever with no clue why. Surfacing the
+                        // exception via one final
+                        // `Announce(..., pty-speak.error)` lets a
+                        // user (or maintainer) hear that something
+                        // went wrong before the task exits.
+                        // Sanitise the message through SR-2's
+                        // chokepoint so PTY-originated control
+                        // bytes can't reach NVDA verbatim.
+                        try
+                            let safe =
+                                AnnounceSanitiser.sanitise ex.Message
+                            let action () =
+                                window.TerminalSurface.Announce(
+                                    sprintf
+                                        "Drain task exception: %s"
+                                        safe,
+                                    ActivityIds.error)
+                            window.Dispatcher.Invoke(Action(action))
+                        with _ -> ()
                 } :> Task)
 
         let cfg : PtyConfig =

@@ -132,10 +132,25 @@ public class TerminalView : FrameworkElement
         // (which strips embedded \x1b[201~ for paste-injection
         // defence and conditionally wraps in bracketed-paste markers),
         // and writes to the PTY.
+        //
+        // Post-Stage-6 fix: a CommandBinding alone tells WPF "if Paste
+        // is invoked on me, here's the handler" but does NOT wire any
+        // keyboard shortcut to invoke it. Without an InputBinding,
+        // Ctrl+V flows through OnPreviewKeyDown → encoder → 0x16 →
+        // cmd.exe echoes as `^V`. Adding the InputBindings below maps
+        // Ctrl+V and Shift+Insert (the two standard paste gestures) to
+        // the Paste command so they fire OnPasteExecuted instead of
+        // reaching the encoder.
         CommandBindings.Add(new CommandBinding(
             ApplicationCommands.Paste,
             OnPasteExecuted,
             OnPasteCanExecute));
+        InputBindings.Add(new KeyBinding(
+            ApplicationCommands.Paste,
+            new KeyGesture(Key.V, ModifierKeys.Control)));
+        InputBindings.Add(new KeyBinding(
+            ApplicationCommands.Paste,
+            new KeyGesture(Key.Insert, ModifierKeys.Shift)));
 
         // Stage 6 PR-B — resize debounce timer. Stopped initially;
         // OnRenderSizeChanged restarts it on each WPF SizeChanged tick.
@@ -225,15 +240,46 @@ public class TerminalView : FrameworkElement
     /// <c>"pty-speak.update"</c> via the back-compat overload
     /// above. The vocabulary is centralised in F# at
     /// <c>Terminal.Core.ActivityIds</c>.
+    ///
+    /// Post-Stage-6 fix: the underlying
+    /// <see cref="AutomationNotificationProcessing"/> defaults to
+    /// <see cref="AutomationNotificationProcessing.MostRecent"/>
+    /// for hotkey-style announcements (Ctrl+Shift+U / D / R, the
+    /// Velopack progress flow) where each new notification SHOULD
+    /// supersede any in-flight one. Streaming PTY output
+    /// (<c>"pty-speak.output"</c>) instead uses
+    /// <see cref="AutomationNotificationProcessing.ImportantAll"/>
+    /// so rapid chunks queue rather than discarding their
+    /// predecessors — without this, typed-character echoes and
+    /// command output were silently superseded before NVDA could
+    /// speak any of them.
     /// </remarks>
     public void Announce(string message, string activityId)
+    {
+        var processing = activityId == ActivityIds.output
+            ? AutomationNotificationProcessing.ImportantAll
+            : AutomationNotificationProcessing.MostRecent;
+        Announce(message, activityId, processing);
+    }
+
+    /// <summary>
+    /// Underlying overload that takes an explicit
+    /// <see cref="AutomationNotificationProcessing"/>. The
+    /// activity-id-aware overload above selects a default per
+    /// notification class; use this overload when a caller needs
+    /// to override the default (rare).
+    /// </summary>
+    public void Announce(
+        string message,
+        string activityId,
+        AutomationNotificationProcessing processing)
     {
         var peer = UIElementAutomationPeer.FromElement(this);
         if (peer is not null)
         {
             peer.RaiseNotificationEvent(
                 AutomationNotificationKind.Other,
-                AutomationNotificationProcessing.MostRecent,
+                processing,
                 message,
                 activityId);
         }
@@ -611,12 +657,34 @@ public class TerminalView : FrameworkElement
 
     protected override Size MeasureOverride(Size availableSize)
     {
+        // Post-Stage-6 fix: honour availableSize so the view tracks
+        // the parent window's size. Previously this returned the
+        // FIXED preferred size (Cols × Rows × cellSize) which meant
+        // the view never resized when the window did, OnRenderSizeChanged
+        // never fired, and the Stage 6 SizeChanged → ResizePseudoConsole
+        // chain was dead.
+        //
+        // The Screen buffer stays at construction-time 30×120 cells
+        // internally (full grid runtime resize is a documented Phase 2
+        // stage), but cmd.exe will see and adapt to the window's
+        // actual dimensions via ResizePseudoConsole, which fixes the
+        // visible "text cuts off the right edge" symptom.
+        //
+        // When availableSize is unbounded (e.g. inside a ScrollViewer
+        // or before a parent has been sized), fall back to the fixed
+        // preferred size so we still claim a sensible footprint.
         if (_screen is null)
         {
             return Size.Empty;
         }
-        var width = _cellWidth * _screen.Cols;
-        var height = _cellHeight * _screen.Rows;
+        var preferredWidth = _cellWidth * _screen.Cols;
+        var preferredHeight = _cellHeight * _screen.Rows;
+        var width = double.IsPositiveInfinity(availableSize.Width)
+            ? preferredWidth
+            : availableSize.Width;
+        var height = double.IsPositiveInfinity(availableSize.Height)
+            ? preferredHeight
+            : availableSize.Height;
         return new Size(width, height);
     }
 
