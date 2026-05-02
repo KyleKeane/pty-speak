@@ -402,24 +402,50 @@ module Coalescer =
                 try
                     let! _ = input.WaitToReadAsync(ct).AsTask()
                     let mutable keepGoing = true
+                    // PeriodicTimer.WaitForNextTickAsync throws
+                    // InvalidOperationException ("Operation is not
+                    // valid due to the state of the object") if
+                    // called concurrently — a second call before the
+                    // previous returns. Each loop iteration's
+                    // Task.WhenAny wins on EITHER timer or reader; if
+                    // the reader wins, the timer's wait is still
+                    // pending. Without this state-tracking, the next
+                    // iteration would invoke WaitForNextTickAsync
+                    // again on a still-pending timer and crash.
+                    //
+                    // Fix: keep the pending timer task across
+                    // iterations. Only start a new
+                    // WaitForNextTickAsync after the previous one
+                    // has fired.
+                    let mutable pendingTimerWait : Task | null = null
                     while keepGoing && not ct.IsCancellationRequested do
                         // Drain everything currently available.
                         let mutable peek = Unchecked.defaultof<ScreenNotification>
                         while input.TryRead(&peek) do
                             do! processNotification peek
-                        // Wait for the next timer tick OR a new
-                        // notification (whichever comes first),
-                        // honouring cancellation.
-                        let timerWait = timer.WaitForNextTickAsync(ct).AsTask()
+                        // Reuse the still-pending timer task from a
+                        // previous reader-wins iteration; otherwise
+                        // start a fresh wait.
+                        let timerWait : Task =
+                            match pendingTimerWait with
+                            | null -> timer.WaitForNextTickAsync(ct).AsTask() :> Task
+                            | t -> t
+                        pendingTimerWait <- timerWait
                         let readWait = input.WaitToReadAsync(ct).AsTask()
-                        let! winner = Task.WhenAny(timerWait :> Task, readWait :> Task)
+                        let! winner = Task.WhenAny(timerWait, readWait :> Task)
                         if obj.ReferenceEquals(winner, timerWait) then
-                            // Timer tick: flush any pending.
+                            // Timer tick fired: clear the pending
+                            // slot so the next iteration starts a
+                            // fresh wait, and flush any pending
+                            // accumulator.
+                            pendingTimerWait <- null
                             let now = timeProvider.GetUtcNow()
                             let emits = onTimerTick state now
                             do! writeAll emits
                         else
-                            // Channel closed?
+                            // Reader won; timer wait stays in
+                            // pendingTimerWait for next iteration.
+                            // Did the channel close?
                             let! got = readWait
                             if not got then keepGoing <- false
                 with

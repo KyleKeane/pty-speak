@@ -15,6 +15,47 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Streaming-silence root cause: `PeriodicTimer` reuse bug in
+  `Coalescer.runLoop`.** Diagnosed via the maintainer's manual
+  NVDA verification on the post-Stage-6 preview, where typing
+  `dir` produced no streaming announcement and the cmd.exe
+  banner sometimes worked while subsequent output went silent.
+  The audible signal was "Coalescer crashed: Operation is not
+  valid due to the state of the object" — the exact message
+  `PeriodicTimer.WaitForNextTickAsync` throws when called a
+  second time before the previous call completes.
+
+  Pre-fix, every iteration of the runLoop's main `while`
+  unconditionally called `timer.WaitForNextTickAsync(ct)` to
+  build a `Task.WhenAny` race against the input channel. When
+  the reader won the race, the previous tick wait was orphaned
+  but never cancelled; the next iteration called
+  `WaitForNextTickAsync` AGAIN while the previous was still
+  pending → `InvalidOperationException`. The catch handler
+  surfaced "Coalescer crashed" then exited the loop, stopping
+  all further streaming announcements for the rest of the
+  session.
+
+  Why intermittent: the bug requires the reader to win
+  `Task.WhenAny` at least once before any timer tick fires
+  (i.e. input arrives faster than the 200ms debounce). The
+  cmd.exe launch banner was a single big chunk that arrived
+  before any timer iteration cycled, so it announced
+  correctly. Subsequent typed-input echoes triggered multiple
+  fast iterations where the reader kept winning, and the
+  second iteration's `WaitForNextTickAsync` crashed.
+
+  Fix: track the pending timer task across loop iterations.
+  Reuse the same wait until it actually fires; only after a
+  timer tick wins does the next iteration start a fresh
+  `WaitForNextTickAsync`. New regression test
+  `runLoop survives multiple consecutive reader-wins without
+  crashing the PeriodicTimer` in `CoalescerTests.fs` pumps 20
+  fast events through the reader channel and asserts the
+  runLoop keeps delivering notifications without faulting.
+
 ### Added
 
 - **`Ctrl+Alt+L` copies the active session's log file content to
