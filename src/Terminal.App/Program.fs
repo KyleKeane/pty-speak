@@ -60,6 +60,7 @@ module Program =
             (ct: CancellationToken) : Task =
         Task.Run(fun () ->
             task {
+                let logger = Logger.get "Terminal.App.startReaderLoop"
                 try
                     while not ct.IsCancellationRequested do
                         let! chunk = host.Stdout.ReadAsync(ct).AsTask()
@@ -81,7 +82,17 @@ module Program =
                                 // to read"). A future revision can
                                 // compute the row-set from screen
                                 // sequence number deltas.
-                                let _ = notifications.TryWrite(RowsChanged [])
+                                let written = notifications.TryWrite(RowsChanged [])
+                                // Streaming-path instrumentation:
+                                // log every reader-side publish so
+                                // we can verify the parser → channel
+                                // seam is alive when diagnosing
+                                // streaming-silence bugs. Metadata
+                                // only — chunk byte count and event
+                                // count — never the bytes themselves.
+                                logger.LogInformation(
+                                    "Reader published RowsChanged. ChunkBytes={ChunkBytes} Events={Events} ChannelAccepted={ChannelAccepted}",
+                                    chunk.Length, events.Length, written)
                                 ()
                 with
                 | :? OperationCanceledException -> ()
@@ -629,6 +640,7 @@ module Program =
         let _ =
             Task.Run(fun () ->
                 task {
+                    let drainLog = Logger.get "Terminal.App.Program.drain"
                     try
                         let reader = coalescedChannel.Reader
                         let mutable keepGoing = true
@@ -655,6 +667,15 @@ module Program =
                                             // "DECCKM application mode", etc.).
                                             "", ActivityIds.mode
                                     if msg <> "" then
+                                        // Streaming-path instrumentation:
+                                        // log every dispatch to Announce.
+                                        // Metadata only (activityId +
+                                        // length); never the message
+                                        // text itself, per security
+                                        // chokepoint policy.
+                                        drainLog.LogInformation(
+                                            "Drain → Announce. ActivityId={ActivityId} MsgLen={MsgLen}",
+                                            activityId, msg.Length)
                                         let action () =
                                             window.TerminalSurface.Announce(msg, activityId)
                                         let! _ =
@@ -662,6 +683,10 @@ module Program =
                                                 .InvokeAsync(Action(action))
                                                 .Task
                                         ()
+                                    else
+                                        drainLog.LogInformation(
+                                            "Drain skipped empty msg. ActivityId={ActivityId}",
+                                            activityId)
                     with
                     | :? OperationCanceledException -> ()
                     | ex ->
