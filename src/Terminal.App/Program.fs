@@ -229,21 +229,49 @@ module Program =
                     "Diagnostic script not found at %s. Re-install pty-speak or report this as a packaging regression."
                     scriptPath)
         else
-            try
-                let psi = System.Diagnostics.ProcessStartInfo()
-                psi.FileName <- "powershell.exe"
-                psi.Arguments <-
-                    sprintf
-                        "-ExecutionPolicy Bypass -NoExit -File \"%s\""
-                        scriptPath
-                psi.UseShellExecute <- true
-                System.Diagnostics.Process.Start(psi) |> ignore
-                window.TerminalSurface.Announce(
-                    "Diagnostic launched in a separate PowerShell window. Switch to that window to follow the test.")
-            with ex ->
-                let safe = AnnounceSanitiser.sanitise ex.Message
-                window.TerminalSurface.Announce(
-                    sprintf "Could not launch diagnostic: %s" safe)
+            // Announce FIRST so NVDA's speech queue holds the message
+            // before focus shifts. The new PowerShell window's
+            // activation triggers NVDA's interrupt-on-focus-change,
+            // which truncates whatever is currently being spoken — so
+            // the previous "Process.Start then Announce" order made the
+            // announce effectively silent (the queued speech was
+            // immediately overwritten by NVDA reading the new PowerShell
+            // window's title). Pre-Stage-5 NVDA verification on
+            // `v0.0.1-preview.NN` confirmed the regression.
+            //
+            // Fix: announce a SHORT cue ("Launching diagnostic.") that
+            // NVDA can fully read in well under the focus-grab latency,
+            // wait ~700ms, then start the process. The PowerShell
+            // window's title takes over from there — which is the
+            // natural way for screen-reader users to confirm the new
+            // window arrived.
+            // TODO Phase 2: the 700ms delay should come from a TOML
+            // setting alongside the Stage 5 coalescer constants.
+            window.TerminalSurface.Announce(
+                "Launching diagnostic.",
+                ActivityIds.diagnostic)
+            let _ =
+                task {
+                    do! Task.Delay(700)
+                    let action () =
+                        try
+                            let psi = System.Diagnostics.ProcessStartInfo()
+                            psi.FileName <- "powershell.exe"
+                            psi.Arguments <-
+                                sprintf
+                                    "-ExecutionPolicy Bypass -NoExit -File \"%s\""
+                                    scriptPath
+                            psi.UseShellExecute <- true
+                            System.Diagnostics.Process.Start(psi) |> ignore
+                        with ex ->
+                            let safe = AnnounceSanitiser.sanitise ex.Message
+                            window.TerminalSurface.Announce(
+                                sprintf "Could not launch diagnostic: %s" safe,
+                                ActivityIds.error)
+                    do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                    ()
+                }
+            ()
 
     /// Wire `Ctrl+Shift+D` to trigger `runDiagnostic`. Same
     /// pattern as `setupAutoUpdateKeybinding` above. Per the
@@ -286,17 +314,32 @@ module Program =
     /// inherits whatever the user configures.
     let private runOpenReleases (window: MainWindow) : unit =
         let url = UpdateRepoUrl + "/releases"
-        try
-            let psi = System.Diagnostics.ProcessStartInfo()
-            psi.FileName <- url
-            psi.UseShellExecute <- true
-            System.Diagnostics.Process.Start(psi) |> ignore
-            window.TerminalSurface.Announce(
-                sprintf "Opened release notes in default browser: %s" url)
-        with ex ->
-            let safe = AnnounceSanitiser.sanitise ex.Message
-            window.TerminalSurface.Announce(
-                sprintf "Could not open release notes: %s" safe)
+        // Same announce-before-focus-grab pattern as `runDiagnostic`
+        // above (the launched browser will steal focus and NVDA's
+        // interrupt-on-focus-change will truncate the queued speech
+        // unless we give it ~700ms head start).
+        // TODO Phase 2: TOML-configurable delay.
+        window.TerminalSurface.Announce(
+            "Opening release notes.",
+            ActivityIds.releases)
+        let _ =
+            task {
+                do! Task.Delay(700)
+                let action () =
+                    try
+                        let psi = System.Diagnostics.ProcessStartInfo()
+                        psi.FileName <- url
+                        psi.UseShellExecute <- true
+                        System.Diagnostics.Process.Start(psi) |> ignore
+                    with ex ->
+                        let safe = AnnounceSanitiser.sanitise ex.Message
+                        window.TerminalSurface.Announce(
+                            sprintf "Could not open release notes: %s" safe,
+                            ActivityIds.error)
+                do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                ()
+            }
+        ()
 
     /// Wire `Ctrl+Shift+R` to trigger `runOpenReleases`. Same
     /// pattern as the other reserved hotkeys above.
