@@ -1,9 +1,16 @@
 # Logging
 
-pty-speak writes structured logs to a daily-rolling file under
-`%LOCALAPPDATA%\PtySpeak\logs\`. The `Ctrl+Shift+L` hotkey opens
-that folder in File Explorer so you can grab the latest log when
-reporting a bug or reviewing a session.
+pty-speak writes structured logs to per-session files under
+`%LOCALAPPDATA%\PtySpeak\logs\{yyyy-MM-dd}\`. Two hotkeys make
+the logs easy to grab when reporting a bug or reviewing a
+session:
+
+- **`Ctrl+Shift+L`** — open the logs folder in File Explorer.
+- **`Ctrl+Alt+L`** — copy the active session's log file content
+  to the clipboard as a single string. NVDA announces the byte
+  count on success ("Log copied to clipboard. N bytes; ready to
+  paste."). Most efficient way to send a log to a maintainer:
+  press the hotkey, switch to the chat / email / issue, paste.
 
 ## Where the logs live
 
@@ -135,18 +142,22 @@ any log site that risks leaking these categories.
 
 ## Sharing logs with a maintainer
 
-When reporting a bug:
+**Fastest path** — `Ctrl+Alt+L`:
 
 1. Reproduce the issue (or wait for it to happen — for the
    intermittent ones).
-2. Press `Ctrl+Shift+L` to open the logs folder.
-3. Open `pty-speak-{today}.log` in Notepad (or any reader).
-4. Either:
-   - Copy the relevant time-range of entries (Ctrl+A to grab
-     everything; or scroll to the relevant timestamp and
-     select from there), then paste in the bug report.
-   - OR attach the whole file (logs are small text — typically
-     a few KB to a few hundred KB per day).
+2. **Press `Ctrl+Alt+L`.** NVDA announces "Log copied to
+   clipboard. N bytes; ready to paste." The active session's
+   entire log file is now on the clipboard.
+3. Switch to the chat / email / issue and paste.
+
+**Manual path** — `Ctrl+Shift+L`:
+
+1. Press `Ctrl+Shift+L` to open the logs folder.
+2. Click into today's `yyyy-MM-dd` day-folder.
+3. The most recent session is alphabetically last (filenames
+   are launch timestamps).
+4. Open the file and copy whatever range you need.
 
 Logs do not contain personally-identifying information beyond
 your machine's username (which appears in path prefixes). If

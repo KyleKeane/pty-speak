@@ -412,6 +412,79 @@ module Program =
             }
         ()
 
+    /// Copy the active session's log file content to the
+    /// system clipboard so the maintainer can paste it into a
+    /// bug report without navigating File Explorer. Triggered
+    /// by `Ctrl+Alt+L` (mnemonic: alt-action paired with
+    /// `Ctrl+Shift+L` open-folder primary). Reads the file
+    /// pointed to by `FileLoggerSink.ActiveLogPath`, copies
+    /// the entire content as a single string, and announces
+    /// the byte count via NVDA on success.
+    ///
+    /// Hotkey choice: `Ctrl+Alt+L`, not `Ctrl+Shift+C`. The
+    /// latter looks intuitive (`C` = copy) but Ctrl-letter
+    /// encoding folds Shift in the keyboard encoder, meaning
+    /// `Ctrl+Shift+C` currently sends `0x03` to the shell
+    /// (the SIGINT / Ctrl-Break gesture) — claiming it for
+    /// log-copy would break shell-interrupt for commands like
+    /// `ping localhost -t`. `Ctrl+Alt+L` doesn't collide with
+    /// any shell encoding, doesn't produce a printable on US
+    /// keyboards, and pairs naturally with the existing
+    /// `Ctrl+Shift+L`.
+    let private runCopyLatestLog (window: MainWindow) : unit =
+        let log = Logger.get "Terminal.App.Program.runCopyLatestLog"
+        log.LogInformation("Ctrl+Alt+L pressed — copying active log to clipboard.")
+        match loggerSink with
+        | None ->
+            window.TerminalSurface.Announce(
+                "Logging is not initialised yet; nothing to copy.",
+                ActivityIds.error)
+        | Some sink ->
+            try
+                let path = sink.ActiveLogPath
+                if not (System.IO.File.Exists path) then
+                    window.TerminalSurface.Announce(
+                        "Active log file does not exist yet; press a key or wait for an event first.",
+                        ActivityIds.error)
+                else
+                    let content = System.IO.File.ReadAllText(path)
+                    // Clipboard.SetText must run on the WPF
+                    // dispatcher thread (STA). The hotkey
+                    // handler already runs there, so direct
+                    // call is safe. Wrap in try/catch because
+                    // Clipboard can transiently throw
+                    // COMException when the OS clipboard is
+                    // contended; one failed attempt is fine
+                    // — user retries.
+                    System.Windows.Clipboard.SetText(content)
+                    let bytes =
+                        System.Text.Encoding.UTF8.GetByteCount(content)
+                    log.LogInformation(
+                        "Copied active log to clipboard. Path={Path} Bytes={Bytes}",
+                        path, bytes)
+                    window.TerminalSurface.Announce(
+                        sprintf
+                            "Log copied to clipboard. %d bytes; ready to paste."
+                            bytes,
+                        ActivityIds.diagnostic)
+            with ex ->
+                let safe = AnnounceSanitiser.sanitise ex.Message
+                log.LogError(ex, "Failed to copy active log to clipboard.")
+                window.TerminalSurface.Announce(
+                    sprintf "Could not copy log: %s" safe,
+                    ActivityIds.error)
+
+    /// Wire `Ctrl+Alt+L` to trigger `runCopyLatestLog`.
+    let private setupCopyLatestLogKeybinding (window: MainWindow) : unit =
+        let cmd = RoutedCommand("CopyLatestLog", typeof<MainWindow>)
+        let gesture = KeyGesture(Key.L, ModifierKeys.Control ||| ModifierKeys.Alt)
+        window.InputBindings.Add(KeyBinding(cmd, gesture)) |> ignore
+        window.CommandBindings.Add(
+            CommandBinding(
+                cmd,
+                ExecutedRoutedEventHandler(fun _ _ -> runCopyLatestLog window)))
+        |> ignore
+
     /// Wire `Ctrl+Shift+L` to trigger `runOpenLogs`. Same
     /// pattern as the other reserved hotkeys above.
     let private setupOpenLogsKeybinding (window: MainWindow) : unit =
@@ -471,6 +544,11 @@ module Program =
 
         // Wire Ctrl+Shift+L to open the logs folder in File Explorer.
         setupOpenLogsKeybinding window
+
+        // Wire Ctrl+Alt+L to copy the active session's log file
+        // contents to the clipboard. Useful for sending the log
+        // to a maintainer without navigating Explorer.
+        setupCopyLatestLogKeybinding window
 
         // Stage 5 — two-channel pipeline:
         //

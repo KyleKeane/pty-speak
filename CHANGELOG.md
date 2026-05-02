@@ -15,6 +15,41 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added
+
+- **`Ctrl+Alt+L` copies the active session's log file content to
+  the clipboard.** Bundled with the logging-restructure work.
+  Pressing the hotkey reads the active log file (the one
+  `FileLoggerSink.ActiveLogPath` points to), sets the OS
+  clipboard, and announces the byte count via NVDA ("Log
+  copied to clipboard. N bytes; ready to paste."). Fastest
+  path to send a session log to a maintainer for bug-report
+  diagnosis — no File Explorer navigation required. Mnemonic:
+  alt-action paired with the existing `Ctrl+Shift+L` open-folder
+  primary.
+
+  Hotkey choice rationale: NOT `Ctrl+Shift+C`. The latter looks
+  intuitive (`C` = copy) but Ctrl-letter encoding folds Shift
+  in the keyboard pipeline, meaning `Ctrl+Shift+C` currently
+  sends `0x03` to the shell — that's the standard SIGINT /
+  Ctrl-Break gesture for interrupting a running command (e.g.
+  `ping localhost -t`). Claiming `Ctrl+Shift+C` for log-copy
+  would break shell-interrupt UX. `Ctrl+Alt+L` doesn't collide
+  with any shell encoding and isn't a printable on US
+  keyboards.
+
+  Added to `AppReservedHotkeys`; wired in
+  `setupCopyLatestLogKeybinding` in `Program.fs`. The handler
+  catches and announces clipboard exceptions (the OS clipboard
+  can transiently throw COMException under contention; one
+  failed attempt becomes an audible error rather than a silent
+  no-op).
+
+  Documentation: README, USER-SETTINGS.md, and LOGGING.md
+  updated with the new hotkey, the rationale, and a refreshed
+  "Sharing logs with a maintainer" section that promotes
+  Ctrl+Alt+L as the fastest path.
+
 ### Changed
 
 - **Logging restructured to per-session files in per-day

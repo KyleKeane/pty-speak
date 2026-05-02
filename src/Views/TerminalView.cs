@@ -314,6 +314,15 @@ public class TerminalView : FrameworkElement
             // Bound in `setupOpenLogsKeybinding`.
             (Key.L, ModifierKeys.Control | ModifierKeys.Shift, "Open logs folder"),
 
+            // Logging-restructure PR — copy active session log to
+            // clipboard. Bound in `setupCopyLatestLogKeybinding`.
+            // Mnemonic: alt-action paired with Ctrl+Shift+L
+            // open-folder primary. NOT Ctrl+Shift+C (that would
+            // collide with the Ctrl-letter shell-interrupt
+            // encoding, where Ctrl+Shift+C currently sends
+            // 0x03 / SIGINT to the running command).
+            (Key.L, ModifierKeys.Control | ModifierKeys.Alt, "Copy active log to clipboard"),
+
             // Future entries (NOT yet bound; commented for
             // forward-planning):
             //   (Key.M, ModifierKeys.Control | ModifierKeys.Shift,
