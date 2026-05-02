@@ -17,6 +17,25 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Changed
 
+- **`docs/SESSION-HANDOFF.md` item 2 truth-up.** The
+  process-cleanup baseline test (Step 1 of the recurring
+  cadence) was actually run via `Ctrl+Shift+D` on
+  `v0.0.1-preview.27` during the post-Stage-4.5 hygiene
+  session — both close paths PASSED, no orphans. The doc
+  still framed the baseline as future tense ("next
+  manual session — establishes whether the shipped code
+  already has issues"); updated to reflect "✓ Baseline on
+  `v0.0.1-preview.27` — PASS (2026-05-01)" plus a
+  cross-reference to item 6 (the screen-reader-native
+  replacement work, since NVDA's coverage of the spawned
+  PowerShell window is the documented limitation; the
+  underlying script's PASS/FAIL output is the source of
+  truth). Step 2 ("After Stage 4.5 PR-B ships") is the
+  next pending pass, since `v0.0.1-preview.28+` now carry
+  the alt-screen back-buffer.
+
+  No code paths touched.
+
 - **Repo-hygiene cleanup (post-Stage-4.5 sweep).** Two
   small documentation fixes, a future-proofing convention
   added to `CONTRIBUTING.md`, and a one-time cleanup
