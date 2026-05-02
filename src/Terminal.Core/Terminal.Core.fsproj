@@ -11,12 +11,14 @@
     <Compile Include="Screen.fs" />
     <Compile Include="AnnounceSanitiser.fs" />
     <Compile Include="UpdateMessages.fs" />
+    <Compile Include="FileLogger.fs" />
     <Compile Include="Coalescer.fs" />
     <Compile Include="KeyEncoding.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="FSharp.Core" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
 </Project>

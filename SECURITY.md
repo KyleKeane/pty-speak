@@ -52,6 +52,19 @@ corresponding stage in [`spec/tech-plan.md`](spec/tech-plan.md).
   UIA Hyperlink-pattern surface, Stage 4+.)* Only `http`, `https`, and
   `file` schemes will be exposed; `javascript:`, `data:`, custom URI
   schemes dropped silently.
+- **Logging chokepoint.** *(shipped, Logging-PR.)* pty-speak
+  writes structured logs to
+  `%LOCALAPPDATA%\PtySpeak\logs\pty-speak-{date}.log` for
+  diagnostic visibility into intermittent bugs (ConPTY
+  spawn failures, Coalescer exceptions, etc.). The log call-site
+  discipline NEVER logs **typed user input**, **paste content**,
+  **full screen contents**, **environment variables** (parent
+  process env may contain `GITHUB_TOKEN`, `OPENAI_API_KEY`, etc.
+  — Stage 7's env-scrub work handles the parent-to-child
+  filtering; logs enforce the same discipline at the file
+  boundary). PRs that add log calls MUST honour this list;
+  reviewers reject log sites that risk leaking these categories.
+  Full description in [`docs/LOGGING.md`](docs/LOGGING.md).
 - **Bracketed-paste injection defence.** *(shipped, Stage 6 PR-B.)*
   When the user pastes clipboard content into pty-speak, the
   `KeyEncoding.encodePaste` chokepoint strips embedded `\x1b[201~`

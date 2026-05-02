@@ -6,6 +6,7 @@ open System.Threading.Tasks
 open System.Windows
 open System.Windows.Input
 open System.Windows.Threading
+open Microsoft.Extensions.Logging
 open Velopack
 open Velopack.Sources
 open Terminal.Core
@@ -357,10 +358,96 @@ module Program =
                 ExecutedRoutedEventHandler(fun _ _ -> runOpenNewRelease window)))
         |> ignore
 
+    /// Mutable handle to the active `FileLoggerSink`. Set by
+    /// `compose ()` at startup; consulted by `runOpenLogs` to
+    /// find the active log directory and disposed in
+    /// `app.Exit.Add` so the writer task flushes pending entries.
+    let mutable private loggerSink : FileLoggerSink option = None
+
+    /// Open the active logs folder in File Explorer. Triggered
+    /// by `Ctrl+Shift+L`. Useful so the user can grab the latest
+    /// log file (e.g. to send to a maintainer when reporting a
+    /// bug) without leaving pty-speak.
+    let private runOpenLogs (window: MainWindow) : unit =
+        let log = Logger.get "Terminal.App.Program.runOpenLogs"
+        log.LogInformation("Ctrl+Shift+L pressed — opening logs folder.")
+        let dir =
+            match loggerSink with
+            | Some s -> s.LogDirectory
+            | None ->
+                // Logger hasn't initialised — fall back to the
+                // default directory so the explorer at least
+                // opens a sensible parent folder.
+                let baseDir =
+                    System.Environment.GetFolderPath(
+                        System.Environment.SpecialFolder.LocalApplicationData)
+                System.IO.Path.Combine(baseDir, "PtySpeak", "logs")
+        // Same announce-before-focus-grab pattern as the other
+        // hotkeys that launch a separate window.
+        window.TerminalSurface.Announce(
+            "Opening logs folder.",
+            ActivityIds.diagnostic)
+        let _ =
+            task {
+                do! Task.Delay(700)
+                let action () =
+                    try
+                        // Ensure the folder exists before we ask
+                        // explorer to open it; on a fresh install
+                        // before any logs have been written, the
+                        // directory may not yet exist.
+                        System.IO.Directory.CreateDirectory(dir) |> ignore
+                        let psi = System.Diagnostics.ProcessStartInfo()
+                        psi.FileName <- "explorer.exe"
+                        psi.Arguments <- sprintf "\"%s\"" dir
+                        psi.UseShellExecute <- true
+                        System.Diagnostics.Process.Start(psi) |> ignore
+                    with ex ->
+                        let safe = AnnounceSanitiser.sanitise ex.Message
+                        window.TerminalSurface.Announce(
+                            sprintf "Could not open logs folder: %s" safe,
+                            ActivityIds.error)
+                do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                ()
+            }
+        ()
+
+    /// Wire `Ctrl+Shift+L` to trigger `runOpenLogs`. Same
+    /// pattern as the other reserved hotkeys above.
+    let private setupOpenLogsKeybinding (window: MainWindow) : unit =
+        let cmd = RoutedCommand("OpenLogs", typeof<MainWindow>)
+        let gesture = KeyGesture(Key.L, ModifierKeys.Control ||| ModifierKeys.Shift)
+        window.InputBindings.Add(KeyBinding(cmd, gesture)) |> ignore
+        window.CommandBindings.Add(
+            CommandBinding(
+                cmd,
+                ExecutedRoutedEventHandler(fun _ _ -> runOpenLogs window)))
+        |> ignore
+
     /// Composition seam — Stage 4+ plugs Elmish.WPF and the UIA peer
     /// in here. For Stage 3b we just hold references to the long-lived
     /// pieces and ensure they're disposed on Application.Exit.
     let compose (app: Application) (window: MainWindow) : unit =
+        // Wire up file-based logging FIRST, before anything else
+        // can produce log calls. Default-on (Information level);
+        // Phase 2 user-settings will surface the toggle. Logs go
+        // to %LOCALAPPDATA%\PtySpeak\logs\pty-speak-{date}.log
+        // with daily rolling and 7-day retention; the
+        // `Ctrl+Shift+L` hotkey opens the folder.
+        let logOptions = FileLoggerOptions.createDefault ()
+        let sink = new FileLoggerSink(logOptions)
+        loggerSink <- Some sink
+        let provider = new FileLoggerProvider(sink)
+        let logFactory = Logger.createFactory (provider :> ILoggerProvider)
+        Logger.configure logFactory
+        let log = Logger.get "Terminal.App.Program"
+        log.LogInformation(
+            "pty-speak starting. version={Version} os={Os} logs={LogDir}",
+            System.Reflection.Assembly.GetExecutingAssembly()
+                .GetName().Version,
+            System.Runtime.InteropServices.RuntimeInformation.OSDescription,
+            sink.LogDirectory)
+
         let cts = new CancellationTokenSource()
         let screen = Screen(rows = ScreenRows, cols = ScreenCols)
         let parser = Parser.create ()
@@ -381,6 +468,9 @@ module Program =
         // Wire Ctrl+Shift+R to open the GitHub "draft a new
         // release" form in the user's default browser.
         setupNewReleaseKeybinding window
+
+        // Wire Ctrl+Shift+L to open the logs folder in File Explorer.
+        setupOpenLogsKeybinding window
 
         // Stage 5 — two-channel pipeline:
         //
@@ -497,6 +587,9 @@ module Program =
                         // chokepoint so PTY-originated control
                         // bytes can't reach NVDA verbatim.
                         try
+                            log.LogError(
+                                ex,
+                                "Drain task crashed; streaming announcements halted.")
                             let safe =
                                 AnnounceSanitiser.sanitise ex.Message
                             let action () =
@@ -520,8 +613,16 @@ module Program =
         // failure can surface in the UI rather than crashing during
         // Application.OnStartup.
         window.Loaded.Add(fun _ ->
+            log.LogInformation(
+                "Window loaded; spawning ConPTY child. Cols={Cols} Rows={Rows} CommandLine={CommandLine}",
+                cfg.Cols,
+                cfg.Rows,
+                cfg.CommandLine)
             match ConPtyHost.start cfg with
-            | Error _ ->
+            | Error e ->
+                log.LogError(
+                    "ConPTY spawn failed: {Error}",
+                    sprintf "%A" e)
                 // Publish a ParserError so the user hears about
                 // ConPTY spawn failures via NVDA rather than
                 // staring at a silent empty terminal.
@@ -531,6 +632,9 @@ module Program =
                 ()
             | Ok host ->
                 hostHandle <- Some host
+                log.LogInformation(
+                    "ConPTY child spawned. Pid={Pid}",
+                    host.ProcessId)
                 let _ =
                     startReaderLoop
                         window.Dispatcher
@@ -561,6 +665,7 @@ module Program =
                 ())
 
         app.Exit.Add(fun _ ->
+            try log.LogInformation("pty-speak exiting.") with _ -> ()
             try cts.Cancel() with _ -> ()
             // Complete both writers so the coalescer and drain
             // tasks exit cleanly when their channels run dry.
@@ -569,7 +674,12 @@ module Program =
             match hostHandle with
             | Some h -> (h :> IDisposable).Dispose()
             | None -> ()
-            cts.Dispose())
+            cts.Dispose()
+            // Dispose the logger LAST so any cleanup logging
+            // above lands in the file. The provider's Dispose
+            // cancels the channel writer, drains pending entries,
+            // flushes, and closes the file.
+            try (provider :> IDisposable).Dispose() with _ -> ())
 
     [<EntryPoint>]
     [<STAThread>]

@@ -151,6 +151,10 @@ preserve this list per the app-reserved-hotkey contract in
   is to publish a release in the Releases UI (which creates the tag
   and triggers the Velopack workflow), and this hotkey skips the
   navigation step.
+- **`Ctrl+Shift+L`** — open the logs folder
+  (`%LOCALAPPDATA%\PtySpeak\logs\`) in File Explorer. Useful for
+  grabbing the latest log when reporting a bug. See
+  [`docs/LOGGING.md`](docs/LOGGING.md) for what is and isn't logged.
 
 Reserved but not yet implemented: `Ctrl+Shift+M` (Stage 9 mute toggle),
 `Alt+Shift+R` (Stage 10 review-mode toggle).

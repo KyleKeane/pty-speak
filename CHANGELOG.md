@@ -15,6 +15,65 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added
+
+- **File-based structured logging.** New
+  `Terminal.Core/FileLogger.fs` implements `ILogger` /
+  `ILoggerProvider` directly against
+  `Microsoft.Extensions.Logging.Abstractions` (the
+  first-party SDK package — no Serilog or other third-party
+  dependency added). A single background task drains a bounded
+  channel, formats entries, and appends to
+  `%LOCALAPPDATA%\PtySpeak\logs\pty-speak-{date}.log`. Daily
+  rolling, 7-day retention, off-thread writes so the WPF
+  dispatcher never blocks on disk.
+
+  New `Ctrl+Shift+L` hotkey opens the logs folder in File
+  Explorer for one-keypress retrieval when reporting bugs.
+  Added to `AppReservedHotkeys`; wired in
+  `setupOpenLogsKeybinding` in `Program.fs`. The
+  `runOpenLogs` handler uses the same announce-before-launch
+  pattern as the other window-spawning hotkeys so NVDA's
+  speech queue gets ~700ms before File Explorer steals focus.
+
+  Default log level: **Information**. Off-by-default trace
+  levels (Trace, Debug) reserved for verbose troubleshooting;
+  Phase 2 user-settings will surface a toggle.
+
+  Initial log calls land at the diagnosis-critical points:
+
+  - App startup (version, OS, log directory).
+  - `compose ()` lifecycle.
+  - ConPTY child spawn (success with PID, failure with full
+    error variant).
+  - Coalescer.runLoop entry, clean-cancel exit, and exception
+    path (this is the path that will catch the post-Stage-6
+    intermittent "Coalescer crashed" we still haven't pinned
+    down).
+  - Drain task crash path (alongside the existing
+    `Announce(..., pty-speak.error)` user-facing notice).
+  - App exit.
+
+  **Security posture:** new "Logging chokepoint" entry in
+  `SECURITY.md`. The call-site discipline NEVER logs typed
+  user input, paste content, full screen contents, or
+  environment variables. Same first-class status as the
+  `AnnounceSanitiser` chokepoint from audit-cycle SR-2.
+
+  **Documentation:** new `docs/LOGGING.md` covers location,
+  format, retention, what's logged, what isn't, and how to
+  share log slices with a maintainer.
+
+  **Tests:** 8 new `FileLoggerTests` pinning the contract:
+  Information entries land in today's file with the
+  documented format; minimum-level filtering drops below-min
+  entries; exception details land in the file; retention
+  sweep deletes >7-day-old files on startup; log directory
+  is created on demand; `LogDirectory` member exposes the
+  path; `Logger.get` returns a `NullLogger` before
+  `Logger.configure` runs; the configured factory's logger
+  produces correctly-categorised output.
+
 ### Fixed
 
 - **Ctrl+V paste re-fix + Ctrl+L clear-screen.** The previous
