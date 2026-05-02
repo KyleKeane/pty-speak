@@ -49,6 +49,15 @@ See [`docs/BUILD.md`](docs/BUILD.md) for build instructions.
   (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `build:`, `ci:`).
   All PRs to date have been squashed; the merge commit subject becomes
   the canonical history line.
+- **Delete the source branch after the squash-merge lands** (both
+  remote and local). The squashed commit on `main` is the canonical
+  reference; the branch is redundant after merge and accumulates as
+  visual noise in `git branch -a`. GitHub's "Delete branch" button
+  on the merged PR page does the remote half in one click; locally,
+  `git fetch --prune origin` + `git branch -d <name>` finishes the
+  job. Without this discipline the repo accumulates dozens of stale
+  refs over time (the post-Stage-4.5 hygiene sweep removed 75+ such
+  branches in one go).
 - **One concern per PR.** When tempted to bundle two improvements,
   split them. Past frustrations on this repo trace back to oversized
   PRs with multiple moving parts; small focused PRs review faster and

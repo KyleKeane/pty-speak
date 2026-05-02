@@ -282,6 +282,38 @@ disconnects mid-session.
    the launcher hotkeys" subsection notes the limitation
    so future runs aren't surprised.
 
+7. **One-time bulk-delete of 77 stale post-merge branches
+   on `origin/`.** The post-Stage-4.5 hygiene audit
+   identified 77 remote branches whose work has been
+   squash-merged into `main` (every branch's PR has
+   either `merged_at` or a `closed` state per the GitHub
+   API). They've accumulated because the
+   delete-branch-after-merge convention wasn't codified
+   until PR #87 added it to CONTRIBUTING.md.
+
+   The agent sandbox cannot delete remote branches
+   (proxy returns HTTP 403 on `git push --delete`), so
+   this is a maintainer-side action. The full deletion
+   list is bundled as
+   `scripts/cleanup-stale-branches.sh` (shipped via
+   PR #87). To execute:
+
+   ```bash
+   bash scripts/cleanup-stale-branches.sh
+   ```
+
+   Runs from any workstation with normal git push
+   permissions. ~30 sec end to end. Idempotent (skips
+   branches that have already been deleted via
+   `ls-remote --exit-code` check). After it completes,
+   `origin/` should have ~3 branches: `main`, the
+   active hygiene PR's branch (if not yet merged), and
+   any in-flight new work.
+
+   The script can be deleted from the repo after the
+   one-time cleanup finishes; future branch hygiene is
+   covered by the per-PR convention in CONTRIBUTING.md.
+
 ## Working conventions on this repo
 
 The written rules live in [`CONTRIBUTING.md`](../CONTRIBUTING.md):
