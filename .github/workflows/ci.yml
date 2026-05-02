@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup .NET 9
         uses: actions/setup-dotnet@v5
@@ -110,7 +110,7 @@ jobs:
     # that shape directly.
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Run actionlint
         uses: raven-actions/actionlint@v2
@@ -130,7 +130,7 @@ jobs:
     # PRs on it.
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # Restrict to docs we author (root + docs/). spec/ contains
       # reference citations to academic and vendor sources that we

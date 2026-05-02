@@ -41,7 +41,7 @@ jobs:
           Write-Host "Release target branch is 'main' — OK."
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup .NET 9
         uses: actions/setup-dotnet@v5
