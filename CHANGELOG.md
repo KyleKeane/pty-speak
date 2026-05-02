@@ -15,6 +15,161 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added
+
+- **Stage 5: streaming-output coalescer.** First stage where
+  PTY output narrates itself — before Stage 5, the only NVDA
+  flow was review-cursor exploration (the user navigated to
+  new content); after Stage 5, NVDA reads streaming output
+  line-by-line at conversational pace as the PTY produces it.
+  Per `spec/tech-plan.md` §5: "When PTY output arrives, NVDA
+  reads it aloud at conversational pace. Spinner doesn't
+  flood. Multi-line output is announced line by line."
+
+  Implementation:
+
+  - New `Terminal.Core.Coalescer` module
+    (`src/Terminal.Core/Coalescer.fs`) sits between the
+    parser-side `notificationChannel` (256, DropOldest) and
+    a new `coalescedChannel` (16, Wait). Reads every
+    `ScreenNotification` the parser publishes, applies
+    debounce + dedup + spinner suppression, and emits at
+    most one `CoalescedNotification` per ~200ms window.
+
+  - **Per-row + frame hash** via FNV-1a 64-bit. Per-row hash
+    folds the row index in so a row swap can't alias to the
+    same frame hash; frame hash XORs per-row hashes.
+    Two consecutive `RowsChanged` events with identical
+    screen content produce identical frame hashes and the
+    second is suppressed entirely (composes with Claude
+    Ink's full-frame redraws — without this, every row
+    hash changes per redraw and per-row dedup never fires).
+
+  - **Spinner heuristic**: sliding window keyed by
+    `(rowIdx, hash)` with a 1s window and threshold of 5
+    same-key hits, plus a generic "any-hash high-frequency
+    anywhere" gate at 4× threshold. Suppresses repeated
+    frames at high rate (`|/-\` spinners, etc.).
+
+  - **Debounce**: leading-edge + trailing-edge. First event
+    in an idle period (no flush in last 200ms) emits
+    immediately for fast single-event UX (`echo hello`);
+    subsequent events accumulate and drain on the next
+    200ms timer tick.
+
+  - **Alt-screen flush barrier**: new
+    `ScreenNotification.ModeChanged(flag, value)` case
+    + `TerminalModeFlag` discriminator added to
+    `Terminal.Core.Types`. `Screen.enterAltScreen` /
+    `exitAltScreen` now queue `(AltScreen, true/false)` into
+    a `pendingModeChanges` buffer under the gate; `Apply`
+    drains the buffer AFTER releasing the lock and fires
+    a new `[<CLIEvent>] ModeChanged` event. The coalescer
+    subscribes (via `Program.fs compose ()`) and on
+    `ModeChanged` flushes any pending accumulator first,
+    resets frame-hash + spinner state, then passes the
+    barrier through. Stage 6 will reuse the same shape for
+    DECCKM, bracketed paste, and focus reporting.
+
+  - **Sanitisation**: every emit text passes through the
+    audit-cycle SR-2 `AnnounceSanitiser.sanitise`
+    chokepoint per row, then rows are joined with `\n` so
+    NVDA's per-line speech pause survives (the bug-prone
+    naive "sanitise the whole joined string" path would
+    have stripped `\n` as a C0 control and collapsed
+    multi-line output into a single line).
+
+  - **Activity IDs**: new `Terminal.Core.ActivityIds`
+    module providing the stable
+    `pty-speak.{output,update,error,diagnostic,releases,mode}`
+    vocabulary so NVDA users can configure per-tag
+    handling (e.g. quieter speech for the install flow vs.
+    streaming text). The new
+    `TerminalView.Announce(message, activityId)` overload
+    lets the drain pass the right tag per
+    `CoalescedNotification` shape.
+
+  - **Two-channel composition**: `Program.fs compose ()`
+    now starts the coalescer as a `Task.Run` with the
+    SHARED `cts.Token` (single CTS, unified
+    cancellation across reader, coalescer, and drain).
+    Production passes `TimeProvider.System`; tests
+    inject `FakeTimeProvider` for deterministic
+    debounce assertions.
+
+  - **`TimeProvider` injection**: `Coalescer.runLoop`
+    accepts `TimeProvider`; new
+    `Microsoft.Extensions.TimeProvider.Testing` package
+    pinned at 9.0.0 in `Directory.Packages.props` so
+    `CoalescerTests` can advance time without
+    `Thread.Sleep`.
+
+  - **`Acc/9` OnRender lock fix bundled** (per the
+    SESSION-HANDOFF item 5.3 commitment).
+    `src/Views/TerminalView.cs`'s `OnRender` previously
+    called `_screen.GetCell(row, c)` per cell, which
+    re-entered the screen gate up to `Rows*Cols` times
+    per render frame and could race with the parser
+    thread between cells. Refactored to take ONE
+    `_screen.SnapshotRows(0, _screen.Rows)` snapshot at
+    the start of the frame and walk that immutable copy
+    in `RenderRow` / `DrawRun`. Single gate acquisition
+    per render; no measurable perf cost. SESSION-HANDOFF
+    item 5.3 flips from "deferred — Stage 5 will revisit"
+    to "✓ resolved by Stage 5".
+
+  Tests:
+
+  - New `tests/Tests.Unit/CoalescerTests.fs` (24 facts)
+    pinning every algorithm independently
+    (hash equality / row-swap defence; frame dedup;
+    leading- / trailing-edge debounce; per-key spinner
+    gate firing + GC release; mode barrier flush +
+    state reset; `ParserError` pass-through with
+    sanitisation; `renderRows` per-row sanitise +
+    `\n` preservation + trailing-blank trimming;
+    activity-ID vocabulary pinning; `runLoop`
+    cancellation cleanup; `runLoop` end-to-end with
+    real `Screen` + `FakeTimeProvider`).
+
+  - `tests/Tests.Unit/ScreenTests.fs` extended with
+    five new `ModeChanged` event tests (fires on
+    enter; fires on exit; idempotent enter / exit
+    do NOT fire; subscriber can call `SnapshotRows`
+    without deadlock — pins the post-lock fire
+    contract Stage 5's coalescer relies on).
+
+  Out of scope (deferred per the approved Stage 5 plan):
+
+  - **Verbosity profiles** (off / smart / verbose) —
+    Phase 2 TOML config. Stage 5 ships hardcoded
+    200ms debounce + 1s spinner-window with
+    `// TODO Phase 2` comments at each constant.
+
+  - **`ITextProvider2` / `TextChangedEvent`** —
+    explicitly forbidden per spec §5.6 (NVDA disables
+    TextChanged for terminals to prevent
+    double-announce).
+
+  - **`TermControl2` className** in
+    `TerminalAutomationPeer.GetClassNameCore` — could
+    signal NVDA's terminal-app heuristics; not
+    validation-required; flag for any later stage that
+    touches the peer.
+
+  - **Per-event-class `activityId`s for the diagnostic
+    / releases hotkeys** — today they pass through the
+    default `pty-speak.update` tag. Stage 5 adds the
+    vocabulary; whoever next touches those hotkeys can
+    flip them.
+
+  - "Command output complete" prompt-redraw signal —
+    strategic review §G assigned this to Stage 8.
+
+  - Stage 6 keyboard input + Stage 7 Claude Code
+    roundtrip + Stage 8/9/10 features — separate
+    stages.
+
 ### Changed
 
 - **`docs/SESSION-HANDOFF.md` item 2 truth-up.** The

@@ -210,9 +210,65 @@ type ScreenNotification =
     /// in this batch (typically contiguous, but not required).
     /// Stage 5's coalescer collapses many of these into one
     /// before they reach the UIA peer.
+    ///
+    /// Today the parser publishes `RowsChanged []` (empty list
+    /// — "something changed, you decide what to read"). Stage 5's
+    /// coalescer reads `Screen.SequenceNumber` + `SnapshotRows`
+    /// to compute the actual row diffs.
     | RowsChanged of int list
     /// The parser / reader loop hit an unexpected exception
     /// that would otherwise have been swallowed. Surfaced via
     /// NVDA so the user knows something went wrong rather
     /// than the terminal silently freezing.
     | ParserError of string
+    /// A `TerminalModes` flag changed value. Stage 4.5 PR-B's
+    /// alt-screen toggle (`?1049h/l`) is emitted as
+    /// `ModeChanged(AltScreen, true/false)` so Stage 5's
+    /// coalescer can treat it as a hard flush barrier (the
+    /// buffer just changed wholesale; pending coalesced text
+    /// must drain first; frame-hash + spinner state must
+    /// reset). Stage 6 emits the same shape for DECCKM,
+    /// bracketed paste, and focus reporting transitions.
+    /// Emitted **after** the `lock gate` release in
+    /// `Screen.enterAltScreen` / `exitAltScreen` so the channel
+    /// publish doesn't extend the gate's hold.
+    | ModeChanged of flag: TerminalModeFlag * value: bool
+
+/// Discriminator for which `TerminalModes` bit just flipped.
+/// Mirrors the field names on the `TerminalModes` record so the
+/// coalescer + future Stage 6 input layer can pattern-match on
+/// the specific mode rather than always re-reading the record.
+and TerminalModeFlag =
+    | AltScreen
+    | CursorVisible
+    | DECCKM
+    | BracketedPaste
+    | FocusReporting
+
+/// Stable activity-ID vocabulary for `RaiseNotificationEvent`'s
+/// `activityId` parameter. NVDA can be configured per-tag (mute
+/// updates, prioritise errors, etc.); using a constant module
+/// prevents typo'd magic strings from drifting across stages.
+///
+/// Each tag is namespaced with `pty-speak.` so user-visible
+/// NVDA configuration screens distinguish our notifications
+/// from any other application's.
+module ActivityIds =
+    /// Streaming PTY output (Stage 5 coalescer's primary channel).
+    let output = "pty-speak.output"
+    /// Velopack auto-update flow (Stage 11 `Ctrl+Shift+U`).
+    let update = "pty-speak.update"
+    /// Parser / reader-loop exception surfaced via the
+    /// notification channel.
+    let error = "pty-speak.error"
+    /// Diagnostic launcher (`Ctrl+Shift+D` → process-cleanup
+    /// PowerShell script).
+    let diagnostic = "pty-speak.diagnostic"
+    /// Release-notes browser launcher (`Ctrl+Shift+R`).
+    let releases = "pty-speak.releases"
+    /// Terminal-mode transition (alt-screen, etc.) — emitted
+    /// when Stage 5's coalescer flushes around a `ModeChanged`
+    /// event. Today the announcement is empty (silent flush
+    /// barrier); a future stage may flip to a verbosity-aware
+    /// message.
+    let mode = "pty-speak.mode"

@@ -11,6 +11,7 @@
     <Compile Include="Screen.fs" />
     <Compile Include="AnnounceSanitiser.fs" />
     <Compile Include="UpdateMessages.fs" />
+    <Compile Include="Coalescer.fs" />
   </ItemGroup>
 
   <ItemGroup>
