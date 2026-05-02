@@ -68,7 +68,540 @@ In a terminal, they constantly diverge:
 - Sighted users glance at the new content; blind users
   hear nothing without explicit intervention.
 
-## Glossary
+## Technical constraints we work within
+
+This section names the platform-, library-, and protocol-level
+limits that shape every decision below. Future PRs are
+encouraged to add to this list when they hit a new one.
+
+### WPF + Win32
+
+- **WPF dispatcher is single-threaded and STA.** UI work, UIA
+  peer events, and clipboard access all serialise on the
+  dispatcher thread. Long operations on the dispatcher freeze
+  the window. Background work has to marshal back via
+  `Dispatcher.InvokeAsync` for any UI-touching call.
+- **Routed-event ordering:** `PreviewKeyDown` (tunneling) →
+  `KeyDown` (bubbling) → `InputBindings` → `CommandBindings`.
+  Marking `e.Handled = true` in any handler stops the rest. We
+  exploit this for the `AppReservedHotkeys` short-circuit.
+- **`InputBindings` on a custom `FrameworkElement` are NOT
+  auto-routed by `CommandManager`.** `KeyBinding` →
+  `CommandBinding` only fires reliably on built-in `Control`
+  subclasses. We learned this in Stage 6 (Ctrl+V paste fix);
+  the fix was direct gesture handling at the top of
+  `OnPreviewKeyDown`.
+- **`Clipboard.SetText` requires STA + can throw
+  `COMException`** when the OS clipboard is contended (e.g. the
+  user just pasted from another app). Single-attempt is
+  acceptable; the user retries.
+- **`MeasureOverride` controls layout.** Returning a fixed size
+  means the element doesn't track parent resize — we hit this
+  as the Stage 6 resize-cuts-off-text bug; fix was to honour
+  `availableSize`.
+- **WPF's `OnRender` runs on the dispatcher.** Long renders
+  block input. We use `Screen.SnapshotRows` to take ONE
+  locked snapshot per render frame instead of repeated
+  `GetCell` calls (Acc/9 fix in Stage 5).
+- **F# 9 strict-null + WPF interop friction.** F# 9's
+  nullness analysis sometimes disagrees with C# nullable
+  annotations on third-party assemblies (e.g.
+  `ILogger.BeginScope` returning `IDisposable?` is read by
+  F# as non-null). Workaround: return a no-op disposable
+  rather than `null`.
+
+### ConPTY (Windows pseudo-console)
+
+- **No OVERLAPPED I/O on ConPTY pipes.** All reads and writes
+  are synchronous. Our reader runs in its own background
+  task; our writer (`ConPtyHost.WriteBytes`) blocks the
+  caller until the kernel accepts the bytes.
+- **Pipe handles must be released by the parent immediately
+  after `CreatePseudoConsole`** or the child's pipes never
+  signal EOF. Single missed close causes hangs on shutdown.
+  Documented inline in `PseudoConsole.fs:create`.
+- **The ConPTY init prologue includes `\x1b[?9001h\x1b[?1004h`**
+  emitted by ConPTY itself before the child runs. Stage 4.5's
+  parser must not choke on these; Stage 6 PR-A's
+  FocusReporting arm now handles `?1004h` explicitly.
+- **`ResizePseudoConsole` is documented thread-safe** but the
+  child shell does layout work on every resize. WPF's
+  per-pixel `SizeChanged` during a window drag would hammer
+  the child without debouncing — Stage 6's 200ms
+  `DispatcherTimer` debounce protects against this.
+- **`Job Object` containment requires the child to be
+  assigned BEFORE its first instruction** for strict
+  guarantees. We don't pass `CREATE_SUSPENDED` (microsecond
+  race window accepted; cmd.exe doesn't fork that fast).
+  `KILL_ON_JOB_CLOSE` ensures the descendant tree dies on
+  parent exit even on hard parent crash.
+- **Environment variables inherit from parent by default.**
+  `lpEnvironment = NULL` in `CreateProcess`. Sensitive vars
+  (`GITHUB_TOKEN`, `OPENAI_API_KEY`) reach the child unless
+  filtered. Stage 7 will add the filter (env-scrub PO-5).
+
+### UIA (UI Automation) — what NVDA actually consumes
+
+- **`UIElementAutomationPeer.FromElement` returns `null`
+  until UIA queries the element.** Peer creation is lazy.
+  Our `Announce` early-skips when peer is null; it's a
+  defensive default, not a bug.
+- **NVDA disables `LiveRegion` and `TextChanged` events for
+  terminals.** Forbidden by `spec/tech-plan.md` §5.6 to
+  prevent double-announce. Don't re-add them.
+- **`AutomationNotificationProcessing.MostRecent` is
+  per-`activityId`.** Rapid bursts of the same activityId
+  supersede each other in NVDA's queue; chunks earlier in a
+  burst can be dropped before NVDA reads them. We use
+  `ImportantAll` for streaming output (Stage 6 post-fix) and
+  `MostRecent` for hotkey-style one-shot announcements.
+- **`ITextProvider` vs `ITextProvider2`.** Newer NVDA versions
+  prefer the `2` variant when present; it adds caret-aware
+  range methods (`GetCaretRange`). We currently implement
+  `ITextProvider` only.
+- **`ITextProvider.GetSelection()` is how NVDA learns the
+  caret position.** Returning a zero-width range at the PTY
+  cursor lets NVDA's "current line" command read the right
+  line WITHOUT moving the system caret. We don't yet
+  implement this; the disconnect that triggered this
+  document is precisely this gap.
+- **Document control type is the right shape for terminal
+  content.** Stage 4 sets it; NVDA recognises it as
+  document-shaped and exposes its content via the Text
+  pattern.
+- **NVDA notification queue depth is implementation-defined**
+  and can drop entries under sustained load. The Coalescer
+  (Stage 5) handles producer-side rate-limiting.
+- **`activityId` is a free-form string the user / contributor
+  can later filter on.** We define a stable vocabulary
+  (`pty-speak.output`, `pty-speak.update`, `pty-speak.error`,
+  `pty-speak.diagnostic`, `pty-speak.releases`,
+  `pty-speak.mode`, `pty-speak.new-release`).
+
+### NVDA-specific behaviour we have to coexist with
+
+- **NVDA-modifier key is user-configurable** (Insert,
+  CapsLock, both). Our screen-reader-modifier filter has to
+  let bare presses of either through so NVDA receives them.
+- **"Speak typed characters" setting** echoes typed letters
+  via NVDA itself — independent of our streaming. Risks
+  double-announce when the shell echoes back through our
+  Notification path. Currently the maintainer ships with
+  this on; future suppression heuristics are Phase 2.
+- **NVDA Speech History viewer (NVDA+F4 then F4)** is what
+  sighted contributors should ask blind users to consult
+  for "what did NVDA actually say". Distinct from "what did
+  the user hear" (audio output, speech rate, etc. matter).
+- **NVDA's review cursor doesn't move automatically** when
+  document content changes. If we want "the most recent
+  output line is what NVDA reads on the next review
+  command", we'd need to push the review cursor — which
+  isn't an NVDA-supported operation through standard UIA.
+
+### VT escape sequence parser
+
+- **Only a fraction of xterm's sequence space is implemented.**
+  Stage 4.5 covers DECTCEM, DECSC/DECRC, alt-screen 1049,
+  256/truecolor SGR, OSC 52 (silent drop). Stage 6 adds
+  DECCKM, bracketed paste, focus reporting. **Hundreds of
+  other private modes** exist; they're silently dropped.
+- **Response-generating sequences are forbidden** per
+  `SECURITY.md` (CVE-2003-0063, CVE-2022-45872, etc.). DSR,
+  DA1/2/3, DECRQM, DECRQSS, cursor-position reports, title
+  reports — all parsed and dropped, never responded to.
+- **Malformed input must not crash the parser.** Audit-cycle
+  SR-1 + SR-3 hardened the state machine; the catch-all in
+  the reader loop publishes a `ParserError` rather than
+  letting the exception terminate the app.
+- **OSC 52 (clipboard set from child) is silently dropped.**
+  A child writing `\x1b]52;c;<base64>\x07` MUST NOT be one
+  paste away from RCE.
+
+### F# 9 / .NET 9
+
+- **Strict-null + central package management** are both on.
+  Reading C# `Nullable<T>` annotations through F#'s nullness
+  view sometimes diverges (`IDisposable?` from
+  `Microsoft.Extensions.Logging.Abstractions` 9.0.0 is read
+  as non-null in F#). Workarounds documented at the call
+  sites.
+- **`type ... and ...`** for mutual recursion in F# requires
+  `let rec` for value bindings (we hit this in
+  Coalescer.fs's hash functions). Type definitions don't
+  need `rec` because F# auto-recurses.
+- **F# extension method visibility** requires `open` on the
+  containing namespace. The `LogInformation` /
+  `LogError` extension methods are in
+  `Microsoft.Extensions.Logging`; missing the open is a
+  compile error rather than a fallback to the underlying
+  `Log` method.
+- **F# generic interface methods on `ILogger`** have known
+  syntax pitfalls; the `member _.Log<'TState>` form with
+  nullness annotations is finicky and worth verifying via CI.
+
+### Threading model
+
+- **Three thread classes** in steady-state:
+  1. **WPF dispatcher** — UI, UIA peer events, hotkey
+     handlers, OnRender, OnPreviewKeyDown.
+  2. **PTY reader** — Task.Run loop reading stdout chunks;
+     marshals VtEvent application back to dispatcher via
+     `Dispatcher.InvokeAsync`.
+  3. **Coalescer drain** — background Task.Run loop reading
+     the notification channel; marshals `Announce` calls back
+     to dispatcher.
+- **The PTY stdin pipe is single-writer.** All keyboard /
+  paste / focus-event writes funnel through the dispatcher
+  (single-threaded by definition); no lock needed.
+- **`Channel<T>` is the cross-thread primitive of choice.**
+  Bounded with `FullMode = DropOldest` (parser → coalescer)
+  or `FullMode = Wait` (coalescer → drain). DropOldest at
+  the high-volume seam protects against an out-of-control
+  parser; Wait at the low-volume seam preserves
+  notification ordering.
+
+### File system + persistence
+
+- **`%LOCALAPPDATA%`** is the conventional per-user data
+  root for Windows desktop apps. Logs go under
+  `PtySpeak/logs/`.
+- **No registry use.** We deliberately avoid HKCU; logs +
+  future TOML config live in well-known file paths so
+  uninstall + reinstall is clean.
+- **Windows file paths reject `:`** in filenames. Session
+  log files use `HH-mm-ss` not `HH:mm:ss`.
+
+## Desired blind-user workflows
+
+Each workflow below is a **scenario** the design must
+support, named with the maintainer's user-perspective in
+mind. Most have specific implementation work pending; the
+status notes which stage delivers them.
+
+### W1 — First launch and orientation
+
+**User goal:** Open pty-speak; immediately know what shell
+is running, what version of pty-speak is loaded, and that
+the cursor is ready for input.
+
+**Current state:** Window title + Document role announce
+on focus (Stage 4). Cmd.exe banner streams via Stage 5
+coalescer. **Working** in steady-state.
+
+**Open issues:** if the streaming-silence bug we're
+diagnosing also affects launch announcements, the user
+hears only the title. Currently being investigated via the
+session-log infrastructure.
+
+### W2 — Type a command, hear it run
+
+**User goal:** Type `git status`; hear typed characters
+(NVDA setting); press Enter; hear each output line stream
+back at conversational pace; know when the command
+completes and the prompt is ready again.
+
+**Current state:** Stage 5 streams output as
+Notifications. Stage 6 routes typed input. **Streaming-
+silence bug currently breaks this for typed-command
+output**; banner reads on launch but `dir` / `echo` output
+goes silent. Diagnosis in flight.
+
+**Stage 8 candidate:** "Command complete" cue when the
+prompt redraws — an audible confirmation that the user
+can take their next action. Strategic review §G assigned
+this to Stage 8.
+
+### W3 — Long-running output (compile, test, install)
+
+**User goal:** Run `npm install` or `cargo build`. Hear
+that something is happening (not silence); not be drowned
+in spinner output; know when it finishes; be able to skim
+the most recent output afterwards.
+
+**Current state:** Coalescer's spinner suppression handles
+the flood (Stage 5). "Something is happening" relies on
+non-spinner output still arriving. "Finishes" cue is W2's
+Stage 8 candidate.
+
+**Open issues:** the user may want to "tune out" while the
+command runs and "catch up" afterwards. Currently NVDA
+keeps speaking until the queue empties; if they ALT+TAB
+away, output keeps streaming into the screen but they
+miss the audio. Some affordance for "summarise the last N
+seconds when I'm ready" would help — Phase 2.
+
+### W4 — Review previous command's output
+
+**User goal:** Just ran `dir`; want to hear specific
+lines from the output (e.g. "what was the size of
+config.json?") without re-running the command.
+
+**Current state:** NVDA review cursor walks the screen via
+the UIA Text pattern (Stage 4). **Working** for
+character/word/line navigation.
+
+**Open issues:** the "current line" desync the maintainer
+hit (NVDA reports a different line than where the system
+caret is). Pattern B fixes this — implement
+`ITextProvider.GetSelection()` returning a zero-width
+range at the PTY cursor. Phase 2 stage.
+
+### W5 — Find a specific string in output
+
+**User goal:** Test runner printed 200 lines; want to find
+"FAIL:" specifically. Don't want to arrow-key through 200
+lines.
+
+**Current state:** **Not supported.** Falls back to
+NVDA's built-in find functionality (NVDA+Ctrl+F in some
+configurations) or the user re-runs the command piped to
+`findstr` / `grep`.
+
+**Phase 2 candidate:** in-app search affordance —
+`Ctrl+F` opens a modal search box; results presented as a
+navigable list ("Failed: line 47", "Failed: line 89");
+selecting a result moves the review cursor to that line.
+
+### W6 — Claude Code roundtrip (the primary use case)
+
+**User goal:** Type a question; hear Claude's streaming
+response, line by line; know when Claude is "thinking"
+vs "done"; be able to interrupt or follow up; navigate
+back through prior responses for reference.
+
+**Current state:** Substrate exists (Stage 4.5 alt-screen
++ DECCKM via Stage 6). End-to-end roundtrip is **Stage 7**
+— not yet shipped.
+
+**Open issues:** Claude Code uses Ink (React-style TUI).
+Ink does full-screen redraws + cursor-positioning; the
+"current line" concept blurs because the WHOLE screen
+might be conceptually one logical region. Worth special-
+casing: detect Ink-shaped output and switch to a different
+announcement strategy (e.g. announce the whole new state
+instead of per-line diffs).
+
+**Lack of precedent:** no existing terminal emulator has
+solved screen-reader-friendly Claude Code interaction.
+We're inventing this.
+
+### W7 — Multi-line input
+
+**User goal:** Compose a multi-line message / script /
+heredoc. Want to navigate within the in-progress block,
+edit prior lines, then submit when ready.
+
+**Current state:** Shell-dependent. cmd.exe: not really
+supported. PowerShell + PSReadLine: rich multi-line edit.
+bash + readline: vi/emacs mode multi-line.
+
+**Phase 2 candidate (Pattern C):** modal "compose"
+dialog with standard text-edit UIA semantics. User
+presses a hotkey (e.g. `Ctrl+Shift+M`?), edits in a
+familiar text-area-shaped surface, submits to the
+shell as a paste. Bypasses shell-specific multi-line
+quirks; consistent UX across all shells.
+
+### W8 — Paste content safely
+
+**User goal:** Copy a snippet from a doc; paste into
+terminal; know what was pasted; be confident it didn't
+include malicious escape sequences.
+
+**Current state:** Stage 6 PR-B wires Ctrl+V → bracketed-
+paste-aware encoder with `\x1b[201~` stripping for
+injection defence. **Working.**
+
+**Phase 2 candidate:** "review before paste" modal —
+display the pasted content in a dialog; user presses
+Enter to commit or Esc to cancel. Especially useful for
+security-sensitive sessions (e.g. running an ssh command
+where a paste could include malicious content).
+
+### W9 — Switch between apps fluidly
+
+**User goal:** Alt+Tab to a docs page, find a command
+syntax, Alt+Tab back to pty-speak; continue typing
+naturally.
+
+**Current state:** WPF focus events fire normally;
+pty-speak's input cursor is right where it was;
+keystrokes resume. **Working visually.** Audibly:
+NVDA will announce "pty-speak terminal" on app refocus
+(default NVDA behaviour for window focus); doesn't tell
+the user where the cursor is in the terminal context.
+
+**Open issues:** a "you're back; cursor is on prompt"
+cue could help. Tied to W4's caret-tracking fix —
+once `GetSelection` returns the cursor position, NVDA's
+on-focus content read may pick up the right place.
+
+### W10 — Recover from confusion
+
+**User goal:** "Wait, where am I? What was the last
+thing that happened? Is this still my terminal?"
+
+**Current state:** NVDA review cursor + W4 navigation
+help. NVDA+T reads the window title.
+
+**Phase 2 candidate:** "tell me current state" hotkey
+that announces a structured status: "Pty-speak.
+Current shell: cmd.exe. Last command: dir. Cursor at
+prompt. Output buffer: 47 lines available for review."
+One-shot, NVDA-friendly recovery cue.
+
+### W11 — Discover features
+
+**User goal:** "What hotkeys does pty-speak provide?
+What can I do with it?"
+
+**Current state:** README + USER-SETTINGS.md document
+the hotkeys; no in-app discovery.
+
+**Phase 2 candidate:** `Ctrl+Shift+?` (or similar)
+announces a structured summary of available hotkeys.
+Like a "command palette" but audible.
+
+### W12 — Configure pty-speak to my preferences
+
+**User goal:** Adjust speech rate hints, font size,
+log verbosity, NVDA voice settings.
+
+**Current state:** Hardcoded everything. Phase 2's TOML
+config substrate (catalogued in
+[`USER-SETTINGS.md`](USER-SETTINGS.md)) is the path.
+
+### W13 — Report a bug, paste a log
+
+**User goal:** Something went wrong; capture diagnostics
+and send to a maintainer / contributor.
+
+**Current state:** Logging shipped (PR #102; logs at
+`%LOCALAPPDATA%\PtySpeak\logs\`). PR #103 in flight to
+add per-session files + `Ctrl+Alt+L` clipboard copy for
+one-keypress sharing.
+
+### W14 — Interrupt a stuck process
+
+**User goal:** Run a long command, realise it's hung,
+press Ctrl+C, have it actually interrupt.
+
+**Current state:** Stage 6 wires Ctrl+C through the
+encoder as 0x03 (SIGINT). **Working** for cmd.exe.
+
+**Open issues:** if pty-speak's UI is ALSO hung (e.g. a
+WPF dispatcher freeze), Ctrl+C might not reach the
+encoder. Independent problem; Phase 2 monitoring.
+
+## Lack of existing precedent
+
+This section is the maintainer's specific request: **honestly
+acknowledge what no one has solved yet** and where pty-speak
+is doing original work.
+
+### What HAS been done
+
+- **Sighted-developer terminal emulators**: solved for
+  decades. xterm, Windows Terminal, iTerm2, Alacritty,
+  WezTerm — visual rendering of VT escape sequences is
+  well-understood.
+- **Screen-reader-aware text editing**: standard.
+  TextBoxes in WPF / Cocoa / GTK have decades of
+  accessibility infrastructure.
+- **Web browser accessibility**: well-developed. NVDA's
+  browse mode, ARIA live regions, semantic HTML — mature
+  ecosystem.
+
+### What has been PARTIALLY done
+
+- **Windows Terminal + NVDA**: NVDA detects the
+  `TermControl2` class name and applies terminal-specific
+  heuristics. Works for streaming output via UIA's
+  `TextChanged` event (which NVDA only enables for
+  recognised terminal classes — pty-speak doesn't have
+  this signal yet, which is one of our follow-ups).
+  Still imperfect for many of W1-W14 above.
+- **iTerm2 + VoiceOver (macOS)**: bespoke accessibility
+  layer with VoiceOver-specific routing. Different
+  platform; can't directly port.
+- **emacspeak (Emacs)**: predates UIA entirely.
+  Character-level speech feedback inside Emacs's input
+  loop. Single-app paradigm; not a terminal emulator
+  but a screen-reader-aware editor that happens to
+  include terminal modes.
+- **`speakup` (Linux console screen reader)**: kernel-
+  level character-level speech. Different paradigm
+  (frame-buffer console, not pseudo-console).
+- **NVDA's third-party "Terminal" addon**: changes how
+  NVDA handles terminal-shaped content. Worth studying
+  but addresses NVDA's side, not the terminal's.
+
+### What has NOT been done (where we're inventing)
+
+- **Streaming output via `RaiseNotificationEvent` with
+  per-`activityId` policy choices.** Stage 5 was a
+  deliberate design experiment; the literature on which
+  `NotificationProcessing` mode to pick for high-frequency
+  terminal output is essentially nonexistent.
+- **Coalescer-with-frame-hash for spinner / redraw
+  suppression in NVDA notifications.** The spec for
+  Stage 5 cited it as a guess at a reasonable heuristic;
+  no prior implementations exist for terminal output.
+- **Caret-tracking via `ITextProvider.GetSelection` for
+  PTY cursor position.** Implementations exist for text
+  editors, but the terminal case (where the caret moves
+  due to escape sequences, not direct user navigation) is
+  an open design question.
+- **Modal break-outs from terminal flow** (Pattern C).
+  Not a thing in any existing terminal emulator. We're
+  considering it specifically because the screen-reader-
+  fluent path may diverge from the sighted-fluent path.
+- **Screen-reader-friendly Claude Code interaction.**
+  Ink's full-screen TUI is the test case for Stage 7;
+  no terminal emulator has shipped a documented solution.
+  This is also where pty-speak's user value is highest —
+  blind developers using Claude Code is the primary use
+  case the project exists to serve.
+- **A "command complete" audio cue.** Some shell prompts
+  emit `\a` (bell) as a completion hint; NVDA doesn't
+  forward terminal bells distinctively. Stage 8 will
+  invent the right signal.
+- **Custom review mode (Pattern D)** — distinct from
+  NVDA's browse mode but specific to terminal scrollback
+  semantics. Stage 10 reservation.
+- **Per-shell behaviour adaptation.** No terminal emulator
+  meaningfully adapts to the spawned shell beyond a
+  per-shell colour scheme. We've started this with Ctrl+L
+  → cmd.exe-specific `cls\r`; a fuller framework is Phase
+  2+.
+
+### What's hard about inventing
+
+- **No NVDA conformance test suite for terminals.** We
+  rely on the maintainer's lived experience as a blind
+  developer plus xUnit pinning of the producer-side
+  contracts (Stage 5 coalescer tests, Stage 6 keyboard
+  encoding tests, etc.). Audio-side correctness is
+  manual.
+- **Iteration cycle is slow.** "Did NVDA actually read
+  this?" requires a Windows machine + NVDA install + a
+  human listener. Not friendly to CI-driven development.
+- **The right design depends on the user's NVDA settings.**
+  Speech rate, "speak typed characters" on/off, modifier
+  key choice, voice — all change what the right pty-speak
+  behaviour looks like. We can document recommendations
+  but can't standardise.
+- **Sighted contributors can't easily verify changes.**
+  The audio-output observation is qualitatively different
+  from visual-output observation. A sighted reviewer can
+  read the screen text but not assess whether the speech
+  felt natural. Maintainer + community of blind-user
+  testers is the long-term path.
+- **The blind-developer-using-terminal user community
+  is small but growing.** Each shipped preview feeds back
+  into the next stage's design. Long feedback loop.
+
+
 
 Naming the paradigms so future PRs and discussions can
 reference them precisely.
