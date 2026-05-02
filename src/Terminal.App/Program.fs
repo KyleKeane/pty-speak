@@ -550,6 +550,19 @@ module Program =
         // to a maintainer without navigating Explorer.
         setupCopyLatestLogKeybinding window
 
+        // Post-PR-#106 fix — also wire Ctrl+Alt+L through the
+        // TerminalView's OnPreviewKeyDown direct-handling path.
+        // The Window-level KeyBinding above (setupCopyLatestLogKeybinding)
+        // SHOULD be sufficient on paper — KeyGesture.MatchesImpl
+        // honours WPF's e.SystemKey for Alt-modified gestures —
+        // but in practice the maintainer reported the gesture
+        // never reaches `runCopyLatestLog` on a current-main
+        // build. The direct path bypasses the unreliable
+        // CommandManager class-handler routing entirely.
+        // Both paths are wired; whichever fires first wins.
+        window.TerminalSurface.SetCopyLogToClipboardHandler(
+            Action(fun () -> runCopyLatestLog window))
+
         // Stage 5 — two-channel pipeline:
         //
         //   parser thread → notificationChannel (256, DropOldest)
