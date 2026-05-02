@@ -17,6 +17,154 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Stage 6 PR-B: keyboard input, paste, focus reporting, dynamic
+  resize, and Job Object child-process lifecycle.** Second and
+  final half of Stage 6 — pty-speak becomes interactive. Typed
+  keys reach the cmd.exe child via the new pure-F# `KeyEncoding`
+  module; paste via Ctrl+V / right-click / Edit menu wraps in
+  bracketed-paste markers when DECSET ?2004 is set; window resize
+  flows through to `ResizePseudoConsole` after a 200ms debounce;
+  the spawned child plus any process it later spawns are
+  contained in a Job Object so the entire tree dies via
+  `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` even on a hard parent
+  crash.
+
+  Component pieces:
+
+  - **New `Terminal.Core.KeyEncoding` module** — pure F# encoder
+    `KeyCode * KeyModifiers * TerminalModes -> byte[] option`.
+    Decoupled from `System.Windows.Input.Key` via its own
+    `KeyCode` discriminated union and `KeyModifiers` flags type
+    so a future Linux / macOS port (Avalonia, MAUI, web) reuses
+    this module unchanged — only the WPF→KeyCode adapter changes.
+    Encoding tables follow the xterm "PC-Style" + "VT220-Style"
+    function-key conventions: arrows are DECCKM-aware (`\x1b[A`
+    normal vs `\x1bOA` application), modified cursor keys use
+    the SGR-modifier protocol (`\x1b[1;<mod>A`), F1-F4 use SS3
+    form (`\x1bO<P/Q/R/S>`), F5-F12 use CSI form
+    (`\x1b[<n>~`), Ctrl-letter folds Shift, Alt-letter
+    ESC-prefixes, Backspace sends DEL (`0x7f`, modern xterm
+    default that bash / zsh / PowerShell / Claude Code all
+    expect). The `KeyCode.Unhandled` case is the
+    future-proofing escape hatch — any unknown key produces
+    `None` rather than a crash; new WPF Key values can ship
+    without breaking us.
+
+  - **Bracketed-paste handler** bound to
+    `ApplicationCommands.Paste` so Ctrl+V, right-click → Paste,
+    and Edit menu → Paste all flow through one site.
+    `KeyEncoding.encodePaste` strips embedded `\x1b[201~` from
+    clipboard content **before** wrapping — paste-injection
+    defence diverging from xterm's permissive default. NVDA
+    users can't easily inspect their clipboard before pasting,
+    so an attacker-crafted paste containing `\x1b[201~`
+    followed by a malicious command would otherwise close the
+    bracket-paste frame early and execute the post-paste
+    portion as if typed. SECURITY.md tracks this as a
+    deliberate accessibility-first posture divergence.
+
+  - **Focus reporting** via `OnGotKeyboardFocus` /
+    `OnLostKeyboardFocus`. Emits `\x1b[I` / `\x1b[O` to the
+    child only when DECSET ?1004 is set. Editors like nano /
+    vim / Emacs and Claude Code use these to suspend cursor
+    blink, save unsaved buffers on focus loss, etc.
+
+  - **Dynamic resize** via `OnRenderSizeChanged` →
+    `DispatcherTimer` (200ms trailing-edge debounce) →
+    `ConPtyHost.Resize` → `Win32.ResizePseudoConsole`. WPF
+    SizeChanged fires per pixel during a window drag (60Hz);
+    debouncing prevents the child shell from re-laying-out on
+    every tick and flooding Stage 5's output coalescer.
+    Hardcoded `// TODO Phase 2: TOML-configurable` constant.
+    Note: Stage 6 resizes the **PTY** (so the child shell sees
+    the new column count); the in-process `Cell[,]` Screen
+    grid stays at construction-time 30×120, so oversize
+    windows have empty padding and undersize windows clip.
+    Full grid runtime resize is logged as a Phase 2 stage in
+    `docs/SESSION-HANDOFF.md`.
+
+  - **Job Object child-process lifecycle.** `Native.fs` adds
+    P/Invokes for `CreateJobObjectW`,
+    `SetInformationJobObject`, `AssignProcessToJobObject` plus
+    the `JOBOBJECT_BASIC_LIMIT_INFORMATION` /
+    `JOBOBJECT_EXTENDED_LIMIT_INFORMATION` / `IO_COUNTERS`
+    structs and a `SafeJobHandle`. `PseudoConsole.create`
+    creates a job with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`
+    set, assigns the immediate cmd.exe to it, and stores the
+    handle on `PtySession.JobHandle`. **Layered on top of**
+    the existing `TerminateProcess` cleanup rather than
+    replacing it: `TerminateProcess` is fast targeted cleanup
+    for the immediate cmd.exe (so its pipe drains promptly);
+    the Job Object is the kernel-enforced safety net for
+    grandchildren (e.g. a `node` process Stage 7's Claude
+    Code launches inside pty-speak). On any setup-step
+    failure the orphan child is terminated before returning
+    Error so we never leak.
+
+  - **`OnPreviewKeyDown` filter ordering** is load-bearing
+    and pinned by inline doc-comment + the test suite:
+    1. `AppReservedHotkeys` check first (Ctrl+Shift+U /
+       Ctrl+Shift+D / Ctrl+Shift+R short-circuit and let
+       the parent Window's `InputBindings` see them).
+    2. NVDA / screen-reader modifier filter second (bare
+       Insert / CapsLock and Numpad-with-NumLock-off
+       return without `Handled`).
+    3. WPF Key + ModifierKeys → `KeyCode` + `KeyModifiers`
+       translate.
+    4. Plain printable typing (letters / digits / space
+       without Ctrl or Alt) defers to `OnPreviewTextInput`
+       so WPF's text-composition pipeline (IME, AltGr,
+       dead keys) handles it correctly.
+    5. Encode + write via `KeyEncoding.encodeOrNull`.
+
+  - **NVDA / screen-reader compatibility.** The bare
+    Insert + CapsLock filter covers NVDA, JAWS, and Narrator
+    modifier keys uniformly. The Numpad-with-NumLock-off
+    filter covers NVDA's review-cursor numpad layout.
+    Conservative on purpose — the cost of a few key presses
+    not reaching the shell is tiny compared to the cost of
+    breaking screen-reader navigation.
+
+  - **`AppReservedHotkeys` refresh** in
+    `src/Views/TerminalView.cs` — was stale (only listed
+    Ctrl+Shift+U); now lists all three currently-shipped
+    hotkeys (Ctrl+Shift+U, Ctrl+Shift+D, Ctrl+Shift+R) plus
+    the future-reserved Ctrl+Shift+M (Stage 9) and
+    Alt+Shift+R (Stage 10) as comments.
+
+  - **`Program.fs compose ()`** — wires the new host into
+    `TerminalView.SetPtyHost` after spawn. The view takes
+    `Action<byte[]>` + `Action<int,int>` callbacks rather
+    than a direct `ConPtyHost` reference so `Views/`
+    intentionally doesn't take a project ref on
+    `Terminal.Pty` (preserves the F#-first / WPF-only-at-
+    the-edge boundary). All callbacks invoke on the WPF
+    dispatcher thread, which is also the only thread that
+    touches the ConPTY stdin pipe — single-writer
+    discipline by construction.
+
+  Tests:
+
+  - **New `tests/Tests.Unit/KeyEncodingTests.fs`** (~35
+    facts) pinning the entire encoding table: cursor keys
+    (DECCKM normal vs application vs modified); editing
+    keypad (Insert / Delete / Home / End / PageUp /
+    PageDown); F1-F12 (SS3 vs CSI form, modified
+    variants); Tab / Enter / Esc / Backspace; Ctrl-letter
+    folding Shift; Alt-letter ESC-prefix; Ctrl+`@`/`[`/
+    `?` mapping to NUL/ESC/DEL; non-ASCII char returns
+    None; Unhandled returns None; bracketed paste
+    wrapping + injection defence; Unicode UTF-8
+    survival; focus-reporting bytes; SGR-modifier
+    parameter encoding; `encodeOrNull` C#-friendly
+    wrapper.
+
+  - **`tests/Tests.Unit/ConPtyHostTests.fs`** extended
+    with two new Stage 6 facts: `ConPtyHost.Resize`
+    accepts new dimensions without erroring; the
+    `JobHandle` is non-null and not-invalid after
+    spawn (proves the Job Object setup path works).
+
 - **Stage 6 PR-A: parser arms for DECCKM, bracketed paste, and
   focus reporting.** The first half of Stage 6 lands the
   parser-side mode-flag plumbing for the three remaining

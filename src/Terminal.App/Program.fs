@@ -517,6 +517,24 @@ module Program =
                         window.TerminalSurface
                         notificationChannel.Writer
                         cts.Token
+                // Stage 6 PR-B — wire keyboard input + paste + focus
+                // events + window-resize through to the new host.
+                // SetPtyHost takes two callbacks because Views/
+                // intentionally doesn't reference Terminal.Pty (would
+                // break the F#-first / WPF-only-at-the-edge boundary).
+                // The view invokes them on the WPF dispatcher thread,
+                // which is also the only thread that touches the
+                // ConPTY stdin pipe (single-writer discipline).
+                window.TerminalSurface.SetPtyHost(
+                    Action<byte[]>(fun bytes -> host.WriteBytes(bytes)),
+                    Action<int, int>(fun cols rows ->
+                        // Resize is best-effort: a transient failure
+                        // (e.g. the child has just exited) shouldn't
+                        // crash the app. The next SizeChanged tick
+                        // retries naturally.
+                        match host.Resize(int16 cols, int16 rows) with
+                        | Ok () -> ()
+                        | Error _ -> ()))
                 ())
 
         app.Exit.Add(fun _ ->

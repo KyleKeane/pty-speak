@@ -116,3 +116,48 @@ let ``ConPtyHost spawns cmd.exe and captures startup bytes`` () =
                     ex.Message
                     ex.StackTrace
                     ex.InnerException)
+
+// ---------------------------------------------------------------------
+// Stage 6 PR-B — Resize + Job Object smoke
+// ---------------------------------------------------------------------
+//
+// These tests don't simulate a real window resize or a real
+// grandchild process — they pin the wiring contracts that
+// Stage 6 relies on:
+//   * Resize accepts new dimensions and returns Ok.
+//   * The Job Object handle is non-null and not-invalid after spawn.
+//
+// Both Windows-only by construction (ConPTY required); fall-through
+// pass on non-Windows so dev workstations stay green.
+
+[<Fact>]
+let ``ConPtyHost.Resize accepts new dimensions without erroring`` () =
+    if not (isWindows ()) then () else
+    let cfg = { Cols = 80s; Rows = 24s; CommandLine = "cmd.exe" }
+    match ConPtyHost.start cfg with
+    | Error e -> Assert.Fail(sprintf "ConPtyHost.start failed: %A" e)
+    | Ok host ->
+        use host = host
+        // Resize to a different size; ResizePseudoConsole returns
+        // 0 (S_OK) on success which `host.Resize` translates to Ok.
+        match host.Resize(120s, 40s) with
+        | Ok () -> ()
+        | Error hr ->
+            Assert.Fail(sprintf "host.Resize returned HRESULT 0x%08X" hr)
+
+[<Fact>]
+let ``ConPtyHost.JobHandle is valid after spawn`` () =
+    if not (isWindows ()) then () else
+    let cfg = { Cols = 80s; Rows = 24s; CommandLine = "cmd.exe" }
+    match ConPtyHost.start cfg with
+    | Error e -> Assert.Fail(sprintf "ConPtyHost.start failed: %A" e)
+    | Ok host ->
+        use host = host
+        // SafeHandleZeroOrMinusOneIsInvalid considers 0 and -1
+        // invalid; the kernel returns a real handle if
+        // CreateJobObjectW + AssignProcessToJobObject succeeded.
+        Assert.NotNull(host.JobHandle :> obj)
+        Assert.False(host.JobHandle.IsInvalid,
+            "Job handle should be valid (non-zero, non-minus-one) after spawn")
+        Assert.False(host.JobHandle.IsClosed,
+            "Job handle should still be open while host is alive")

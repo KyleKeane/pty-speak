@@ -12,6 +12,7 @@
     <Compile Include="AnnounceSanitiser.fs" />
     <Compile Include="UpdateMessages.fs" />
     <Compile Include="Coalescer.fs" />
+    <Compile Include="KeyEncoding.fs" />
   </ItemGroup>
 
   <ItemGroup>

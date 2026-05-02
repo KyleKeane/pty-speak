@@ -15,6 +15,10 @@ type PtyCreateError =
     | AllocAttributeListFailed
     | UpdateAttributeFailed of win32: int
     | CreateProcessFailed of win32: int
+    /// Stage 6 PR-B — Job Object setup failure. The child process
+    /// has already been started and terminated when this error
+    /// returns; no orphan is left behind.
+    | JobObjectSetupFailed of stage: string * win32: int
 
 /// Configuration for a new pseudo-console session. cols/rows are the
 /// initial grid size; the child can be resized later via
@@ -49,7 +53,15 @@ type PtySession =
       ProcessId: uint32
       /// Heap-allocated attribute-list buffer. Must be passed to
       /// DeleteProcThreadAttributeList and then freed.
-      AttributeList: nativeint }
+      AttributeList: nativeint
+      /// Stage 6 PR-B — Job Object handle owning the child + any
+      /// processes the child spawns. Closing this handle (which
+      /// happens via SafeJobHandle.Dispose) triggers
+      /// `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and the kernel
+      /// terminates the entire process tree. Belt-and-braces on
+      /// top of `ConPtyHost`'s targeted `TerminateProcess` of the
+      /// immediate cmd.exe.
+      JobHandle: SafeJobHandle }
 
     interface IDisposable with
         member this.Dispose() =
@@ -64,6 +76,12 @@ type PtySession =
                 Win32.CloseHandle(this.ProcessHandle) |> ignore
             if this.ThreadHandle <> IntPtr.Zero then
                 Win32.CloseHandle(this.ThreadHandle) |> ignore
+            // Closing the job handle LAST gives the kernel a final
+            // KILL_ON_JOB_CLOSE pass for any process that might
+            // have escaped earlier cleanup steps. SafeHandle's
+            // finaliser also runs this if Dispose is missed entirely
+            // (e.g. on a hard parent crash).
+            this.JobHandle.Dispose()
 
 /// Functions for creating, resizing, and tearing down a pseudoconsole.
 /// All public functions return Result so callers don't need a try/catch
@@ -221,14 +239,109 @@ module PseudoConsole =
                             outputRead.Dispose()
                             Error(CreateProcessFailed err)
                         else
-                            Ok
-                                { Console = hPC
-                                  Stdin = inputWrite
-                                  Stdout = outputRead
-                                  ProcessHandle = pi.hProcess
-                                  ThreadHandle = pi.hThread
-                                  ProcessId = pi.dwProcessId
-                                  AttributeList = attrList }
+                            // 9. Stage 6 PR-B — create a Job Object,
+                            // mark it KILL_ON_JOB_CLOSE, and assign
+                            // the freshly-spawned child to it. The
+                            // child is already running by the time
+                            // CreateProcess returned (we don't pass
+                            // CREATE_SUSPENDED), so there's a
+                            // microsecond-window race in which the
+                            // child could fork before assignment;
+                            // cmd.exe in practice doesn't fork
+                            // anything that fast, and any escapee
+                            // would still be killed by the standard
+                            // ConPTY pipe-close path on shutdown.
+                            // The Job Object is the kernel-enforced
+                            // safety net for the post-CreateProcess
+                            // descendant tree (e.g. processes
+                            // started by a shell command Stage 7's
+                            // Claude Code launches).
+                            //
+                            // On any setup failure, we MUST
+                            // terminate the orphan child before
+                            // returning Error — leaving a running
+                            // child after a failed start would leak
+                            // a process and confuse later cleanup.
+                            let cleanupChildOnFailure () =
+                                try Win32.TerminateProcess(pi.hProcess, 1u) |> ignore with _ -> ()
+                                try Win32.CloseHandle(pi.hProcess) |> ignore with _ -> ()
+                                try Win32.CloseHandle(pi.hThread) |> ignore with _ -> ()
+                                Win32.DeleteProcThreadAttributeList(attrList) |> ignore
+                                Marshal.FreeHGlobal(attrList)
+                                hPC.Dispose()
+                                inputWrite.Dispose()
+                                outputRead.Dispose()
+                            let jobHandleRaw = Win32.CreateJobObjectW(IntPtr.Zero, null)
+                            if jobHandleRaw = IntPtr.Zero then
+                                let err = Marshal.GetLastWin32Error()
+                                cleanupChildOnFailure ()
+                                Error(JobObjectSetupFailed("CreateJobObjectW", err))
+                            else
+                                let jobHandle = new SafeJobHandle(jobHandleRaw)
+                                // Build JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+                                // with KILL_ON_JOB_CLOSE on; everything
+                                // else zeroed.
+                                let mutable jobInfo =
+                                    { BasicLimitInformation =
+                                        { PerProcessUserTimeLimit = 0L
+                                          PerJobUserTimeLimit = 0L
+                                          LimitFlags = Constants.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+                                          MinimumWorkingSetSize = 0un
+                                          MaximumWorkingSetSize = 0un
+                                          ActiveProcessLimit = 0u
+                                          Affinity = 0un
+                                          PriorityClass = 0u
+                                          SchedulingClass = 0u }
+                                      IoInfo =
+                                        { ReadOperationCount = 0UL
+                                          WriteOperationCount = 0UL
+                                          OtherOperationCount = 0UL
+                                          ReadTransferCount = 0UL
+                                          WriteTransferCount = 0UL
+                                          OtherTransferCount = 0UL }
+                                      ProcessMemoryLimit = 0un
+                                      JobMemoryLimit = 0un
+                                      PeakProcessMemoryUsed = 0un
+                                      PeakJobMemoryUsed = 0un }
+                                let jobInfoSize =
+                                    Marshal.SizeOf<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>()
+                                let jobInfoPtr = Marshal.AllocHGlobal(jobInfoSize)
+                                try
+                                    Marshal.StructureToPtr<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>(
+                                        jobInfo, jobInfoPtr, false)
+                                    let setOk =
+                                        Win32.SetInformationJobObject(
+                                            jobHandle.DangerousGetHandle(),
+                                            Constants.JobObjectExtendedLimitInformation,
+                                            jobInfoPtr,
+                                            uint32 jobInfoSize)
+                                    if not setOk then
+                                        let err = Marshal.GetLastWin32Error()
+                                        jobHandle.Dispose()
+                                        cleanupChildOnFailure ()
+                                        Error(JobObjectSetupFailed("SetInformationJobObject", err))
+                                    else
+                                        let assignOk =
+                                            Win32.AssignProcessToJobObject(
+                                                jobHandle.DangerousGetHandle(),
+                                                pi.hProcess)
+                                        if not assignOk then
+                                            let err = Marshal.GetLastWin32Error()
+                                            jobHandle.Dispose()
+                                            cleanupChildOnFailure ()
+                                            Error(JobObjectSetupFailed("AssignProcessToJobObject", err))
+                                        else
+                                            Ok
+                                                { Console = hPC
+                                                  Stdin = inputWrite
+                                                  Stdout = outputRead
+                                                  ProcessHandle = pi.hProcess
+                                                  ThreadHandle = pi.hThread
+                                                  ProcessId = pi.dwProcessId
+                                                  AttributeList = attrList
+                                                  JobHandle = jobHandle }
+                                finally
+                                    Marshal.FreeHGlobal(jobInfoPtr)
 
     /// Resize the pseudo-console grid. Idempotent and safe to call from
     /// any thread; the underlying ResizePseudoConsole is documented
