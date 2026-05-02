@@ -84,7 +84,7 @@ module Coalescer =
 
     /// FNV-1a 64-bit folded with the row index. See module
     /// docstring §"Per-row hash".
-    let internal hashRow (rowIdx: int) (cells: Cell[]) : uint64 =
+    let rec internal hashRow (rowIdx: int) (cells: Cell[]) : uint64 =
         let mutable h = fnvOffsetBasis
         for cell in cells do
             // Cell.Ch is a Rune (int code point).
