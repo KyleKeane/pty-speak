@@ -299,14 +299,38 @@ public class TerminalView : FrameworkElement
         string activityId,
         AutomationNotificationProcessing processing)
     {
+        // Streaming-path instrumentation: log whether the UIA peer
+        // is actually present (peer creation is lazy — UIA clients
+        // like NVDA trigger it on first query) and whether the
+        // RaiseNotificationEvent call fired. Metadata only:
+        // activityId + length; never the message text itself, per
+        // SECURITY.md "Logging chokepoint" policy.
+        var log = Terminal.Core.Logger.get("PtySpeak.Views.TerminalView.Announce");
         var peer = UIElementAutomationPeer.FromElement(this);
         if (peer is not null)
         {
+            Microsoft.Extensions.Logging.LoggerExtensions.LogInformation(
+                log,
+                "RaiseNotificationEvent firing. ActivityId={ActivityId} MsgLen={MsgLen} Processing={Processing}",
+                activityId, message.Length, processing);
             peer.RaiseNotificationEvent(
                 AutomationNotificationKind.Other,
                 processing,
                 message,
                 activityId);
+        }
+        else
+        {
+            // Peer is null when no UIA client (NVDA, Inspect.exe,
+            // etc.) has connected yet to trigger lazy peer creation.
+            // The Announce silently no-ops in this case; logging
+            // it tells us *that* it happened so a streaming-silence
+            // diagnosis doesn't need to guess whether the peer
+            // existed.
+            Microsoft.Extensions.Logging.LoggerExtensions.LogWarning(
+                log,
+                "Announce skipped: peer was null. ActivityId={ActivityId} MsgLen={MsgLen}",
+                activityId, message.Length);
         }
     }
 

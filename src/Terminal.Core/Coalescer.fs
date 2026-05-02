@@ -254,12 +254,24 @@ module Coalescer =
             (state: State)
             (now: DateTimeOffset)
             (snapshot: Cell[][]) : CoalescedNotification list =
+        // Streaming-path instrumentation. Defaults to NullLogger
+        // before Logger.configure runs (production sets this in
+        // Program.fs compose(); tests that don't configure get
+        // NullLogger and pay no cost). Each branch below logs the
+        // suppression reason or the emit so the diagnosis trail
+        // distinguishes "Coalescer dropped the event by design"
+        // from "Coalescer didn't see the event" from "Coalescer
+        // emitted but Drain didn't pick up".
+        let logger = Logger.get "Terminal.Core.Coalescer.processRowsChanged"
         let frameHash = hashFrame snapshot
         // Frame-level dedup: identical content → suppress
         // entirely. This is the layer that composes with
         // Ink's full-frame redraws.
         match state.LastFrameHash with
-        | ValueSome prev when prev = frameHash -> []
+        | ValueSome prev when prev = frameHash ->
+            logger.LogInformation(
+                "Suppressed (frame-dedup). FrameHash=0x{Hash:X16}", frameHash)
+            []
         | _ ->
             gcHistory state now
             // Spinner check: walk per-row hashes; if ANY row
@@ -274,6 +286,8 @@ module Coalescer =
                 // Update LastFrameHash so we don't re-suppress
                 // when content actually changes again.
                 state.LastFrameHash <- ValueSome frameHash
+                logger.LogInformation(
+                    "Suppressed (spinner). FrameHash=0x{Hash:X16}", frameHash)
                 []
             else
                 // Debounce decision: leading-edge or queue?
@@ -287,12 +301,19 @@ module Coalescer =
                     state.LastFlushAt <- ValueSome now
                     state.PendingFrame <- ValueNone
                     state.PendingHash <- ValueNone
-                    [ OutputBatch (renderRows snapshot) ]
+                    let rendered = renderRows snapshot
+                    logger.LogInformation(
+                        "Emit OutputBatch (leading-edge). FrameHash=0x{Hash:X16} TextLen={Len}",
+                        frameHash, rendered.Length)
+                    [ OutputBatch rendered ]
                 else
                     // Within debounce: accumulate; trailing
                     // edge will flush.
                     state.PendingFrame <- ValueSome snapshot
                     state.PendingHash <- ValueSome frameHash
+                    logger.LogInformation(
+                        "Accumulated (within debounce window). FrameHash=0x{Hash:X16}",
+                        frameHash)
                     []
 
     /// Trailing-edge timer tick. If anything is pending and
@@ -300,6 +321,7 @@ module Coalescer =
     let onTimerTick
             (state: State)
             (now: DateTimeOffset) : CoalescedNotification list =
+        let logger = Logger.get "Terminal.Core.Coalescer.onTimerTick"
         match state.PendingFrame, state.PendingHash with
         | ValueSome snapshot, ValueSome hash ->
             let elapsed =
@@ -311,7 +333,11 @@ module Coalescer =
                 state.LastFlushAt <- ValueSome now
                 state.PendingFrame <- ValueNone
                 state.PendingHash <- ValueNone
-                [ OutputBatch (renderRows snapshot) ]
+                let rendered = renderRows snapshot
+                logger.LogInformation(
+                    "Emit OutputBatch (trailing-edge). FrameHash=0x{Hash:X16} TextLen={Len}",
+                    hash, rendered.Length)
+                [ OutputBatch rendered ]
             else
                 []
         | _ -> []

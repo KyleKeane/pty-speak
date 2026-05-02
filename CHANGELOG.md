@@ -15,6 +15,54 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added
+
+- **Streaming-path instrumentation.** Diagnostic log entries at
+  the five stages the streaming-output pipeline can silently
+  fail at. Each stage now leaves a metadata-only trace at INFO
+  level so a future bug-report log captures the exact stage
+  where the chain broke down rather than a black-box silence.
+  Stages instrumented:
+
+  1. **Reader publish** (`Terminal.App.startReaderLoop`) —
+     `Reader published RowsChanged. ChunkBytes={N} Events={M} ChannelAccepted={true|false}`
+  2. **Coalescer suppress / emit** (`Terminal.Core.Coalescer.processRowsChanged`,
+     `onTimerTick`) — distinguishes frame-dedup, spinner-
+     suppress, accumulate-into-debounce, leading-edge emit,
+     and trailing-edge emit. Each branch logs the frame hash
+     and (when emitting) the rendered text length.
+  3. **Drain dispatch** (`Terminal.App.Program.drain`) —
+     `Drain → Announce. ActivityId={tag} MsgLen={N}` for
+     non-empty messages; explicit `Drain skipped empty msg`
+     for ModeBarrier passes.
+  4. **Peer raise** (`PtySpeak.Views.TerminalView.Announce`) —
+     `RaiseNotificationEvent firing. ActivityId={tag}
+     MsgLen={N} Processing={MostRecent|ImportantAll|...}`
+     when peer is non-null; **`Announce skipped: peer was
+     null`** at WARN level when peer hasn't been created yet
+     (this would mean NVDA / a UIA client hasn't connected
+     and notifications are silently dropped — a critical
+     diagnostic signal).
+
+  All log entries are metadata-only (counts, hashes,
+  activity-IDs, levels). The streamed text content itself
+  is never logged, per the `docs/LOGGING.md` "What pty-speak
+  NEVER logs" policy and the `SECURITY.md` "Logging
+  chokepoint" entry.
+
+  Volume: at typing speed (~5 coalesced batches per second)
+  this adds ~25 log entries/second across all stages — a few
+  thousand lines for a 30-second `dir`-and-friends test
+  session. Acceptable for a diagnostic period; can be
+  lowered to Debug after the streaming bug is verified
+  fixed.
+
+  Together with PR #106's `PeriodicTimer` reuse fix and the
+  drain-task error-surfacing from earlier work, the
+  streaming-output pipeline is now fully observable: any
+  silence has a definite cause that the next captured log
+  will pinpoint.
+
 ### Fixed
 
 - **`Ctrl+Alt+L` clipboard-copy hotkey didn't fire.** Maintainer
