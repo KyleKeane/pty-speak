@@ -19,10 +19,10 @@ A new session should read this **first**, then
 
 | | |
 |---|---|
-| **Last merged stages** | **Stage 4** (UIA Document + Text pattern + Line/Character/Word navigation + focus-into-TerminalSurface fix, PRs #54-#56, #59, #60, #68), **Stage 11** (Velopack auto-update via `Ctrl+Shift+U`, PRs #63, #66), **Security-audit cycle SR-1/SR-2/SR-3** (PRs #76, #77, #78), and **Stage 4.5 — Claude Code rendering substrate** (PR-A #85 mode coverage + SGR walker + DECTCEM + DECSC/DECRC + OSC 52 chokepoint, PR-B alt-screen 1049 back-buffer). Stage 4 + 11 NVDA-verified on `v0.0.1-preview.26`; Stage 4.5 verified by xUnit (27 new tests across PR-A + PR-B); manual NVDA verification on the next preview cut is the acceptance gate. |
-| **Last shipped release** | `v0.0.1-preview.26` (or whichever preview the maintainer last cut — release cadence is ad-hoc during the unsigned-preview line). The auto-update path replaces the `scripts/install-latest-preview.ps1` bridge for in-place updates; the script is now **deprecated for in-place updates** but remains useful for fresh installs and dev-environment workflows. The next preview cut picks up the SR-1/SR-2/SR-3 hardening + the Stage 4.5 substrate work (PR-A + PR-B). |
-| **In-flight branch** | None. Stage 4.5 PR-A and PR-B merged. The 2026-05-01 strategic stage review (`/root/.claude/plans/replicated-riding-sketch.md`) sequenced Stage 5 next. Process-cleanup test (the deferred Stage 4 row) is the recurring acceptance check tracked in "Pending action items" item 2; should re-run after the post-Stage-4.5 preview cut. |
-| **Next stage** | **Stage 5 — Streaming output notifications.** First stage where the user gets passive narration as terminal output streams in, rather than active review-cursor exploration. Validation: NVDA reads `dir` line-by-line; spinner-class redraws don't flood NVDA's speech queue; busy loops printing dots don't get NVDA stuck. Substrate: the `Screen.SequenceNumber` + `Screen.SnapshotRows` primitives (PR #38), the parser→UIA notification channel seam (audit-cycle PR-B), Stage 11's existing `TerminalView.Announce` raise path (PR #63), and Stage 4.5's `TerminalModes` + alt-screen flush-barrier semantics (PRs #85 + Stage 4.5 PR-B). Stage 5 plugs the coalescer between the parser and the channel: per-row hash dedup PLUS a frame-hash layer (added per the strategic review §C to compose with Claude Ink's full-frame redraws — without it, every row hash changes per redraw and per-row dedup never fires) PLUS a 200ms debounce. Alt-screen toggle is a hard flush barrier per the Stage 4.5 PR-B test contract. The seams are in place; only the coalescing logic is new. |
+| **Last merged stages** | **Stage 4** (UIA Document + Text pattern + Line/Character/Word navigation + focus-into-TerminalSurface fix, PRs #54-#56, #59, #60, #68), **Stage 11** (Velopack auto-update via `Ctrl+Shift+U`, PRs #63, #66), **Security-audit cycle SR-1/SR-2/SR-3** (PRs #76, #77, #78), **Stage 4.5 — Claude Code rendering substrate** (PR-A #85 mode coverage + SGR walker + DECTCEM + DECSC/DECRC + OSC 52 chokepoint, PR-B alt-screen 1049 back-buffer), and **Stage 5 — Streaming output notifications** (single PR: `Coalescer` module + `ModeChanged` event + two-channel composition + `Acc/9` OnRender lock fix bundled). Stage 4 + 11 NVDA-verified on `v0.0.1-preview.26`; Stage 4.5 verified by xUnit (27 new tests across PR-A + PR-B); Stage 5 verified by xUnit (24 new `CoalescerTests` + 5 new `ScreenTests` for the `ModeChanged` emit contract); manual NVDA verification of Stage 4.5 + Stage 5 on the next preview cut is the acceptance gate. |
+| **Last shipped release** | `v0.0.1-preview.26` (or whichever preview the maintainer last cut — release cadence is ad-hoc during the unsigned-preview line). The auto-update path replaces the `scripts/install-latest-preview.ps1` bridge for in-place updates; the script is now **deprecated for in-place updates** but remains useful for fresh installs and dev-environment workflows. The next preview cut picks up the SR-1/SR-2/SR-3 hardening + the Stage 4.5 substrate work + Stage 5's streaming-output coalescer. |
+| **In-flight branch** | None. Stage 5 merged. The next stage per the 2026-05-01 strategic review (`/root/.claude/plans/replicated-riding-sketch.md`) is Stage 6 (keyboard input to PTY + DECCKM + bracketed paste + focus reporting + `ResizePseudoConsole` + Job Object lifecycle + the env-scrub work piggybacking onto Stage 7). Process-cleanup test (the deferred Stage 4 row) is the recurring acceptance check tracked in "Pending action items" item 2; should re-run after the post-Stage-5 preview cut. |
+| **Next stage** | **Stage 6 — Keyboard input + DECCKM + bracketed paste + focus reporting.** Wires WPF `KeyDown` / `TextInput` events through `ConPtyHost.WriteAsync` so the user can drive the child shell. Honours DECCKM application-cursor mode (which Stage 4.5's `TerminalModes` already exposes — Stage 6 just reads the flag), bracketed paste (wrap clipboard pastes in `\x1b[200~`...`\x1b[201~`), focus reporting (emit `\x1b[I` / `\x1b[O` on WPF Activated/Deactivated). Adds `ResizePseudoConsole` so cmd / Claude Code see the right cell grid when the WPF window resizes. Adds Job Object child-process containment so closing pty-speak guarantees the child shell tree dies (replaces today's "best-effort kill" path). The reserved-hotkey contract (Ctrl+Shift+U/D/R/M, Alt+Shift+R) MUST take priority over PTY input. Stage 4.5's mode flags + Stage 5's `ModeChanged` event already support DECCKM / BracketedPaste / FocusReporting in the type system; Stage 6 wires the parser arms + key encoding. |
 
 The end-to-end pipeline now reaches the auto-update boundary:
 launching the app spawns `cmd.exe` under ConPTY, parses its
@@ -35,8 +35,21 @@ narration plus an audible version-flip on restart. Stage 4.5
 shipped in two PRs (mode coverage + alt-screen back-buffer);
 the Screen layer now applies DECTCEM, DECSC/DECRC, 256/truecolor
 SGR, alt-screen 1049, and the OSC 52 SECURITY-CRITICAL silent
-drop. Stage 5 is the first stage where output starts narrating
-itself instead of waiting for the user to navigate to it.
+drop. Stage 5 closes the loop on output narrating itself: the
+new `Coalescer` module (FNV-1a per-row + frame hash dedup,
+sliding-window spinner suppression, leading- + trailing-edge
+200ms debounce, alt-screen flush barrier, per-row
+`AnnounceSanitiser` chokepoint) sits between the parser-side
+`notificationChannel` (256, DropOldest) and a new
+`coalescedChannel` (16, Wait), with the existing UIA drain
+fanning out to `TerminalView.Announce(message, activityId)`
+using the new `ActivityIds` vocabulary so NVDA users can
+configure per-tag handling. The Stage 5 PR also bundled the
+Acc/9 OnRender lock fix (item 5.3 below) so the WPF render
+path takes ONE locked snapshot per frame instead of
+re-entering the screen gate per cell. Stage 6 (keyboard input
+to the PTY, plus DECCKM / bracketed paste / focus reporting)
+is the next user-facing milestone.
 
 ## Pending action items (maintainer)
 
@@ -95,12 +108,22 @@ disconnects mid-session.
         Pending the next manual session on a preview that
         carries PR-B (already shipped to `main` via PR #86;
         cut whichever preview corresponds and run).
-     3. After Stage 6 ships (most important pass — Stage 6
+     3. ↻ **After Stage 5 ships (post-Stage-5 preview)** —
+        re-run via `Ctrl+Shift+D` to confirm the new
+        coalescer task + Acc/9 OnRender refactor didn't
+        introduce a lifecycle regression. The coalescer is
+        a new background `Task.Run`; verify it cancels
+        cleanly on app exit (the `cts.Cancel()` +
+        `coalescedChannel.Writer.TryComplete()` ordering
+        in `Program.fs compose ()`'s `app.Exit.Add` is the
+        intended shutdown path). Pending the next manual
+        session on a preview that carries Stage 5.
+     4. After Stage 6 ships (most important pass — Stage 6
         is where Job Object lifecycle lands per
         `spec/tech-plan.md` §160).
-     4. After Stage 7 ships (Claude Code spawns subprocesses;
+     5. After Stage 7 ships (Claude Code spawns subprocesses;
         verify cascade cleanup).
-     5. **Firm gate before any v0.1.0+ tag** (per
+     6. **Firm gate before any v0.1.0+ tag** (per
         `SECURITY.md` row PO-2). Until v0.1.0, prior passes
         accumulate evidence; if any regression appears, file
         against the most recent stage that touched lifecycle.
@@ -241,15 +264,19 @@ disconnects mid-session.
       altogether). The script is dev-iteration tooling per
       `scripts/README.md`; defer until it's used outside that
       context.
-   3. **`TerminalView.OnRender` `_screen` lock (Acc/9).**
-      `OnRender` reads `_screen` without holding any lock;
-      Stage 3b is safe because the parser runs on the
-      dispatcher and the read happens on the same thread.
-      Stage 5 will move the parser off the dispatcher and
-      rework snapshot-on-render; the lock decision belongs in
-      that work, not in a one-liner now. A one-line forward-
-      reference comment in `OnRender` deferring to Stage 5 is
-      the lightweight handle.
+   3. ✓ **`TerminalView.OnRender` `_screen` lock (Acc/9) —
+      RESOLVED by Stage 5.** Bundled into the Stage 5 PR per
+      the prior commitment ("Stage 5 will revisit"). `OnRender`
+      now takes ONE `_screen.SnapshotRows(0, _screen.Rows)`
+      snapshot at the start of the frame and walks that
+      immutable copy in `RenderRow` / `DrawRun`, instead of
+      calling `_screen.GetCell(row, c)` per cell (which
+      re-entered the screen gate up to `Rows*Cols` times per
+      render frame). Single gate acquisition per render; no
+      measurable perf cost. The Stage 5 coalescer reads via
+      the same `SnapshotRows` primitive, so the WPF render
+      path and the coalescer agree on the snapshot-on-read
+      contract.
 
 6. **Diagnostic-launcher UX needs a screen-reader-native
    replacement (post-Stage-5/6).** PR #81 shipped

@@ -335,18 +335,25 @@ module Program =
         // the user's default browser.
         setupReleasesKeybinding window
 
-        // Pre-Stage-5 seam (audit-cycle PR-B): bounded
-        // notification channel from the parser thread to the
-        // UIA peer. Today the consumer drains 1:1 onto
-        // `TerminalSurface.Announce`. Stage 5 will insert a
-        // coalescer between `startReaderLoop`'s publish and
-        // this consumer (debounce ~200ms, hash dedup, single
-        // notification per coalesced batch) without changing
-        // the channel's contract. The channel is bounded with
-        // DropOldest so a very fast parser can't grow the
-        // backlog without bound — rate-limiting at the source
-        // is Stage 5's job, but bounded-with-drop-oldest is
-        // the safe default for the seam.
+        // Stage 5 — two-channel pipeline:
+        //
+        //   parser thread → notificationChannel (256, DropOldest)
+        //                       ↓
+        //                 Coalescer.runLoop (one Task)
+        //                       ↓
+        //                 coalescedChannel (16, Wait)
+        //                       ↓
+        //                 drain task → window.TerminalSurface.Announce(msg, activityId)
+        //
+        // The DropOldest source channel means a flooding parser
+        // can't grow the backlog without bound; the coalescer
+        // applies debounce + hash dedup + spinner suppression
+        // and emits at most one CoalescedNotification per
+        // ~200ms window. The downstream channel is small +
+        // Wait because the drain marshals to the WPF
+        // dispatcher per item and we want backpressure on
+        // pathological emit rates rather than dropping
+        // already-coalesced notifications.
         let notificationChannel =
             let opts =
                 System.Threading.Channels.BoundedChannelOptions(256,
@@ -354,36 +361,79 @@ module Program =
                         System.Threading.Channels.BoundedChannelFullMode.DropOldest)
             System.Threading.Channels.Channel.CreateBounded<ScreenNotification>(opts)
 
-        // Drain the channel onto the WPF dispatcher, calling
-        // `TerminalSurface.Announce` (which raises a UIA
-        // Notification event via the existing path PR #63
-        // wired for Stage 11). Each consumed notification
-        // produces one announcement.
+        let coalescedChannel =
+            let opts =
+                System.Threading.Channels.BoundedChannelOptions(16,
+                    FullMode =
+                        System.Threading.Channels.BoundedChannelFullMode.Wait)
+            System.Threading.Channels.Channel.CreateBounded<Coalescer.CoalescedNotification>(opts)
+
+        // Bridge Screen.ModeChanged events into the parser-side
+        // channel so the coalescer can use them as flush
+        // barriers (alt-screen swap, etc.) and pass them
+        // through as ModeBarrier announcements. The screen
+        // fires this AFTER releasing its internal lock, so
+        // pushing to a Channel here is non-blocking and
+        // deadlock-free.
+        screen.ModeChanged.Add(fun (flag, value) ->
+            notificationChannel.Writer.TryWrite(ModeChanged (flag, value)) |> ignore)
+
+        // Start the coalescer with the SHARED cts.Token so
+        // shutdown cancels reader, coalescer, and drain in
+        // unison. Production passes TimeProvider.System;
+        // unit tests inject FakeTimeProvider directly into
+        // Coalescer.processRowsChanged / onTimerTick.
+        let _ =
+            Coalescer.runLoop
+                notificationChannel.Reader
+                coalescedChannel.Writer
+                screen
+                TimeProvider.System
+                cts.Token
+
+        // Drain the coalesced channel onto the WPF dispatcher,
+        // calling `TerminalSurface.Announce(message, activityId)`
+        // per coalesced item. The activityId vocabulary is
+        // defined in `Terminal.Core.ActivityIds`; NVDA users
+        // can configure per-tag handling (e.g. quieter speech
+        // for `pty-speak.update` install events vs.
+        // `pty-speak.output` streaming text).
         let _ =
             Task.Run(fun () ->
                 task {
                     try
-                        let reader = notificationChannel.Reader
+                        let reader = coalescedChannel.Reader
                         let mutable keepGoing = true
                         while keepGoing && not cts.Token.IsCancellationRequested do
                             let! got = reader.WaitToReadAsync(cts.Token).AsTask()
                             if not got then
                                 keepGoing <- false
                             else
-                                let mutable peek = Unchecked.defaultof<ScreenNotification>
+                                let mutable peek =
+                                    Unchecked.defaultof<Coalescer.CoalescedNotification>
                                 while reader.TryRead(&peek) do
-                                    let msg =
+                                    let msg, activityId =
                                         match peek with
-                                        | RowsChanged _ ->
-                                            "Terminal output updated"
-                                        | ParserError s ->
-                                            sprintf "Terminal parser error: %s" s
-                                    let action () = window.TerminalSurface.Announce(msg)
-                                    let! _ =
-                                        window.Dispatcher
-                                            .InvokeAsync(Action(action))
-                                            .Task
-                                    ()
+                                        | Coalescer.OutputBatch text ->
+                                            text, ActivityIds.output
+                                        | Coalescer.ErrorPassthrough s ->
+                                            sprintf "Terminal parser error: %s" s,
+                                            ActivityIds.error
+                                        | Coalescer.ModeBarrier _ ->
+                                            // Stage 5 ships an empty string for
+                                            // mode barriers — Stage 6 may replace
+                                            // this with a verbosity-aware
+                                            // description ("entered alt-screen",
+                                            // "DECCKM application mode", etc.).
+                                            "", ActivityIds.mode
+                                    if msg <> "" then
+                                        let action () =
+                                            window.TerminalSurface.Announce(msg, activityId)
+                                        let! _ =
+                                            window.Dispatcher
+                                                .InvokeAsync(Action(action))
+                                                .Task
+                                        ()
                     with
                     | :? OperationCanceledException -> ()
                     | _ -> ()
@@ -424,9 +474,10 @@ module Program =
 
         app.Exit.Add(fun _ ->
             try cts.Cancel() with _ -> ()
-            // Complete the writer so the consumer drain task
-            // exits cleanly when the channel runs dry.
+            // Complete both writers so the coalescer and drain
+            // tasks exit cleanly when their channels run dry.
             try notificationChannel.Writer.TryComplete() |> ignore with _ -> ()
+            try coalescedChannel.Writer.TryComplete() |> ignore with _ -> ()
             match hostHandle with
             | Some h -> (h :> IDisposable).Dispose()
             | None -> ()

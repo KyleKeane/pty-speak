@@ -619,3 +619,71 @@ let ``SequenceNumber bumps on ?1049h and ?1049l`` () =
     feed screen (ascii "\x1b[?1049l")
     let seq2 = screen.SequenceNumber
     Assert.True(seq2 > seq1)
+
+// ---------------------------------------------------------------------
+// Stage 5 — Screen.ModeChanged event emission
+// ---------------------------------------------------------------------
+//
+// `enterAltScreen` / `exitAltScreen` queue a (TerminalModeFlag,
+// bool) pair into `pendingModeChanges` while still under the
+// `lock gate`; `Apply` drains the buffer AFTER releasing the
+// lock and fires `modeChangedEvent` for each. These tests pin
+// the post-lock fire contract so Stage 5's coalescer can
+// reliably wire ModeChanged events through the parser-side
+// notification channel without re-entering the lock.
+
+[<Fact>]
+let ``ModeChanged fires on alt-screen enter`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    let received = ResizeArray<TerminalModeFlag * bool>()
+    screen.ModeChanged.Add(fun pair -> received.Add(pair))
+    feed screen (ascii "\x1b[?1049h")
+    Assert.Equal(1, received.Count)
+    Assert.Equal((AltScreen, true), received.[0])
+
+[<Fact>]
+let ``ModeChanged fires on alt-screen exit`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    feed screen (ascii "\x1b[?1049h")  // prime; no subscriber yet
+    let received = ResizeArray<TerminalModeFlag * bool>()
+    screen.ModeChanged.Add(fun pair -> received.Add(pair))
+    feed screen (ascii "\x1b[?1049l")
+    Assert.Equal(1, received.Count)
+    Assert.Equal((AltScreen, false), received.[0])
+
+[<Fact>]
+let ``ModeChanged does NOT fire on idempotent ?1049h while already in alt`` () =
+    // The Stage 4.5 PR-B alt-entry idempotence guard
+    // short-circuits BEFORE the pendingModeChanges.Add call,
+    // so subscribers don't see a spurious "AltScreen, true"
+    // event when the buffer is already alt.
+    let screen = Screen(rows = 3, cols = 5)
+    feed screen (ascii "\x1b[?1049h")
+    let received = ResizeArray<TerminalModeFlag * bool>()
+    screen.ModeChanged.Add(fun pair -> received.Add(pair))
+    feed screen (ascii "\x1b[?1049h")
+    Assert.Equal(0, received.Count)
+
+[<Fact>]
+let ``ModeChanged does NOT fire on idempotent ?1049l while not in alt`` () =
+    // Mirror of the entry idempotence test for the exit side.
+    let screen = Screen(rows = 3, cols = 5)
+    let received = ResizeArray<TerminalModeFlag * bool>()
+    screen.ModeChanged.Add(fun pair -> received.Add(pair))
+    feed screen (ascii "\x1b[?1049l")
+    Assert.Equal(0, received.Count)
+
+[<Fact>]
+let ``ModeChanged subscriber can call SnapshotRows without deadlock`` () =
+    // Critical contract for Stage 5's coalescer: Screen
+    // fires ModeChanged AFTER releasing its `lock gate`,
+    // so a subscriber that re-enters the gate (e.g. via
+    // SnapshotRows) does not deadlock. If this regresses,
+    // Stage 5's two-channel pipeline silently freezes.
+    let screen = Screen(rows = 1, cols = 5)
+    let mutable observedSeq = -1L
+    screen.ModeChanged.Add(fun _ ->
+        let seq, _ = screen.SnapshotRows(0, 1)
+        observedSeq <- seq)
+    feed screen (ascii "\x1b[?1049h")
+    Assert.True(observedSeq > 0L)

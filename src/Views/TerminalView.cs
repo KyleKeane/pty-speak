@@ -137,6 +137,29 @@ public class TerminalView : FrameworkElement
     /// </remarks>
     public void Announce(string message)
     {
+        // Back-compat overload — every existing call site in
+        // Stage 11 / hotkey handlers passes update-flow text.
+        // Stage 5's coalescer drain calls the (message, activityId)
+        // overload below to pass per-event-class tags.
+        Announce(message, "pty-speak.update");
+    }
+
+    /// <summary>
+    /// Stage 5 overload — accepts an explicit
+    /// <paramref name="activityId"/> so each notification class
+    /// (streaming output, update flow, errors, diagnostic
+    /// launcher, releases browser, mode transitions) gets a
+    /// stable tag for NVDA's per-tag verbosity configuration.
+    /// </summary>
+    /// <remarks>
+    /// Stage 5's `Coalescer` drain passes
+    /// <c>"pty-speak.output"</c>; Stage 11's update flow passes
+    /// <c>"pty-speak.update"</c> via the back-compat overload
+    /// above. The vocabulary is centralised in F# at
+    /// <c>Terminal.Core.ActivityIds</c>.
+    /// </remarks>
+    public void Announce(string message, string activityId)
+    {
         var peer = UIElementAutomationPeer.FromElement(this);
         if (peer is not null)
         {
@@ -144,7 +167,7 @@ public class TerminalView : FrameworkElement
                 AutomationNotificationKind.Other,
                 AutomationNotificationProcessing.MostRecent,
                 message,
-                "pty-speak.update");
+                activityId);
         }
     }
 
@@ -260,30 +283,36 @@ public class TerminalView : FrameworkElement
             return;
         }
 
-        for (int row = 0; row < _screen.Rows; row++)
+        // Acc/9 — take ONE locked snapshot per render frame instead of
+        // calling _screen.GetCell(...) per cell, which would re-acquire
+        // the screen gate up to Rows*Cols times and race with the
+        // parser thread between cells.
+        var snap = _screen.SnapshotRows(0, _screen.Rows);
+        var rows = snap.Item2;
+        var cols = _screen.Cols;
+
+        for (int row = 0; row < rows.Length; row++)
         {
-            RenderRow(drawingContext, row);
+            RenderRow(drawingContext, row, rows[row], cols);
         }
     }
 
-    private void RenderRow(DrawingContext dc, int row)
+    private void RenderRow(DrawingContext dc, int row, Cell[] cells, int cols)
     {
-        if (_screen is null) return;
-
         // Walk the row coalescing contiguous cells with identical
         // SgrAttrs. For each run we draw the background (if non-default)
         // then a single FormattedText for the run's characters.
         int runStart = 0;
-        while (runStart < _screen.Cols)
+        while (runStart < cols)
         {
-            var startAttrs = _screen.GetCell(row, runStart).Attrs;
+            var startAttrs = cells[runStart].Attrs;
             int runEnd = runStart + 1;
-            while (runEnd < _screen.Cols
-                && SgrAttrsEqual(_screen.GetCell(row, runEnd).Attrs, startAttrs))
+            while (runEnd < cols
+                && SgrAttrsEqual(cells[runEnd].Attrs, startAttrs))
             {
                 runEnd++;
             }
-            DrawRun(dc, row, runStart, runEnd, startAttrs);
+            DrawRun(dc, row, runStart, runEnd, startAttrs, cells);
             runStart = runEnd;
         }
     }
@@ -293,10 +322,9 @@ public class TerminalView : FrameworkElement
         int row,
         int runStart,
         int runEnd,
-        SgrAttrs attrs)
+        SgrAttrs attrs,
+        Cell[] cells)
     {
-        if (_screen is null) return;
-
         var fg = ResolveBrush(attrs.Fg, isForeground: true);
         var bg = ResolveBrush(attrs.Bg, isForeground: false);
 
@@ -318,7 +346,7 @@ public class TerminalView : FrameworkElement
         var sb = new System.Text.StringBuilder(runEnd - runStart);
         for (int c = runStart; c < runEnd; c++)
         {
-            var rune = _screen.GetCell(row, c).Ch;
+            var rune = cells[c].Ch;
             sb.Append(rune.ToString());
         }
 

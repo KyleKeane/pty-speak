@@ -19,6 +19,14 @@
     <PackageVersion Include="FluentAssertions" Version="6.12.2" />
     <PackageVersion Include="FlaUI.Core" Version="5.0.0" />
     <PackageVersion Include="FlaUI.UIA3" Version="5.0.0" />
+    <!--
+      Stage 5 — FakeTimeProvider for CoalescerTests. The
+      official Microsoft package; mirrors System.TimeProvider's
+      surface and lets tests advance time deterministically
+      to assert debounce + spinner-window behaviour without
+      sleeping.
+    -->
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.0.0" />
   </ItemGroup>
 
 </Project>

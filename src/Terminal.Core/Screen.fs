@@ -94,6 +94,28 @@ type Screen(rows: int, cols: int) =
     // wires `AltScreen`; Stage 6 wires the keyboard-side bits.
     let mutable modes: TerminalModes = TerminalModes.create ()
 
+    // Stage 5 — mode-change event surface.
+    //
+    // When `enterAltScreen` / `exitAltScreen` (and future
+    // Stage 6 mode bits) flip a `TerminalModes` flag, the
+    // change is appended to `pendingModeChanges` while still
+    // holding `gate`. After `Apply` releases the gate, it
+    // drains the buffer and fires `ModeChangedEvent` for each
+    // change. This decouples the lock-protected mutation from
+    // the (potentially expensive) downstream reactions —
+    // subscribers can do channel writes, log emits, etc.
+    // without extending the gate's hold.
+    //
+    // Buffered (rather than fired-while-holding-the-gate) for
+    // two reasons: (1) `Event<>.Trigger` synchronously invokes
+    // every subscriber, and Stage 5's coalescer subscriber
+    // does a `Channel.Writer.TryWrite` which we do NOT want
+    // serialized under the screen-buffer lock; (2) a misbehaving
+    // subscriber that throws shouldn't poison Apply's gate
+    // semantics for other threads.
+    let modeChangedEvent = Event<TerminalModeFlag * bool>()
+    let pendingModeChanges = ResizeArray<TerminalModeFlag * bool>()
+
     // Mutation gate. Apply takes this lock; SnapshotRows takes it to
     // capture (sequence, rows) atomically. Stage 3b feeds Apply on the
     // WPF dispatcher; Stage 4's UIA peer reads snapshots from the UIA
@@ -281,6 +303,9 @@ type Screen(rows: int, cols: int) =
             cursor.Col <- 0
             currentAttrs <- SgrAttrs.defaults
             modes.AltScreen <- true
+            // Stage 5: queue ModeChanged event; Apply drains
+            // and fires after the gate releases.
+            pendingModeChanges.Add((AltScreen, true))
 
     /// Switch the active buffer back to primary and restore
     /// the cursor + SGR attrs that were saved on enter. Called
@@ -305,6 +330,9 @@ type Screen(rows: int, cols: int) =
             savedPrimary <- None
             activeBuffer <- primaryBuffer
             modes.AltScreen <- false
+            // Stage 5: queue ModeChanged event; Apply drains
+            // and fires after the gate releases.
+            pendingModeChanges.Add((AltScreen, false))
 
     /// CSI private-marker dispatch: handles sequences emitted
     /// when the parser sees a `?` private byte (DECSET / DECRESET
@@ -444,11 +472,27 @@ type Screen(rows: int, cols: int) =
                 Array.init cols (fun c -> activeBuffer.[r, c]))
             sequenceNumber, snapshot)
 
+    /// Stage 5 — fires when `enterAltScreen` / `exitAltScreen`
+    /// (or any future Stage 6 mode flip) changes a
+    /// `TerminalModes` flag. Triggered AFTER `Apply` releases
+    /// the screen-buffer gate, so subscribers can do channel
+    /// writes / log emits without serialising under the lock.
+    /// Each Apply may trigger zero or more events depending on
+    /// the VT sequence dispatched.
+    [<CLIEvent>]
+    member _.ModeChanged = modeChangedEvent.Publish
+
     /// Apply a single VT event to the buffer. Stage 3a covers the
     /// minimum needed to render cmd.exe-style output; unsupported
     /// sequences are silently no-ops so the parser can continue
     /// streaming without exceptions.
     member _.Apply(event: VtEvent) =
+        // Stage 5: drain pending mode-change events into a local
+        // list under the lock; fire them AFTER the lock releases
+        // so subscribers (e.g. Stage 5's coalescer pushing to
+        // a Channel) can't deadlock with concurrent SnapshotRows
+        // calls or extend the gate's hold.
+        let toEmit = ResizeArray<TerminalModeFlag * bool>()
         lock gate (fun () ->
             sequenceNumber <- sequenceNumber + 1L
             match event with
@@ -499,4 +543,17 @@ type Screen(rows: int, cols: int) =
                 ignore parms
             | DcsHook _
             | DcsPut _
-            | DcsUnhook -> ())  // Not yet handled — Stage 4+
+            | DcsUnhook -> ()  // Not yet handled — Stage 4+
+            // Drain any mode changes the dispatch above queued
+            // into the per-Apply local emit list, then clear
+            // the buffer for the next Apply.
+            if pendingModeChanges.Count > 0 then
+                toEmit.AddRange(pendingModeChanges)
+                pendingModeChanges.Clear())
+        // Post-lock: fire each event. Subscribers run on the
+        // calling thread; if a subscriber throws, the exception
+        // propagates back to the parser-loop's `with | ex -> ...`
+        // branch, which surfaces it via ParserError per
+        // audit-cycle SR-2.
+        for pair in toEmit do
+            modeChangedEvent.Trigger(pair)

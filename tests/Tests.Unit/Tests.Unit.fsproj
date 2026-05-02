@@ -26,6 +26,7 @@
     <Compile Include="UpdateMessagesTests.fs" />
     <Compile Include="WordBoundaryTests.fs" />
     <Compile Include="AnnounceSanitiserTests.fs" />
+    <Compile Include="CoalescerTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
@@ -39,6 +40,13 @@
     </PackageReference>
     <PackageReference Include="FsCheck.Xunit" />
     <PackageReference Include="FluentAssertions" />
+    <!--
+      Stage 5 — FakeTimeProvider so CoalescerTests can pin
+      debounce + spinner-window assertions deterministically
+      without relying on Thread.Sleep / wall-clock.
+      Microsoft's official TimeProvider testing package.
+    -->
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <ProjectReference Include="..\..\src\Terminal.Core\Terminal.Core.fsproj" />
     <ProjectReference Include="..\..\src\Terminal.Pty\Terminal.Pty.fsproj" />
     <ProjectReference Include="..\..\src\Terminal.Parser\Terminal.Parser.fsproj" />
