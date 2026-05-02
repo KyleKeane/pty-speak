@@ -30,34 +30,75 @@ let private optionsAt (dir: string) (minLevel: LogLevel) : FileLoggerOptions =
       MinLevel = minLevel
       ChannelCapacity = 256 }
 
-/// Read the current day's log file as a single string.
-let private readTodayLog (dir: string) : string =
-    let path =
-        Path.Combine(
-            dir,
-            sprintf "pty-speak-%s.log"
-                (DateTime.UtcNow.Date.ToString("yyyy-MM-dd")))
-    if File.Exists(path) then File.ReadAllText(path) else ""
+/// Read the active session's log file via the sink's
+/// `ActiveLogPath` accessor. Tests in this file capture the
+/// sink before disposal (or use the sink directly) so they
+/// have a handle to the path.
+let private readActiveLog (sink: FileLoggerSink) : string =
+    if File.Exists(sink.ActiveLogPath) then
+        File.ReadAllText(sink.ActiveLogPath)
+    else
+        ""
+
+/// Read whatever log files exist in the logs root (across all
+/// day-folders) as a concatenated string. Useful when a test
+/// wants to verify content without holding the sink reference.
+let private readAllLogContent (dir: string) : string =
+    if not (Directory.Exists(dir)) then "" else
+    let allFiles =
+        Directory.EnumerateDirectories(dir)
+        |> Seq.collect (fun d ->
+            try Directory.EnumerateFiles(d, "pty-speak-*.log")
+            with _ -> Seq.empty)
+    let sb = System.Text.StringBuilder()
+    for f in allFiles do
+        try sb.Append(File.ReadAllText(f)) |> ignore with _ -> ()
+    sb.ToString()
 
 [<Fact>]
-let ``logger writes Information entries to today's log file`` () =
+let ``logger writes Information entries to the active session log file`` () =
     let dir = freshTempDir ()
-    use sink = new FileLoggerSink(optionsAt dir LogLevel.Information)
+    let sink = new FileLoggerSink(optionsAt dir LogLevel.Information)
     let provider = new FileLoggerProvider(sink) :> ILoggerProvider
     let logger = provider.CreateLogger("Test.Category")
     logger.LogInformation("hello {Who}", "world")
-    // Disposing the sink awaits the background drain so the file
-    // is flushed deterministically before we read it.
+    // Disposing the provider awaits the background drain so the
+    // file is flushed deterministically before we read it.
     (provider :> IDisposable).Dispose()
-    let content = readTodayLog dir
+    let content = readActiveLog sink
     Assert.Contains("[INF]", content)
     Assert.Contains("[Test.Category]", content)
     Assert.Contains("hello world", content)
 
 [<Fact>]
+let ``active log lives inside a day-folder named yyyy-MM-dd`` () =
+    let dir = freshTempDir ()
+    let sink = new FileLoggerSink(optionsAt dir LogLevel.Information)
+    let provider = new FileLoggerProvider(sink) :> ILoggerProvider
+    let logger = provider.CreateLogger("Test")
+    logger.LogInformation("create the file")
+    (provider :> IDisposable).Dispose()
+    // ActiveLogPath should be: {dir}\{yyyy-MM-dd}\pty-speak-{HH-mm-ss}.log
+    let parentFolder = Path.GetDirectoryName(sink.ActiveLogPath)
+    let parentName = Path.GetFileName(parentFolder)
+    let mutable parsed = DateTime.MinValue
+    let parsedOk =
+        DateTime.TryParseExact(
+            parentName,
+            "yyyy-MM-dd",
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None,
+            &parsed)
+    Assert.True(parsedOk,
+        sprintf "Expected day-folder named yyyy-MM-dd; got '%s'" parentName)
+    let fileName = Path.GetFileName(sink.ActiveLogPath)
+    Assert.StartsWith("pty-speak-", fileName)
+    Assert.EndsWith(".log", fileName)
+
+[<Fact>]
 let ``logger respects minimum level filtering`` () =
     let dir = freshTempDir ()
-    use sink = new FileLoggerSink(optionsAt dir LogLevel.Warning)
+    let sink = new FileLoggerSink(optionsAt dir LogLevel.Warning)
     let provider = new FileLoggerProvider(sink) :> ILoggerProvider
     let logger = provider.CreateLogger("Test")
     logger.LogDebug("debug-noise")
@@ -65,7 +106,7 @@ let ``logger respects minimum level filtering`` () =
     logger.LogWarning("warn-signal")
     logger.LogError("error-signal")
     (provider :> IDisposable).Dispose()
-    let content = readTodayLog dir
+    let content = readActiveLog sink
     Assert.DoesNotContain("debug-noise", content)
     Assert.DoesNotContain("info-noise", content)
     Assert.Contains("warn-signal", content)
@@ -74,61 +115,87 @@ let ``logger respects minimum level filtering`` () =
 [<Fact>]
 let ``logger writes exception details when an exception is supplied`` () =
     let dir = freshTempDir ()
-    use sink = new FileLoggerSink(optionsAt dir LogLevel.Information)
+    let sink = new FileLoggerSink(optionsAt dir LogLevel.Information)
     let provider = new FileLoggerProvider(sink) :> ILoggerProvider
     let logger = provider.CreateLogger("Test")
     let ex = InvalidOperationException("boom")
     logger.LogError(ex, "operation failed at step={Step}", 3)
     (provider :> IDisposable).Dispose()
-    let content = readTodayLog dir
+    let content = readActiveLog sink
     Assert.Contains("operation failed at step=3", content)
     Assert.Contains("InvalidOperationException", content)
     Assert.Contains("boom", content)
 
 [<Fact>]
-let ``retention sweep deletes log files older than RetentionDays`` () =
+let ``retention sweep deletes day-folders older than RetentionDays`` () =
     let dir = freshTempDir ()
-    // Plant a stale log file: 30 days old.
-    let stalePath =
-        Path.Combine(dir, "pty-speak-2020-01-01.log")
-    File.WriteAllText(stalePath, "old content\n")
-    File.SetLastWriteTimeUtc(stalePath, DateTime.UtcNow.AddDays(-30.0))
-    Assert.True(File.Exists(stalePath))
-    // Plant a fresh log file: 1 day old. Should survive.
-    let freshPath =
-        Path.Combine(dir, "pty-speak-keep.log")
-    File.WriteAllText(freshPath, "fresh content\n")
-    File.SetLastWriteTimeUtc(freshPath, DateTime.UtcNow.AddDays(-1.0))
-    use sink = new FileLoggerSink(optionsAt dir LogLevel.Information)
+    // Plant a stale day-folder named for a date >7 days ago.
+    let staleDate = DateTime.UtcNow.Date.AddDays(-30.0)
+    let staleDirName = staleDate.ToString("yyyy-MM-dd")
+    let staleDir = Path.Combine(dir, staleDirName)
+    Directory.CreateDirectory(staleDir) |> ignore
+    File.WriteAllText(
+        Path.Combine(staleDir, "pty-speak-12-00-00.log"),
+        "old content\n")
+    Assert.True(Directory.Exists(staleDir))
+    // Plant a fresh day-folder (yesterday) — should survive.
+    let freshDate = DateTime.UtcNow.Date.AddDays(-1.0)
+    let freshDirName = freshDate.ToString("yyyy-MM-dd")
+    let freshDir = Path.Combine(dir, freshDirName)
+    Directory.CreateDirectory(freshDir) |> ignore
+    File.WriteAllText(
+        Path.Combine(freshDir, "pty-speak-12-00-00.log"),
+        "fresh content\n")
+    // Plant a folder with a non-date name — should be ignored
+    // entirely (defensive: stray folders shouldn't crash).
+    let strayDir = Path.Combine(dir, "not-a-date")
+    Directory.CreateDirectory(strayDir) |> ignore
+    let sink = new FileLoggerSink(optionsAt dir LogLevel.Information)
     let provider = new FileLoggerProvider(sink) :> ILoggerProvider
     // Force the drain task to actually run by writing one entry.
     let logger = provider.CreateLogger("Test")
     logger.LogInformation("kick the writer")
     (provider :> IDisposable).Dispose()
-    Assert.False(File.Exists(stalePath),
-        "Expected the 30-day-old file to be deleted by retention sweep")
-    Assert.True(File.Exists(freshPath),
-        "Expected the 1-day-old file to survive retention sweep")
+    Assert.False(Directory.Exists(staleDir),
+        "Expected the 30-day-old day-folder to be deleted")
+    Assert.True(Directory.Exists(freshDir),
+        "Expected the 1-day-old day-folder to survive")
+    Assert.True(Directory.Exists(strayDir),
+        "Expected a folder with a non-date name to be ignored by retention")
 
 [<Fact>]
-let ``logger creates the log directory if it does not exist`` () =
+let ``logger creates the day-folder if it does not exist`` () =
     // Pick a path under a fresh temp dir but DON'T create it yet.
     let parent = freshTempDir ()
     let nestedDir = Path.Combine(parent, "nested", "logs")
     Assert.False(Directory.Exists(nestedDir))
-    use sink = new FileLoggerSink(optionsAt nestedDir LogLevel.Information)
+    let sink = new FileLoggerSink(optionsAt nestedDir LogLevel.Information)
     let provider = new FileLoggerProvider(sink) :> ILoggerProvider
     let logger = provider.CreateLogger("Test")
-    logger.LogInformation("should create the parent dir")
+    logger.LogInformation("should create the parent dir + day folder")
     (provider :> IDisposable).Dispose()
     Assert.True(Directory.Exists(nestedDir),
-        "Expected sink to create the log directory tree on first write")
+        "Expected sink to create the log root")
+    let dayFolder = Path.GetDirectoryName(sink.ActiveLogPath)
+    Assert.True(Directory.Exists(dayFolder),
+        sprintf "Expected sink to create the day folder %s" dayFolder)
 
 [<Fact>]
-let ``LogDirectory member exposes the configured path`` () =
+let ``LogDirectory member exposes the configured root path`` () =
     let dir = freshTempDir ()
     use sink = new FileLoggerSink(optionsAt dir LogLevel.Information)
     Assert.Equal(dir, sink.LogDirectory)
+
+[<Fact>]
+let ``ActiveLogPath member exposes the per-session file inside today's day-folder`` () =
+    let dir = freshTempDir ()
+    use sink = new FileLoggerSink(optionsAt dir LogLevel.Information)
+    // The path should start with `{dir}\{yyyy-MM-dd}\` and end
+    // with `pty-speak-{HH-mm-ss}.log`.
+    Assert.StartsWith(dir, sink.ActiveLogPath)
+    let fileName = Path.GetFileName(sink.ActiveLogPath)
+    Assert.StartsWith("pty-speak-", fileName)
+    Assert.EndsWith(".log", fileName)
 
 // Note: a "Logger module returns NullLogger before configure"
 // test was tried and removed. The Logger module's `factory`
@@ -174,7 +241,7 @@ let ``concurrent writes from multiple threads all land in the file`` () =
     // criterion — sink survived.)
     logger.LogInformation("post-concurrent sentinel")
     (provider :> IDisposable).Dispose()
-    let content = readTodayLog dir
+    let content = readActiveLog sink
     Assert.Contains("post-concurrent sentinel", content)
     // Verify SOMETHING from the concurrent burst made it too —
     // not every thread (the channel is bounded; if a future
@@ -192,7 +259,7 @@ let ``concurrent writes from multiple threads all land in the file`` () =
 [<Fact>]
 let ``formatter throwing does not crash the sink`` () =
     let dir = freshTempDir ()
-    use sink = new FileLoggerSink(optionsAt dir LogLevel.Information)
+    let sink = new FileLoggerSink(optionsAt dir LogLevel.Information)
     let provider = new FileLoggerProvider(sink) :> ILoggerProvider
     let logger = provider.CreateLogger("FormatterCrash")
     // Issue a log call where the formatter throws.
@@ -207,7 +274,7 @@ let ``formatter throwing does not crash the sink`` () =
     // still land in the file.
     logger.LogInformation("post-crash entry survives")
     (provider :> IDisposable).Dispose()
-    let content = readTodayLog dir
+    let content = readActiveLog sink
     Assert.Contains("post-crash entry survives", content)
     // The fallback message for the broken formatter should also
     // appear (so the diagnostic is captured rather than swallowed).
@@ -237,7 +304,7 @@ let ``PTYSPEAK_LOG_LEVEL with an invalid value falls back to Information`` () =
 [<Fact>]
 let ``Logger module returns the configured factory's logger after configure`` () =
     let dir = freshTempDir ()
-    use sink = new FileLoggerSink(optionsAt dir LogLevel.Information)
+    let sink = new FileLoggerSink(optionsAt dir LogLevel.Information)
     let provider = new FileLoggerProvider(sink) :> ILoggerProvider
     let factory = Logger.createFactory provider
     Logger.configure factory
@@ -245,6 +312,6 @@ let ``Logger module returns the configured factory's logger after configure`` ()
     Assert.True(logger.IsEnabled(LogLevel.Information))
     logger.LogInformation("via configured factory")
     (provider :> IDisposable).Dispose()
-    let content = readTodayLog dir
+    let content = readActiveLog sink
     Assert.Contains("[Configured.Category]", content)
     Assert.Contains("via configured factory", content)

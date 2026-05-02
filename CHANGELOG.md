@@ -15,6 +15,81 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added
+
+- **`Ctrl+Alt+L` copies the active session's log file content to
+  the clipboard.** Bundled with the logging-restructure work.
+  Pressing the hotkey reads the active log file (the one
+  `FileLoggerSink.ActiveLogPath` points to), sets the OS
+  clipboard, and announces the byte count via NVDA ("Log
+  copied to clipboard. N bytes; ready to paste."). Fastest
+  path to send a session log to a maintainer for bug-report
+  diagnosis — no File Explorer navigation required. Mnemonic:
+  alt-action paired with the existing `Ctrl+Shift+L` open-folder
+  primary.
+
+  Hotkey choice rationale: NOT `Ctrl+Shift+C`. The latter looks
+  intuitive (`C` = copy) but Ctrl-letter encoding folds Shift
+  in the keyboard pipeline, meaning `Ctrl+Shift+C` currently
+  sends `0x03` to the shell — that's the standard SIGINT /
+  Ctrl-Break gesture for interrupting a running command (e.g.
+  `ping localhost -t`). Claiming `Ctrl+Shift+C` for log-copy
+  would break shell-interrupt UX. `Ctrl+Alt+L` doesn't collide
+  with any shell encoding and isn't a printable on US
+  keyboards.
+
+  Added to `AppReservedHotkeys`; wired in
+  `setupCopyLatestLogKeybinding` in `Program.fs`. The handler
+  catches and announces clipboard exceptions (the OS clipboard
+  can transiently throw COMException under contention; one
+  failed attempt becomes an audible error rather than a silent
+  no-op).
+
+  Documentation: README, USER-SETTINGS.md, and LOGGING.md
+  updated with the new hotkey, the rationale, and a refreshed
+  "Sharing logs with a maintainer" section that promotes
+  Ctrl+Alt+L as the fastest path.
+
+### Changed
+
+- **Logging restructured to per-session files in per-day
+  folders.** The previous layout kept one daily-rolled file
+  per UTC day; long-running development days produced massive
+  aggregated files that were painful to navigate when grabbing
+  a slice for a bug report. New layout:
+
+  ```
+  %LOCALAPPDATA%\PtySpeak\logs\
+  ├── 2026-05-02\
+  │   ├── pty-speak-13-45-23.log    ← session that launched at 13:45:23
+  │   ├── pty-speak-15-12-08.log
+  │   └── pty-speak-16-30-44.log
+  ├── 2026-05-01\
+  │   └── pty-speak-09-15-22.log
+  └── ... (up to 7 days)
+  ```
+
+  Each launch creates a fresh session file named with its
+  launch timestamp inside today's day-folder. Sessions don't
+  split across midnight (a long-running session stays in its
+  launch-day folder). Retention deletes whole day-folders
+  older than 7 days; folders with non-date names are ignored
+  defensively. New `FileLoggerSink.ActiveLogPath` member
+  exposes this session's file path for tools that want to
+  grab the active session directly.
+
+  `Ctrl+Shift+L` still opens the logs root; the user
+  navigates one click into today's day-folder and picks the
+  most recent session by alphabetical sort. Bug reports are
+  now one-file pastes instead of "scroll a giant log to the
+  right time range".
+
+  `docs/LOGGING.md` updated with the new layout, retention
+  rules, and a one-line PowerShell snippet for grabbing the
+  latest session — useful for the future
+  Claude-Code-on-the-machine workflow where a script could
+  pull the most recent log without prompting the user.
+
 ### Fixed
 
 - **UI test flakiness on the windows-2025 runner.** The

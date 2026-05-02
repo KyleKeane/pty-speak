@@ -100,7 +100,31 @@ type internal LogEntry =
 /// Shared sink behind every `FileLogger` instance. One per
 /// process. Owns the background drain task + the active file
 /// stream.
+///
+/// File layout (post-restructure):
+///
+/// ```text
+/// %LOCALAPPDATA%\PtySpeak\logs\
+/// ├── 2026-05-02\
+/// │   ├── pty-speak-13-45-23.log    ← session that launched at 13:45:23 UTC
+/// │   └── pty-speak-15-30-44.log
+/// └── 2026-05-01\
+///     └── pty-speak-09-15-22.log
+/// ```
+///
+/// One file per launch (per-session) inside a day-folder.
+/// Lets the maintainer / user navigate to a specific session
+/// when reporting a bug without scrolling a giant aggregated
+/// file. Retention deletes whole day-folders older than the
+/// configured window.
 type FileLoggerSink (options: FileLoggerOptions) =
+
+    /// Capture launch instant ONCE at construction. Each session
+    /// writes to a single file named after this timestamp; if
+    /// the session runs past midnight the file stays in its
+    /// launch-day folder rather than splitting across two
+    /// folders.
+    let launchUtc = DateTimeOffset.UtcNow
 
     let channel =
         let opts =
@@ -141,24 +165,45 @@ type FileLoggerSink (options: FileLoggerOptions) =
             sb.Append('\n').Append(ex.ToString()) |> ignore
         sb.ToString()
 
-    /// Compute the path for a given UTC date.
-    let pathForDate (utcDate: DateTime) : string =
-        Path.Combine(
-            options.LogDirectory,
-            sprintf "pty-speak-%s.log" (utcDate.ToString("yyyy-MM-dd")))
+    /// Compute the day-folder path + session-file path for the
+    /// launch instant. Day folder named `yyyy-MM-dd`; file
+    /// named `pty-speak-HH-mm-ss.log` (no colons; Windows file
+    /// paths reject `:`).
+    let pathsForLaunch () : string * string =
+        let dayFolder =
+            Path.Combine(
+                options.LogDirectory,
+                launchUtc.UtcDateTime.ToString("yyyy-MM-dd"))
+        let fileName =
+            sprintf "pty-speak-%s.log"
+                (launchUtc.UtcDateTime.ToString("HH-mm-ss"))
+        let filePath = Path.Combine(dayFolder, fileName)
+        dayFolder, filePath
 
-    /// Delete log files older than `RetentionDays` days. Best-
-    /// effort — exceptions are swallowed (a stray file in the
-    /// logs directory shouldn't crash the app).
+    /// Delete day-folders older than `RetentionDays`. Best-
+    /// effort — folder names that don't parse as `yyyy-MM-dd`
+    /// are ignored (someone's manually-created subfolder
+    /// shouldn't cause a crash). Exceptions on individual
+    /// folder deletes are swallowed (a stray file holding a
+    /// folder open shouldn't block startup).
     let runRetention () =
         try
             if Directory.Exists(options.LogDirectory) then
-                let cutoff = DateTime.UtcNow.AddDays(-(float options.RetentionDays))
-                for path in Directory.EnumerateFiles(options.LogDirectory, "pty-speak-*.log") do
+                let cutoff =
+                    DateTime.UtcNow.Date.AddDays(-(float options.RetentionDays))
+                for dirPath in Directory.EnumerateDirectories(options.LogDirectory) do
                     try
-                        let info = FileInfo(path)
-                        if info.LastWriteTimeUtc < cutoff then
-                            info.Delete()
+                        let dirName = Path.GetFileName(dirPath)
+                        let mutable parsed = DateTime.MinValue
+                        let ok =
+                            DateTime.TryParseExact(
+                                dirName,
+                                "yyyy-MM-dd",
+                                System.Globalization.CultureInfo.InvariantCulture,
+                                System.Globalization.DateTimeStyles.None,
+                                &parsed)
+                        if ok && parsed.Date < cutoff then
+                            Directory.Delete(dirPath, true)
                     with _ -> ()
         with _ -> ()
 
@@ -167,42 +212,30 @@ type FileLoggerSink (options: FileLoggerOptions) =
     let drainTask =
         Task.Run(fun () ->
             task {
-                Directory.CreateDirectory(options.LogDirectory) |> ignore
+                let dayFolder, filePath = pathsForLaunch ()
+                Directory.CreateDirectory(dayFolder) |> ignore
                 runRetention ()
 
-                let mutable currentDate = DateTime.UtcNow.Date
+                // Per-session log: open ONCE at startup, write
+                // until the sink is disposed. No daily-roll
+                // logic — a session is one file by design. If a
+                // session runs past midnight it stays in its
+                // launch-day folder; the next launch creates a
+                // file in the new day's folder.
                 let mutable writer : StreamWriter | null = null
 
-                let openWriter (date: DateTime) =
+                let openWriter () =
                     let stream =
                         new FileStream(
-                            pathForDate date,
+                            filePath,
                             FileMode.Append,
                             FileAccess.Write,
                             FileShare.ReadWrite)
                     new StreamWriter(stream, Encoding.UTF8)
 
                 let ensureWriter () =
-                    let today = DateTime.UtcNow.Date
                     if writer = null then
-                        writer <- openWriter today
-                        currentDate <- today
-                    elif today <> currentDate then
-                        // Daily roll: close yesterday's writer,
-                        // open today's, run retention sweep again.
-                        // Pattern-match `writer` to satisfy F# 9
-                        // strict-null: even though we know writer
-                        // is non-null in this elif branch, the
-                        // compiler's flow analysis doesn't carry
-                        // that across the `today <> currentDate`
-                        // condition.
-                        (match writer with
-                         | null -> ()
-                         | w ->
-                             try (w :> IDisposable).Dispose() with _ -> ())
-                        writer <- openWriter today
-                        currentDate <- today
-                        runRetention ()
+                        writer <- openWriter ()
 
                 let writeOne (entry: LogEntry) =
                     try
@@ -273,9 +306,22 @@ type FileLoggerSink (options: FileLoggerOptions) =
                   Exception = ex }
             channel.Writer.TryWrite(entry) |> ignore
 
-    /// Path to the currently active log file. Useful for the
-    /// Ctrl+Shift+L "open logs folder" hotkey.
+    /// Path to the configured logs root directory (the parent
+    /// of the per-day folders). Used by the `Ctrl+Shift+L`
+    /// hotkey to open the root in File Explorer; the user
+    /// then navigates to today's day-folder and picks the
+    /// session of interest.
     member _.LogDirectory : string = options.LogDirectory
+
+    /// Path to THIS session's log file (inside today's day-
+    /// folder, named with the launch time). Useful for tools
+    /// that want to grab the active session's log directly,
+    /// e.g. a future "copy latest log to clipboard" hotkey or
+    /// a Claude-Code-on-the-machine integration that wants the
+    /// most recent log without scanning the directory.
+    member _.ActiveLogPath : string =
+        let _, filePath = pathsForLaunch ()
+        filePath
 
     interface IDisposable with
         member _.Dispose() =

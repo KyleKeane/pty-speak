@@ -1,26 +1,72 @@
 # Logging
 
-pty-speak writes structured logs to a daily-rolling file under
-`%LOCALAPPDATA%\PtySpeak\logs\`. The `Ctrl+Shift+L` hotkey opens
-that folder in File Explorer so you can grab the latest log when
-reporting a bug or reviewing a session.
+pty-speak writes structured logs to per-session files under
+`%LOCALAPPDATA%\PtySpeak\logs\{yyyy-MM-dd}\`. Two hotkeys make
+the logs easy to grab when reporting a bug or reviewing a
+session:
+
+- **`Ctrl+Shift+L`** — open the logs folder in File Explorer.
+- **`Ctrl+Alt+L`** — copy the active session's log file content
+  to the clipboard as a single string. NVDA announces the byte
+  count on success ("Log copied to clipboard. N bytes; ready to
+  paste."). Most efficient way to send a log to a maintainer:
+  press the hotkey, switch to the chat / email / issue, paste.
 
 ## Where the logs live
 
 ```
 %LOCALAPPDATA%\PtySpeak\logs\
-├── pty-speak-2026-05-02.log    ← today's log (active)
-├── pty-speak-2026-05-01.log    ← yesterday
-├── pty-speak-2026-04-30.log
-└── ... (up to 7 days)
+├── 2026-05-02\                                ← today's day-folder
+│   ├── pty-speak-13-45-23.log                 ← session that launched at 13:45:23 UTC
+│   ├── pty-speak-15-12-08.log                 ← session that launched at 15:12:08 UTC
+│   └── pty-speak-16-30-44.log                 ← active session (still being written)
+├── 2026-05-01\                                ← yesterday's day-folder
+│   ├── pty-speak-09-15-22.log
+│   └── pty-speak-22-04-11.log
+└── ... (up to 7 days of day-folders)
 ```
 
-- One file per UTC day. Daily rolling at midnight UTC.
-- 7-day retention. On startup, files older than 7 days are
-  deleted.
+- **One file per launch / session** inside a per-day folder
+  named `yyyy-MM-dd` (UTC). Each session gets its own file
+  named with its launch timestamp (`pty-speak-HH-mm-ss.log`,
+  no colons because Windows file paths reject them).
+- **7-day retention** — entire day-folders older than 7 days
+  are deleted on every fresh launch. Folders with names that
+  don't parse as `yyyy-MM-dd` (manual subfolders, etc.) are
+  ignored.
+- **Sessions don't split across midnight.** A long-running
+  session's file stays in its launch-day folder; no rolling
+  mid-session. The next launch creates a file in the new
+  day's folder.
 - The active file is opened with `FileShare.ReadWrite` so you
   can open it in Notepad, NVDA, or any other reader while
   pty-speak is still running.
+
+## Finding the right session for a bug report
+
+Sessions are named with their launch timestamp, so within a
+day-folder they sort alphabetically in chronological order.
+The latest is always alphabetically last. To grab the session
+where a bug just fired:
+
+1. Press `Ctrl+Shift+L` — File Explorer opens at
+   `%LOCALAPPDATA%\PtySpeak\logs\`.
+2. Open today's day-folder.
+3. Sort by Name (or Date Modified) — the most recent session
+   is at the bottom.
+4. Open that file. It contains ONLY this session's events,
+   typically a few hundred lines for a normal use; thousands
+   if the session was active for a long time.
+5. Copy the relevant slice (or the whole file — single-session
+   files are small) and paste it in a bug report.
+
+Future Claude-Code-on-the-machine integration can grab the
+latest log with one PowerShell line:
+
+```powershell
+Get-ChildItem "$env:LOCALAPPDATA\PtySpeak\logs\$(Get-Date -Format yyyy-MM-dd)" |
+  Sort-Object Name -Descending | Select-Object -First 1
+```
 
 ## Format
 
@@ -96,18 +142,22 @@ any log site that risks leaking these categories.
 
 ## Sharing logs with a maintainer
 
-When reporting a bug:
+**Fastest path** — `Ctrl+Alt+L`:
 
 1. Reproduce the issue (or wait for it to happen — for the
    intermittent ones).
-2. Press `Ctrl+Shift+L` to open the logs folder.
-3. Open `pty-speak-{today}.log` in Notepad (or any reader).
-4. Either:
-   - Copy the relevant time-range of entries (Ctrl+A to grab
-     everything; or scroll to the relevant timestamp and
-     select from there), then paste in the bug report.
-   - OR attach the whole file (logs are small text — typically
-     a few KB to a few hundred KB per day).
+2. **Press `Ctrl+Alt+L`.** NVDA announces "Log copied to
+   clipboard. N bytes; ready to paste." The active session's
+   entire log file is now on the clipboard.
+3. Switch to the chat / email / issue and paste.
+
+**Manual path** — `Ctrl+Shift+L`:
+
+1. Press `Ctrl+Shift+L` to open the logs folder.
+2. Click into today's `yyyy-MM-dd` day-folder.
+3. The most recent session is alphabetically last (filenames
+   are launch timestamps).
+4. Open the file and copy whatever range you need.
 
 Logs do not contain personally-identifying information beyond
 your machine's username (which appears in path prefixes). If

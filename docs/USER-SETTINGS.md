@@ -294,12 +294,22 @@ for future stages — listed inline below):
   mnemonic similarity.
 - **`Ctrl+Shift+L`** — open the logs folder
   (`%LOCALAPPDATA%\PtySpeak\logs\`) in File Explorer (Logging-PR).
-  Useful for grabbing the latest log file when reporting a bug.
-  Logs are daily-rolled with 7-day retention. See
-  [`LOGGING.md`](LOGGING.md) for the full description of what's
-  logged and what isn't (typed input, paste content, full screen
-  contents, environment variables — never). Wired in
+  Useful for navigating into a previous session's log file when
+  reporting a bug. Logs are per-session files inside per-day
+  folders with 7-day retention. See [`LOGGING.md`](LOGGING.md)
+  for the full description of what's logged and what isn't
+  (typed input, paste content, full screen contents,
+  environment variables — never). Wired in
   `setupOpenLogsKeybinding`.
+- **`Ctrl+Alt+L`** — copy the active session's log file content
+  to the clipboard as a single string (Logging-restructure PR).
+  NVDA announces the byte count on success ("Log copied to
+  clipboard. N bytes; ready to paste."). Fastest path to send
+  a session log to a maintainer. NOT `Ctrl+Shift+C` —
+  Ctrl+Shift+C currently sends `0x03` (SIGINT) to the shell
+  via the Ctrl-letter encoding, and overriding that would
+  break the standard "press Ctrl+C to interrupt a running
+  command" gesture. Wired in `setupCopyLatestLogKeybinding`.
 - (planned) **`Ctrl+Shift+M`** — earcon mute toggle (Stage 9).
 - (planned) **`Alt+Shift+R`** — review-mode toggle (Stage 10).
 

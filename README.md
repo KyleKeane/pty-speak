@@ -153,8 +153,13 @@ preserve this list per the app-reserved-hotkey contract in
   navigation step.
 - **`Ctrl+Shift+L`** — open the logs folder
   (`%LOCALAPPDATA%\PtySpeak\logs\`) in File Explorer. Useful for
-  grabbing the latest log when reporting a bug. See
-  [`docs/LOGGING.md`](docs/LOGGING.md) for what is and isn't logged.
+  grabbing a previous session's log when reporting a bug.
+- **`Ctrl+Alt+L`** — copy the active session's log file content
+  to the clipboard. NVDA announces the byte count; switch to
+  the chat / email / issue and paste. The fastest way to send
+  a session log to a maintainer. See
+  [`docs/LOGGING.md`](docs/LOGGING.md) for what is and isn't
+  logged.
 
 Reserved but not yet implemented: `Ctrl+Shift+M` (Stage 9 mute toggle),
 `Alt+Shift+R` (Stage 10 review-mode toggle).
