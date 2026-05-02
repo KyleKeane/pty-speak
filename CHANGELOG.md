@@ -17,6 +17,38 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Fixed
 
+- **Ctrl+V paste re-fix + Ctrl+L clear-screen.** The previous
+  attempt (in the post-Stage-6 fix-PR) added `KeyBinding`s mapping
+  Ctrl+V and Shift+Insert to `ApplicationCommands.Paste`, but
+  manual NVDA verification showed Ctrl+V still emitted `^V` to the
+  shell. Two compounding causes:
+  1. WPF's `CommandManager` class handler doesn't auto-process
+     `InputBindings` on a raw `FrameworkElement` the way it does
+     for built-in `Control`s, so the gesture wasn't reliably
+     reaching `OnPasteExecuted`.
+  2. Even when the routing did reach `OnPasteCanExecute`, an empty
+     clipboard returned `CanExecute = false`, the gesture fell
+     through unhandled to my `OnPreviewKeyDown` override, the
+     encoder produced `0x16`, and cmd.exe echoed `^V`.
+
+  Re-fix: handle Ctrl+V, Shift+Insert, and Ctrl+L explicitly at
+  the top of `OnPreviewKeyDown` (new `HandleAppLevelShortcut`
+  helper) before the encoder runs. Empty clipboard now becomes a
+  silent no-op instead of a `^V` emission. The
+  `ApplicationCommands.Paste` `CommandBinding` is kept for any
+  future right-click-menu / Edit-menu paste paths.
+
+  Ctrl+L is special-cased to send `cls\r` (the cmd.exe clear-
+  screen command) instead of `0x0C` (form feed). Strictly the
+  literally-correct terminal-emulator behaviour is to send `0x0C`
+  and let the shell decide — but cmd.exe ignores `0x0C` and
+  echoes `^L`, which is bad UX. Documented trade-off: when the
+  foreground process is something that DOES interpret `0x0C`
+  (Claude Code's Ink, `less`, `vim`), Ctrl+L will run `cls` as
+  if typed instead of triggering that program's redraw. Acceptable
+  for the current cmd.exe-only scope; revisit when Stage 7+ adds
+  shell flexibility.
+
 - **Three post-Stage-6 regressions surfaced during manual NVDA
   verification on the post-Stage-6 preview**, all targeted in a
   single follow-up PR:

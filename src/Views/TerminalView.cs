@@ -126,31 +126,24 @@ public class TerminalView : FrameworkElement
         TextProvider = new TerminalTextProvider(() => _screen);
 
         // Stage 6 PR-B — paste hook. ApplicationCommands.Paste fires
-        // for Ctrl+V, right-click → Paste, and Edit menu → Paste; one
-        // CommandBinding covers all paste sources. The handler reads
-        // the clipboard, runs it through KeyEncoding.encodePaste
-        // (which strips embedded \x1b[201~ for paste-injection
-        // defence and conditionally wraps in bracketed-paste markers),
-        // and writes to the PTY.
-        //
-        // Post-Stage-6 fix: a CommandBinding alone tells WPF "if Paste
-        // is invoked on me, here's the handler" but does NOT wire any
-        // keyboard shortcut to invoke it. Without an InputBinding,
-        // Ctrl+V flows through OnPreviewKeyDown → encoder → 0x16 →
-        // cmd.exe echoes as `^V`. Adding the InputBindings below maps
-        // Ctrl+V and Shift+Insert (the two standard paste gestures) to
-        // the Paste command so they fire OnPasteExecuted instead of
-        // reaching the encoder.
+        // for right-click → Paste, Edit menu → Paste, and any future
+        // CommandBinding consumer; one CommandBinding covers all
+        // command-style paste sources. The keyboard gestures
+        // (Ctrl+V / Shift+Insert) are NOT wired through CommandManager
+        // any more — they're handled directly in OnPreviewKeyDown
+        // before the encoder runs (see post-Stage-6 fix-2 below).
+        // Reason: WPF's CommandManager class handler doesn't auto-
+        // process InputBindings on a raw FrameworkElement, AND when
+        // OnPasteCanExecute returns false (e.g. empty clipboard), the
+        // unhandled gesture falls through to the encoder and emits
+        // ^V to the shell — exactly what we wanted to avoid. Direct
+        // handling guarantees the encoder is bypassed regardless of
+        // clipboard state, with empty-clipboard becoming a silent
+        // no-op rather than a ^V emission.
         CommandBindings.Add(new CommandBinding(
             ApplicationCommands.Paste,
             OnPasteExecuted,
             OnPasteCanExecute));
-        InputBindings.Add(new KeyBinding(
-            ApplicationCommands.Paste,
-            new KeyGesture(Key.V, ModifierKeys.Control)));
-        InputBindings.Add(new KeyBinding(
-            ApplicationCommands.Paste,
-            new KeyGesture(Key.Insert, ModifierKeys.Shift)));
 
         // Stage 6 PR-B — resize debounce timer. Stopped initially;
         // OnRenderSizeChanged restarts it on each WPF SizeChanged tick.
@@ -385,6 +378,25 @@ public class TerminalView : FrameworkElement
             return;
         }
 
+        // 2.5. App-level keyboard shortcuts that bypass the encoder.
+        // Post-Stage-6 fix-2: these gestures look like Ctrl-letter
+        // combos to the encoder, but their user-facing meaning
+        // (paste, clear-screen) is fundamentally a UI concept that
+        // doesn't translate cleanly to a single PTY byte for cmd.exe.
+        // Sending the raw control byte (0x16, 0x0C) results in cmd.exe
+        // echoing them back as ^V / ^L caret-notation, which is the
+        // bug the maintainer hit during NVDA verification.
+        //
+        // Handle these explicitly here instead of relying on
+        // CommandManager / InputBinding routing — that route doesn't
+        // fire reliably for a custom FrameworkElement, and any
+        // CanExecute=false branch falls through to the encoder.
+        if (HandleAppLevelShortcut(e.Key, pressedModifiers))
+        {
+            e.Handled = true;
+            return;
+        }
+
         // 3. Translate.
         var keyMods = TranslateModifiers(pressedModifiers);
         var keyCode = TranslateKey(e.Key);
@@ -494,6 +506,73 @@ public class TerminalView : FrameworkElement
     {
         e.CanExecute = _writeBytes is not null && Clipboard.ContainsText();
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// Post-Stage-6 fix — app-level keyboard shortcuts that bypass
+    /// the PTY encoder. These gestures look like Ctrl-letter combos
+    /// to the encoder, but their user-facing meaning (paste,
+    /// clear-screen) is a UI concept that doesn't translate cleanly
+    /// to a single PTY byte for cmd.exe. Returns true if the
+    /// gesture was handled (caller marks Handled and returns);
+    /// false if not (caller continues with encoder).
+    ///
+    /// Currently handles:
+    /// <list type="bullet">
+    ///   <item><description><b>Ctrl+V / Shift+Insert</b> — paste from
+    ///   clipboard via <see cref="KeyEncoding.encodePaste"/>. Empty
+    ///   clipboard becomes a silent no-op rather than a <c>^V</c>
+    ///   emission to the shell.</description></item>
+    ///   <item><description><b>Ctrl+L</b> — send <c>cls\r</c> to the
+    ///   shell. <b>Currently cmd.exe-specific.</b> The literally-correct
+    ///   thing to do is send <c>0x0C</c> (form feed) and let the
+    ///   shell decide; cmd.exe ignores it and echoes <c>^L</c>,
+    ///   which is bad UX. PowerShell + PSReadLine and Unix shells
+    ///   honour <c>0x0C</c> directly. A future stage with shell
+    ///   detection (or per-shell config) will pick the right
+    ///   behaviour automatically; for now we hardcode <c>cls\r</c>
+    ///   because the default shell is cmd.exe. Trade-off: when the
+    ///   foreground process is something that DOES interpret
+    ///   <c>0x0C</c> (Claude Code's Ink, <c>less</c>,
+    ///   <c>vim</c>, etc.), Ctrl+L will run <c>cls</c> as if typed
+    ///   instead of triggering that program's redraw. Acceptable
+    ///   compromise for the current cmd.exe-only scope; revisit
+    ///   when Stage 7+ adds shell flexibility.</description></item>
+    /// </list>
+    /// </summary>
+    private bool HandleAppLevelShortcut(Key key, ModifierKeys modifiers)
+    {
+        if (_writeBytes is null) return false;
+
+        // Ctrl+V / Shift+Insert → paste.
+        var isPaste =
+            (key == Key.V && modifiers == ModifierKeys.Control) ||
+            (key == Key.Insert && modifiers == ModifierKeys.Shift);
+        if (isPaste)
+        {
+            if (Clipboard.ContainsText())
+            {
+                var text = Clipboard.GetText();
+                if (!string.IsNullOrEmpty(text))
+                {
+                    var bracketed = _screen?.Modes.BracketedPaste == true;
+                    var bytes = KeyEncoding.encodePaste(text, bracketed);
+                    _writeBytes(bytes);
+                }
+            }
+            // Silent no-op on empty clipboard — strictly better than
+            // the previous ^V emission to the shell.
+            return true;
+        }
+
+        // Ctrl+L → cls\r (cmd.exe-specific clear-screen).
+        if (key == Key.L && modifiers == ModifierKeys.Control)
+        {
+            _writeBytes(System.Text.Encoding.ASCII.GetBytes("cls\r"));
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
