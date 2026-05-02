@@ -15,6 +15,46 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed
+
+- **Logging restructured to per-session files in per-day
+  folders.** The previous layout kept one daily-rolled file
+  per UTC day; long-running development days produced massive
+  aggregated files that were painful to navigate when grabbing
+  a slice for a bug report. New layout:
+
+  ```
+  %LOCALAPPDATA%\PtySpeak\logs\
+  ├── 2026-05-02\
+  │   ├── pty-speak-13-45-23.log    ← session that launched at 13:45:23
+  │   ├── pty-speak-15-12-08.log
+  │   └── pty-speak-16-30-44.log
+  ├── 2026-05-01\
+  │   └── pty-speak-09-15-22.log
+  └── ... (up to 7 days)
+  ```
+
+  Each launch creates a fresh session file named with its
+  launch timestamp inside today's day-folder. Sessions don't
+  split across midnight (a long-running session stays in its
+  launch-day folder). Retention deletes whole day-folders
+  older than 7 days; folders with non-date names are ignored
+  defensively. New `FileLoggerSink.ActiveLogPath` member
+  exposes this session's file path for tools that want to
+  grab the active session directly.
+
+  `Ctrl+Shift+L` still opens the logs root; the user
+  navigates one click into today's day-folder and picks the
+  most recent session by alphabetical sort. Bug reports are
+  now one-file pastes instead of "scroll a giant log to the
+  right time range".
+
+  `docs/LOGGING.md` updated with the new layout, retention
+  rules, and a one-line PowerShell snippet for grabbing the
+  latest session — useful for the future
+  Claude-Code-on-the-machine workflow where a script could
+  pull the most recent log without prompting the user.
+
 ### Fixed
 
 - **UI test flakiness on the windows-2025 runner.** The
