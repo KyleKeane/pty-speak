@@ -17,6 +17,85 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Stage 7 PR-C — hot-switch hotkeys `Ctrl+Shift+1` (cmd) /
+  `Ctrl+Shift+2` (claude).** Mid-session shell switching via WPF
+  `KeyBinding` -> `RoutedCommand` -> orchestrator closure in
+  `src/Terminal.App/Program.fs compose ()`. The orchestrator
+  resolves the target via `ShellRegistry.tryFind`, announces
+  "Switching to {target}." with the existing 700ms
+  announce-before-launch delay (matches Stage 4b's diagnostic-
+  launcher pattern), tears down the running ConPtyHost (cancels
+  reader, terminates immediate child via `TerminateProcess`,
+  closes pipes; `KILL_ON_JOB_CLOSE` on the Job Object cascade-
+  kills any grandchildren the previous shell spawned), spawns
+  a new `ConPtyHost.start` with the same grid dimensions and
+  the resolved command line, re-wires keyboard / paste / focus
+  / resize callbacks via the extracted `wirePostSpawn` helper,
+  and announces "Switched to {target}." Resolve failure (e.g.
+  Claude Code not installed) keeps the existing host running
+  and announces the failure rather than dropping the user
+  into a dead window.
+
+  Both hotkeys are reserved in
+  `TerminalView.AppReservedHotkeys` so Stage 6's
+  `OnPreviewKeyDown` filter doesn't mark them `Handled = true`
+  before WPF's `InputBindings` machinery can fire.
+  Number-row digits (`Key.D1` / `Key.D2`), NOT numpad —
+  numpad-with-NumLock-off carries NVDA review-cursor commands
+  per the accessibility non-negotiables. NVDA collision check:
+  `Ctrl+Shift+1` / `Ctrl+Shift+2` have no default NVDA
+  bindings (the digit-only `1` / `Shift+1` browse-mode
+  heading-quick-nav doesn't fire in focus mode, which is what
+  NVDA uses for terminal applications).
+
+  New `ActivityIds.shellSwitch = "pty-speak.shell-switch"` for
+  the announce strings; tagged distinctly so users can
+  configure NVDA's notification processing for shell-switch
+  announcements separately from streaming output.
+
+  `wirePostSpawn` extraction: the post-spawn wiring (env-scrub
+  count log, reader-loop start, `SetPtyHost` callbacks) was
+  factored out of the initial-spawn `window.Loaded.Add` block
+  so the shell-switch coordinator reuses the exact same
+  wiring without duplication. Both spawn paths converge on
+  `wirePostSpawn host`.
+
+  Spec deviation: bundled spec update (§6 hotkey-list
+  amendment + new §7.5 "Shell registry + hot-switch UX")
+  per chat 2026-05-03 maintainer authorisation. Mirrors the
+  ADR-style retroactive-formalisation pattern that landed
+  Stages 4a / 4b / 5a.
+
+  Pinned by `tests/Tests.Unit/ShellSwitchTests.fs`: ShellId
+  exhaustive pattern coverage (FS0025 forces lockstep updates
+  when shells are added), `Ctrl+Shift+1`-to-`Cmd` /
+  `Ctrl+Shift+2`-to-`Claude` mapping, registry/hotkey keyset
+  parity check (every registered shell has a hotkey),
+  Resolver-Result shape (no exception leak), DisplayName
+  natural-language check (announce strings read aloud).
+
+  Known limitations (deferred to follow-up PRs if NVDA
+  validation flags them in PR-D):
+  - Screen state is NOT reset across switches; new shell's
+    first paint overlays the previous screen. cmd -> claude
+    is clean (`?1049h` enters alt-screen); claude -> cmd may
+    briefly show alt-screen residue.
+  - Parser state is NOT reset; mid-CSI/OSC bytes from the
+    dying shell may parse oddly until the new shell sends a
+    complete sequence.
+  - UIA peer ranges are NOT invalidated; NVDA's review cursor
+    may briefly point at stale text until the new shell's
+    first announce-bound output triggers a fresh
+    Notification event.
+
+  Each is acceptable for v1; the framework cycles' RFC scope
+  owns the architectural fixes.
+
+  Third of four sequenced Stage 7 PRs per
+  `docs/PROJECT-PLAN-2026-05.md` Part 2; depends on PR-B
+  (#132) for the `ShellRegistry` registry. PR-D (NVDA
+  validation matrix + STAGE-7-ISSUES seeding) follows.
+
 - **`CLAUDE.md` — auto-loaded standing instructions for Claude
   Code sessions.** Consolidates the working rules and project-
   specific gotchas every session needs to know upfront, indexed

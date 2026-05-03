@@ -31,6 +31,7 @@
     <Compile Include="FileLoggerTests.fs" />
     <Compile Include="EnvBlockTests.fs" />
     <Compile Include="ShellRegistryTests.fs" />
+    <Compile Include="ShellSwitchTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
