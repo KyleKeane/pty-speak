@@ -474,76 +474,130 @@ module Program =
                 "Logging is not initialised yet; nothing to copy.",
                 ActivityIds.error)
         | Some sink ->
-            try
-                // Wait briefly for any in-flight log entries to reach
-                // disk before reading. Without this, the bounded
-                // channel can hold ~milliseconds of recent entries
-                // that haven't been written yet — the clipboard
-                // would then capture a stale snapshot of the file.
-                // Bounded by 500ms so the dispatcher can't freeze
-                // for longer than that worst-case; if no flush
-                // completes (channel idle, nothing to flush), the
-                // file already contains everything the writer has
-                // produced, so the false-return path is benign.
-                let drained = sink.FlushPending(500).Result
-                if not drained then
-                    log.LogInformation(
-                        "FlushPending timed out after 500ms; clipboard may be missing entries enqueued in the last few hundred ms.")
-                let path = sink.ActiveLogPath
-                if not (System.IO.File.Exists path) then
-                    window.TerminalSurface.Announce(
-                        "Active log file does not exist yet; press a key or wait for an event first.",
-                        ActivityIds.error)
-                else
-                    // Read with FileShare.ReadWrite to match the
-                    // FileLogger writer's open mode. Using
-                    // File.ReadAllText here previously failed with
-                    // "The process cannot access the file because
-                    // it is being used by another process" — the
-                    // overload defaults to FileShare.Read, which
-                    // means "I tolerate other readers but no
-                    // writers." Since the writer IS holding the
-                    // file with write access, the OS rejected the
-                    // read open. FileShare.ReadWrite advertises
-                    // "I tolerate readers AND writers", which
-                    // matches the writer's policy and lets the
-                    // OS grant the handle.
-                    let content =
-                        use stream =
-                            new System.IO.FileStream(
-                                path,
-                                System.IO.FileMode.Open,
-                                System.IO.FileAccess.Read,
-                                System.IO.FileShare.ReadWrite)
-                        use reader =
-                            new System.IO.StreamReader(
-                                stream, System.Text.Encoding.UTF8)
-                        reader.ReadToEnd()
-                    // Clipboard.SetText must run on the WPF
-                    // dispatcher thread (STA). The hotkey
-                    // handler already runs there, so direct
-                    // call is safe. Wrap in try/catch because
-                    // Clipboard can transiently throw
-                    // COMException when the OS clipboard is
-                    // contended; one failed attempt is fine
-                    // — user retries.
-                    System.Windows.Clipboard.SetText(content)
-                    let bytes =
-                        System.Text.Encoding.UTF8.GetByteCount(content)
-                    log.LogInformation(
-                        "Copied active log to clipboard. Path={Path} Bytes={Bytes}",
-                        path, bytes)
-                    window.TerminalSurface.Announce(
-                        sprintf
-                            "Log copied to clipboard. %d bytes; ready to paste."
-                            bytes,
-                        ActivityIds.diagnostic)
-            with ex ->
-                let safe = AnnounceSanitiser.sanitise ex.Message
-                log.LogError(ex, "Failed to copy active log to clipboard.")
-                window.TerminalSurface.Announce(
-                    sprintf "Could not copy log: %s" safe,
-                    ActivityIds.error)
+            // Stage 7-followup PR-G — fix dispatcher deadlock that
+            // wedged the WPF window when this hotkey ran while NVDA
+            // had a long readout queued.
+            //
+            // The previous implementation called
+            // `sink.FlushPending(500).Result` on the dispatcher.
+            // `FlushPending` is `task { ... let! winner =
+            // Task.WhenAny(...) ... }`; the `let!` captures the
+            // WPF dispatcher's `SynchronizationContext`. When the
+            // dispatcher thread calls `.Result`, it blocks waiting
+            // for the task. The task's continuation needs to
+            // resume on the captured context — which is the
+            // dispatcher itself. Permanent deadlock; the 500ms
+            // timeout never fires because the timeout's
+            // continuation can't run on the wedged dispatcher.
+            // Empirical confirmation: 2026-05-03 NVDA pass log
+            // showed `Ctrl+Shift+;` entry-log fired at 19:13:51.861
+            // followed by zero subsequent dispatcher events for
+            // 2.5+ minutes (heartbeats kept firing on the
+            // background timer, confirming the runtime was alive
+            // but the WPF dispatcher was stuck).
+            //
+            // Additional concern: `Clipboard.SetText` requires the
+            // STA apartment AND can hang on contention with NVDA's
+            // clipboard hooks / antivirus / clipboard managers.
+            // Both issues are fixed by running the whole copy
+            // operation off the dispatcher in a Task: FlushPending
+            // is awaited normally (no `.Result`), the clipboard
+            // SetText runs on a dedicated STA thread with a 3s
+            // timeout, and the announcement dispatches back to the
+            // WPF thread on completion. The hotkey handler returns
+            // immediately; the dispatcher never blocks.
+            let _ =
+                task {
+                    try
+                        let! drained = sink.FlushPending(500)
+                        if not drained then
+                            log.LogInformation(
+                                "FlushPending timed out after 500ms; clipboard may be missing entries enqueued in the last few hundred ms.")
+                        let path = sink.ActiveLogPath
+                        if not (System.IO.File.Exists path) then
+                            let action () =
+                                window.TerminalSurface.Announce(
+                                    "Active log file does not exist yet; press a key or wait for an event first.",
+                                    ActivityIds.error)
+                            do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                        else
+                            // FileShare.ReadWrite matches the
+                            // FileLogger writer's open mode (the
+                            // writer holds the file with FileAccess.Write
+                            // + FileShare.ReadWrite, so a reader
+                            // with FileShare.ReadWrite is granted
+                            // by the OS).
+                            let content =
+                                use stream =
+                                    new System.IO.FileStream(
+                                        path,
+                                        System.IO.FileMode.Open,
+                                        System.IO.FileAccess.Read,
+                                        System.IO.FileShare.ReadWrite)
+                                use reader =
+                                    new System.IO.StreamReader(
+                                        stream, System.Text.Encoding.UTF8)
+                                reader.ReadToEnd()
+                            // System.Windows.Clipboard.SetText
+                            // requires STA apartment. Thread-pool
+                            // threads are MTA, so we spin up a
+                            // dedicated STA thread for this single
+                            // operation. Bounded by a 3s timeout
+                            // so clipboard contention can't hang
+                            // the workflow indefinitely.
+                            let setOk = TaskCompletionSource<bool>()
+                            let staBody = ThreadStart(fun () ->
+                                try
+                                    System.Windows.Clipboard.SetText(content)
+                                    setOk.TrySetResult(true) |> ignore
+                                with ex ->
+                                    log.LogWarning(
+                                        ex,
+                                        "Clipboard.SetText threw: {Message}",
+                                        ex.Message)
+                                    setOk.TrySetResult(false) |> ignore)
+                            let staThread = new Thread(staBody)
+                            staThread.SetApartmentState(ApartmentState.STA)
+                            staThread.IsBackground <- true
+                            staThread.Start()
+                            let! winner =
+                                Task.WhenAny(
+                                    setOk.Task :> Task,
+                                    Task.Delay(3000))
+                            let succeeded =
+                                obj.ReferenceEquals(winner, setOk.Task)
+                                && setOk.Task.Result
+                            let bytes =
+                                System.Text.Encoding.UTF8.GetByteCount(content)
+                            let msg, activityId =
+                                if succeeded then
+                                    log.LogInformation(
+                                        "Copied active log to clipboard. Path={Path} Bytes={Bytes}",
+                                        path, bytes)
+                                    sprintf
+                                        "Log copied to clipboard. %d bytes; ready to paste."
+                                        bytes,
+                                    ActivityIds.diagnostic
+                                else
+                                    log.LogWarning(
+                                        "Clipboard.SetText timed out or failed after 3s; clipboard may not contain log content.")
+                                    "Clipboard copy timed out. Try again, or open the logs folder via Ctrl+Shift+L.",
+                                    ActivityIds.error
+                            let action () =
+                                window.TerminalSurface.Announce(msg, activityId)
+                            do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                    with ex ->
+                        let safe = AnnounceSanitiser.sanitise ex.Message
+                        log.LogError(ex, "Failed to copy active log to clipboard.")
+                        let action () =
+                            window.TerminalSurface.Announce(
+                                sprintf "Could not copy log: %s" safe,
+                                ActivityIds.error)
+                        try
+                            do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                        with _ -> ()
+                }
+            ()
 
     /// Wire `Ctrl+Shift+;` to trigger `runCopyLatestLog`.
     let private setupCopyLatestLogKeybinding (window: MainWindow) : unit =
