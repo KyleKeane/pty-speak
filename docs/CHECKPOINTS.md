@@ -45,6 +45,35 @@ stays accurate.
 | `baseline/stage-3a-screen-model` | <pre>git fetch origin main<br>git tag -a baseline/stage-3a-screen-model \\<br>  9c30fc49a25ef2de6bf0491f441d631512ed9fe7 \\<br>  -m "Stage 3a ship: ColorSpec/SgrAttrs/Cell/Cursor/Screen in Terminal.Core"<br>git push origin baseline/stage-3a-screen-model</pre> |
 | `baseline/stage-3b-wpf-rendering` | <pre>git fetch origin main<br>git tag -a baseline/stage-3b-wpf-rendering \\<br>  0a5ee22fb490a70982724b614bf69249e0b512da \\<br>  -m "Stage 3b ship: WPF TerminalView + end-to-end ConPty→Parser→Screen→View"<br>git push origin baseline/stage-3b-wpf-rendering</pre> |
 
+### Post-Stage-3b checkpoint rows pending
+
+Stages 4, 4.5, 5, 6, and 11 have all merged to `main` and shipped
+in maintainer-tested previews, but no `baseline/stage-N` tag rows
+have been added to either the "Current checkpoints" table above or
+this Pending table. The 2026-05-03 audit
+([`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md)) flagged
+this as a hygiene gap. To close it, the maintainer (or a future
+session with maintainer-supplied scope text) should:
+
+1. Identify the `main` merge-commit SHA for each stage:
+   - Stage 4 — UIA Document role + Text pattern + navigation + focus
+     (PRs #54-#56, #59, #60, #66, #68)
+   - Stage 4.5 — Claude Code rendering substrate (PR-A #85; PR-B
+     alt-screen back-buffer #86)
+   - Stage 5 — Streaming output via Coalescer
+     ([`e2f62f9`](https://github.com/KyleKeane/pty-speak/commit/e2f62f9),
+     PR #89; functional end-to-end as of PR #116)
+   - Stage 6 — Keyboard input + paste + focus reporting + dynamic
+     resize + Job Object lifecycle (PR-A #92, PR-B #99, fixup #100)
+   - Stage 11 — Velopack auto-update (PRs #63, #66; NVDA-verified
+     end-to-end on `v0.0.1-preview.26`)
+2. Add a row to "Current checkpoints" describing each stage's
+   shipped scope (see existing rows for tone and detail).
+3. Add a corresponding row to this Pending table with the exact
+   `git tag -a` + `git push` commands so future sessions can sweep
+   them.
+4. Delete this notice once the rows are added.
+
 ## Rolling back to a checkpoint
 
 ### Read-only inspection (browse the tree)

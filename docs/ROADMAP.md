@@ -40,12 +40,12 @@ for ANSI color/style changes.*
 | 3     | Screen model + WPF rendering           | `cmd` runs visibly inside the WPF window        | merged on `main` (split as 3a + 3b — see [`docs/CHECKPOINTS.md`](CHECKPOINTS.md)) |
 | 4     | First UIA provider (text exposure)     | NVDA review cursor reads the buffer             | **shipped** (`v0.0.1-preview.22`+ for first NVDA verification, `v0.0.1-preview.26` after word-nav + focus + version-suffix follow-ups; PRs #54-#56, #59, #60, #66, #68) |
 | 11    | Velopack auto-update                   | `Ctrl+Shift+U` updates from GitHub Releases     | **shipped** (`v0.0.1-preview.26`, NVDA-verified end-to-end via `preview.25 → preview.26` self-update) |
-| 5     | Streaming output notifications         | NVDA reads `dir` line by line; spinner doesn't flood | pending |
-| 6     | Keyboard input to PTY                  | PowerShell, vim, Ctrl+C all work; NVDA keys still work | pending |
-| 7     | Run Claude Code end-to-end             | Roundtrip prompt → response, NVDA reads it      | pending |
-| 8     | Interactive list detection + UIA list  | Selection prompt announced as listbox           | pending |
-| 9     | Earcons (NAudio) + color announcement  | Red plays alarm; Ctrl+Shift+M mutes             | pending |
-| 10    | Review mode + structured navigation    | `e` jumps to next error in scrollback           | pending |
+| 5     | Streaming output notifications         | NVDA reads `dir` line by line; spinner doesn't flood | **functional** as of PR #116 (pipeline reaches NVDA end-to-end). The verbose-readback issue — Stage 5's `renderRows` design announces the whole rendered screen on every emit — is the **first foundational architecture decision** addressed by the [May-2026 plan](PROJECT-PLAN-2026-05.md)'s Output framework cycle (Part 3); the original Stage 5 generic coalescer remains in place as the future Stream profile. |
+| 6     | Keyboard input to PTY                  | PowerShell, vim, Ctrl+C all work; NVDA keys still work | **shipped** (Stage 6 PR-A parser arms + PR-B `KeyEncoding` + WPF input wiring + Job Object lifecycle). The minimal pass-through input pipeline is the **second foundational architecture decision** addressed by the [May-2026 plan](PROJECT-PLAN-2026-05.md)'s Input framework cycle (Part 4). |
+| 7     | Run Claude Code end-to-end             | Roundtrip prompt → response, NVDA reads it      | pending — sequenced as **Part 2 (validation gate)** of the [May-2026 plan](PROJECT-PLAN-2026-05.md); ships before the framework cycles to surface the gap inventory that drives their design. |
+| 8     | Interactive list detection + UIA list  | Selection prompt announced as listbox           | pending — **subsumed** by the [May-2026 plan](PROJECT-PLAN-2026-05.md)'s Output framework cycle (Part 3 Stage F: Selection profile). List-detection becomes a profile-detection signal; UIA list exposure becomes a presentation-sink contract. |
+| 9     | Earcons (NAudio) + color announcement  | Red plays alarm; Ctrl+Shift+M mutes             | pending — **subsumed** by the [May-2026 plan](PROJECT-PLAN-2026-05.md)'s Output framework cycle (Part 3 Stage G: earcons + colour-to-earcon mapping as a presentation sink the framework drives). Gates the `Ctrl+Shift+M` mute hotkey reservation. |
+| 10    | Review mode + structured navigation    | `e` jumps to next error in scrollback           | pending — sequenced as **Part 5 (post-frameworks)** of the [May-2026 plan](PROJECT-PLAN-2026-05.md); first non-built-in consumer of the framework's semantic-event taxonomy. |
 
 A stage in CI green and an internal test pass earns a `vX.Y.Z-preview.N`
 prerelease. A stage with a successful external NVDA validation pass
@@ -83,6 +83,49 @@ justification:
 Stage 4's verification completed in parallel with Stage 11
 shipping — both are now NVDA-verified end-to-end on
 `v0.0.1-preview.26`.
+
+### Post-Stage-7 architecture cycles (May-2026 plan)
+
+Per [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md), the
+post-Stage-6 review surfaced two foundational architecture
+decisions that the original walking-skeleton plan deferred to
+"Stage 5 polish" but are too consequential to leave to
+incremental tuning:
+
+1. **Output handling.** Stage 5's `renderRows` design announces
+   the whole rendered screen on every emit. Manageable for a
+   one-shot command; untenable for typing (NVDA reads the whole
+   screen per keystroke); fundamentally wrong for structured
+   workloads — REPL prompts, TUI apps, Ink-rendered forms
+   (Claude Code), selection lists (fzf, peco). Different content
+   paradigms need different presentation strategies, not
+   different verbosity tunings of one strategy. The Output
+   framework cycle (plan Part 3) abstracts the Stream / REPL /
+   TUI / Form / Selection profile taxonomy. **Subsumes original
+   Stages 8 (Selection profile = list detection + UIA list) and
+   9 (earcons + colour announcement = presentation-sink
+   stage).**
+
+2. **Input interpretation.** Today every keystroke goes straight
+   from `OnPreviewKeyDown` to the encoder to the PTY, with no
+   rolling buffer, no completion, no lint, no natural-language
+   suggestion surface. Sighted developers see bash's
+   completion; blind developers get nothing. The Input framework
+   cycle (plan Part 4) introduces a per-keystroke rolling buffer
+   that feeds a tokeniser → lexer → suggestion engine pipeline,
+   surfaced on demand via `Ctrl+Space` / `Tab` / `Ctrl+H` so the
+   speech queue isn't spammed. Includes an explicit
+   echo-correlation API that lets the Output framework's Stream
+   profile suppress double-spoken character echoes (closes the
+   typed-input half of Issue #115).
+
+The full sequencing is **Part 1 cleanup → Part 2 Stage 7
+(validation gate) → Part 3 Output framework cycle → Part 4 Input
+framework cycle → Part 5 Stage 10 (first framework consumer)**.
+Total estimated effort: ~8-12 weeks of focused work to reach
+v0.1.0 with all original-plan stages either shipped or formally
+subsumed. See the plan document for the per-part scope and the
+research → RFC → staged-implementation breakdown.
 
 ## Phase 2 — accessibility depth (v0.2.0 onward)
 

@@ -231,6 +231,49 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Strategic plan committed to repo:
+  [`docs/PROJECT-PLAN-2026-05.md`](docs/PROJECT-PLAN-2026-05.md).**
+  Captures the post-PR-#116 architecture review and sequences
+  the next ~8-12 weeks of work as **Part 1** Cleanup → **Part 2**
+  Stage 7 Claude Code roundtrip + env-scrub PO-5 (validation
+  gate) → **Part 3** Output-handling framework cycle (subsumes
+  original Stages 8 + 9 as Selection profile + earcons sink) →
+  **Part 4** Input-interpretation framework cycle (parallel to
+  Part 3; bridges to it via echo-correlation API) → **Part 5**
+  Stage 10 review mode + quick-nav (first non-built-in consumer
+  of the framework's semantic-event taxonomy). The plan
+  supersedes `spec/tech-plan.md`'s Stage 7-10 ordering
+  specifically; the spec remains immutable as architectural
+  rationale. `docs/SESSION-HANDOFF.md`, `docs/ROADMAP.md`,
+  `docs/ACCESSIBILITY-INTERACTION-MODEL.md`, and `README.md`
+  cross-link the plan as the canonical source for the next
+  several months of work, so a fresh session (Claude or human)
+  can pick up the work without re-deriving the rationale.
+
+- **Repo-wide handoff doc freshness sweep.** Bundled with the
+  plan-doc commit:
+  - `docs/SESSION-HANDOFF.md` — Stage 11 implementation sketch
+    relabeled "shipped — retained as reference" (parallel to
+    the existing Stage 4 sketch); pending-action-items 5.1
+    (PO-5 env-scrub) reframed via May-2026 plan Part 2;
+    item 6 (diagnostic-launcher native replacement) marked
+    actionable now that Stages 5 + 6 have shipped; item 7
+    (stale-branch bulk-delete) count refreshed (~100, was 77).
+  - `docs/CHECKPOINTS.md` — added "Post-Stage-3b checkpoint
+    rows pending" notice listing missing checkpoint rows for
+    Stages 4, 4.5, 5, 6, and 11.
+  - `SECURITY.md` — PO-5 row reframed from "accepted risk /
+    defer" to "planned / sequenced as plan Part 2"; TC-5 row
+    marked **shipped** since Stage 5's `Coalescer` confirmed
+    routes per-row announcements through `AnnounceSanitiser`
+    (verified at `src/Terminal.Core/Coalescer.fs:178`); the
+    PRs that add log calls clause cross-links the plan.
+  - `docs/USER-SETTINGS.md` — verbosity section rewritten
+    around the May-2026 plan's per-profile output-framework
+    taxonomy (Off / Smart / Verbose preserved as a power-user
+    override per profile, not the primary surface); Stage 9
+    audio section flagged as subsumed into Part 3 Stage G.
+
 - **`Ctrl+Shift+;` copies the active session's log file content
   to the clipboard.** Bundled with the logging-restructure
   work. Pressing the hotkey reads the active log file (the one

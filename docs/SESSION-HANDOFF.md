@@ -9,6 +9,8 @@ CHANGELOG discipline, documentation policy, F# / WPF gotchas) live in
 [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 A new session should read this **first**, then
+[`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md) (the
+canonical strategic plan for the next ~8-12 weeks of work),
 [`CONTRIBUTING.md`](../CONTRIBUTING.md),
 [`spec/tech-plan.md`](../spec/tech-plan.md),
 [`docs/CHECKPOINTS.md`](CHECKPOINTS.md), and
@@ -17,12 +19,19 @@ A new session should read this **first**, then
 
 ## Where we left off
 
+> **Authoritative plan**:
+> [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md). The
+> "Where we left off" table below captures snapshot state; the plan
+> document captures the multi-week sequencing decisions
+> (cleanup → Stage 7 validation gate → output framework cycle →
+> input framework cycle → Stage 10) that drive the work.
+
 | | |
 |---|---|
-| **Last merged stages** | **Stage 4** (UIA Document + Text pattern + Line/Character/Word navigation + focus-into-TerminalSurface fix, PRs #54-#56, #59, #60, #68), **Stage 11** (Velopack auto-update via `Ctrl+Shift+U`, PRs #63, #66), **Security-audit cycle SR-1/SR-2/SR-3** (PRs #76, #77, #78), **Stage 4.5 — Claude Code rendering substrate** (PR-A #85, PR-B alt-screen back-buffer), **Stage 5 — Streaming output notifications** (single PR: `Coalescer` module + `ModeChanged` event + two-channel composition + Acc/9 OnRender lock fix bundled), and **Stage 6 — Keyboard input, paste, focus reporting, dynamic resize, Job Object lifecycle** (PR-A parser arms for DECCKM/BracketedPaste/FocusReporting, PR-B `KeyEncoding` module + WPF input wiring + `ResizePseudoConsole` debounce + Job Object child-process containment). Stage 4 + 11 NVDA-verified on `v0.0.1-preview.26`; Stage 4.5 + Stage 5 verified end-to-end on the post-Stage-5 preview (streaming output, frame-hash dedup, alt-screen, hotkey announces); Stage 6 verified by xUnit (35 new `KeyEncodingTests` + 15 new `ScreenTests` for the new mode arms + 2 new `ConPtyHostTests` for resize and Job Object); manual NVDA verification of Stage 6 typed-input gates + Job Object cleanup on the next preview cut is the acceptance gate. |
-| **Last shipped release** | `v0.0.1-preview.26` (or whichever preview the maintainer last cut — release cadence is ad-hoc during the unsigned-preview line). The auto-update path replaces the `scripts/install-latest-preview.ps1` bridge for in-place updates; the script is now **deprecated for in-place updates** but remains useful for fresh installs and dev-environment workflows. The next preview cut picks up Stage 5 + Stage 6 (the first preview where pty-speak is interactive — the user can type into the cmd.exe child). |
-| **In-flight branch** | None. Stage 6 merged. The next stage per the 2026-05-01 strategic review is **Stage 7 — Claude Code roundtrip + env-scrub**. Process-cleanup test (the deferred Stage 4 row) is the recurring acceptance check tracked in "Pending action items" item 2; should re-run after the post-Stage-6 preview cut, this time exercising the new Job Object cleanup path including a Task-Manager kill of `Terminal.App.exe` to confirm KILL_ON_JOB_CLOSE works under hard-crash conditions. |
-| **Next stage** | **Stage 7 — Claude Code roundtrip + env-scrub.** All substrate is in place after Stage 6: alt-screen + cursor visibility (Stage 4.5), streaming announcements (Stage 5), keyboard input + bracketed paste + DECCKM + focus reporting (Stage 6 — Claude Code uses application-cursor mode and bracketed paste both). Stage 7 wires `claude` as the spawned shell command, adds the deferred env-scrub PO-5 (strip `TERM_PROGRAM`, `GITHUB_TOKEN`, `OPENAI_API_KEY`, etc. from the child's environment block via `lpEnvironment` on `CreateProcess` — currently inheriting the parent's full env block), and runs the Claude Code conversation flow end-to-end. Strategic review §G also assigned the "command output complete" prompt-redraw signal to Stage 8, but if Claude's redraw rhythm benefits, it can land in Stage 7's tail. **Open follow-up logged for a future stage**: Screen-buffer runtime resize. Stage 6 resizes the PTY (so cmd.exe and Claude Code see the right column count), but the in-process `Cell[,]` Screen grid stays at construction-time 30×120 — oversize windows have empty padding, undersize windows clip. Spec §6 says "ResizePseudoConsole", which Stage 6 satisfies; full grid resize is a Phase 2 stage. |
+| **Last merged stages** | **Stages 0 → 6 + 11** all merged to `main`. Stage 5 (streaming output via `Coalescer`) and Stage 6 (keyboard input, paste, focus reporting, dynamic resize, Job Object lifecycle) shipped through PRs #100s; Stage 4 + Stage 11 NVDA-verified on `v0.0.1-preview.26`. The post-Stage-5/6 cycle then surfaced and fixed a series of streaming-pipeline bugs: PR #108 (`Ctrl+Alt+L` SystemKey-aware filter), PR #109 (streaming-path INFO instrumentation), PR #111 (`Ctrl+Shift+;` log-copy hotkey + Alt+F4 restoration + log-level demote), PR #114 (FileShare bug + restored two INFO entries), and **PR #116** (the cap-stone: removed the broken `AllHashHistory` spinner gate that was instantly silencing every event). As of PR #116 the streaming pipeline is provably alive end-to-end: cmd.exe banner reads on launch, typed characters trigger speech, command output triggers speech. |
+| **Last shipped release** | `v0.0.1-preview.43` (preview cadence has continued through the post-Stage-6 cycle of fixes). |
+| **In-flight branch** | `claude/audit-repo-handoff-FCsnT` — 2026-05-03 audit of the original `spec/tech-plan.md` Stages 7-10 against the post-#116 state, leading to the [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md) sequencing. The branch lands the plan doc + the docs-freshness sweep (this file, ROADMAP.md, ACCESSIBILITY-INTERACTION-MODEL.md, README.md). Subsequent Part-1 cleanup PRs (FluentAssertions removal, CHANGELOG consolidation, Issue #107 log filename, FlushPending API) ship on separate `chore/`, `docs/`, and `feat/` branches per CONTRIBUTING.md's one-concern-per-PR rule. |
+| **Next stage** | Per [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md): **Part 1 cleanup** (this branch + its sibling PRs, ~1-2 days) → **Part 2: Stage 7 — Claude Code roundtrip + env-scrub PO-5** (~3-5 days, the validation gate before the framework cycles) → **Part 3: Output-handling framework cycle** (multi-week; subsumes original Stages 8 + 9 as Selection profile + earcons sink) → **Part 4: Input-interpretation framework cycle** (multi-week; partly overlaps Part 3) → **Part 5: Stage 10 — Review mode + quick-nav** (~1 week; first non-built-in consumer of the new semantic-event taxonomy). The original-plan Stages 7, 8, 9, 10 are all addressed: 7 is the validation gate, 8 + 9 fold into Part 3, 10 ships post-frameworks as their first consumer. **Open follow-up logged for a future stage**: Screen-buffer runtime resize. Stage 6 resizes the PTY (so cmd.exe and Claude Code see the right column count), but the in-process `Cell[,]` Screen grid stays at construction-time 30×120 — oversize windows have empty padding, undersize windows clip. Spec §6 says "ResizePseudoConsole", which Stage 6 satisfies; full grid resize is a Phase 2 stage. |
 
 The end-to-end pipeline now reaches the auto-update boundary:
 launching the app spawns `cmd.exe` under ConPTY, parses its
@@ -66,9 +75,41 @@ crash leaves no orphans. The reserved-hotkey contract
 (Ctrl+Shift+U / D / R shipped, Ctrl+Shift+M and Alt+Shift+R
 future-reserved) takes priority over PTY input via the
 load-bearing `OnPreviewKeyDown` filter ordering pinned in
-the inline doc-comment + behavioural tests. Stage 7 (Claude
-Code roundtrip + the deferred env-scrub work) is the next
-user-facing milestone.
+the inline doc-comment + behavioural tests.
+
+**Post-Stage-6 streaming-fix cycle.** After Stage 6 shipped,
+manual NVDA verification surfaced that streaming announcements
+weren't actually reaching NVDA in practice — a series of
+diagnostics + fixes followed: PR #109 instrumented the
+streaming path with INFO-level logging, PR #111 added the
+`Ctrl+Shift+;` log-copy hotkey to make those logs trivially
+shareable, PR #114 fixed a `FileShare` race that prevented
+the log-copy from reading its own writer's file, and **PR
+#116** removed the broken `AllHashHistory` spinner gate that
+was the root cause: the gate counted total entries rather
+than unique-hash recurrences, so every emit added 30 row
+entries and the threshold-of-20 was instantly exceeded,
+silencing the channel permanently. As of PR #116 the
+streaming pipeline is provably alive end-to-end (cmd.exe
+banner reads on launch, typed characters and command output
+both trigger speech). The remaining verbose-readback issue
+— Stage 5's `renderRows` design announces the whole
+rendered screen on every emit — is the **first foundational
+architecture decision** that the new May-2026 plan addresses.
+
+**The May-2026 strategic plan.** A 2026-05-03 review identified
+two foundational architecture decisions that remain unsolved
+(output-handling profiles and input-interpretation profiles)
+AND four original `spec/tech-plan.md` Stages still unshipped
+(Stages 7, 8, 9, 10). The result is
+[`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md), which
+sequences the work as: **Part 1** Cleanup → **Part 2** Stage 7
+(validation gate) → **Part 3** Output framework cycle (subsumes
+Stages 8 + 9) → **Part 4** Input framework cycle → **Part 5**
+Stage 10 (first framework consumer). Read that document next
+for the full sequencing rationale; the per-stage detail in this
+file's "Stage N implementation sketch" sections remains useful
+historical reference but is no longer the active plan.
 
 ## Pending action items (maintainer)
 
@@ -254,16 +295,17 @@ disconnects mid-session.
    identified three items genuinely worth deferring rather than
    shipping inline. Each is tracked in `SECURITY.md`'s inventory;
    the items below are the action handles a future maintainer
-   needs to actually close them. The 2026-05-01 strategic stage
-   review (logged at
-   `/root/.claude/plans/replicated-riding-sketch.md`) made
-   refinements to where each lands — see "Recommended adjustments"
-   §E (PO-5 env scrub bundles into Stage 7's env contract per
-   `spec/tech-plan.md` §7.2).
+   needs to actually close them. The 2026-05-03 strategic
+   review (canonical:
+   [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md))
+   sequences PO-5 as the security half of Part 2 (Stage 7
+   Claude Code roundtrip + env-scrub PO-5 — the validation
+   gate before the framework cycles).
 
-   1. **ConPTY environment scrub (PO-5).** Parent's full env
-      block inherits to the child via `lpEnvironment=IntPtr.Zero`
-      in `CreateProcess`, so sensitive vars (`GITHUB_TOKEN`,
+   1. **ConPTY environment scrub (PO-5) — sequenced as
+      May-2026 plan Part 2.** Parent's full env block inherits
+      to the child via `lpEnvironment=IntPtr.Zero` in
+      `CreateProcess`, so sensitive vars (`GITHUB_TOKEN`,
       `OPENAI_API_KEY`, etc.) reach the child shell. To close:
       build an allow/deny-list inside `Terminal.Pty/Native.fs`,
       construct an env block from filtered entries, pass to
@@ -271,7 +313,12 @@ disconnects mid-session.
       breaking developer workflows that depend on inherited
       `PATH` / locale variables; getting the F# string-block
       marshalling exactly right (must be double-NUL terminated,
-      sorted order matters for some tools).
+      sorted order matters for some tools). Lands together
+      with the Claude-Code-as-spawned-child wiring per the
+      May-2026 plan; both pieces of Stage 7 ship as a single
+      cycle so the env-scrub coverage is exercised against
+      Claude Code's actual environment expectations during
+      NVDA validation.
    2. **`install-latest-preview.ps1` TOCTOU (D-1, T-10).**
       A local attacker can swap the `Setup.exe` in `%TEMP%`
       between `Unblock-File` and `Start-Process`. Mitigation
@@ -298,32 +345,31 @@ disconnects mid-session.
       contract.
 
 6. **Diagnostic-launcher UX needs a screen-reader-native
-   replacement (post-Stage-5/6).** PR #81 shipped
+   replacement — now actionable (Stages 5 + 6 shipped, PR
+   #116 functional end-to-end).** PR #81 shipped
    `Ctrl+Shift+D` to launch
    `scripts/test-process-cleanup.ps1` in a separate
    PowerShell window, with the working hypothesis that the
    spawned conhost window would route the script's stdout
    through Windows' default screen-reader path. Manual
-   verification on `v0.0.1-preview.27` (and the next preview
-   that picks up PR #82's script fix) found that **NVDA's
+   verification on `v0.0.1-preview.27` found that **NVDA's
    reading of the spawned PowerShell window is unreliable**
    in practice — line-by-line stdout is the script's design
    but conhost's UIA exposure isn't on par with pty-speak's
    own `Document` + `Text` pattern peer.
 
-   The right replacement, suspected by the maintainer
-   during the manual test, is to run diagnostics **inside
+   The right replacement is to run diagnostics **inside
    pty-speak itself** rather than spawning a separate
-   process:
+   process. As of PR #116 (streaming pipeline functional
+   end-to-end) the foundations are all in place:
 
-   - **Once Stage 6 (keyboard input to PTY) ships:** the
-     user types `pwsh ./test-process-cleanup.ps1` (or
-     similar) directly into pty-speak's child shell. The
-     output flows through the screen and NVDA reads it
-     via the well-tested UIA peer.
-   - **Once Stage 5 (streaming announcements) ships:** the
-     output is also actively narrated as it streams in,
-     not just available via review cursor.
+   - **Stage 6 keyboard-input-to-PTY (shipped).** The user
+     can type `pwsh ./scripts/test-process-cleanup.ps1`
+     directly into pty-speak's child shell.
+   - **Stage 5 streaming announcements (functional via PR
+     #116).** Output is actively narrated as it streams in
+     via the well-tested UIA peer + `TerminalView.Announce`
+     chokepoint, not just available via review cursor.
    - **Optional architectural alternative** if multi-instance
      launch becomes a desired feature: `Ctrl+Shift+D`
      could launch a second pty-speak instance whose child
@@ -336,19 +382,30 @@ disconnects mid-session.
      accessible, but duplicates the logic.
 
    `Ctrl+Shift+D` stays in place as a usable-but-imperfect
-   diagnostic until the above lands; the
-   `docs/ACCESSIBILITY-TESTING.md` "Diagnostic decoder for
-   the launcher hotkeys" subsection notes the limitation
-   so future runs aren't surprised.
+   diagnostic until a screen-reader-native replacement
+   lands; the `docs/ACCESSIBILITY-TESTING.md` "Diagnostic
+   decoder for the launcher hotkeys" subsection notes the
+   limitation so future runs aren't surprised. Filing this
+   as a tracked issue (or folding into Part 1 spec hygiene
+   via a "type the diagnostic into pty-speak directly"
+   note in `ACCESSIBILITY-TESTING.md`) is a reasonable
+   next move; deferred from the May-2026 plan because the
+   diagnostic's verbose-readback experience will benefit
+   from the Output framework cycle's per-profile tuning
+   (Part 3) anyway.
 
-7. **One-time bulk-delete of 77 stale post-merge branches
+7. **One-time bulk-delete of stale post-merge branches
    on `origin/`.** The post-Stage-4.5 hygiene audit
    identified 77 remote branches whose work has been
-   squash-merged into `main` (every branch's PR has
-   either `merged_at` or a `closed` state per the GitHub
-   API). They've accumulated because the
+   squash-merged into `main`; the count has since grown
+   to ~100 as the post-Stage-6 streaming-fix cycle added
+   more merged-but-not-deleted branches. Every branch's
+   PR has either `merged_at` or a `closed` state per the
+   GitHub API. They've accumulated because the
    delete-branch-after-merge convention wasn't codified
-   until PR #87 added it to CONTRIBUTING.md.
+   until PR #87 added it to CONTRIBUTING.md, and the rule
+   has been observed inconsistently for sandbox-pushed
+   branches the agent can't delete from origin.
 
    The agent sandbox cannot delete remote branches
    (proxy returns HTTP 403 on `git push --delete`), so
@@ -464,7 +521,14 @@ all validation happens in CI on `windows-latest`. Implications:
   aware of this and will say "try smaller actions" if a long write
   hangs.
 
-## Stage 11 implementation sketch (next)
+## Stage 11 implementation sketch (shipped — retained as reference)
+
+> **Status:** Stage 11 has shipped. The sketch below is the
+> pre-digested execution plan that drove PRs #63 and #66; it's
+> preserved as reference for the architectural reasoning
+> (especially the Velopack `VelopackApp.Build().Run()` ordering
+> requirement and the structured-error-announcement contract)
+> but is no longer the active plan.
 
 Stage 11 was re-prioritised to land next — see "Where we left off"
 and `docs/ROADMAP.md` "Stage ordering" for the rationale.
@@ -827,23 +891,30 @@ Guard against scope creep:
 ## Recommended reading order for a new session
 
 1. **This file.**
-2. [`CONTRIBUTING.md`](../CONTRIBUTING.md) — PR shape, branching,
+2. **[`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md)** —
+   the canonical strategic plan for the next ~8-12 weeks
+   (cleanup → Stage 7 validation gate → output framework cycle
+   → input framework cycle → Stage 10). Supersedes the per-stage
+   ordering of `spec/tech-plan.md` for Stages 7-10 specifically;
+   the spec remains immutable as architectural rationale.
+3. [`CONTRIBUTING.md`](../CONTRIBUTING.md) — PR shape, branching,
    CHANGELOG discipline, F# / WPF gotchas, documentation policy.
    Working conventions all live here.
-3. [`spec/tech-plan.md`](../spec/tech-plan.md) §1–§4 (the stages
-   already shipped + Stage 4) — establishes the architectural
-   grain.
-4. [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) — what's stable, what
+4. [`spec/tech-plan.md`](../spec/tech-plan.md) §1–§6 (the stages
+   already shipped) — establishes the architectural grain. §7-§10
+   are the original-plan stages that the May-2026 plan reshapes
+   (see plan doc for sequencing).
+5. [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) — what's stable, what
    tags need pushing, how rollback works.
-5. [`docs/CONPTY-NOTES.md`](CONPTY-NOTES.md) — observed platform
+6. [`docs/CONPTY-NOTES.md`](CONPTY-NOTES.md) — observed platform
    quirks. Render-cadence finding is the one most likely to bite
    again.
-6. [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md) "Common pitfalls"
+7. [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md) "Common pitfalls"
    section — every diagnostic loop's lessons end up here.
-7. Skim [`CHANGELOG.md`](../CHANGELOG.md) `[Unreleased]` for
+8. Skim [`CHANGELOG.md`](../CHANGELOG.md) `[Unreleased]` for
    in-flight work and the most recent shipped section for the
    last release narrative shape.
-8. Browse `src/` top-down: `Terminal.Core` (data) → `Terminal.Pty`
+9. Browse `src/` top-down: `Terminal.Core` (data) → `Terminal.Pty`
    (ConPTY) → `Terminal.Parser` (VT500) → `Views` (WPF) →
    `Terminal.App/Program.fs` (composition).
 

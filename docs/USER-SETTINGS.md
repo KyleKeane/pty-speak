@@ -204,11 +204,15 @@ designing for.
 ### Current state
 
 **No audio shipped yet** — Stage 9 (earcons via NAudio) is
-still pending in the roadmap. The current state is "all the
-candidate settings are deciding-now-shippable-later." Logging
-them here lets the design think through configurability before
-shipping the substrate so we don't bake in choices that
-users want to flip.
+**subsumed** into Part 3 Stage G of the
+[May-2026 plan](PROJECT-PLAN-2026-05.md): earcons land as a
+presentation sink the Output framework drives, with
+colour-to-earcon mapping as a profile-tunable strategy. The
+current state is "all the candidate settings are
+deciding-now-shippable-later." Logging them here lets the
+design think through configurability before shipping the
+substrate so we don't bake in choices that users want to
+flip.
 
 The spec (`spec/tech-plan.md` §9) calls out specific audio
 constraints already:
@@ -454,51 +458,73 @@ the universal default on Windows.
 
 ### Current state
 
-No explicit verbosity setting yet. Stage 5 (streaming output
-notifications, pending) will introduce the first decisions
-about what to narrate — line-by-line, only on event
-boundaries, only on errors, etc. Spec calls for spinner
-suppression and rate limiting.
+Stage 5's `Coalescer` ships a single generic strategy:
+`renderRows` announces the rendered screen on every emit
+(functional end-to-end as of PR #116). No verbosity setting
+exposes any knob to the user; the strategy itself is the
+decision. The verbose-readback experience that results — NVDA
+re-reading the whole screen on every keystroke for typed
+input — is the **first foundational architecture decision**
+addressed by the
+[May-2026 plan](PROJECT-PLAN-2026-05.md)'s Output framework
+cycle (Part 3), not a tuning problem inside the existing
+coalescer.
 
-### Why hardcoded now (for Stage 5+ once it ships)
+### Why hardcoded now
 
-The defaults for Stage 5 will be evidence-based: "what does
+The defaults for Stage 5 are evidence-based: "what does
 NVDA need to say so the user understands what's happening
-without being overwhelmed?" The defaults aren't arbitrary;
-they're the answer to that question. But "what counts as
-overwhelming" varies per user and per task, so verbosity
-control will be one of the first config knobs to need
-exposing.
+without being overwhelmed?" The Output framework cycle
+treats this as a **per-profile** question (Stream / REPL /
+TUI / Form / Selection) rather than a single global verbosity
+slider — different content paradigms need different
+presentation strategies, not different verbosity tunings of
+one strategy.
 
 ### What configurability would look like
 
-The spec sketches three profiles (`spec/overview.md` Phase 2):
+Per the May-2026 plan Part 3, configurability lands as a
+**profile taxonomy** with per-profile parameters:
 
-- **Off** — no streaming narration; review cursor only.
-- **Smart** (default) — coalesced flushes, spinner
-  suppression, error highlighting.
-- **Verbose** — every line announced, no coalescing.
+- **Profile selection** — automatic detection (alt-screen,
+  app-name, OSC 133); per-app override; manual switch
+  hotkey (`Ctrl+Alt+1..5` style).
+- **Per-profile parameters** — Stream profile (suffix-diff
+  vs full-screen, OSC 133 prompt awareness); REPL profile
+  (prompt detection signals, output-block boundaries); TUI
+  profile (review-cursor primary, alt-screen flush barrier);
+  Form profile (field detection, focus model); Selection
+  profile (list enumeration verbosity).
+- **Per-app overrides** — `claude` always uses Form; `fzf`
+  always uses Selection; `python` always uses REPL; etc.
 
-Plus:
+The original three-bucket sketch (Off / Smart / Verbose) from
+`spec/overview.md` Phase 2 is preserved as a power-user
+override that the framework's settings UI exposes per
+profile, but it's not the primary surface — profile selection
+is. Other power-user knobs:
 
-- **Per-event-class enable/disable** — power-user setting,
-  e.g. "narrate stderr but suppress stdout"; "announce errors
-  but skip command echoes".
-- **Notification rate limit override** — for the
-  programmer-class user who wants every byte read aloud and
-  knows the cost.
+- **Per-event-class enable/disable** — e.g. "narrate stderr
+  but suppress stdout"; "announce errors but skip command
+  echoes". Ships through the framework's per-profile
+  configuration UI.
+- **Notification rate limit override** — programmer-class
+  user wants every byte read aloud and knows the cost.
 
 ### Implementation notes
 
-- Verbosity needs to be readable from Stage 5's notification
-  emission point in real time.
-- `Ctrl+Shift+V` cycle hotkey is a natural choice
-  ("verbosity off / smart / verbose" cycle) similar to the
-  proposed word-boundary cycle.
+- Phase 2 user-settings TOML (Tomlyn) is the persistence
+  surface; the Output framework cycle's settings UI (plan
+  Part 3 Stage H) provides the discoverable knob.
+- Verbosity overrides are per-profile, not global — the
+  framework's `IOutputProfile` interface owns its own
+  parameter surface.
 - Tests: `tests/Tests.Unit` should include FsCheck properties
-  on the coalescer (no notification flood at any verbosity
-  level, no notifications dropped silently at "verbose"
-  level).
+  per profile (no notification flood at any verbosity level,
+  no notifications dropped silently at "verbose" level).
+- The existing `Coalescer.fs` migrates into the framework's
+  Stream profile during Part 3 Stage A; nothing in the
+  pipeline (parser, screen, drain, peer) needs to move.
 
 ## Process for adding a new setting
 

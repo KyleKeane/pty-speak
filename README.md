@@ -5,25 +5,27 @@ from the ground up for blind developers using NVDA, JAWS, or Narrator —
 with Anthropic's Claude Code (and other Ink/React TUIs) as the primary
 target workload.
 
-> Status: **pre-alpha.** Last shipped preview is
-> [`v0.0.1-preview.26`](../../releases/tag/v0.0.1-preview.26).
+> Status: **pre-alpha.** Latest preview is
+> [`v0.0.1-preview.43`](../../releases) (preview cadence has
+> continued through the post-Stage-6 streaming-fix cycle).
 > Shipped on `main` and NVDA-verified on Windows 11:
-> Stage 0 (skeleton + CI + Velopack pipe), Stage 1 (ConPTY
-> host), Stage 2 (Williams VT500 parser), Stage 3a (screen
-> model), Stage 3b (WPF rendering — live `cmd.exe` output
-> visible in the window), Stage 4 (UIA Document role + Text
-> pattern + Line/Word/Character review-cursor navigation +
-> focus into TerminalSurface), and Stage 11 (Velopack
-> auto-update via `Ctrl+Shift+U` from inside the running
-> app). Stages 5–10 (streaming output notifications, keyboard
-> input to PTY, Claude Code roundtrip, list detection,
-> earcons, review mode) are pending. Stage 11 was
-> re-prioritised ahead of Stages 5–10 because install
-> friction was a meaningful tax on iterative NVDA
-> verification — see [`docs/ROADMAP.md`](docs/ROADMAP.md)
-> "Stage ordering" for the rationale. Follow
-> [Releases](../../releases) for new builds; once installed,
-> `Ctrl+Shift+U` updates in place.
+> Stages 0-4 (skeleton + CI, ConPTY host, Williams VT500
+> parser, screen model + WPF rendering, UIA Document role
+> + Text pattern + Line/Word/Character navigation), Stage
+> 4.5 (Claude Code rendering substrate: alt-screen + DECTCEM
+> + 256/truecolor SGR), Stage 5 (streaming output via
+> `Coalescer`; functional end-to-end as of PR #116 — pipeline
+> reaches NVDA, though the verbose-readback issue is the
+> first foundational architecture decision the May-2026 plan
+> addresses), Stage 6 (keyboard input to PTY + paste +
+> focus reporting + dynamic resize + Job Object lifecycle),
+> and Stage 11 (Velopack auto-update via `Ctrl+Shift+U`).
+> Stages 7-10 are sequenced via
+> [`docs/PROJECT-PLAN-2026-05.md`](docs/PROJECT-PLAN-2026-05.md)
+> as cleanup → Stage 7 (validation gate) → Output framework
+> cycle (subsumes Stages 8 + 9) → Input framework cycle →
+> Stage 10. Follow [Releases](../../releases) for new
+> builds; once installed, `Ctrl+Shift+U` updates in place.
 
 ## Why this exists
 
@@ -98,6 +100,7 @@ tests/                   xUnit + FsCheck.Xunit + FlaUI placeholder
 
 - **Design and rationale:** [`spec/overview.md`](spec/overview.md)
 - **Implementation plan (Stages 0–11):** [`spec/tech-plan.md`](spec/tech-plan.md)
+- **Strategic plan (May 2026 — supersedes Stages 7-10 sequencing):** [`docs/PROJECT-PLAN-2026-05.md`](docs/PROJECT-PLAN-2026-05.md)
 - **Roadmap:** [`docs/ROADMAP.md`](docs/ROADMAP.md)
 - **Architecture map:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - **Build from source:** [`docs/BUILD.md`](docs/BUILD.md)
