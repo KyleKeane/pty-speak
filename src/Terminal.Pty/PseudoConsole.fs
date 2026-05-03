@@ -61,7 +61,15 @@ type PtySession =
       /// terminates the entire process tree. Belt-and-braces on
       /// top of `ConPtyHost`'s targeted `TerminateProcess` of the
       /// immediate cmd.exe.
-      JobHandle: SafeJobHandle }
+      JobHandle: SafeJobHandle
+      /// Stage 7 PR-A — count of parent environment variables
+      /// stripped by the env-scrub deny-list before this child was
+      /// spawned. Information-only; surfaced for `Information`-level
+      /// log emission at the composition root. Names and values are
+      /// NEVER captured (per `SECURITY.md` logging discipline:
+      /// env-var names like `BANK_API_KEY` are themselves
+      /// sensitive). Closes `SECURITY.md` row PO-5.
+      EnvScrubStrippedCount: int }
 
     interface IDisposable with
         member this.Dispose() =
@@ -214,6 +222,19 @@ module PseudoConsole =
 
                         let mutable pi = Unchecked.defaultof<PROCESS_INFORMATION>
 
+                        // Stage 7 PR-A — build the env-scrub block
+                        // immediately before `CreateProcess`. The
+                        // kernel copies the bytes during the call so
+                        // we free the block in either branch (success
+                        // or failure) on the same scope. `lpEnvironment`
+                        // is paired with `CREATE_UNICODE_ENVIRONMENT`
+                        // because we marshal UTF-16LE; without the
+                        // flag the kernel would reinterpret the bytes
+                        // as ANSI (CP_ACP) and mojibake every
+                        // non-ASCII value. Closes `SECURITY.md` row
+                        // PO-5.
+                        let envBuilt = EnvBlock.build ()
+
                         // 8. CreateProcess. bInheritHandles = false is
                         // correct: ConPTY duplicates the std handles
                         // through the attribute list, not by inheritance.
@@ -224,11 +245,20 @@ module PseudoConsole =
                                 IntPtr.Zero,
                                 IntPtr.Zero,
                                 false,
-                                Constants.EXTENDED_STARTUPINFO_PRESENT,
-                                IntPtr.Zero,
+                                Constants.EXTENDED_STARTUPINFO_PRESENT
+                                    ||| Constants.CREATE_UNICODE_ENVIRONMENT,
+                                envBuilt.Block,
                                 null,
                                 &si,
                                 &pi)
+
+                        // Free the env block once `CreateProcess`
+                        // returns. The kernel has already copied the
+                        // bytes into the new process by this point;
+                        // holding the HGlobal alive any longer would
+                        // be a leak. Free unconditionally so the
+                        // failure-return paths below stay simple.
+                        Marshal.FreeHGlobal(envBuilt.Block)
 
                         if not started then
                             let err = Marshal.GetLastWin32Error()
@@ -339,7 +369,9 @@ module PseudoConsole =
                                                   ThreadHandle = pi.hThread
                                                   ProcessId = pi.dwProcessId
                                                   AttributeList = attrList
-                                                  JobHandle = jobHandle }
+                                                  JobHandle = jobHandle
+                                                  EnvScrubStrippedCount =
+                                                      envBuilt.StrippedCount }
                                 finally
                                     Marshal.FreeHGlobal(jobInfoPtr)
 

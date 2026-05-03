@@ -2600,6 +2600,41 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Security
 
+- **Stage 7 PR-A — `SECURITY.md` row PO-5 closed (env-scrub for
+  ConPTY child).** New `Terminal.Pty.Native.EnvBlock` module builds
+  an explicit UTF-16LE `lpEnvironment` block before every
+  `CreateProcess` call instead of inheriting the parent's full
+  environment via `lpEnvironment=IntPtr.Zero`. Allow-list preserves
+  `PATH`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `HOME` (with
+  `%USERPROFILE%` fallback when absent), `ANTHROPIC_API_KEY`,
+  `CLAUDE_CODE_GIT_BASH_PATH` per `spec/tech-plan.md` §7.2;
+  always-set `TERM=xterm-256color` + `COLORTERM=truecolor` overrides
+  any parent value (Stage 4a's truecolor SGR substrate already
+  handles the produced sequences). Deny-list overrides allow-list
+  for variables matching `*_TOKEN`, `*_SECRET`, `*_KEY` (with
+  explicit `ANTHROPIC_API_KEY` exemption — Claude Code is the
+  primary target workload), `*_PASSWORD` — suffix match on
+  uppercase, so `KEYBOARD_LAYOUT` is preserved. Sorted by uppercase
+  name per Win32 convention. Pinned by
+  `tests/Tests.Unit/EnvBlockTests.fs` covering allow-list
+  preservation, deny-list pattern matching (case-insensitive),
+  the `ANTHROPIC_API_KEY` exemption, the HOME=%USERPROFILE%
+  fallback, the always-set TERM/COLORTERM override, and a
+  byte-level UTF-16LE marshalling round-trip — the silent-failure
+  canary the `docs/SESSION-HANDOFF.md` Stage 7 sketch flagged as
+  the highest-risk failure mode for this PR (get the marshalling
+  wrong and the child sees no environment at all). Stripped count
+  is logged at `Information` level after spawn ("Env-scrub:
+  stripped {Count} variables before child spawn.") — count only,
+  never names or values, per the `SECURITY.md` logging-discipline
+  contract (env-var names like `BANK_API_KEY` are themselves
+  sensitive). First of four sequenced Stage 7 PRs per
+  `docs/PROJECT-PLAN-2026-05.md` Part 2 — env-scrub lands first
+  because it's independent of the shell-registry / hot-switch
+  hotkey work in PR-B / PR-C / PR-D. Stage 7 issues inventory
+  (`docs/STAGE-7-ISSUES.md`) and ACCESSIBILITY-TESTING.md row
+  expansion follow in PR-D after PR-C ships.
+
 - **Security audit cycle SR-3: SECURITY.md audit response.**
   Brings the vulnerability inventory and narrative into sync
   with the shipped code from SR-1 and SR-2, plus closes the

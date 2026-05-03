@@ -804,6 +804,13 @@ module Program =
                 log.LogInformation(
                     "ConPTY child spawned. Pid={Pid}",
                     host.ProcessId)
+                // Stage 7 PR-A — env-scrub PO-5. Count only,
+                // never names or values (per `SECURITY.md`
+                // logging discipline: env-var names like
+                // `BANK_API_KEY` are themselves sensitive).
+                log.LogInformation(
+                    "Env-scrub: stripped {Count} variables before child spawn.",
+                    host.EnvScrubStrippedCount)
                 let _ =
                     startReaderLoop
                         window.Dispatcher

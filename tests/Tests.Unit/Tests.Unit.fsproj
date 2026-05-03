@@ -29,6 +29,7 @@
     <Compile Include="CoalescerTests.fs" />
     <Compile Include="KeyEncodingTests.fs" />
     <Compile Include="FileLoggerTests.fs" />
+    <Compile Include="EnvBlockTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
