@@ -190,6 +190,13 @@ preserve this list per the app-reserved-hotkey contract in
   isn't on `PATH`, NVDA announces "Cannot switch to Claude
   Code: not found on PATH." and the existing shell keeps
   running (Stage 7 PR-C).
+- **`Ctrl+Shift+G`** — toggle `FileLogger` min-level between
+  `Information` (default) and `Debug` at runtime. Each press
+  flips the level and NVDA announces the new state ("Debug
+  logging on." / "Debug logging off."). Lets the maintainer
+  enable verbose debug logging from inside pty-speak without
+  the previous env-var-and-relaunch workflow. Mnemonic: G for
+  "loGging" (Stage 7-followup PR-E).
 
 Reserved but not yet implemented: `Ctrl+Shift+M` (Stage 9 mute
 toggle), `Alt+Shift+R` (Stage 10 review-mode toggle).

@@ -422,6 +422,17 @@ public class TerminalView : FrameworkElement
             (Key.D1, ModifierKeys.Control | ModifierKeys.Shift, "Switch to cmd shell"),
             (Key.D2, ModifierKeys.Control | ModifierKeys.Shift, "Switch to claude shell"),
 
+            // Stage 7-followup PR-E — toggle FileLogger min-level
+            // between Information (default) and Debug at runtime,
+            // without requiring an env-var + relaunch cycle. Each
+            // press flips the level and announces the new state via
+            // NVDA so the user can confirm at any time. Mnemonic:
+            // G for "loGging". No NVDA collision (NVDA's
+            // `Ctrl+Shift+G` has no default binding; the
+            // letter-G family in NVDA is `NVDA+G` for object-nav
+            // graphics, which is a different modifier).
+            (Key.G, ModifierKeys.Control | ModifierKeys.Shift, "Toggle debug logging"),
+
             // Future entries (NOT yet bound; commented for
             // forward-planning):
             //   (Key.M, ModifierKeys.Control | ModifierKeys.Shift,

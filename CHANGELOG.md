@@ -17,6 +17,45 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Stage 7-followup PR-E — `Ctrl+Shift+G` toggle debug logging
+  + announce state.** Eliminates the previous
+  `PTYSPEAK_LOG_LEVEL=Debug` env-var-and-relaunch workflow that
+  the maintainer (a screen-reader user) spent two hours fighting
+  to enable Debug-level logging. Each `Ctrl+Shift+G` press flips
+  the active `FileLoggerSink`'s min-level between `Information`
+  (default) and `Debug` and announces the new state via NVDA
+  ("Debug logging on." / "Debug logging off."). The toggle event
+  itself logs at `Information` level so the audit trail captures
+  every transition regardless of which state we just left.
+  New `ActivityIds.logToggle = "pty-speak.log-toggle"` so users
+  can configure NVDA's notification processing for diagnostic-
+  config announcements separately from streaming output. Wired
+  in `setupToggleDebugLogKeybinding`. Reserved in
+  `TerminalView.AppReservedHotkeys` so Stage 6's
+  `OnPreviewKeyDown` filter doesn't mark it `Handled = true`
+  before WPF's `InputBindings` machinery can fire. Mnemonic: G
+  for "loGging". No NVDA collision (default NVDA bindings don't
+  claim `Ctrl+Shift+G`).
+
+  Implementation: `FileLoggerSink.MinLevel` is now a runtime-
+  mutable read-out + `SetMinLevel` member (previously read-only
+  via the `options.MinLevel` immutable record field). Reads are
+  unsynchronised — the level is a 4-byte enum, atomic on x64,
+  and the hotkey-driven write happens on the WPF dispatcher
+  thread while reads happen on the Channel-drain thread; a
+  stale read for one entry is acceptable (worst case: one log
+  line at the previous level after a toggle).
+
+  Spec deviation: bundled spec update (§6 hotkey-list amendment)
+  per chat 2026-05-03 maintainer authorisation. Same ADR-style
+  retroactive-formalisation pattern as Stage 7 PR-C.
+
+  Followup to the Stage 7 sequence; addresses the diagnostic-
+  workflow accessibility gap surfaced when the maintainer
+  attempted manual NVDA validation per
+  `docs/ACCESSIBILITY-TESTING.md` Stage 7 row and could not
+  reliably enable Debug-level logging via env-var manipulation.
+
 - **Stage 7 PR-D — NVDA validation matrix expansion +
   `docs/STAGE-7-ISSUES.md` design-derived seed entries.**
   Closes the four-PR Stage 7 sequence per
