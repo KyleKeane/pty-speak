@@ -274,3 +274,11 @@ module ActivityIds =
     /// barrier); a future stage may flip to a verbosity-aware
     /// message.
     let mode = "pty-speak.mode"
+    /// Shell hot-switch announcements (Stage 7 PR-C
+    /// `Ctrl+Shift+1` / `Ctrl+Shift+2`). Emits the
+    /// "Switching to {target}." pre-launch cue and the
+    /// "Switched to {target}." post-spawn confirmation. Tagged
+    /// distinctly so users can configure NVDA's notification
+    /// processing for shell-switch announcements separately
+    /// from streaming output.
+    let shellSwitch = "pty-speak.shell-switch"

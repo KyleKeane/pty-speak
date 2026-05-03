@@ -176,9 +176,26 @@ preserve this list per the app-reserved-hotkey contract in
   and paste. The fastest way to send a session log to a
   maintainer. See [`docs/LOGGING.md`](docs/LOGGING.md) for what
   is and isn't logged.
+- **`Ctrl+Shift+1`** — switch the spawned shell to `cmd.exe`
+  mid-session. Tears down the running ConPTY child (kernel
+  `KILL_ON_JOB_CLOSE` cascade kills any grandchildren) and
+  spawns cmd in its place. NVDA announces "Switching to
+  Command Prompt." → ~700ms pause → "Switched to Command
+  Prompt." (Stage 7 PR-C).
+- **`Ctrl+Shift+2`** — switch the spawned shell to `claude.exe`
+  (resolved via `where.exe claude` per spec §7.1). Same teardown
+  + respawn as `Ctrl+Shift+1`. NVDA announces "Switching to
+  Claude Code." → "Switched to Claude Code." If Claude Code
+  isn't on `PATH`, NVDA announces "Cannot switch to Claude
+  Code: not found on PATH." and the existing shell keeps
+  running (Stage 7 PR-C).
 
 Reserved but not yet implemented: `Ctrl+Shift+M` (Stage 9 mute
 toggle), `Alt+Shift+R` (Stage 10 review-mode toggle).
+Higher digit slots (`Ctrl+Shift+3`, `Ctrl+Shift+4`, ...) are
+reserved for future shells (PowerShell, WSL, Python REPL)
+per the shell-registry extensibility model in
+[`spec/tech-plan.md`](spec/tech-plan.md) §7.5.
 
 The historical Stage 0 preview installer opens an empty window. Once
 the next preview is cut from the current `main`, the installer launches

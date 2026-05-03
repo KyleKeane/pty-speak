@@ -444,10 +444,23 @@ The “spinner problem” is real (Claude Code’s Ink renderer redraws the same
 >     bound in `setupAutoUpdateKeybinding` in
 >     `src/Terminal.App/Program.fs`).
 >
+> Stage 7 PR-C additions (ADR-style amendment 2026-05-03,
+> maintainer-authorised — bundled with the shell registry +
+> hot-switch UX in §7.5 below):
+>   - `Ctrl+Shift+1` — switch the spawned shell to cmd.exe.
+>     Bound in `setupShellSwitchKeybindings` in
+>     `src/Terminal.App/Program.fs`.
+>   - `Ctrl+Shift+2` — switch the spawned shell to claude.exe
+>     (resolved via `where.exe claude` per §7.1).
+>     Bound in the same setup function.
+>
 > Future entries (declared as code comments today; activated
 > when their owning stage ships):
 >   - `Ctrl+Shift+M` — Stage 9 earcon mute toggle.
 >   - `Alt+Shift+R` — Stage 10 review-mode toggle.
+>   - `Ctrl+Shift+3` / `4` / `...` — additional shells
+>     (PowerShell, WSL, Python REPL, etc.) per the §7.5
+>     extensibility model.
 >
 > Failure mode if violated: app-level hotkeys silently stop
 > working — `Ctrl+Shift+U` no longer triggers self-update,
@@ -615,6 +628,138 @@ On first invocation Claude Code will:
   - Selection prompt (“Edit / Yes / Always / No”) is announced as flat text, not as a listbox → Stage 8.
   - Red error text is announced as plain text → Stage 9.
   - No way to jump back through the response after focus moves → Stage 10.
+
+### 7.5 Shell registry + hot-switch UX (Stage 7 PR-B + PR-C)
+
+> **ADR-style amendment 2026-05-03** — added per maintainer
+> authorisation (chat 2026-05-03; mirrors the chat-2026-05-03
+> retroactive-formalisation pattern that landed §4a / §4b /
+> §5a). The original §7 launch story assumed a single
+> shell-per-launch (the `PTYSPEAK_SHELL` env var); this section
+> formalises the registry abstraction + the mid-session
+> hot-switch UX that landed in PR-B and PR-C of the Stage 7
+> sequence.
+
+**Goal.** Make the spawned shell pluggable (no hardcoded
+"cmd or claude" branching in the spawn path) and reachable
+mid-session via a screen-reader-accessible hotkey gesture, so
+the user can flip between cmd / claude (and future shells)
+without restarting pty-speak.
+
+#### 7.5.1 Registry shape (Stage 7 PR-B)
+
+`Terminal.Pty.ShellRegistry` exposes a discriminated union
+`ShellId` plus a `Shell` record carrying display name + lazy
+resolver:
+
+```fsharp
+type ShellId = | Cmd | Claude
+type Shell =
+    { Id: ShellId
+      DisplayName: string
+      Resolve: unit -> Result<string, string> }
+```
+
+`builtIns: Map<ShellId, Shell>` is the single source of truth.
+Adding a shell requires (a) extending `ShellId`, (b) adding a
+`builtIns` entry with a resolver closure, (c) updating
+`parseEnvVar`'s recognised-values list, (d) updating
+`ShellRegistryTests.builtIns contains exactly Cmd and Claude` to
+pin the new keyset, and (e) adding a `Ctrl+Shift+N` hotkey if
+the new shell wants hot-switch participation.
+
+`tryFind` and `tryFindIn` separate the production lookup
+(`tryFind`, delegates to `builtIns`) from the test seam
+(`tryFindIn`, accepts an injected registry). Tests construct
+synthetic registries with deterministic resolvers so
+`Process.Start("where.exe", ...)` doesn't leak into the unit
+test.
+
+#### 7.5.2 Default + override (Stage 7 PR-B)
+
+Cmd is the default. `PTYSPEAK_SHELL=claude` (case-insensitive
+after trim) flips to claude at startup. Unrecognised non-empty
+values produce a `LogWarning` and fall back to cmd. Resolution
+failure (e.g. claude.exe not on PATH) likewise falls back to
+cmd with a warning.
+
+Rationale: a fresh-install user without Claude Code installed
+should still see a working terminal. The maintainer-primary
+workload (Claude Code) is opt-in via the env var or the §7.5.3
+hotkey.
+
+#### 7.5.3 Hot-switch hotkeys (Stage 7 PR-C)
+
+`Ctrl+Shift+1` → cmd.exe; `Ctrl+Shift+2` → claude.exe. Both
+are reserved in `TerminalView.AppReservedHotkeys` per §6.
+Number-row digits, NOT numpad — numpad-with-NumLock-off
+carries NVDA review-cursor commands and must stay reachable.
+
+NVDA collision check: `Ctrl+Shift+1`/`Ctrl+Shift+2` have no
+default NVDA bindings. The bare `1`/`Shift+1` browse-mode
+heading-quick-nav doesn't fire in focus mode (which is what
+NVDA uses for terminal applications by default).
+
+Switch sequence (handler runs on the WPF dispatcher thread):
+
+1. Resolve target via `ShellRegistry.tryFind`. If unresolvable
+   (e.g. claude not installed), announce the failure via
+   `ActivityIds.error` and return without tearing down the
+   current host.
+2. Announce-before-launch ("Switching to {target}.") via
+   `ActivityIds.shellSwitch`. Same pattern as Stage 4b's
+   diagnostic-launcher: NVDA's speech queue gets the cue
+   BEFORE the new shell's first paint takes focus.
+3. ~700ms `Task.Delay` then dispatch back to the WPF thread.
+4. Dispose the current `ConPtyHost` (cancels reader, terminates
+   immediate child via `TerminateProcess`, closes pipes,
+   `KILL_ON_JOB_CLOSE` on the Job Object kills any
+   grandchildren). Set `hostHandle <- None`.
+5. Spawn a new `ConPtyHost.start` with the same grid
+   dimensions and the new command line. Re-wire the
+   reader-loop + `SetPtyHost` callbacks via the shared
+   `wirePostSpawn` helper (extracted from the initial-spawn
+   path).
+6. Announce post-switch ("Switched to {target}.").
+
+#### 7.5.4 Known limitations (PR-C v1; deferred to follow-ups)
+
+- **Screen state is not reset.** The new shell's first paint
+  overlays the previous screen. cmd → claude is clean (claude
+  enters alt-screen via `?1049h` which Stage 4a's parser handles
+  by clearing the alt buffer). claude → cmd may briefly show
+  alt-screen residue until cmd's prompt overwrites the primary
+  buffer. If NVDA validation flags this as a UX problem in
+  PR-D, follow-up adds a `Screen.reset()` member.
+- **Parser state is not reset.** If the previous shell
+  terminated mid-CSI/OSC sequence, a few garbage bytes may
+  parse oddly until the new shell sends a complete sequence and
+  the Williams VT500 state machine re-syncs. Same deferral
+  policy as the Screen reset.
+- **UIA peer ranges are not invalidated.** NVDA's review
+  cursor may briefly point at stale text until the new shell's
+  first announce-bound output triggers a fresh Notification
+  event. PR-D's NVDA validation row exercises this empirically.
+
+Each limitation is acceptable for v1 because the visible
+failure is mild (residual paint, not crash) and the
+architectural fix lives in Stage 4a's substrate / the framework
+cycles' RFC scope.
+
+#### 7.5.5 Validation (Stage 7 PR-C row in `docs/ACCESSIBILITY-TESTING.md`)
+
+- Launch pty-speak; default cmd shell is announced.
+- Press `Ctrl+Shift+2`; NVDA reads "Switching to Claude Code."
+  → ~700ms pause → claude welcome screen reads.
+- Type a prompt; claude responds; review-cursor navigates the
+  response.
+- Press `Ctrl+Shift+1`; NVDA reads "Switching to Command
+  Prompt." → cmd prompt reads.
+- `Ctrl+Shift+D` (process-cleanup diagnostic) confirms no
+  orphan claude.exe processes after the switch.
+- Press `Ctrl+Shift+2` when claude.exe isn't installed; NVDA
+  reads the resolve-failure announcement; the existing cmd
+  shell continues to work.
 
 -----
 

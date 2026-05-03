@@ -843,6 +843,54 @@ module Program =
 
         let mutable hostHandle : ConPtyHost option = None
 
+        // Stage 7 PR-C — extracted from the initial-spawn branch
+        // so the shell-switch coordinator below can reuse the
+        // exact same wiring without duplication. Wires the
+        // env-scrub log + reader-loop start + SetPtyHost
+        // keyboard/paste/focus/resize callbacks. Caller is
+        // responsible for setting `hostHandle <- Some host`
+        // before invoking; this function only does the
+        // post-host setup.
+        //
+        // Stage 6 PR-B keyboard-pipeline rationale (preserved
+        // verbatim from the pre-PR-C inline form): SetPtyHost
+        // takes two callbacks because Views/ intentionally
+        // doesn't reference Terminal.Pty (would break the
+        // F#-first / WPF-only-at-the-edge boundary). The view
+        // invokes them on the WPF dispatcher thread, which is
+        // also the only thread that touches the ConPTY stdin
+        // pipe (single-writer discipline).
+        let wirePostSpawn (host: ConPtyHost) : unit =
+            log.LogInformation(
+                "ConPTY child spawned. Pid={Pid}",
+                host.ProcessId)
+            // Stage 7 PR-A — env-scrub PO-5. Count only,
+            // never names or values (per `SECURITY.md`
+            // logging discipline: env-var names like
+            // `BANK_API_KEY` are themselves sensitive).
+            log.LogInformation(
+                "Env-scrub: stripped {Count} variables before child spawn.",
+                host.EnvScrubStrippedCount)
+            let _ =
+                startReaderLoop
+                    window.Dispatcher
+                    host
+                    parser
+                    screen
+                    window.TerminalSurface
+                    notificationChannel.Writer
+                    cts.Token
+            window.TerminalSurface.SetPtyHost(
+                Action<byte[]>(fun bytes -> host.WriteBytes(bytes)),
+                Action<int, int>(fun cols rows ->
+                    // Resize is best-effort: a transient failure
+                    // (e.g. the child has just exited) shouldn't
+                    // crash the app. The next SizeChanged tick
+                    // retries naturally.
+                    match host.Resize(int16 cols, int16 rows) with
+                    | Ok () -> ()
+                    | Error _ -> ()))
+
         // Defer ConPTY spawn until the window has loaded so any startup
         // failure can surface in the UI rather than crashing during
         // Application.OnStartup.
@@ -866,44 +914,141 @@ module Program =
                 ()
             | Ok host ->
                 hostHandle <- Some host
-                log.LogInformation(
-                    "ConPTY child spawned. Pid={Pid}",
-                    host.ProcessId)
-                // Stage 7 PR-A — env-scrub PO-5. Count only,
-                // never names or values (per `SECURITY.md`
-                // logging discipline: env-var names like
-                // `BANK_API_KEY` are themselves sensitive).
-                log.LogInformation(
-                    "Env-scrub: stripped {Count} variables before child spawn.",
-                    host.EnvScrubStrippedCount)
-                let _ =
-                    startReaderLoop
-                        window.Dispatcher
-                        host
-                        parser
-                        screen
-                        window.TerminalSurface
-                        notificationChannel.Writer
-                        cts.Token
-                // Stage 6 PR-B — wire keyboard input + paste + focus
-                // events + window-resize through to the new host.
-                // SetPtyHost takes two callbacks because Views/
-                // intentionally doesn't reference Terminal.Pty (would
-                // break the F#-first / WPF-only-at-the-edge boundary).
-                // The view invokes them on the WPF dispatcher thread,
-                // which is also the only thread that touches the
-                // ConPTY stdin pipe (single-writer discipline).
-                window.TerminalSurface.SetPtyHost(
-                    Action<byte[]>(fun bytes -> host.WriteBytes(bytes)),
-                    Action<int, int>(fun cols rows ->
-                        // Resize is best-effort: a transient failure
-                        // (e.g. the child has just exited) shouldn't
-                        // crash the app. The next SizeChanged tick
-                        // retries naturally.
-                        match host.Resize(int16 cols, int16 rows) with
-                        | Ok () -> ()
-                        | Error _ -> ()))
-                ())
+                wirePostSpawn host)
+
+        // Stage 7 PR-C — shell hot-switch coordinator.
+        // `Ctrl+Shift+1` (cmd) / `Ctrl+Shift+2` (claude) call
+        // this with the target ShellId. It announces, waits for
+        // NVDA's speech queue, tears down the current host,
+        // spawns the new one with the new command line, and
+        // re-wires the post-spawn callbacks via wirePostSpawn.
+        //
+        // Known limitations (defer to follow-up PRs if NVDA
+        // validation flags them):
+        //   * Screen state is NOT reset — the new shell's first
+        //     paint overlays the previous screen. cmd → claude
+        //     is clean (claude enters alt-screen via `?1049h`,
+        //     clearing it). claude → cmd may briefly show alt-
+        //     screen residue until cmd's prompt overwrites the
+        //     primary buffer.
+        //   * Parser state is NOT reset — if the previous shell
+        //     terminated mid-CSI/OSC sequence, a few garbage
+        //     bytes may parse oddly until the new shell sends
+        //     a complete sequence and the parser re-syncs.
+        //   * UIA peer ranges are NOT invalidated — NVDA's
+        //     review cursor may briefly point at stale text
+        //     until the new shell's first announce-bound
+        //     output triggers a fresh Notification event.
+        //
+        // Each is acceptable for v1; the validation matrix in
+        // PR-D will document any that surface as user-visible
+        // problems and the framework cycles will own the
+        // architectural fixes.
+        let switchToShell (target: ShellRegistry.ShellId) : unit =
+            match ShellRegistry.tryFind target with
+            | None ->
+                log.LogWarning(
+                    "Shell-switch target {Target} not registered in ShellRegistry.builtIns.",
+                    sprintf "%A" target)
+            | Some shell ->
+                match shell.Resolve() with
+                | Error reason ->
+                    // Resolution failure (e.g. claude.exe not on
+                    // PATH) — keep the existing host running so
+                    // the user isn't dropped into a dead window;
+                    // announce the failure so they know the
+                    // hotkey didn't silently fail.
+                    let safe = AnnounceSanitiser.sanitise reason
+                    log.LogWarning(
+                        "Shell-switch resolve failed for {Shell}: {Reason}",
+                        shell.DisplayName,
+                        reason)
+                    window.TerminalSurface.Announce(
+                        sprintf "Cannot switch to %s: %s" shell.DisplayName safe,
+                        ActivityIds.error)
+                | Ok newCmdLine ->
+                    // Announce-before-launch pattern from
+                    // Stage 4b's diagnostic-launcher: NVDA
+                    // gets the cue into its speech queue
+                    // BEFORE the new shell's first paint
+                    // takes focus and triggers
+                    // interrupt-on-focus-change. ~700ms is
+                    // the empirically-validated wait window.
+                    window.TerminalSurface.Announce(
+                        sprintf "Switching to %s." shell.DisplayName,
+                        ActivityIds.shellSwitch)
+                    let _ =
+                        task {
+                            do! Task.Delay(700)
+                            let action () =
+                                try
+                                    match hostHandle with
+                                    | Some h ->
+                                        (h :> IDisposable).Dispose()
+                                        hostHandle <- None
+                                    | None -> ()
+                                    let newCfg : PtyConfig =
+                                        { Cols = int16 ScreenCols
+                                          Rows = int16 ScreenRows
+                                          CommandLine = newCmdLine }
+                                    log.LogInformation(
+                                        "Shell-switch: spawning {Shell}. CommandLine={CommandLine}",
+                                        shell.DisplayName,
+                                        newCmdLine)
+                                    match ConPtyHost.start newCfg with
+                                    | Error e ->
+                                        log.LogError(
+                                            "Shell-switch ConPTY spawn failed: {Error}",
+                                            sprintf "%A" e)
+                                        window.TerminalSurface.Announce(
+                                            sprintf "Could not launch %s." shell.DisplayName,
+                                            ActivityIds.error)
+                                    | Ok newHost ->
+                                        hostHandle <- Some newHost
+                                        wirePostSpawn newHost
+                                        window.TerminalSurface.Announce(
+                                            sprintf "Switched to %s." shell.DisplayName,
+                                            ActivityIds.shellSwitch)
+                                with ex ->
+                                    let safe = AnnounceSanitiser.sanitise ex.Message
+                                    log.LogError(
+                                        ex,
+                                        "Shell-switch crashed: {Message}",
+                                        ex.Message)
+                                    window.TerminalSurface.Announce(
+                                        sprintf "Shell switch failed: %s" safe,
+                                        ActivityIds.error)
+                            do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                            ()
+                        }
+                    ()
+
+        // Wire `Ctrl+Shift+1` → cmd, `Ctrl+Shift+2` → claude.
+        // Pattern matches `setupAutoUpdateKeybinding` etc.; same
+        // window-level KeyBinding + RoutedCommand + CommandBinding
+        // triple. The keys are listed in
+        // `TerminalView.AppReservedHotkeys` so OnPreviewKeyDown
+        // doesn't mark them Handled before InputBindings can fire.
+        let setupShellSwitchKeybindings (window: MainWindow)
+                                        (switchTo: ShellRegistry.ShellId -> unit) : unit =
+            let cmdRouted = RoutedCommand("SwitchToCmdShell", typeof<MainWindow>)
+            let cmdGesture = KeyGesture(Key.D1, ModifierKeys.Control ||| ModifierKeys.Shift)
+            window.InputBindings.Add(KeyBinding(cmdRouted, cmdGesture)) |> ignore
+            window.CommandBindings.Add(
+                CommandBinding(
+                    cmdRouted,
+                    ExecutedRoutedEventHandler(fun _ _ -> switchTo ShellRegistry.Cmd)))
+            |> ignore
+            let claudeRouted = RoutedCommand("SwitchToClaudeShell", typeof<MainWindow>)
+            let claudeGesture = KeyGesture(Key.D2, ModifierKeys.Control ||| ModifierKeys.Shift)
+            window.InputBindings.Add(KeyBinding(claudeRouted, claudeGesture)) |> ignore
+            window.CommandBindings.Add(
+                CommandBinding(
+                    claudeRouted,
+                    ExecutedRoutedEventHandler(fun _ _ -> switchTo ShellRegistry.Claude)))
+            |> ignore
+
+        setupShellSwitchKeybindings window switchToShell
 
         app.Exit.Add(fun _ ->
             try log.LogInformation("pty-speak exiting.") with _ -> ()
