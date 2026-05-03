@@ -15,220 +15,6 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
-### Fixed
-
-- **Streaming output was permanently silent.** Root cause:
-  the coalescer's "any-hash-anywhere" spinner gate was
-  fundamentally broken. It triggered when
-  `AllHashHistory.Count >= 20`, but every call to
-  `processRowsChanged` iterates all 30 screen rows and
-  appends to that same history — so a single user event
-  added 30 entries, instantly exceeding the 20-entry
-  threshold. Once tripped, every subsequent event added
-  another 30 entries faster than the 1-second sliding
-  window could drain them, so the gate stayed permanently
-  triggered for the entire session. Net effect: the
-  cmd.exe banner, every typed character, and every command
-  output were all silently suppressed at the coalescer
-  before the dispatcher / NVDA path ever saw them.
-
-  Diagnosed from a `PTYSPEAK_LOG_LEVEL=Debug` capture on
-  the post-#114 preview where every `Reader published
-  RowsChanged` entry was followed by `Suppressed (spinner)`
-  — including the very first 16-byte cmd.exe banner chunk.
-  No real spinner was running; the heuristic was firing on
-  legitimate output.
-
-  Fix: remove the broken any-hash-anywhere gate entirely.
-  The per-`(rowIdx, hash)` gate (the OTHER spinner check,
-  which fires when the same row state recurs ≥5 times in
-  1s) handles the common spinner case (`|/-\` cycling on
-  one cell) correctly and stays in place. Cross-row
-  spinner detection — the original motivation for the
-  any-hash gate — is filed as a follow-up issue with a
-  proper redesign brief: count unique-hash recurrences,
-  not total entries.
-
-  Tests unchanged: existing `CoalescerTests.fs` covers
-  the per-key gate; nothing covered the broken any-hash
-  gate, so removing it doesn't regress any tested
-  behaviour.
-
-- **`Ctrl+Shift+;` log-copy failed with "file is in use by
-  another process".** Maintainer-reported on the post-#111
-  preview. The clipboard handler used `File.ReadAllText(path)`
-  which opens the file with `FileShare.Read` (the overload's
-  default) — meaning "I tolerate other readers but no
-  writers." Since the `FileLogger` writer holds the file
-  open with `FileAccess.Write`, the OS rejected the read
-  open because it couldn't honor the reader's "no writers"
-  requirement when the writer was already there.
-
-  Fix: open the file via an explicit `FileStream` with
-  `FileShare.ReadWrite`, matching the writer's policy. The
-  writer is happy to coexist with concurrent readers
-  (Notepad, NVDA, the Ctrl+Shift+; handler), so the OS
-  grants the handle.
-
-### Changed
-
-- **Restored two strategic INFO log entries that PR #111
-  over-demoted.** Coalescer "Emit OutputBatch (leading-edge
-  | trailing-edge)" and `TerminalView.Announce`
-  "RaiseNotificationEvent firing" are back at `Information`.
-  These are bounded by the coalescer's 200ms debounce
-  (~5 events/sec at typing speed; far below any I/O lag
-  threshold) and constitute the primary "is the streaming
-  pipeline alive?" signal at default log level — without
-  them, default logs show nothing of the streaming path,
-  and a streaming-silence bug requires the user to launch
-  with `PTYSPEAK_LOG_LEVEL=Debug` to capture any trace at
-  all. The other PR #109 entries (reader publish, suppress,
-  accumulate, drain dispatch) stay at `Debug` to keep the
-  steady-state volume low; flip to Debug for full-chain
-  diagnosis when needed.
-
-- **Log-copy hotkey rebound from `Ctrl+Alt+L` to
-  `Ctrl+Shift+;`** (the semicolon / colon key, immediately
-  to the right of `L` on a US-layout keyboard).
-  Maintainer-reported regressions on the post-#109 preview
-  drove the move:
-
-  1. `Ctrl+Alt+L` collides with the **Windows Magnifier**
-     zoom-in shortcut on some default Magnifier configs;
-     the OS swallowed the gesture before pty-speak saw it.
-  2. The original fix for `Ctrl+Alt+L` not firing (PR #108)
-     introduced a `SystemKey`-aware filter at the top of
-     `OnPreviewKeyDown` so that `Alt`-modified gestures (which
-     WPF reports as `e.Key == Key.System` + `e.SystemKey ==
-     Key.L`) were unwrapped to the underlying key. Side
-     effect: `Alt+F4` was unwrapped to `Key.F4 + Alt`, the
-     encoder produced bytes, `e.Handled` became `true`, and
-     the OS window-close gesture stopped working.
-
-  `Ctrl+Shift+;` is a clean Ctrl+Shift gesture: no Alt path,
-  no Magnifier collision, no SystemKey unwrap needed in the
-  filter chain. Removing the SystemKey unwrap restored
-  `Alt+F4` because `Key.System` falls through to
-  `KeyCode.Unhandled`, the encoder returns null, `e.Handled`
-  stays false, and WPF's default close handler fires.
-
-  Mnemonic: physical proximity. The semicolon / colon key
-  sits right next to `L`, so `Ctrl+Shift+L` (open the logs
-  folder) and `Ctrl+Shift+;` (copy the active session log)
-  live under one hand position. `Ctrl+Shift+C` was
-  considered as the natural "copy" mnemonic but reserved
-  for a future copy-latest-command-output feature (the
-  cross-terminal convention for that gesture). `Ctrl+Shift+M`
-  was considered but stays reserved for the Stage 9 earcon
-  mute toggle. Layout caveat: on non-US keyboards the
-  `OemSemicolon` virtual-key sits in a different physical
-  position; remap support is on the Phase 2 user-settings
-  roadmap.
-
-  Updated everywhere it was documented: README,
-  `docs/LOGGING.md`, `docs/USER-SETTINGS.md`,
-  `docs/ACCESSIBILITY-INTERACTION-MODEL.md`, the
-  `AppReservedHotkeys` table in `TerminalView.cs`, the
-  `setupCopyLatestLogKeybinding` wiring in `Program.fs`, and
-  the `HandleAppLevelShortcut` direct-dispatch path. The
-  `Ctrl+Shift+L` open-folder primary is unchanged.
-
-- **Streaming-path instrumentation demoted from `Information`
-  to `Debug`** so the production default sees no per-frame
-  log I/O. The PR #109 instrumentation at typing speed
-  produced ~25 entries/second across all stages, which
-  manifested as visible WPF dispatcher lag during streaming
-  output. Demoting the per-event entries (reader publish,
-  coalescer suppress / accumulate / emit, drain dispatch,
-  peer-present raise) leaves the trail intact for diagnosis
-  — set `PTYSPEAK_LOG_LEVEL=Debug` before launch to capture
-  the full chain — but keeps the steady-state log silent.
-  The peer-NULL `WARN` stays at `WARN` (rare, and the
-  smoking-gun signal that a UIA client never connected and
-  notifications are silently dropping). One-time entries
-  (runLoop start, cancellation, hotkey invocations) stay at
-  `Information`.
-
-### Fixed
-
-- **Log-copy hotkey didn't fire on the post-#103 preview.**
-  Maintainer reported pressing the gesture and not hearing the
-  "Log copied to clipboard. N bytes" announcement; the session
-  log confirmed the handler never ran. The Window-level
-  `KeyBinding` for the gesture was registered, but WPF's
-  `CommandManager` class-handler routing on a custom
-  `FrameworkElement` (`TerminalView`) didn't reliably fire
-  `runCopyLatestLog` — same family of routing flakiness that
-  bit `Ctrl+V` earlier in Stage 6.
-
-  Fix: handle the gesture directly in
-  `TerminalView.HandleAppLevelShortcut`, the same path that
-  handles `Ctrl+V` and `Ctrl+L`. New
-  `SetCopyLogToClipboardHandler` callback wired by
-  `Program.fs compose ()` invokes the existing
-  `runCopyLatestLog` handler. Both the direct path AND the
-  Window-level `KeyBinding` are wired; whichever fires first
-  wins. Direct path is reliable; Window-level is defence in
-  depth.
-
-- **`Alt+F4` window-close gesture stopped working** under the
-  PR #108 SystemKey-aware filter. WPF reports Alt-modified
-  gestures with `e.Key == Key.System` + the actual key in
-  `e.SystemKey`. The PR #108 filter unwrapped that to make
-  the original `Ctrl+Alt+L` reach the handler — but the same
-  unwrap converted `Alt+F4` into `Key.F4 + Alt`, the encoder
-  produced bytes, `e.Handled` became `true`, and the OS
-  window-close gesture died.
-
-  Fix: drop the SystemKey unwrap and rebind the log-copy
-  hotkey to `Ctrl+Shift+;` (a clean Ctrl+Shift gesture that
-  doesn't need the unwrap). `Key.System` now falls through
-  to `KeyCode.Unhandled`, the encoder returns null, `e.Handled`
-  stays false, and the OS default `Alt+F4` close handler
-  fires. If a future Alt-modified reserved hotkey (Stage 10's
-  `Alt+Shift+R`) is added, the unwrap can come back with an
-  explicit `Alt+F4` fall-through.
-
-- **Streaming-silence root cause: `PeriodicTimer` reuse bug in
-  `Coalescer.runLoop`.** Diagnosed via the maintainer's manual
-  NVDA verification on the post-Stage-6 preview, where typing
-  `dir` produced no streaming announcement and the cmd.exe
-  banner sometimes worked while subsequent output went silent.
-  The audible signal was "Coalescer crashed: Operation is not
-  valid due to the state of the object" — the exact message
-  `PeriodicTimer.WaitForNextTickAsync` throws when called a
-  second time before the previous call completes.
-
-  Pre-fix, every iteration of the runLoop's main `while`
-  unconditionally called `timer.WaitForNextTickAsync(ct)` to
-  build a `Task.WhenAny` race against the input channel. When
-  the reader won the race, the previous tick wait was orphaned
-  but never cancelled; the next iteration called
-  `WaitForNextTickAsync` AGAIN while the previous was still
-  pending → `InvalidOperationException`. The catch handler
-  surfaced "Coalescer crashed" then exited the loop, stopping
-  all further streaming announcements for the rest of the
-  session.
-
-  Why intermittent: the bug requires the reader to win
-  `Task.WhenAny` at least once before any timer tick fires
-  (i.e. input arrives faster than the 200ms debounce). The
-  cmd.exe launch banner was a single big chunk that arrived
-  before any timer iteration cycled, so it announced
-  correctly. Subsequent typed-input echoes triggered multiple
-  fast iterations where the reader kept winning, and the
-  second iteration's `WaitForNextTickAsync` crashed.
-
-  Fix: track the pending timer task across loop iterations.
-  Reuse the same wait until it actually fires; only after a
-  timer tick wins does the next iteration start a fresh
-  `WaitForNextTickAsync`. New regression test
-  `runLoop survives multiple consecutive reader-wins without
-  crashing the PeriodicTimer` in `CoalescerTests.fs` pumps 20
-  fast events through the reader channel and asserts the
-  runLoop keeps delivering notifications without faulting.
-
 ### Added
 
 - **Strategic plan committed to repo:
@@ -314,65 +100,6 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   "Sharing logs with a maintainer" section that promotes
   `Ctrl+Shift+;` as the fastest path.
 
-### Changed
-
-- **Logging restructured to per-session files in per-day
-  folders.** The previous layout kept one daily-rolled file
-  per UTC day; long-running development days produced massive
-  aggregated files that were painful to navigate when grabbing
-  a slice for a bug report. New layout:
-
-  ```
-  %LOCALAPPDATA%\PtySpeak\logs\
-  ├── 2026-05-02\
-  │   ├── pty-speak-13-45-23.log    ← session that launched at 13:45:23
-  │   ├── pty-speak-15-12-08.log
-  │   └── pty-speak-16-30-44.log
-  ├── 2026-05-01\
-  │   └── pty-speak-09-15-22.log
-  └── ... (up to 7 days)
-  ```
-
-  Each launch creates a fresh session file named with its
-  launch timestamp inside today's day-folder. Sessions don't
-  split across midnight (a long-running session stays in its
-  launch-day folder). Retention deletes whole day-folders
-  older than 7 days; folders with non-date names are ignored
-  defensively. New `FileLoggerSink.ActiveLogPath` member
-  exposes this session's file path for tools that want to
-  grab the active session directly.
-
-  `Ctrl+Shift+L` still opens the logs root; the user
-  navigates one click into today's day-folder and picks the
-  most recent session by alphabetical sort. Bug reports are
-  now one-file pastes instead of "scroll a giant log to the
-  right time range".
-
-  `docs/LOGGING.md` updated with the new layout, retention
-  rules, and a one-line PowerShell snippet for grabbing the
-  latest session — useful for the future
-  Claude-Code-on-the-machine workflow where a script could
-  pull the most recent log without prompting the user.
-
-### Fixed
-
-- **UI test flakiness on the windows-2025 runner.** The
-  FlaUI-driven tests in `tests/Tests.Ui/` launch the actual
-  `Terminal.App.exe` and wait for the WPF main window to
-  appear. The previous 10-second timeout was tight; under
-  parallel xUnit-test load on a freshly-provisioned
-  Windows Server 2025 runner image, Velopack initialisation
-  + WPF subsystem startup + ConPTY spawn could exceed it.
-  Confirmed flake (not a code regression) by observing the
-  same failure mode on PR #104, a markdown-only PR with
-  zero code changes. Bumped to 30 seconds in three call
-  sites: `AutomationPeerTests.fs`, two locations in
-  `TextPatternTests.fs`. Same diagnostic messages preserved
-  with the new timeout value. No application code touched;
-  no behavioural change for users.
-
-### Added
-
 - **File-based structured logging.** New
   `Terminal.Core/FileLogger.fs` implements `ILogger` /
   `ILoggerProvider` directly against
@@ -429,103 +156,6 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   path; `Logger.get` returns a `NullLogger` before
   `Logger.configure` runs; the configured factory's logger
   produces correctly-categorised output.
-
-### Fixed
-
-- **Ctrl+V paste re-fix + Ctrl+L clear-screen.** The previous
-  attempt (in the post-Stage-6 fix-PR) added `KeyBinding`s mapping
-  Ctrl+V and Shift+Insert to `ApplicationCommands.Paste`, but
-  manual NVDA verification showed Ctrl+V still emitted `^V` to the
-  shell. Two compounding causes:
-  1. WPF's `CommandManager` class handler doesn't auto-process
-     `InputBindings` on a raw `FrameworkElement` the way it does
-     for built-in `Control`s, so the gesture wasn't reliably
-     reaching `OnPasteExecuted`.
-  2. Even when the routing did reach `OnPasteCanExecute`, an empty
-     clipboard returned `CanExecute = false`, the gesture fell
-     through unhandled to my `OnPreviewKeyDown` override, the
-     encoder produced `0x16`, and cmd.exe echoed `^V`.
-
-  Re-fix: handle Ctrl+V, Shift+Insert, and Ctrl+L explicitly at
-  the top of `OnPreviewKeyDown` (new `HandleAppLevelShortcut`
-  helper) before the encoder runs. Empty clipboard now becomes a
-  silent no-op instead of a `^V` emission. The
-  `ApplicationCommands.Paste` `CommandBinding` is kept for any
-  future right-click-menu / Edit-menu paste paths.
-
-  Ctrl+L is special-cased to send `cls\r` (the cmd.exe clear-
-  screen command) instead of `0x0C` (form feed). Strictly the
-  literally-correct terminal-emulator behaviour is to send `0x0C`
-  and let the shell decide — but cmd.exe ignores `0x0C` and
-  echoes `^L`, which is bad UX. Documented trade-off: when the
-  foreground process is something that DOES interpret `0x0C`
-  (Claude Code's Ink, `less`, `vim`), Ctrl+L will run `cls` as
-  if typed instead of triggering that program's redraw. Acceptable
-  for the current cmd.exe-only scope; revisit when Stage 7+ adds
-  shell flexibility.
-
-- **Three post-Stage-6 regressions surfaced during manual NVDA
-  verification on the post-Stage-6 preview**, all targeted in a
-  single follow-up PR:
-
-  - **Ctrl+V didn't paste; sent `^V` to the shell instead.**
-    `TerminalView`'s constructor added a `CommandBinding` for
-    `ApplicationCommands.Paste`, which tells WPF "if Paste is
-    invoked on me, here's the handler" — but did NOT add an
-    `InputBinding` mapping `Ctrl+V` (or `Shift+Insert`) to the
-    Paste command. Without the gesture-to-command map, Ctrl+V
-    flowed through `OnPreviewKeyDown` → encoder → `0x16` → and
-    cmd.exe echoed `^V` per its control-character display
-    convention. Adding the two `InputBinding`s
-    (`Ctrl+V` and `Shift+Insert`) wires the gestures to the
-    existing `OnPasteExecuted` handler so the paste-injection
-    chokepoint actually fires.
-
-  - **Window resize didn't reflow; text cut off the right
-    edge.** `TerminalView.MeasureOverride` returned the FIXED
-    preferred size (`Cols × Rows × cellSize`), so the view
-    never tracked window resize, so `OnRenderSizeChanged`
-    never fired, so the Stage 6 `SizeChanged` →
-    `DispatcherTimer` debounce → `ResizePseudoConsole` chain
-    was dead. Changed `MeasureOverride` to honour
-    `availableSize` (fall back to preferred size only when
-    availableSize is unbounded, e.g. inside a `ScrollViewer`).
-    The Screen buffer stays at construction-time 30×120 cells
-    internally — full grid runtime resize is a documented
-    Phase 2 stage — but cmd.exe now sees and adapts to the
-    window's actual dimensions via `ResizePseudoConsole`,
-    fixing the visible "text cuts off" symptom.
-
-  - **Stage 5 streaming output announcements were silent.**
-    `TerminalView.Announce` was hardcoded to use
-    `AutomationNotificationProcessing.MostRecent`. That's the
-    right choice for hotkey-style one-shot announcements
-    (Ctrl+Shift+U / D / R, Velopack progress) where each new
-    notification SHOULD supersede any in-flight one. But for
-    Stage 5's streaming-PTY-output path it was wrong: rapid
-    chunks arrive faster than NVDA can speak them, and under
-    `MostRecent` each new chunk discards the in-flight speech
-    of the previous one — typed-character echoes and command
-    output were silently superseded before NVDA could read
-    any of them. The two-arg `Announce(message, activityId)`
-    overload now selects processing per activityId:
-    `pty-speak.output` uses `ImportantAll` (queue all chunks);
-    everything else keeps `MostRecent`. A new three-arg
-    overload (`message, activityId, processing`) is exposed
-    for any future caller that needs to override.
-
-- **Diagnostic safety net for the coalescer drain task.**
-  Previously the `Program.fs compose ()` drain task swallowed
-  every unexpected exception silently with `| _ -> ()`. A
-  crashed drain looked identical to a working-but-silent one,
-  which made post-Stage-6 streaming-silence diagnosis hard
-  ("is the drain dying or is NVDA filtering?"). The catch-all
-  now sanitises the exception message through SR-2's
-  chokepoint and emits one final `Announce(..., pty-speak.error)`
-  before the task exits, so a future drain crash announces
-  itself rather than disappearing into the void.
-
-### Added
 
 - **Stage 6 PR-B: keyboard input, paste, focus reporting, dynamic
   resize, and Job Object child-process lifecycle.** Second and
@@ -705,80 +335,6 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   shared-backing-field refactors). Templates from the
   Stage 5 alt-screen `ModeChanged` test triplet.
 
-### Changed
-
-- **`Ctrl+Shift+R` flipped from "open releases page" to "open
-  draft-a-new-release form".** The original PR #83 hotkey opened
-  `UpdateRepoUrl + "/releases"` (the listing). During post-Stage-5
-  manual NVDA verification on the just-cut preview, the maintainer
-  realised the daily-use path during the preview line is creating
-  a release (publishing in the GitHub Releases UI triggers the
-  Velopack build/upload workflow per `docs/RELEASE-PROCESS.md`),
-  not browsing existing releases. Flipping the URL to
-  `/releases/new` makes the hotkey a one-keypress shortcut to the
-  cadence step that matters every preview cut. Mnemonic stays "R
-  for **R**elease".
-
-  Renames that follow the behaviour change:
-
-  - `Program.fs runOpenReleases` → `runOpenNewRelease`
-  - `Program.fs setupReleasesKeybinding` → `setupNewReleaseKeybinding`
-  - `RoutedCommand("OpenReleases", ...)` → `"OpenNewRelease"`
-  - `Terminal.Core.ActivityIds.releases` (`"pty-speak.releases"`)
-    → `ActivityIds.newRelease` (`"pty-speak.new-release"`).
-    The activity-ID rename is a soft breaking change for any NVDA
-    user who already configured per-tag handling for the old
-    string, but Stage 5's tag vocabulary just shipped on the
-    preceding preview and is documented to accept renames until
-    v0.1.0+.
-  - Announce text: "Opened release notes in default browser:
-    {url}" → "Opening new release form."
-  - Doc updates: `README.md`, `SECURITY.md` (A-3 row + the
-    pre-Stage-6 keyboard contract paragraph), `docs/USER-SETTINGS.md`.
-
-  No hotkey contract change from the user's perspective; same
-  `Ctrl+Shift+R`, different (more useful) URL.
-
-- **SESSION-HANDOFF item 2 step 3 closed.** Post-Stage-5
-  process-cleanup re-run via `Ctrl+Shift+D` on the post-Stage-5
-  preview returned PASS for both close paths (Alt+F4 and
-  X-button) per the maintainer's manual NVDA verification.
-  Item 2 step 3 flips from "↻ pending" to "✓ PASS"; step 4
-  ("After Stage 6 ships") is now the next pending pass.
-
-### Fixed
-
-- **`Ctrl+Shift+D` and `Ctrl+Shift+R` announcements no longer get
-  cut off by the spawned window's focus-grab.** Discovered during
-  Stage 5 manual NVDA verification: pressing `Ctrl+Shift+D` started
-  the diagnostic announcement but NVDA was interrupted as soon as
-  the new PowerShell window activated and stole focus (NVDA's
-  default interrupt-on-focus-change). Same shape for
-  `Ctrl+Shift+R` once the browser activated. Pre-existing since
-  the diagnostic hotkey shipped in PR #81 and the releases hotkey
-  shipped in PR #84; latent because no NVDA verification cycle
-  before today exercised the announce path end-to-end.
-
-  Fix in `src/Terminal.App/Program.fs runDiagnostic` and
-  `runOpenNewRelease`: announce a SHORT cue ("Launching
-  diagnostic.", "Opening new release form.") FIRST, then
-  schedule the actual `Process.Start` on a ~700ms `Task.Delay`
-  so NVDA's speech queue has time to play the cue before the
-  new window's title takes over. The longer guidance ("Switch
-  to that window to follow the test.") is dropped from the cue
-  — once the user hears the spawned window's title, they have
-  all the context the long version provided. Both announces
-  are also re-tagged with the proper `ActivityIds.diagnostic` /
-  `ActivityIds.newRelease` per-class tags introduced in Stage 5
-  (replacing the back-compat default `pty-speak.update`).
-
-  No new hotkey contract; same `Ctrl+Shift+D/R` behaviour from
-  the user's side, just audible. Phase 2 TOML config will make
-  the 700ms delay configurable alongside the Stage 5 coalescer
-  constants.
-
-### Added
-
 - **Stage 5: streaming-output coalescer.** First stage where
   PTY output narrates itself — before Stage 5, the only NVDA
   flow was review-cursor exploration (the user navigated to
@@ -931,64 +487,6 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   - Stage 6 keyboard input + Stage 7 Claude Code
     roundtrip + Stage 8/9/10 features — separate
     stages.
-
-### Changed
-
-- **`docs/SESSION-HANDOFF.md` item 2 truth-up.** The
-  process-cleanup baseline test (Step 1 of the recurring
-  cadence) was actually run via `Ctrl+Shift+D` on
-  `v0.0.1-preview.27` during the post-Stage-4.5 hygiene
-  session — both close paths PASSED, no orphans. The doc
-  still framed the baseline as future tense ("next
-  manual session — establishes whether the shipped code
-  already has issues"); updated to reflect "✓ Baseline on
-  `v0.0.1-preview.27` — PASS (2026-05-01)" plus a
-  cross-reference to item 6 (the screen-reader-native
-  replacement work, since NVDA's coverage of the spawned
-  PowerShell window is the documented limitation; the
-  underlying script's PASS/FAIL output is the source of
-  truth). Step 2 ("After Stage 4.5 PR-B ships") is the
-  next pending pass, since `v0.0.1-preview.28+` now carry
-  the alt-screen back-buffer.
-
-  No code paths touched.
-
-- **Repo-hygiene cleanup (post-Stage-4.5 sweep).** Two
-  small documentation fixes, a future-proofing convention
-  added to `CONTRIBUTING.md`, and a one-time cleanup
-  script for the maintainer to run on their workstation:
-
-  - `docs/USER-SETTINGS.md` Keybindings section: corrected
-    "Four app-level keybindings shipped today" to "Three"
-    (the bullet list correctly enumerates three shipped
-    `Ctrl+Shift+U/D/R` plus two reserved `Ctrl+Shift+M`,
-    `Alt+Shift+R`; the prose count was off by one).
-
-  - `CONTRIBUTING.md` Branching and pull requests: new
-    bullet documenting the post-merge convention to
-    delete the source branch (both remote and local).
-    The repo had accumulated 75+ stale post-merge
-    branches over the project's history; the codified
-    convention prevents recurrence.
-
-  - `scripts/cleanup-stale-branches.sh`: bundled
-    maintainer-side script that deletes the 77 accumulated
-    stale post-merge branches in one go. The agent
-    sandbox cannot delete remote refs (proxy returns
-    HTTP 403 on `git push --delete`), so this is a
-    one-time maintainer action. Idempotent
-    (`git ls-remote --exit-code` check skips branches
-    that have already been deleted). The script can be
-    deleted from the repo after the one-time cleanup
-    finishes.
-
-  - `docs/SESSION-HANDOFF.md` "Pending action items"
-    item 7 tracks the cleanup-script run as a
-    maintainer-side action.
-
-  No code paths touched.
-
-### Added
 
 - **Stage 4.5 PR-B: alt-screen 1049 back-buffer.** Closes the
   last latent gap in the Claude Code rendering substrate.
@@ -1215,224 +713,6 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   `SECURITY.md` row A-3 (pre-Stage-6 keyboard contract)
   updated to reflect the new app-reserved hotkey.
 
-### Security
-
-- **Security audit cycle SR-3: SECURITY.md audit response.**
-  Brings the vulnerability inventory and narrative into sync
-  with the shipped code from SR-1 and SR-2, plus closes the
-  documentation gaps the comprehensive audit identified.
-  Companion to SR-1 (#76, parser hardening) and SR-2 (#77,
-  accessibility hardening). The audit cycle is complete with
-  this PR.
-
-  - **6 new inventory rows.** `A-1`/`A-2`/`A-3` cover
-    application-surface findings (jagged-snapshot bounds in
-    word-boundary helpers, `Move(Character)` int32 underflow,
-    pre-Stage-6 keyboard contract). `D-1`/`D-2` cover
-    developer-tooling and operational mitigations
-    (`install-latest-preview.ps1` Mark-of-the-Web strip,
-    burned-tag visibility in public release history). `C-1`
-    covers the deferred-to-Phase-2 hardcoded `UpdateRepoUrl`
-    configuration item.
-
-  - **3 inventory rows updated.** `TC-1` (response-generating
-    sequences) annotated with the SR-1 catch-all-drop
-    documentation. `TC-5` (control characters in NVDA
-    `displayString`) flipped from `planned` to `partial`,
-    citing SR-2's `AnnounceSanitiser` for the
-    exception-message interpolation chokepoint. `TC-6`
-    (output-rate ANSI-bomb DoS) updated to credit SR-1's
-    parser-state caps (`MAX_PARAM_VALUE`, `MAX_DCS_RAW`,
-    `OscIgnore`) and clarify that the Stage 5 ingestion-rate
-    cap is still the remaining work.
-
-  - **2 new narrative items.** `T-10` paragraph in the
-    auto-update threat model elaborates the Mark-of-the-Web
-    strip rationale (cross-references T-3); `D-2` bullet
-    appears under "Out of scope for the update path" for
-    burned-tag visibility.
-
-  - **New `PO-5` row** documents the ConPTY environment
-    inheritance accepted-risk: parent's full env block
-    reaches the child via `lpEnvironment=IntPtr.Zero`,
-    leaking sensitive vars (`GITHUB_TOKEN`,
-    `OPENAI_API_KEY`, etc.) to the child shell. Significant
-    change to close; tracked in `docs/SESSION-HANDOFF.md`
-    item 5 alongside two other deferred follow-ups.
-
-  - **New "Application surfaces" inventory section** between
-    Process / OS and Update path, plus a new "Configuration"
-    mini-section for the C-prefix.
-
-  - **Lead-paragraph legend** explains the row-prefix
-    naming (`TC-`, `PO-`, `A-`, `T-`, `B-`, `D-`, `C-`)
-    so audit-grep queries stay consistent across surfaces.
-
-  - **Doc-drift fix.** Tense agreement on the Ed25519
-    public-key publication sentence (`is published as ...
-    (it will be added)` -> `will be published as ... (it
-    will be added)`).
-
-  - **3 deferred-follow-up rows added to
-    `docs/SESSION-HANDOFF.md`** (item 5) tracking the
-    findings the audit identified but didn't close inline:
-    PO-5 ConPTY env scrub, D-1 install-script TOCTOU
-    between `Unblock-File` and `Start-Process`, Acc/9
-    `TerminalView.OnRender` lock decision (deferred to
-    Stage 5's parser-off-dispatcher rework).
-
-  Vulnerability inventory now has 31 rows: TC-1..TC-6,
-  PO-1..PO-5, A-1..A-3, T-1..T-10, B-1..B-4, D-1..D-2,
-  C-1. All HIGH-severity findings from the November-December
-  2025 audit are CLOSED in code (SR-1 + SR-2); all MEDIUM
-  findings are either CLOSED or have an inventory row
-  pointing at the deferred work.
-
-- **Security audit cycle SR-2: accessibility hardening against
-  malformed snapshots and untrusted exception messages.**
-  Closes three HIGH/MEDIUM findings from the comprehensive
-  code-level security audit. Companion to SR-1's parser
-  hardening; together they close every HIGH-severity finding
-  the audit identified.
-
-  - **Jagged-snapshot bounds in word-boundary helpers.**
-    `TerminalTextRange`'s `WordEndFrom`, `NextWordStart`, and
-    `PrevWordStart` walked `rows.[r].[c]` assuming uniform
-    row lengths (`c < cols`). `Screen.SnapshotRows` returns
-    uniform rows today, but the `TerminalTextRange`
-    constructor doesn't enforce uniformity, so a future
-    refactor (e.g. ragged scrollback) or adversarial test
-    construction could trigger `IndexOutOfRangeException`.
-    Each `rows.[r].[c]` access in
-    `src/Terminal.Accessibility/TerminalAutomationPeer.fs` is
-    now guarded against `c >= rows.[r].Length`; the helpers
-    advance to the next row when a short row is encountered.
-
-  - **Control-character `AnnounceSanitiser`.** New
-    `Terminal.Core.AnnounceSanitiser.sanitise : string ->
-    string` strips C0 (0x00..0x1F), DEL (0x7F), and C1
-    (0x80..0x9F) controls before any string reaches NVDA via
-    UIA's `RaiseNotificationEvent`. Applied at the two call
-    sites that interpolate exception messages: the
-    `ParserError` construction in
-    `src/Terminal.App/Program.fs` and all four interpolations
-    in `Terminal.Core.UpdateMessages.announcementForException`.
-    Closes the path where an exception message containing a
-    BiDi override (U+202E), BEL (0x07), or ANSI escape
-    sequence (0x1B) could confuse NVDA's notification handler
-    or spoof announcement direction. Stage 5's streaming
-    coalescer is the future second consumer; the sanitiser
-    is the central chokepoint.
-
-  - **`Move(Character, count)` int64 widening.** Both `Move`
-    and `MoveEndpointByUnit` previously did `curIdx + count`
-    in unchecked int32; `count = int.MinValue` underflowed to
-    a positive value due to wrap, slipping past the `max 0`
-    clamp and returning a wrong-direction result. Both sites
-    now widen to int64 before the add, then narrow back to
-    int after the bounds clamp. Same observed clamping
-    behaviour for legitimate inputs; the underflow class
-    disappears.
-
-  Three new tests in `tests/Tests.Unit/WordBoundaryTests.fs`
-  pin the jagged-snapshot contract (no
-  `IndexOutOfRangeException` from any of the three helpers
-  on a deliberately-jagged `Cell[][]`). Three new tests in
-  `tests/Tests.Unit/UpdateMessagesTests.fs` pin the
-  control-char strip contract end-to-end (BiDi override
-  printable-Unicode preserved; BEL stripped from `IOException`
-  message; clipboard-OSC `\x1b]52;c;...\x07` stripped from
-  catch-all message). New `tests/Tests.Unit/AnnounceSanitiserTests.fs`
-  exercises the sanitiser directly: empty / null tolerance,
-  pure-ASCII identity, each control class stripped, BiDi /
-  multi-byte UTF-8 / combining-mark printable Unicode
-  preserved, long control-byte runs handled.
-
-  Companion PRs: SR-1 (parser hardening, merged via #76);
-  SR-3 (`SECURITY.md` audit response, queued). The full
-  plan is in `/root/.claude/plans/replicated-riding-sketch.md`.
-
-- **Security audit cycle SR-1: parser bounds against malicious
-  input.** Closes three HIGH/MEDIUM findings from the
-  comprehensive code-level security audit. All three are
-  ANSI-bomb-class DoS protections — they don't change
-  behaviour for legitimate input, just cap the parser-state
-  accumulators so an adversarially-shaped byte stream
-  can't allocate without bound or wrap into negative
-  values.
-
-  - **`currentParam` int32 clamp at 65535** (alacritty / vte
-    parity). Input like `\x1b[999999999999999999m` previously
-    overflowed int32 to a negative SGR param; now it clamps.
-    Applied at both CSI and DCS digit-accumulation sites in
-    `src/Terminal.Parser/StateMachine.fs`.
-
-  - **`MAX_DCS_RAW = 4096` cap** on DCS payload emission.
-    `DcsPassthrough` now tracks `dcsTotalLen` and stops
-    emitting `DcsPut` events past the cap (DCS Hook + Unhook
-    pair still fires, so the framing stays intact). Matches
-    the ANSI-bomb resistance pattern Sixel / ReGIS terminal
-    emulators use.
-
-  - **OSC overflow transitions to `OscIgnore`.** Previously
-    the parser silently truncated OSC payloads at
-    `MAX_OSC_RAW = 1024` but stayed in `OscString`, where an
-    embedded `\x1B` in dropped bytes could be misread as ST
-    and desynchronise the state machine. New `OscIgnore`
-    sub-state mirrors the existing `DcsIgnore` pattern:
-    consumes bytes until ST/BEL terminator, then dispatches
-    an empty `OscDispatch`.
-
-  - **`Screen.csiDispatch` catch-all comment** documents that
-    response-generating sequences (DSR, DA1/2/3, DECRQM,
-    DECRQSS, CPR, title/font reports) are deliberately
-    dropped per `SECURITY.md` row TC-1. Reviewers are
-    instructed to block any PR that adds a handler in this
-    match without a matching `SECURITY.md` update.
-
-  Four new tests in `tests/Tests.Unit/VtParserTests.fs` pin
-  each contract: SGR param clamp returns non-negative;
-  8 KiB DCS payload produces ≤ 4096 `DcsPut` events with
-  Hook+Unhook intact; 8 KiB OSC payload dispatches once
-  with empty params; parser returns to `Ground` after OSC
-  overflow + terminator.
-
-  Companion PRs in this audit cycle (queued):
-  SR-2 (accessibility hardening: jagged-array bounds,
-  control-char `AnnounceSanitiser`, `Move` overflow guard);
-  SR-3 (`SECURITY.md` audit response: 6 new inventory rows
-  + cross-references). The full plan is in
-  `/root/.claude/plans/replicated-riding-sketch.md`.
-
-### Changed
-
-- **Audit-cycle PR-E: cache `~/.dotnet/tools` across CI
-  runs.** Both `.github/workflows/ci.yml` (Build and test
-  job) and `.github/workflows/release.yml` (release-pack
-  job) now cache the global dotnet tools directory before
-  `dotnet tool install -g vpk`. The install step gates on
-  `cache-hit != 'true'` so a cached run skips the install
-  entirely. Saves ~10s per CI run. Cache key is statically
-  versioned (`v1`); bump to `v2` when a new vpk version is
-  wanted (the cache key change forces a fresh install,
-  which pulls latest from NuGet, then re-caches).
-
-  Two other CI optimisations from SESSION-HANDOFF item 3
-  investigated and **deferred**: merging the two
-  `gaurav-nelson/github-action-markdown-link-check` steps
-  into one invocation (the action doesn't support both
-  `folder-path` and `file-path`; combining would either
-  drop the `spec/` exclusion or require enumerating 14
-  files explicitly that would drift); release.yml audit
-  for vpk-pack input cache (per-build artefacts have no
-  cache opportunity) and gh-download 5xx retry (no flakes
-  observed yet, defer until a flake happens). Both
-  trade-offs are documented in `docs/SESSION-HANDOFF.md`
-  item 3 so a future contributor doesn't redo the
-  investigation.
-
-### Added
-
 - **Audit-cycle PR-D: deferred-test burn-down.** Closes the
   largest test-coverage gap identified by the audit
   (SESSION-HANDOFF.md item 6) and validates that PR-C's
@@ -1477,80 +757,6 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   `Terminal.Accessibility` (needed to resolve the WPF
   reference set transitively when reaching internal
   helpers in that assembly).
-
-### Changed
-
-- **Audit-cycle PR-D: SESSION-HANDOFF.md cleanup.** Item 2
-  (Re-enable the GitHub MCP server) removed as obsolete —
-  the MCP has been working reliably for the last ~14 PRs
-  in this session, the original "occasionally disconnects
-  mid-session" concern has not recurred. Items 3-5
-  renumbered to 2-4. Item 6 (Stage 11 `runUpdateFlow`
-  test coverage) removed as shipped via this PR.
-
-### Removed
-
-- **Audit-cycle PR-C: deleted dead-code MSAA fallback path
-  (`WindowSubclassNative.cs`, `TerminalRawProvider.cs`,
-  `WindowSubclassTests.fs`).** Stage 4's architectural pivot
-  to `AutomationPeer.GetPattern` override (PR #56) made the
-  WM_GETOBJECT subclass hook + `IRawElementProviderSimple`
-  raw provider a "kept just in case" MSAA-only fallback. The
-  audit found no real consumers and the maintainer
-  authorised outright deletion (vs. `[Obsolete]`-deprecation
-  with a tracking issue). Removed three files plus the
-  `SourceInitialized` / `Closed` handlers in
-  `MainWindow.xaml.cs` that installed and uninstalled the
-  hook. Updated cross-references in `TerminalView.cs`,
-  `TerminalAutomationPeer.fs` (docstring), `TextPatternTests.fs`
-  (diagnostic message + verification-chain doc), and
-  `docs/ACCESSIBILITY-TESTING.md` (diagnostic decoder no
-  longer points at the deleted file).
-
-  Stage 4's UIA Document role + Text pattern + review-cursor
-  navigation chain is unaffected — that path lives entirely
-  in `TerminalAutomationPeer` (Terminal.Accessibility) and
-  `TerminalView.OnCreateAutomationPeer`. UIA3 clients
-  (NVDA, Inspect.exe, FlaUI) reach the Text pattern through
-  the WPF peer tree as designed.
-
-### Changed
-
-- **Audit-cycle PR-C: tightened `Terminal.Accessibility` API
-  surface via `internal` + `InternalsVisibleTo`.**
-  `TerminalAutomationPeer`, `TerminalTextProvider`,
-  `TerminalTextRange`, and the `SnapshotText` module are now
-  marked `internal` (were public by F# default). Two
-  `[<assembly: InternalsVisibleTo>]` declarations grant access
-  to `PtySpeak.Views` (the C# WPF library that constructs
-  the peer in `TerminalView.OnCreateAutomationPeer`) and
-  `PtySpeak.Tests.Unit` (so future Stage-5+ unit tests can
-  reach into the accessibility types without re-exposing them
-  publicly). `TerminalView.TextProvider` lowered from `public`
-  to `internal` to match its now-internal type.
-
-  Net effect: Stage 5+ contributors have the freedom to
-  break these signatures without an external breaking-change
-  concern. If the project ever publishes `Terminal.Accessibility`
-  as a NuGet for third parties, the `internal` becomes the
-  stable contract and we promote a curated subset to `public`
-  intentionally.
-
-- **Audit-cycle PR-C: Stage 11 `runUpdateFlow` test coverage
-  scoped out of this PR; logged in
-  `docs/SESSION-HANDOFF.md` item 6 as a focused follow-up.**
-  The audit identified `runUpdateFlow` (~80 lines, three
-  exception branches) as the largest untested surface in
-  the codebase. The cheapest test approach needs an
-  `IUpdateManager` adapter wrapping Velopack's concrete
-  `UpdateManager` class — adapter scaffold big enough to
-  warrant its own PR. SESSION-HANDOFF item 6 captures the
-  recommended approach (full adapter OR a simpler
-  pure-function extraction of the exception-to-message
-  mapping) so the next contributor doesn't have to
-  reverse-engineer the design decision.
-
-### Added
 
 - **Audit-cycle PR-B: pre-Stage-5 architectural seams +
   Stage 6 spec ADR.** Two seams Stage 5+ contributors can
@@ -1606,38 +812,6 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   Companion PRs in the audit cycle: PR-A (docs truth-up,
   shipped); PR-C (hygiene cleanup — MSAA delete +
   InternalsVisibleTo + Stage 11 tests; queued).
-
-### Changed
-
-- **Audit-cycle PR-A: documentation truth-up after Stage 4 +
-  Stage 11 verification.** Three CRITICAL doc errors fixed
-  in one focused PR: `README.md`'s status block referenced
-  `v0.0.1-preview.15` and described "next preview will show
-  live cmd.exe output" (was Stage 3 era language); now
-  reflects Stages 0-4 + 11 shipped on `v0.0.1-preview.26`
-  with NVDA verification. `docs/ROADMAP.md` Stage 11 row
-  marked "shipped" instead of "next"; "Stage ordering"
-  subsection rewritten to past tense. `docs/ARCHITECTURE.md`
-  module table: `Terminal.Accessibility` row updated from
-  "placeholder" to "implemented (4)" with the actual type
-  surface; the `Terminal.Update *(future)*` row replaced
-  with a row pointing at the actual `runUpdateFlow` location
-  in `Terminal.App/Program.fs` (per walking-skeleton
-  discipline, kept in the composition root).
-
-  Bundled MEDIUM/LOW doc fixes: `docs/SESSION-HANDOFF.md`
-  "from this point forward" phrasing replaced with
-  "deprecated for in-place updates"; next-stage pointer
-  updated to call out the PR-B notification-channel seam
-  Stage 5 will plug into. `CONTRIBUTING.md` USER-SETTINGS
-  cross-reference strengthened with explicit reviewer-block
-  rule. `docs/USER-SETTINGS.md` gains an "Intentionally not
-  user-configurable" subsection covering parser limits
-  (alacritty/vte parity rationale) and earcon
-  frequency/duration defaults (evidence-based from
-  accessibility research; not arbitrary).
-
-### Added
 
 - **`docs/UPDATE-FAILURES.md` — Stage 11 NVDA failure
   announcements reference.** Standalone reference doc
@@ -1752,51 +926,6 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   exercise Word semantics specifically — that's added when we
   have deterministic test fixtures (Stage 5+).
 
-### Changed
-
-- **`SECURITY.md` rewritten with a comprehensive auto-update
-  threat model and a consolidated vulnerability inventory.**
-  Stage 11's auto-update flow added a new attack surface
-  (network-fetch + execute) that wasn't analysed in the
-  previous SECURITY.md. The maintainer asked for "every
-  single vulnerability" and the known mitigations or
-  forward-mitigation paths to be documented end-to-end. The
-  rewrite:
-
-  - **New section "Auto-update threat model"** enumerating
-    nine threat classes (T-1 through T-9): passive observation,
-    active MITM substitution, GitHub account compromise, CI
-    runner / supply-chain attack, replay / downgrade, LPE via
-    the update path, time-of-check vs time-of-use during apply,
-    resource exhaustion, and Velopack log info-disclosure.
-    Each class has Risk / Severity / Mitigation today / Future
-    mitigation columns spelled out, with explicit references to
-    the protections shipped in PRs #44, #63, #64, #65, #66.
-    Includes a chain-of-trust diagram showing where each link
-    can fail.
-  - **New section "Vulnerability inventory"** consolidating
-    every threat class in the document into a single table
-    (terminal core, process / OS, update path, build and
-    supply chain — 24 rows total). Each row has the threat
-    ID, severity, mitigation today, what closes the gap at
-    `v0.1.0+`, and shipping status. Severity and status
-    glossaries make the table self-contained.
-  - **"How to use this inventory"** subsection describing the
-    contributor workflow: PRs that touch a protection class
-    must update both the affected row and the narrative
-    section. Reviewers are told to request changes on PRs
-    that weaken a protection without updating SECURITY.md.
-  - **Cross-link** from the existing "What we defend against"
-    section to the new inventory so a contributor reading
-    top-down lands on both the narrative and the audit-table
-    view.
-
-  No code changes; this is the documentation pass that
-  captures the security state we've actually been shipping
-  through the past several PRs.
-
-### Added
-
 - **Window title and accessibility name now include the running
   version.** `MainWindow.xaml.cs` reads
   `AssemblyInformationalVersionAttribute` (which carries the
@@ -1811,88 +940,6 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   announcement to keep it clean. Closes the
   "version-suffix-missing" follow-up logged in
   `docs/SESSION-HANDOFF.md`.
-
-### Fixed
-
-- **Update-failure announcements pattern-match on common
-  exception types instead of a single generic catch.**
-  `runUpdateFlow`'s `with` block now branches on:
-  - `HttpRequestException` → "Update check failed: cannot
-    reach GitHub Releases. Check your internet connection.
-    (...)" — the offline case, the most common failure for
-    end users on flaky connections.
-  - `TaskCanceledException` → "Update check timed out. Check
-    your internet connection and try Ctrl+Shift+U again." —
-    timeouts and dropped-mid-download.
-  - `IOException` → "Update could not be written to disk: ...
-    Free up space or check folder permissions in
-    %%LocalAppData%%\\pty-speak\\." — disk-side failures
-    during download or patch application.
-  - Catch-all for unexpected exceptions remains as
-    "Update failed: ...".
-  Replaces the single generic "Update failed: <ex.Message>"
-  that PR #63 shipped with a "later stage can pattern-match"
-  TODO comment. The user's offline-failure question on
-  preview.25 install made this concrete enough to
-  implement now.
-
-- **Release workflow walks back through burned tags when
-  fetching the prior `*-full.nupkg`.** `v0.0.1-preview.24`
-  failed at the "Fetch prior release nupkg" step because the
-  most recent prior release (`preview.23`) was a burned tag
-  whose own workflow had failed at the target-branch gate, so
-  no `*-full.nupkg` was ever uploaded to it. The original step
-  picked the most recent prior release by publishedAt and
-  blindly tried to download the asset — exit 1 from `gh
-  release download` when no matching assets existed propagated
-  to the workflow as a failure. Replaced with a walk-back loop
-  that iterates releases in descending order and uses
-  `gh release view --json assets` to find the most recent one
-  that actually has a `*-full.nupkg`. Falls through to the
-  existing "no prior nupkg, ship full-only" path if no release
-  in the history has the asset (legitimate first release on a
-  channel). Resolves the failure mode that
-  `v0.0.1-preview.{14, 23, 24}` all hit at different points;
-  combined with PR #64's documentation strengthening, makes
-  burned tags a recoverable rather than cascading failure.
-
-### Changed
-
-- **`docs/RELEASE-PROCESS.md` step 3 rewritten with explicit
-  CLI vs UI paths and target-branch failure recovery.**
-  `v0.0.1-preview.23` was burned by a UI-path publish with the
-  Target dropdown still pointing at a stale feature branch
-  (`fix/stage-4-text-pattern-navigation`); the workflow's
-  target-branch gate caught it correctly and failed fast, but
-  the docs didn't make the failure mode prominent enough to
-  prevent the recurrence (`v0.0.1-preview.14` was the first time
-  this happened). The rewrite:
-
-  - Splits step 3 into "3a CLI path (recommended)" and "3b UI
-    path." The CLI path is recommended for screen-reader users
-    because it's a single keyboard-driven command vs the UI's
-    multi-step dropdown navigation.
-  - Bolds and elaborates the "`--target main` is not optional"
-    warning on the CLI command, with the explicit failure mode
-    (gh uses your local checkout's current branch as the target
-    if you don't pass `--target`).
-  - Bolds and elaborates the "confirm Target reads `main`
-    before clicking Publish" warning on the UI path, with NVDA-
-    specific guidance (tab to the combobox, arrow until you
-    hear "main", confirm). Adds an explicit fallback to the
-    CLI path when the dropdown can't be confirmed.
-  - New subsection "What to do if a release was published
-    targeting the wrong branch" describing both recovery
-    paths: skip the burned tag (the simple option;
-    preview.{16, 17, 23} were all skipped this way) or
-    delete-and-republish at the same tag with `--cleanup-tag`
-    (only if the version number must be preserved).
-  - "Common pitfalls" section's "Releases UI Target dropdown"
-    entry expanded to cover both the UI and CLI failure modes,
-    name the burned previews, and link forward to the new
-    recovery procedure in step 3.
-
-### Added
 
 - **Stage 11 — Velopack auto-update via `Ctrl+Shift+U`.** The
   running app can now self-update from GitHub Releases:
@@ -1939,33 +986,6 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
     (`NetworkUnavailable`, `SignatureMismatch`) for distinct
     announcements is a later refinement.
 
-### Changed
-
-- **Stage 11 (Velopack auto-update) re-prioritised to land
-  immediately after Stage 4, ahead of Stages 5-10.** The original
-  ordering put Stage 11 last because auto-update is feature
-  completeness rather than core functionality. Stage 4's manual
-  NVDA verification cycle made the recurring cost of install
-  friction visible — each iterative preview is download →
-  SmartScreen prompts → install, several screen-reader steps per
-  loop. Stage 11 has no architectural dependency on Stages 5-10
-  (`UpdateManager` is independent of streaming notifications,
-  keyboard input routing, list detection, earcons, and review
-  mode), so moving it forward amortises the friction across all
-  remaining stages. `docs/ROADMAP.md`'s Phase 1 table now lists
-  Stage 11 as "next" with a "Stage ordering" subsection capturing
-  the rationale; `docs/SESSION-HANDOFF.md` "Where we left off"
-  and a new "Stage 11 implementation sketch" replace the old
-  Stage 4 next-pointer (Stage 4 is fully merged on `main` as of
-  PR #60); `spec/tech-plan.md` §11 gains an implementation-order
-  note at the top (the spec content itself is unchanged — only
-  the order of execution shifts). The standalone
-  `scripts/install-latest-preview.ps1` (PR #61) is the bridge
-  until Stage 11 lands and is documented as deprecated for
-  in-place updates once it does.
-
-### Added
-
 - **`scripts/install-latest-preview.ps1` — one-command preview
   installer for Windows.** Downloads the latest (or specified)
   preview's `Setup.exe` from the GitHub Release assets, strips
@@ -1981,73 +1001,6 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   becomes unnecessary for in-place updates. New `scripts/README.md`
   documents the script and reserves the directory for future
   utilities.
-
-### Fixed
-
-- **`MainWindow` moves keyboard focus to `TerminalSurface` on
-  `Loaded`.** `v0.0.1-preview.21` install smoke established that
-  even with PR #59's working Text-pattern navigation, NVDA still
-  couldn't reach the buffer: focus stayed on the WPF `Window`
-  after launch, so NVDA announced "pty-speak terminal, window"
-  and anchored the review cursor on the Window (which has no
-  Text pattern). The `TerminalView`'s Document-role peer with
-  the working Text pattern was reachable in the UIA tree but
-  invisible to NVDA's review cursor because focus was on the
-  wrong element. One-line fix in `MainWindow.xaml.cs`: hook
-  `Loaded` and call `TerminalSurface.Focus()`. NVDA now
-  announces "Terminal, document" on launch and the review
-  cursor anchors to the TerminalView, where PR #59's
-  navigation is reachable.
-
-- **Stage 4 Text-pattern navigation: NVDA's review cursor can
-  now read the terminal buffer.** `v0.0.1-preview.20` install
-  smoke established that PR #56's Text-pattern surface was
-  reachable but unusable: NVDA's "read current line" returned
-  "blank" and prev/next-line did nothing. Root cause was that
-  `TerminalTextRange`'s `ExpandToEnclosingUnit`, `Move`,
-  `MoveEndpointByUnit`, and `MoveEndpointByRange` were all
-  no-op stubs from PR #56's "navigation deferred to PR D"
-  scope. Without them NVDA's review cursor couldn't delimit a
-  line: `ExpandToEnclosingUnit(Line)` was silently dropped,
-  leaving the range collapsed at start with empty `GetText`
-  output. Implementation in this commit:
-
-  - `TerminalTextRange` now tracks mutable `(startRow,
-    startCol, endRow, endCol)` endpoints (the UIA contract
-    requires the void-returning navigation methods to mutate
-    in place).
-  - `ExpandToEnclosingUnit` handles `Character`, `Document`,
-    and `Line` (other unit types degrade to `Line` until a
-    terminal-output tokenizer arrives).
-  - `Move`, `MoveEndpointByUnit`, `MoveEndpointByRange`
-    implement UIA's contract including endpoint-collision
-    handling (range collapses to the moved point if endpoints
-    cross).
-  - `CompareEndpoints` returns the lexicographic ordering
-    over `(row, col)` positions.
-  - `GetText` uses the range endpoints (was returning the
-    entire snapshot regardless of range).
-  - `DocumentRange` constructs a half-open `[(0,0), (rows, 0))`
-    range matching UIA's standard endpoint convention.
-
-  `tests/Tests.Ui/TextPatternTests.fs` gains a navigation
-  regression test that asserts `ExpandToEnclosingUnit(Line)`
-  bounds the range length below the full-document size, and
-  `Move(Line, 1)` preserves the Line shape — the two
-  invariants whose violation produced the preview.20
-  failure mode.
-
-- **Removed `MainWindow.xaml`'s
-  `AutomationProperties.HelpText`.** Preview.20 NVDA smoke
-  heard "Screen-reader-native Windows terminal. Stage 3b:
-  bytes from a child shell are parsed and rendered; UIA
-  exposure lands in Stage 4." read after the role
-  announcement on every focus. That string was useful as
-  developer documentation while the project was bootstrapping
-  but is verbose chatter for the user. The window's name and
-  Document role are sufficient.
-
-### Added
 
 - **Comprehensive manual smoke-test matrix
   (`docs/ACCESSIBILITY-TESTING.md` rewrite).** Reframes the
@@ -2259,7 +1212,446 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   to the `out SafeFileHandle&` byref bug from Stage 1) before
   building 250+ lines of dependent code on top.
 
+- **Parser test coverage for SUB / OSC ST / DCS CAN / Unicode
+  round-trip.** `tests/Tests.Unit/VtParserTests.fs` gains four new
+  cases: SUB (0x1A) cancellation in CSI mirroring the existing CAN
+  test; ST-terminated OSC asserting `bellTerminated=false` plus the
+  trailing bare `EscDispatch` for the `\` byte; CAN inside DCS
+  passthrough emitting `DcsHook` + `DcsPut`* + `DcsUnhook` (note the
+  asymmetry with CSI — CAN there emits `Execute`, here it emits
+  `DcsUnhook`); and an FsCheck property that any valid Unicode
+  scalar encoded as UTF-8 round-trips through the parser as a
+  single `Print` event with the same rune.
+- **Velopack artifact-existence gate in `release.yml`.** A new
+  PowerShell step after `vpk pack` asserts that `*Setup.exe` and
+  `*-full.nupkg` exist under `releases/`. Defense-in-depth on top
+  of `vpk pack`'s own exit code: a future Velopack version that
+  renames an artifact would otherwise produce a green workflow
+  whose release ships without the file the auto-update client
+  expects (because softprops is configured with
+  `fail_on_unmatched_files: false` so the delta nupkg pattern can
+  legitimately match nothing on first releases).
+- **Stage 4 substrate — `Screen.SequenceNumber` + `Screen.SnapshotRows`
+  in `Terminal.Core`.** `Screen` now exposes a monotonic
+  `SequenceNumber: int64` (incremented on every `Apply`) and a
+  `SnapshotRows(startRow, count): int64 * Cell[][]` method that
+  atomically captures an immutable copy of the requested rows
+  paired with the sequence number at capture time. Both `Apply` and
+  `SnapshotRows` serialize on a private gate object, which is the
+  boundary between the WPF Dispatcher (where the parser feeds
+  events) and the UIA RPC thread (where Stage 4's
+  `ITextRangeProvider` will read snapshots from). This is the
+  thread-safety primitive that spec §4.3's snapshot-on-construction
+  rule depends on; landing it ahead of the UIA peer keeps the
+  Stage 4 PR focused on the peer + provider implementation.
+  `tests/Tests.Unit/ScreenTests.fs` covers fresh-screen baseline,
+  per-event sequence increments, deep-copy independence, sequence-
+  pairing, argument validation, the `count = 0` degenerate, and a
+  concurrent producer / snapshot stress test.
+
 ### Changed
+
+- **Restored two strategic INFO log entries that PR #111
+  over-demoted.** Coalescer "Emit OutputBatch (leading-edge
+  | trailing-edge)" and `TerminalView.Announce`
+  "RaiseNotificationEvent firing" are back at `Information`.
+  These are bounded by the coalescer's 200ms debounce
+  (~5 events/sec at typing speed; far below any I/O lag
+  threshold) and constitute the primary "is the streaming
+  pipeline alive?" signal at default log level — without
+  them, default logs show nothing of the streaming path,
+  and a streaming-silence bug requires the user to launch
+  with `PTYSPEAK_LOG_LEVEL=Debug` to capture any trace at
+  all. The other PR #109 entries (reader publish, suppress,
+  accumulate, drain dispatch) stay at `Debug` to keep the
+  steady-state volume low; flip to Debug for full-chain
+  diagnosis when needed.
+
+- **Log-copy hotkey rebound from `Ctrl+Alt+L` to
+  `Ctrl+Shift+;`** (the semicolon / colon key, immediately
+  to the right of `L` on a US-layout keyboard).
+  Maintainer-reported regressions on the post-#109 preview
+  drove the move:
+
+  1. `Ctrl+Alt+L` collides with the **Windows Magnifier**
+     zoom-in shortcut on some default Magnifier configs;
+     the OS swallowed the gesture before pty-speak saw it.
+  2. The original fix for `Ctrl+Alt+L` not firing (PR #108)
+     introduced a `SystemKey`-aware filter at the top of
+     `OnPreviewKeyDown` so that `Alt`-modified gestures (which
+     WPF reports as `e.Key == Key.System` + `e.SystemKey ==
+     Key.L`) were unwrapped to the underlying key. Side
+     effect: `Alt+F4` was unwrapped to `Key.F4 + Alt`, the
+     encoder produced bytes, `e.Handled` became `true`, and
+     the OS window-close gesture stopped working.
+
+  `Ctrl+Shift+;` is a clean Ctrl+Shift gesture: no Alt path,
+  no Magnifier collision, no SystemKey unwrap needed in the
+  filter chain. Removing the SystemKey unwrap restored
+  `Alt+F4` because `Key.System` falls through to
+  `KeyCode.Unhandled`, the encoder returns null, `e.Handled`
+  stays false, and WPF's default close handler fires.
+
+  Mnemonic: physical proximity. The semicolon / colon key
+  sits right next to `L`, so `Ctrl+Shift+L` (open the logs
+  folder) and `Ctrl+Shift+;` (copy the active session log)
+  live under one hand position. `Ctrl+Shift+C` was
+  considered as the natural "copy" mnemonic but reserved
+  for a future copy-latest-command-output feature (the
+  cross-terminal convention for that gesture). `Ctrl+Shift+M`
+  was considered but stays reserved for the Stage 9 earcon
+  mute toggle. Layout caveat: on non-US keyboards the
+  `OemSemicolon` virtual-key sits in a different physical
+  position; remap support is on the Phase 2 user-settings
+  roadmap.
+
+  Updated everywhere it was documented: README,
+  `docs/LOGGING.md`, `docs/USER-SETTINGS.md`,
+  `docs/ACCESSIBILITY-INTERACTION-MODEL.md`, the
+  `AppReservedHotkeys` table in `TerminalView.cs`, the
+  `setupCopyLatestLogKeybinding` wiring in `Program.fs`, and
+  the `HandleAppLevelShortcut` direct-dispatch path. The
+  `Ctrl+Shift+L` open-folder primary is unchanged.
+
+- **Streaming-path instrumentation demoted from `Information`
+  to `Debug`** so the production default sees no per-frame
+  log I/O. The PR #109 instrumentation at typing speed
+  produced ~25 entries/second across all stages, which
+  manifested as visible WPF dispatcher lag during streaming
+  output. Demoting the per-event entries (reader publish,
+  coalescer suppress / accumulate / emit, drain dispatch,
+  peer-present raise) leaves the trail intact for diagnosis
+  — set `PTYSPEAK_LOG_LEVEL=Debug` before launch to capture
+  the full chain — but keeps the steady-state log silent.
+  The peer-NULL `WARN` stays at `WARN` (rare, and the
+  smoking-gun signal that a UIA client never connected and
+  notifications are silently dropping). One-time entries
+  (runLoop start, cancellation, hotkey invocations) stay at
+  `Information`.
+
+- **Logging restructured to per-session files in per-day
+  folders.** The previous layout kept one daily-rolled file
+  per UTC day; long-running development days produced massive
+  aggregated files that were painful to navigate when grabbing
+  a slice for a bug report. New layout:
+
+  ```
+  %LOCALAPPDATA%\PtySpeak\logs\
+  ├── 2026-05-02\
+  │   ├── pty-speak-13-45-23.log    ← session that launched at 13:45:23
+  │   ├── pty-speak-15-12-08.log
+  │   └── pty-speak-16-30-44.log
+  ├── 2026-05-01\
+  │   └── pty-speak-09-15-22.log
+  └── ... (up to 7 days)
+  ```
+
+  Each launch creates a fresh session file named with its
+  launch timestamp inside today's day-folder. Sessions don't
+  split across midnight (a long-running session stays in its
+  launch-day folder). Retention deletes whole day-folders
+  older than 7 days; folders with non-date names are ignored
+  defensively. New `FileLoggerSink.ActiveLogPath` member
+  exposes this session's file path for tools that want to
+  grab the active session directly.
+
+  `Ctrl+Shift+L` still opens the logs root; the user
+  navigates one click into today's day-folder and picks the
+  most recent session by alphabetical sort. Bug reports are
+  now one-file pastes instead of "scroll a giant log to the
+  right time range".
+
+  `docs/LOGGING.md` updated with the new layout, retention
+  rules, and a one-line PowerShell snippet for grabbing the
+  latest session — useful for the future
+  Claude-Code-on-the-machine workflow where a script could
+  pull the most recent log without prompting the user.
+
+- **`Ctrl+Shift+R` flipped from "open releases page" to "open
+  draft-a-new-release form".** The original PR #83 hotkey opened
+  `UpdateRepoUrl + "/releases"` (the listing). During post-Stage-5
+  manual NVDA verification on the just-cut preview, the maintainer
+  realised the daily-use path during the preview line is creating
+  a release (publishing in the GitHub Releases UI triggers the
+  Velopack build/upload workflow per `docs/RELEASE-PROCESS.md`),
+  not browsing existing releases. Flipping the URL to
+  `/releases/new` makes the hotkey a one-keypress shortcut to the
+  cadence step that matters every preview cut. Mnemonic stays "R
+  for **R**elease".
+
+  Renames that follow the behaviour change:
+
+  - `Program.fs runOpenReleases` → `runOpenNewRelease`
+  - `Program.fs setupReleasesKeybinding` → `setupNewReleaseKeybinding`
+  - `RoutedCommand("OpenReleases", ...)` → `"OpenNewRelease"`
+  - `Terminal.Core.ActivityIds.releases` (`"pty-speak.releases"`)
+    → `ActivityIds.newRelease` (`"pty-speak.new-release"`).
+    The activity-ID rename is a soft breaking change for any NVDA
+    user who already configured per-tag handling for the old
+    string, but Stage 5's tag vocabulary just shipped on the
+    preceding preview and is documented to accept renames until
+    v0.1.0+.
+  - Announce text: "Opened release notes in default browser:
+    {url}" → "Opening new release form."
+  - Doc updates: `README.md`, `SECURITY.md` (A-3 row + the
+    pre-Stage-6 keyboard contract paragraph), `docs/USER-SETTINGS.md`.
+
+  No hotkey contract change from the user's perspective; same
+  `Ctrl+Shift+R`, different (more useful) URL.
+
+- **SESSION-HANDOFF item 2 step 3 closed.** Post-Stage-5
+  process-cleanup re-run via `Ctrl+Shift+D` on the post-Stage-5
+  preview returned PASS for both close paths (Alt+F4 and
+  X-button) per the maintainer's manual NVDA verification.
+  Item 2 step 3 flips from "↻ pending" to "✓ PASS"; step 4
+  ("After Stage 6 ships") is now the next pending pass.
+
+- **`docs/SESSION-HANDOFF.md` item 2 truth-up.** The
+  process-cleanup baseline test (Step 1 of the recurring
+  cadence) was actually run via `Ctrl+Shift+D` on
+  `v0.0.1-preview.27` during the post-Stage-4.5 hygiene
+  session — both close paths PASSED, no orphans. The doc
+  still framed the baseline as future tense ("next
+  manual session — establishes whether the shipped code
+  already has issues"); updated to reflect "✓ Baseline on
+  `v0.0.1-preview.27` — PASS (2026-05-01)" plus a
+  cross-reference to item 6 (the screen-reader-native
+  replacement work, since NVDA's coverage of the spawned
+  PowerShell window is the documented limitation; the
+  underlying script's PASS/FAIL output is the source of
+  truth). Step 2 ("After Stage 4.5 PR-B ships") is the
+  next pending pass, since `v0.0.1-preview.28+` now carry
+  the alt-screen back-buffer.
+
+  No code paths touched.
+
+- **Repo-hygiene cleanup (post-Stage-4.5 sweep).** Two
+  small documentation fixes, a future-proofing convention
+  added to `CONTRIBUTING.md`, and a one-time cleanup
+  script for the maintainer to run on their workstation:
+
+  - `docs/USER-SETTINGS.md` Keybindings section: corrected
+    "Four app-level keybindings shipped today" to "Three"
+    (the bullet list correctly enumerates three shipped
+    `Ctrl+Shift+U/D/R` plus two reserved `Ctrl+Shift+M`,
+    `Alt+Shift+R`; the prose count was off by one).
+
+  - `CONTRIBUTING.md` Branching and pull requests: new
+    bullet documenting the post-merge convention to
+    delete the source branch (both remote and local).
+    The repo had accumulated 75+ stale post-merge
+    branches over the project's history; the codified
+    convention prevents recurrence.
+
+  - `scripts/cleanup-stale-branches.sh`: bundled
+    maintainer-side script that deletes the 77 accumulated
+    stale post-merge branches in one go. The agent
+    sandbox cannot delete remote refs (proxy returns
+    HTTP 403 on `git push --delete`), so this is a
+    one-time maintainer action. Idempotent
+    (`git ls-remote --exit-code` check skips branches
+    that have already been deleted). The script can be
+    deleted from the repo after the one-time cleanup
+    finishes.
+
+  - `docs/SESSION-HANDOFF.md` "Pending action items"
+    item 7 tracks the cleanup-script run as a
+    maintainer-side action.
+
+  No code paths touched.
+
+- **Audit-cycle PR-E: cache `~/.dotnet/tools` across CI
+  runs.** Both `.github/workflows/ci.yml` (Build and test
+  job) and `.github/workflows/release.yml` (release-pack
+  job) now cache the global dotnet tools directory before
+  `dotnet tool install -g vpk`. The install step gates on
+  `cache-hit != 'true'` so a cached run skips the install
+  entirely. Saves ~10s per CI run. Cache key is statically
+  versioned (`v1`); bump to `v2` when a new vpk version is
+  wanted (the cache key change forces a fresh install,
+  which pulls latest from NuGet, then re-caches).
+
+  Two other CI optimisations from SESSION-HANDOFF item 3
+  investigated and **deferred**: merging the two
+  `gaurav-nelson/github-action-markdown-link-check` steps
+  into one invocation (the action doesn't support both
+  `folder-path` and `file-path`; combining would either
+  drop the `spec/` exclusion or require enumerating 14
+  files explicitly that would drift); release.yml audit
+  for vpk-pack input cache (per-build artefacts have no
+  cache opportunity) and gh-download 5xx retry (no flakes
+  observed yet, defer until a flake happens). Both
+  trade-offs are documented in `docs/SESSION-HANDOFF.md`
+  item 3 so a future contributor doesn't redo the
+  investigation.
+
+- **Audit-cycle PR-D: SESSION-HANDOFF.md cleanup.** Item 2
+  (Re-enable the GitHub MCP server) removed as obsolete —
+  the MCP has been working reliably for the last ~14 PRs
+  in this session, the original "occasionally disconnects
+  mid-session" concern has not recurred. Items 3-5
+  renumbered to 2-4. Item 6 (Stage 11 `runUpdateFlow`
+  test coverage) removed as shipped via this PR.
+
+- **Audit-cycle PR-C: tightened `Terminal.Accessibility` API
+  surface via `internal` + `InternalsVisibleTo`.**
+  `TerminalAutomationPeer`, `TerminalTextProvider`,
+  `TerminalTextRange`, and the `SnapshotText` module are now
+  marked `internal` (were public by F# default). Two
+  `[<assembly: InternalsVisibleTo>]` declarations grant access
+  to `PtySpeak.Views` (the C# WPF library that constructs
+  the peer in `TerminalView.OnCreateAutomationPeer`) and
+  `PtySpeak.Tests.Unit` (so future Stage-5+ unit tests can
+  reach into the accessibility types without re-exposing them
+  publicly). `TerminalView.TextProvider` lowered from `public`
+  to `internal` to match its now-internal type.
+
+  Net effect: Stage 5+ contributors have the freedom to
+  break these signatures without an external breaking-change
+  concern. If the project ever publishes `Terminal.Accessibility`
+  as a NuGet for third parties, the `internal` becomes the
+  stable contract and we promote a curated subset to `public`
+  intentionally.
+
+- **Audit-cycle PR-C: Stage 11 `runUpdateFlow` test coverage
+  scoped out of this PR; logged in
+  `docs/SESSION-HANDOFF.md` item 6 as a focused follow-up.**
+  The audit identified `runUpdateFlow` (~80 lines, three
+  exception branches) as the largest untested surface in
+  the codebase. The cheapest test approach needs an
+  `IUpdateManager` adapter wrapping Velopack's concrete
+  `UpdateManager` class — adapter scaffold big enough to
+  warrant its own PR. SESSION-HANDOFF item 6 captures the
+  recommended approach (full adapter OR a simpler
+  pure-function extraction of the exception-to-message
+  mapping) so the next contributor doesn't have to
+  reverse-engineer the design decision.
+
+- **Audit-cycle PR-A: documentation truth-up after Stage 4 +
+  Stage 11 verification.** Three CRITICAL doc errors fixed
+  in one focused PR: `README.md`'s status block referenced
+  `v0.0.1-preview.15` and described "next preview will show
+  live cmd.exe output" (was Stage 3 era language); now
+  reflects Stages 0-4 + 11 shipped on `v0.0.1-preview.26`
+  with NVDA verification. `docs/ROADMAP.md` Stage 11 row
+  marked "shipped" instead of "next"; "Stage ordering"
+  subsection rewritten to past tense. `docs/ARCHITECTURE.md`
+  module table: `Terminal.Accessibility` row updated from
+  "placeholder" to "implemented (4)" with the actual type
+  surface; the `Terminal.Update *(future)*` row replaced
+  with a row pointing at the actual `runUpdateFlow` location
+  in `Terminal.App/Program.fs` (per walking-skeleton
+  discipline, kept in the composition root).
+
+  Bundled MEDIUM/LOW doc fixes: `docs/SESSION-HANDOFF.md`
+  "from this point forward" phrasing replaced with
+  "deprecated for in-place updates"; next-stage pointer
+  updated to call out the PR-B notification-channel seam
+  Stage 5 will plug into. `CONTRIBUTING.md` USER-SETTINGS
+  cross-reference strengthened with explicit reviewer-block
+  rule. `docs/USER-SETTINGS.md` gains an "Intentionally not
+  user-configurable" subsection covering parser limits
+  (alacritty/vte parity rationale) and earcon
+  frequency/duration defaults (evidence-based from
+  accessibility research; not arbitrary).
+
+- **`SECURITY.md` rewritten with a comprehensive auto-update
+  threat model and a consolidated vulnerability inventory.**
+  Stage 11's auto-update flow added a new attack surface
+  (network-fetch + execute) that wasn't analysed in the
+  previous SECURITY.md. The maintainer asked for "every
+  single vulnerability" and the known mitigations or
+  forward-mitigation paths to be documented end-to-end. The
+  rewrite:
+
+  - **New section "Auto-update threat model"** enumerating
+    nine threat classes (T-1 through T-9): passive observation,
+    active MITM substitution, GitHub account compromise, CI
+    runner / supply-chain attack, replay / downgrade, LPE via
+    the update path, time-of-check vs time-of-use during apply,
+    resource exhaustion, and Velopack log info-disclosure.
+    Each class has Risk / Severity / Mitigation today / Future
+    mitigation columns spelled out, with explicit references to
+    the protections shipped in PRs #44, #63, #64, #65, #66.
+    Includes a chain-of-trust diagram showing where each link
+    can fail.
+  - **New section "Vulnerability inventory"** consolidating
+    every threat class in the document into a single table
+    (terminal core, process / OS, update path, build and
+    supply chain — 24 rows total). Each row has the threat
+    ID, severity, mitigation today, what closes the gap at
+    `v0.1.0+`, and shipping status. Severity and status
+    glossaries make the table self-contained.
+  - **"How to use this inventory"** subsection describing the
+    contributor workflow: PRs that touch a protection class
+    must update both the affected row and the narrative
+    section. Reviewers are told to request changes on PRs
+    that weaken a protection without updating SECURITY.md.
+  - **Cross-link** from the existing "What we defend against"
+    section to the new inventory so a contributor reading
+    top-down lands on both the narrative and the audit-table
+    view.
+
+  No code changes; this is the documentation pass that
+  captures the security state we've actually been shipping
+  through the past several PRs.
+
+- **`docs/RELEASE-PROCESS.md` step 3 rewritten with explicit
+  CLI vs UI paths and target-branch failure recovery.**
+  `v0.0.1-preview.23` was burned by a UI-path publish with the
+  Target dropdown still pointing at a stale feature branch
+  (`fix/stage-4-text-pattern-navigation`); the workflow's
+  target-branch gate caught it correctly and failed fast, but
+  the docs didn't make the failure mode prominent enough to
+  prevent the recurrence (`v0.0.1-preview.14` was the first time
+  this happened). The rewrite:
+
+  - Splits step 3 into "3a CLI path (recommended)" and "3b UI
+    path." The CLI path is recommended for screen-reader users
+    because it's a single keyboard-driven command vs the UI's
+    multi-step dropdown navigation.
+  - Bolds and elaborates the "`--target main` is not optional"
+    warning on the CLI command, with the explicit failure mode
+    (gh uses your local checkout's current branch as the target
+    if you don't pass `--target`).
+  - Bolds and elaborates the "confirm Target reads `main`
+    before clicking Publish" warning on the UI path, with NVDA-
+    specific guidance (tab to the combobox, arrow until you
+    hear "main", confirm). Adds an explicit fallback to the
+    CLI path when the dropdown can't be confirmed.
+  - New subsection "What to do if a release was published
+    targeting the wrong branch" describing both recovery
+    paths: skip the burned tag (the simple option;
+    preview.{16, 17, 23} were all skipped this way) or
+    delete-and-republish at the same tag with `--cleanup-tag`
+    (only if the version number must be preserved).
+  - "Common pitfalls" section's "Releases UI Target dropdown"
+    entry expanded to cover both the UI and CLI failure modes,
+    name the burned previews, and link forward to the new
+    recovery procedure in step 3.
+
+- **Stage 11 (Velopack auto-update) re-prioritised to land
+  immediately after Stage 4, ahead of Stages 5-10.** The original
+  ordering put Stage 11 last because auto-update is feature
+  completeness rather than core functionality. Stage 4's manual
+  NVDA verification cycle made the recurring cost of install
+  friction visible — each iterative preview is download →
+  SmartScreen prompts → install, several screen-reader steps per
+  loop. Stage 11 has no architectural dependency on Stages 5-10
+  (`UpdateManager` is independent of streaming notifications,
+  keyboard input routing, list detection, earcons, and review
+  mode), so moving it forward amortises the friction across all
+  remaining stages. `docs/ROADMAP.md`'s Phase 1 table now lists
+  Stage 11 as "next" with a "Stage ordering" subsection capturing
+  the rationale; `docs/SESSION-HANDOFF.md` "Where we left off"
+  and a new "Stage 11 implementation sketch" replace the old
+  Stage 4 next-pointer (Stage 4 is fully merged on `main` as of
+  PR #60); `spec/tech-plan.md` §11 gains an implementation-order
+  note at the top (the spec content itself is unchanged — only
+  the order of execution shifts). The standalone
+  `scripts/install-latest-preview.ps1` (PR #61) is the bridge
+  until Stage 11 lands and is documented as deprecated for
+  in-place updates once it does.
 
 - **Stage 4 implementation plan revised: spike + three small PRs
   instead of one big PR.** After completing the pre-Stage-4
@@ -2293,7 +1685,449 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   (`spec/tech-plan.md` §4) is unchanged per the immutable-spec
   policy — this revision is purely about implementation order.
 
+- **`docs/SESSION-HANDOFF.md` brought up to date.** Replaced the
+  out-of-date "in-flight branch" / "last shipped release" rows: the
+  `chore/session-handoff-and-final-audit` audit, the `preview.18`
+  CHANGELOG, and the relaxed CHANGELOG-matching gate (PRs #35-#37)
+  all merged on 2026-04-28; `v0.0.1-preview.18` is now the last
+  shipped preview. Recorded the maintainer-reported Stage-3b
+  finding that a separate `cmd.exe` console-host window appears
+  behind the WPF window on launch, and tracked the conhost
+  defect under "Pending action items" as orthogonal to Stage 4.
+  Updated the Stage 4 sketch to reference the new
+  `Screen.SnapshotRows` / `Screen.SequenceNumber` primitives so the
+  snapshot rule is implementable without further substrate work.
+- **Release-time `CHANGELOG.md` matching gate relaxed.** The pre-build
+  step in `.github/workflows/release.yml` that failed the workflow
+  when no `## [<version>]` section existed has been removed.
+  `v0.0.1-preview.{16,17}` were burned by exactly that gate (publish a
+  release without remembering to rename the section first → workflow
+  fails → `release: published` won't refire for the same tag, so the
+  next attempt has to bump). The `Generate release notes from
+  CHANGELOG.md` step now resolves the body in this order: per-version
+  `## [<version>]` section if present → `## [Unreleased]` content
+  with the heading rewritten to `## [<version>] — <today>` for the
+  release body → generic `"Release X. See CHANGELOG.md for details."`
+  fallback (warned-on, not failed). Net effect: a maintainer can
+  publish a release directly off `[Unreleased]` without burning a
+  tag. `docs/RELEASE-PROCESS.md` "Cutting a release" updated to
+  describe both flows.
+
+### Removed
+
+- **Audit-cycle PR-C: deleted dead-code MSAA fallback path
+  (`WindowSubclassNative.cs`, `TerminalRawProvider.cs`,
+  `WindowSubclassTests.fs`).** Stage 4's architectural pivot
+  to `AutomationPeer.GetPattern` override (PR #56) made the
+  WM_GETOBJECT subclass hook + `IRawElementProviderSimple`
+  raw provider a "kept just in case" MSAA-only fallback. The
+  audit found no real consumers and the maintainer
+  authorised outright deletion (vs. `[Obsolete]`-deprecation
+  with a tracking issue). Removed three files plus the
+  `SourceInitialized` / `Closed` handlers in
+  `MainWindow.xaml.cs` that installed and uninstalled the
+  hook. Updated cross-references in `TerminalView.cs`,
+  `TerminalAutomationPeer.fs` (docstring), `TextPatternTests.fs`
+  (diagnostic message + verification-chain doc), and
+  `docs/ACCESSIBILITY-TESTING.md` (diagnostic decoder no
+  longer points at the deleted file).
+
+  Stage 4's UIA Document role + Text pattern + review-cursor
+  navigation chain is unaffected — that path lives entirely
+  in `TerminalAutomationPeer` (Terminal.Accessibility) and
+  `TerminalView.OnCreateAutomationPeer`. UIA3 clients
+  (NVDA, Inspect.exe, FlaUI) reach the Text pattern through
+  the WPF peer tree as designed.
+
+- **`SmokeTests.fs` "string concat is associative" placeholder.**
+  Was a vestigial FsCheck wire-up assertion from before
+  `VtParserTests.fs` and `ScreenTests.fs` had real property tests.
+  The file's other smoke ("Terminal.Core assembly loads") is
+  preserved as a project-reference / type-loading sanity check.
+
+- **Unused `FluentAssertions` package dependency.** The package was
+  pinned in `Directory.Packages.props` and referenced in
+  `tests/Tests.Unit/Tests.Unit.fsproj` but no test file used it
+  (no `open FluentAssertions` / `using FluentAssertions` anywhere
+  in the codebase). The project's testing convention is xUnit +
+  FsCheck.Xunit (per `CONTRIBUTING.md` § Tests); FluentAssertions
+  was never adopted. Removing the dead reference shrinks the
+  restore graph and removes a meaningless dependency-update
+  surface for Dependabot.
+
 ### Fixed
+
+- **Streaming output was permanently silent.** Root cause:
+  the coalescer's "any-hash-anywhere" spinner gate was
+  fundamentally broken. It triggered when
+  `AllHashHistory.Count >= 20`, but every call to
+  `processRowsChanged` iterates all 30 screen rows and
+  appends to that same history — so a single user event
+  added 30 entries, instantly exceeding the 20-entry
+  threshold. Once tripped, every subsequent event added
+  another 30 entries faster than the 1-second sliding
+  window could drain them, so the gate stayed permanently
+  triggered for the entire session. Net effect: the
+  cmd.exe banner, every typed character, and every command
+  output were all silently suppressed at the coalescer
+  before the dispatcher / NVDA path ever saw them.
+
+  Diagnosed from a `PTYSPEAK_LOG_LEVEL=Debug` capture on
+  the post-#114 preview where every `Reader published
+  RowsChanged` entry was followed by `Suppressed (spinner)`
+  — including the very first 16-byte cmd.exe banner chunk.
+  No real spinner was running; the heuristic was firing on
+  legitimate output.
+
+  Fix: remove the broken any-hash-anywhere gate entirely.
+  The per-`(rowIdx, hash)` gate (the OTHER spinner check,
+  which fires when the same row state recurs ≥5 times in
+  1s) handles the common spinner case (`|/-\` cycling on
+  one cell) correctly and stays in place. Cross-row
+  spinner detection — the original motivation for the
+  any-hash gate — is filed as a follow-up issue with a
+  proper redesign brief: count unique-hash recurrences,
+  not total entries.
+
+  Tests unchanged: existing `CoalescerTests.fs` covers
+  the per-key gate; nothing covered the broken any-hash
+  gate, so removing it doesn't regress any tested
+  behaviour.
+
+- **`Ctrl+Shift+;` log-copy failed with "file is in use by
+  another process".** Maintainer-reported on the post-#111
+  preview. The clipboard handler used `File.ReadAllText(path)`
+  which opens the file with `FileShare.Read` (the overload's
+  default) — meaning "I tolerate other readers but no
+  writers." Since the `FileLogger` writer holds the file
+  open with `FileAccess.Write`, the OS rejected the read
+  open because it couldn't honor the reader's "no writers"
+  requirement when the writer was already there.
+
+  Fix: open the file via an explicit `FileStream` with
+  `FileShare.ReadWrite`, matching the writer's policy. The
+  writer is happy to coexist with concurrent readers
+  (Notepad, NVDA, the Ctrl+Shift+; handler), so the OS
+  grants the handle.
+
+- **Log-copy hotkey didn't fire on the post-#103 preview.**
+  Maintainer reported pressing the gesture and not hearing the
+  "Log copied to clipboard. N bytes" announcement; the session
+  log confirmed the handler never ran. The Window-level
+  `KeyBinding` for the gesture was registered, but WPF's
+  `CommandManager` class-handler routing on a custom
+  `FrameworkElement` (`TerminalView`) didn't reliably fire
+  `runCopyLatestLog` — same family of routing flakiness that
+  bit `Ctrl+V` earlier in Stage 6.
+
+  Fix: handle the gesture directly in
+  `TerminalView.HandleAppLevelShortcut`, the same path that
+  handles `Ctrl+V` and `Ctrl+L`. New
+  `SetCopyLogToClipboardHandler` callback wired by
+  `Program.fs compose ()` invokes the existing
+  `runCopyLatestLog` handler. Both the direct path AND the
+  Window-level `KeyBinding` are wired; whichever fires first
+  wins. Direct path is reliable; Window-level is defence in
+  depth.
+
+- **`Alt+F4` window-close gesture stopped working** under the
+  PR #108 SystemKey-aware filter. WPF reports Alt-modified
+  gestures with `e.Key == Key.System` + the actual key in
+  `e.SystemKey`. The PR #108 filter unwrapped that to make
+  the original `Ctrl+Alt+L` reach the handler — but the same
+  unwrap converted `Alt+F4` into `Key.F4 + Alt`, the encoder
+  produced bytes, `e.Handled` became `true`, and the OS
+  window-close gesture died.
+
+  Fix: drop the SystemKey unwrap and rebind the log-copy
+  hotkey to `Ctrl+Shift+;` (a clean Ctrl+Shift gesture that
+  doesn't need the unwrap). `Key.System` now falls through
+  to `KeyCode.Unhandled`, the encoder returns null, `e.Handled`
+  stays false, and the OS default `Alt+F4` close handler
+  fires. If a future Alt-modified reserved hotkey (Stage 10's
+  `Alt+Shift+R`) is added, the unwrap can come back with an
+  explicit `Alt+F4` fall-through.
+
+- **Streaming-silence root cause: `PeriodicTimer` reuse bug in
+  `Coalescer.runLoop`.** Diagnosed via the maintainer's manual
+  NVDA verification on the post-Stage-6 preview, where typing
+  `dir` produced no streaming announcement and the cmd.exe
+  banner sometimes worked while subsequent output went silent.
+  The audible signal was "Coalescer crashed: Operation is not
+  valid due to the state of the object" — the exact message
+  `PeriodicTimer.WaitForNextTickAsync` throws when called a
+  second time before the previous call completes.
+
+  Pre-fix, every iteration of the runLoop's main `while`
+  unconditionally called `timer.WaitForNextTickAsync(ct)` to
+  build a `Task.WhenAny` race against the input channel. When
+  the reader won the race, the previous tick wait was orphaned
+  but never cancelled; the next iteration called
+  `WaitForNextTickAsync` AGAIN while the previous was still
+  pending → `InvalidOperationException`. The catch handler
+  surfaced "Coalescer crashed" then exited the loop, stopping
+  all further streaming announcements for the rest of the
+  session.
+
+  Why intermittent: the bug requires the reader to win
+  `Task.WhenAny` at least once before any timer tick fires
+  (i.e. input arrives faster than the 200ms debounce). The
+  cmd.exe launch banner was a single big chunk that arrived
+  before any timer iteration cycled, so it announced
+  correctly. Subsequent typed-input echoes triggered multiple
+  fast iterations where the reader kept winning, and the
+  second iteration's `WaitForNextTickAsync` crashed.
+
+  Fix: track the pending timer task across loop iterations.
+  Reuse the same wait until it actually fires; only after a
+  timer tick wins does the next iteration start a fresh
+  `WaitForNextTickAsync`. New regression test
+  `runLoop survives multiple consecutive reader-wins without
+  crashing the PeriodicTimer` in `CoalescerTests.fs` pumps 20
+  fast events through the reader channel and asserts the
+  runLoop keeps delivering notifications without faulting.
+
+- **UI test flakiness on the windows-2025 runner.** The
+  FlaUI-driven tests in `tests/Tests.Ui/` launch the actual
+  `Terminal.App.exe` and wait for the WPF main window to
+  appear. The previous 10-second timeout was tight; under
+  parallel xUnit-test load on a freshly-provisioned
+  Windows Server 2025 runner image, Velopack initialisation
+  + WPF subsystem startup + ConPTY spawn could exceed it.
+  Confirmed flake (not a code regression) by observing the
+  same failure mode on PR #104, a markdown-only PR with
+  zero code changes. Bumped to 30 seconds in three call
+  sites: `AutomationPeerTests.fs`, two locations in
+  `TextPatternTests.fs`. Same diagnostic messages preserved
+  with the new timeout value. No application code touched;
+  no behavioural change for users.
+
+- **Ctrl+V paste re-fix + Ctrl+L clear-screen.** The previous
+  attempt (in the post-Stage-6 fix-PR) added `KeyBinding`s mapping
+  Ctrl+V and Shift+Insert to `ApplicationCommands.Paste`, but
+  manual NVDA verification showed Ctrl+V still emitted `^V` to the
+  shell. Two compounding causes:
+  1. WPF's `CommandManager` class handler doesn't auto-process
+     `InputBindings` on a raw `FrameworkElement` the way it does
+     for built-in `Control`s, so the gesture wasn't reliably
+     reaching `OnPasteExecuted`.
+  2. Even when the routing did reach `OnPasteCanExecute`, an empty
+     clipboard returned `CanExecute = false`, the gesture fell
+     through unhandled to my `OnPreviewKeyDown` override, the
+     encoder produced `0x16`, and cmd.exe echoed `^V`.
+
+  Re-fix: handle Ctrl+V, Shift+Insert, and Ctrl+L explicitly at
+  the top of `OnPreviewKeyDown` (new `HandleAppLevelShortcut`
+  helper) before the encoder runs. Empty clipboard now becomes a
+  silent no-op instead of a `^V` emission. The
+  `ApplicationCommands.Paste` `CommandBinding` is kept for any
+  future right-click-menu / Edit-menu paste paths.
+
+  Ctrl+L is special-cased to send `cls\r` (the cmd.exe clear-
+  screen command) instead of `0x0C` (form feed). Strictly the
+  literally-correct terminal-emulator behaviour is to send `0x0C`
+  and let the shell decide — but cmd.exe ignores `0x0C` and
+  echoes `^L`, which is bad UX. Documented trade-off: when the
+  foreground process is something that DOES interpret `0x0C`
+  (Claude Code's Ink, `less`, `vim`), Ctrl+L will run `cls` as
+  if typed instead of triggering that program's redraw. Acceptable
+  for the current cmd.exe-only scope; revisit when Stage 7+ adds
+  shell flexibility.
+
+- **Three post-Stage-6 regressions surfaced during manual NVDA
+  verification on the post-Stage-6 preview**, all targeted in a
+  single follow-up PR:
+
+  - **Ctrl+V didn't paste; sent `^V` to the shell instead.**
+    `TerminalView`'s constructor added a `CommandBinding` for
+    `ApplicationCommands.Paste`, which tells WPF "if Paste is
+    invoked on me, here's the handler" — but did NOT add an
+    `InputBinding` mapping `Ctrl+V` (or `Shift+Insert`) to the
+    Paste command. Without the gesture-to-command map, Ctrl+V
+    flowed through `OnPreviewKeyDown` → encoder → `0x16` → and
+    cmd.exe echoed `^V` per its control-character display
+    convention. Adding the two `InputBinding`s
+    (`Ctrl+V` and `Shift+Insert`) wires the gestures to the
+    existing `OnPasteExecuted` handler so the paste-injection
+    chokepoint actually fires.
+
+  - **Window resize didn't reflow; text cut off the right
+    edge.** `TerminalView.MeasureOverride` returned the FIXED
+    preferred size (`Cols × Rows × cellSize`), so the view
+    never tracked window resize, so `OnRenderSizeChanged`
+    never fired, so the Stage 6 `SizeChanged` →
+    `DispatcherTimer` debounce → `ResizePseudoConsole` chain
+    was dead. Changed `MeasureOverride` to honour
+    `availableSize` (fall back to preferred size only when
+    availableSize is unbounded, e.g. inside a `ScrollViewer`).
+    The Screen buffer stays at construction-time 30×120 cells
+    internally — full grid runtime resize is a documented
+    Phase 2 stage — but cmd.exe now sees and adapts to the
+    window's actual dimensions via `ResizePseudoConsole`,
+    fixing the visible "text cuts off" symptom.
+
+  - **Stage 5 streaming output announcements were silent.**
+    `TerminalView.Announce` was hardcoded to use
+    `AutomationNotificationProcessing.MostRecent`. That's the
+    right choice for hotkey-style one-shot announcements
+    (Ctrl+Shift+U / D / R, Velopack progress) where each new
+    notification SHOULD supersede any in-flight one. But for
+    Stage 5's streaming-PTY-output path it was wrong: rapid
+    chunks arrive faster than NVDA can speak them, and under
+    `MostRecent` each new chunk discards the in-flight speech
+    of the previous one — typed-character echoes and command
+    output were silently superseded before NVDA could read
+    any of them. The two-arg `Announce(message, activityId)`
+    overload now selects processing per activityId:
+    `pty-speak.output` uses `ImportantAll` (queue all chunks);
+    everything else keeps `MostRecent`. A new three-arg
+    overload (`message, activityId, processing`) is exposed
+    for any future caller that needs to override.
+
+- **Diagnostic safety net for the coalescer drain task.**
+  Previously the `Program.fs compose ()` drain task swallowed
+  every unexpected exception silently with `| _ -> ()`. A
+  crashed drain looked identical to a working-but-silent one,
+  which made post-Stage-6 streaming-silence diagnosis hard
+  ("is the drain dying or is NVDA filtering?"). The catch-all
+  now sanitises the exception message through SR-2's
+  chokepoint and emits one final `Announce(..., pty-speak.error)`
+  before the task exits, so a future drain crash announces
+  itself rather than disappearing into the void.
+
+- **`Ctrl+Shift+D` and `Ctrl+Shift+R` announcements no longer get
+  cut off by the spawned window's focus-grab.** Discovered during
+  Stage 5 manual NVDA verification: pressing `Ctrl+Shift+D` started
+  the diagnostic announcement but NVDA was interrupted as soon as
+  the new PowerShell window activated and stole focus (NVDA's
+  default interrupt-on-focus-change). Same shape for
+  `Ctrl+Shift+R` once the browser activated. Pre-existing since
+  the diagnostic hotkey shipped in PR #81 and the releases hotkey
+  shipped in PR #84; latent because no NVDA verification cycle
+  before today exercised the announce path end-to-end.
+
+  Fix in `src/Terminal.App/Program.fs runDiagnostic` and
+  `runOpenNewRelease`: announce a SHORT cue ("Launching
+  diagnostic.", "Opening new release form.") FIRST, then
+  schedule the actual `Process.Start` on a ~700ms `Task.Delay`
+  so NVDA's speech queue has time to play the cue before the
+  new window's title takes over. The longer guidance ("Switch
+  to that window to follow the test.") is dropped from the cue
+  — once the user hears the spawned window's title, they have
+  all the context the long version provided. Both announces
+  are also re-tagged with the proper `ActivityIds.diagnostic` /
+  `ActivityIds.newRelease` per-class tags introduced in Stage 5
+  (replacing the back-compat default `pty-speak.update`).
+
+  No new hotkey contract; same `Ctrl+Shift+D/R` behaviour from
+  the user's side, just audible. Phase 2 TOML config will make
+  the 700ms delay configurable alongside the Stage 5 coalescer
+  constants.
+
+- **Update-failure announcements pattern-match on common
+  exception types instead of a single generic catch.**
+  `runUpdateFlow`'s `with` block now branches on:
+  - `HttpRequestException` → "Update check failed: cannot
+    reach GitHub Releases. Check your internet connection.
+    (...)" — the offline case, the most common failure for
+    end users on flaky connections.
+  - `TaskCanceledException` → "Update check timed out. Check
+    your internet connection and try Ctrl+Shift+U again." —
+    timeouts and dropped-mid-download.
+  - `IOException` → "Update could not be written to disk: ...
+    Free up space or check folder permissions in
+    %%LocalAppData%%\\pty-speak\\." — disk-side failures
+    during download or patch application.
+  - Catch-all for unexpected exceptions remains as
+    "Update failed: ...".
+  Replaces the single generic "Update failed: <ex.Message>"
+  that PR #63 shipped with a "later stage can pattern-match"
+  TODO comment. The user's offline-failure question on
+  preview.25 install made this concrete enough to
+  implement now.
+
+- **Release workflow walks back through burned tags when
+  fetching the prior `*-full.nupkg`.** `v0.0.1-preview.24`
+  failed at the "Fetch prior release nupkg" step because the
+  most recent prior release (`preview.23`) was a burned tag
+  whose own workflow had failed at the target-branch gate, so
+  no `*-full.nupkg` was ever uploaded to it. The original step
+  picked the most recent prior release by publishedAt and
+  blindly tried to download the asset — exit 1 from `gh
+  release download` when no matching assets existed propagated
+  to the workflow as a failure. Replaced with a walk-back loop
+  that iterates releases in descending order and uses
+  `gh release view --json assets` to find the most recent one
+  that actually has a `*-full.nupkg`. Falls through to the
+  existing "no prior nupkg, ship full-only" path if no release
+  in the history has the asset (legitimate first release on a
+  channel). Resolves the failure mode that
+  `v0.0.1-preview.{14, 23, 24}` all hit at different points;
+  combined with PR #64's documentation strengthening, makes
+  burned tags a recoverable rather than cascading failure.
+
+- **`MainWindow` moves keyboard focus to `TerminalSurface` on
+  `Loaded`.** `v0.0.1-preview.21` install smoke established that
+  even with PR #59's working Text-pattern navigation, NVDA still
+  couldn't reach the buffer: focus stayed on the WPF `Window`
+  after launch, so NVDA announced "pty-speak terminal, window"
+  and anchored the review cursor on the Window (which has no
+  Text pattern). The `TerminalView`'s Document-role peer with
+  the working Text pattern was reachable in the UIA tree but
+  invisible to NVDA's review cursor because focus was on the
+  wrong element. One-line fix in `MainWindow.xaml.cs`: hook
+  `Loaded` and call `TerminalSurface.Focus()`. NVDA now
+  announces "Terminal, document" on launch and the review
+  cursor anchors to the TerminalView, where PR #59's
+  navigation is reachable.
+
+- **Stage 4 Text-pattern navigation: NVDA's review cursor can
+  now read the terminal buffer.** `v0.0.1-preview.20` install
+  smoke established that PR #56's Text-pattern surface was
+  reachable but unusable: NVDA's "read current line" returned
+  "blank" and prev/next-line did nothing. Root cause was that
+  `TerminalTextRange`'s `ExpandToEnclosingUnit`, `Move`,
+  `MoveEndpointByUnit`, and `MoveEndpointByRange` were all
+  no-op stubs from PR #56's "navigation deferred to PR D"
+  scope. Without them NVDA's review cursor couldn't delimit a
+  line: `ExpandToEnclosingUnit(Line)` was silently dropped,
+  leaving the range collapsed at start with empty `GetText`
+  output. Implementation in this commit:
+
+  - `TerminalTextRange` now tracks mutable `(startRow,
+    startCol, endRow, endCol)` endpoints (the UIA contract
+    requires the void-returning navigation methods to mutate
+    in place).
+  - `ExpandToEnclosingUnit` handles `Character`, `Document`,
+    and `Line` (other unit types degrade to `Line` until a
+    terminal-output tokenizer arrives).
+  - `Move`, `MoveEndpointByUnit`, `MoveEndpointByRange`
+    implement UIA's contract including endpoint-collision
+    handling (range collapses to the moved point if endpoints
+    cross).
+  - `CompareEndpoints` returns the lexicographic ordering
+    over `(row, col)` positions.
+  - `GetText` uses the range endpoints (was returning the
+    entire snapshot regardless of range).
+  - `DocumentRange` constructs a half-open `[(0,0), (rows, 0))`
+    range matching UIA's standard endpoint convention.
+
+  `tests/Tests.Ui/TextPatternTests.fs` gains a navigation
+  regression test that asserts `ExpandToEnclosingUnit(Line)`
+  bounds the range length below the full-document size, and
+  `Move(Line, 1)` preserves the Line shape — the two
+  invariants whose violation produced the preview.20
+  failure mode.
+
+- **Removed `MainWindow.xaml`'s
+  `AutomationProperties.HelpText`.** Preview.20 NVDA smoke
+  heard "Screen-reader-native Windows terminal. Stage 3b:
+  bytes from a child shell are parsed and rendered; UIA
+  exposure lands in Stage 4." read after the role
+  announcement on every focus. That string was useful as
+  developer documentation while the project was bootstrapping
+  but is verbose chatter for the user. The window's name and
+  Document role are sufficient.
 
 - **Parser preserves the in-flight digit param across the
   Param → Intermediate transition (closes
@@ -2366,77 +2200,6 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   refreshed with the actual `vpk pack` output set per
   Velopack's [packaging docs](https://docs.velopack.io/packaging/overview).
 
-### Added
-
-- **Parser test coverage for SUB / OSC ST / DCS CAN / Unicode
-  round-trip.** `tests/Tests.Unit/VtParserTests.fs` gains four new
-  cases: SUB (0x1A) cancellation in CSI mirroring the existing CAN
-  test; ST-terminated OSC asserting `bellTerminated=false` plus the
-  trailing bare `EscDispatch` for the `\` byte; CAN inside DCS
-  passthrough emitting `DcsHook` + `DcsPut`* + `DcsUnhook` (note the
-  asymmetry with CSI — CAN there emits `Execute`, here it emits
-  `DcsUnhook`); and an FsCheck property that any valid Unicode
-  scalar encoded as UTF-8 round-trips through the parser as a
-  single `Print` event with the same rune.
-- **Velopack artifact-existence gate in `release.yml`.** A new
-  PowerShell step after `vpk pack` asserts that `*Setup.exe` and
-  `*-full.nupkg` exist under `releases/`. Defense-in-depth on top
-  of `vpk pack`'s own exit code: a future Velopack version that
-  renames an artifact would otherwise produce a green workflow
-  whose release ships without the file the auto-update client
-  expects (because softprops is configured with
-  `fail_on_unmatched_files: false` so the delta nupkg pattern can
-  legitimately match nothing on first releases).
-- **Stage 4 substrate — `Screen.SequenceNumber` + `Screen.SnapshotRows`
-  in `Terminal.Core`.** `Screen` now exposes a monotonic
-  `SequenceNumber: int64` (incremented on every `Apply`) and a
-  `SnapshotRows(startRow, count): int64 * Cell[][]` method that
-  atomically captures an immutable copy of the requested rows
-  paired with the sequence number at capture time. Both `Apply` and
-  `SnapshotRows` serialize on a private gate object, which is the
-  boundary between the WPF Dispatcher (where the parser feeds
-  events) and the UIA RPC thread (where Stage 4's
-  `ITextRangeProvider` will read snapshots from). This is the
-  thread-safety primitive that spec §4.3's snapshot-on-construction
-  rule depends on; landing it ahead of the UIA peer keeps the
-  Stage 4 PR focused on the peer + provider implementation.
-  `tests/Tests.Unit/ScreenTests.fs` covers fresh-screen baseline,
-  per-event sequence increments, deep-copy independence, sequence-
-  pairing, argument validation, the `count = 0` degenerate, and a
-  concurrent producer / snapshot stress test.
-
-### Changed
-
-- **`docs/SESSION-HANDOFF.md` brought up to date.** Replaced the
-  out-of-date "in-flight branch" / "last shipped release" rows: the
-  `chore/session-handoff-and-final-audit` audit, the `preview.18`
-  CHANGELOG, and the relaxed CHANGELOG-matching gate (PRs #35-#37)
-  all merged on 2026-04-28; `v0.0.1-preview.18` is now the last
-  shipped preview. Recorded the maintainer-reported Stage-3b
-  finding that a separate `cmd.exe` console-host window appears
-  behind the WPF window on launch, and tracked the conhost
-  defect under "Pending action items" as orthogonal to Stage 4.
-  Updated the Stage 4 sketch to reference the new
-  `Screen.SnapshotRows` / `Screen.SequenceNumber` primitives so the
-  snapshot rule is implementable without further substrate work.
-- **Release-time `CHANGELOG.md` matching gate relaxed.** The pre-build
-  step in `.github/workflows/release.yml` that failed the workflow
-  when no `## [<version>]` section existed has been removed.
-  `v0.0.1-preview.{16,17}` were burned by exactly that gate (publish a
-  release without remembering to rename the section first → workflow
-  fails → `release: published` won't refire for the same tag, so the
-  next attempt has to bump). The `Generate release notes from
-  CHANGELOG.md` step now resolves the body in this order: per-version
-  `## [<version>]` section if present → `## [Unreleased]` content
-  with the heading rewritten to `## [<version>] — <today>` for the
-  release body → generic `"Release X. See CHANGELOG.md for details."`
-  fallback (warned-on, not failed). Net effect: a maintainer can
-  publish a release directly off `[Unreleased]` without burning a
-  tag. `docs/RELEASE-PROCESS.md` "Cutting a release" updated to
-  describe both flows.
-
-### Fixed
-
 - **Yield in concurrent snapshot stress test.** The producer/snapshot
   test added in #38 now calls `Thread.Yield()` once per snapshot
   iteration. .NET's `Monitor` already yields on contended
@@ -2444,23 +2207,194 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   from starving the producer if the lock briefly goes uncontested
   on a slow CI scheduler.
 
-### Removed
+### Security
 
-- **`SmokeTests.fs` "string concat is associative" placeholder.**
-  Was a vestigial FsCheck wire-up assertion from before
-  `VtParserTests.fs` and `ScreenTests.fs` had real property tests.
-  The file's other smoke ("Terminal.Core assembly loads") is
-  preserved as a project-reference / type-loading sanity check.
+- **Security audit cycle SR-3: SECURITY.md audit response.**
+  Brings the vulnerability inventory and narrative into sync
+  with the shipped code from SR-1 and SR-2, plus closes the
+  documentation gaps the comprehensive audit identified.
+  Companion to SR-1 (#76, parser hardening) and SR-2 (#77,
+  accessibility hardening). The audit cycle is complete with
+  this PR.
 
-- **Unused `FluentAssertions` package dependency.** The package was
-  pinned in `Directory.Packages.props` and referenced in
-  `tests/Tests.Unit/Tests.Unit.fsproj` but no test file used it
-  (no `open FluentAssertions` / `using FluentAssertions` anywhere
-  in the codebase). The project's testing convention is xUnit +
-  FsCheck.Xunit (per `CONTRIBUTING.md` § Tests); FluentAssertions
-  was never adopted. Removing the dead reference shrinks the
-  restore graph and removes a meaningless dependency-update
-  surface for Dependabot.
+  - **6 new inventory rows.** `A-1`/`A-2`/`A-3` cover
+    application-surface findings (jagged-snapshot bounds in
+    word-boundary helpers, `Move(Character)` int32 underflow,
+    pre-Stage-6 keyboard contract). `D-1`/`D-2` cover
+    developer-tooling and operational mitigations
+    (`install-latest-preview.ps1` Mark-of-the-Web strip,
+    burned-tag visibility in public release history). `C-1`
+    covers the deferred-to-Phase-2 hardcoded `UpdateRepoUrl`
+    configuration item.
+
+  - **3 inventory rows updated.** `TC-1` (response-generating
+    sequences) annotated with the SR-1 catch-all-drop
+    documentation. `TC-5` (control characters in NVDA
+    `displayString`) flipped from `planned` to `partial`,
+    citing SR-2's `AnnounceSanitiser` for the
+    exception-message interpolation chokepoint. `TC-6`
+    (output-rate ANSI-bomb DoS) updated to credit SR-1's
+    parser-state caps (`MAX_PARAM_VALUE`, `MAX_DCS_RAW`,
+    `OscIgnore`) and clarify that the Stage 5 ingestion-rate
+    cap is still the remaining work.
+
+  - **2 new narrative items.** `T-10` paragraph in the
+    auto-update threat model elaborates the Mark-of-the-Web
+    strip rationale (cross-references T-3); `D-2` bullet
+    appears under "Out of scope for the update path" for
+    burned-tag visibility.
+
+  - **New `PO-5` row** documents the ConPTY environment
+    inheritance accepted-risk: parent's full env block
+    reaches the child via `lpEnvironment=IntPtr.Zero`,
+    leaking sensitive vars (`GITHUB_TOKEN`,
+    `OPENAI_API_KEY`, etc.) to the child shell. Significant
+    change to close; tracked in `docs/SESSION-HANDOFF.md`
+    item 5 alongside two other deferred follow-ups.
+
+  - **New "Application surfaces" inventory section** between
+    Process / OS and Update path, plus a new "Configuration"
+    mini-section for the C-prefix.
+
+  - **Lead-paragraph legend** explains the row-prefix
+    naming (`TC-`, `PO-`, `A-`, `T-`, `B-`, `D-`, `C-`)
+    so audit-grep queries stay consistent across surfaces.
+
+  - **Doc-drift fix.** Tense agreement on the Ed25519
+    public-key publication sentence (`is published as ...
+    (it will be added)` -> `will be published as ... (it
+    will be added)`).
+
+  - **3 deferred-follow-up rows added to
+    `docs/SESSION-HANDOFF.md`** (item 5) tracking the
+    findings the audit identified but didn't close inline:
+    PO-5 ConPTY env scrub, D-1 install-script TOCTOU
+    between `Unblock-File` and `Start-Process`, Acc/9
+    `TerminalView.OnRender` lock decision (deferred to
+    Stage 5's parser-off-dispatcher rework).
+
+  Vulnerability inventory now has 31 rows: TC-1..TC-6,
+  PO-1..PO-5, A-1..A-3, T-1..T-10, B-1..B-4, D-1..D-2,
+  C-1. All HIGH-severity findings from the November-December
+  2025 audit are CLOSED in code (SR-1 + SR-2); all MEDIUM
+  findings are either CLOSED or have an inventory row
+  pointing at the deferred work.
+
+- **Security audit cycle SR-2: accessibility hardening against
+  malformed snapshots and untrusted exception messages.**
+  Closes three HIGH/MEDIUM findings from the comprehensive
+  code-level security audit. Companion to SR-1's parser
+  hardening; together they close every HIGH-severity finding
+  the audit identified.
+
+  - **Jagged-snapshot bounds in word-boundary helpers.**
+    `TerminalTextRange`'s `WordEndFrom`, `NextWordStart`, and
+    `PrevWordStart` walked `rows.[r].[c]` assuming uniform
+    row lengths (`c < cols`). `Screen.SnapshotRows` returns
+    uniform rows today, but the `TerminalTextRange`
+    constructor doesn't enforce uniformity, so a future
+    refactor (e.g. ragged scrollback) or adversarial test
+    construction could trigger `IndexOutOfRangeException`.
+    Each `rows.[r].[c]` access in
+    `src/Terminal.Accessibility/TerminalAutomationPeer.fs` is
+    now guarded against `c >= rows.[r].Length`; the helpers
+    advance to the next row when a short row is encountered.
+
+  - **Control-character `AnnounceSanitiser`.** New
+    `Terminal.Core.AnnounceSanitiser.sanitise : string ->
+    string` strips C0 (0x00..0x1F), DEL (0x7F), and C1
+    (0x80..0x9F) controls before any string reaches NVDA via
+    UIA's `RaiseNotificationEvent`. Applied at the two call
+    sites that interpolate exception messages: the
+    `ParserError` construction in
+    `src/Terminal.App/Program.fs` and all four interpolations
+    in `Terminal.Core.UpdateMessages.announcementForException`.
+    Closes the path where an exception message containing a
+    BiDi override (U+202E), BEL (0x07), or ANSI escape
+    sequence (0x1B) could confuse NVDA's notification handler
+    or spoof announcement direction. Stage 5's streaming
+    coalescer is the future second consumer; the sanitiser
+    is the central chokepoint.
+
+  - **`Move(Character, count)` int64 widening.** Both `Move`
+    and `MoveEndpointByUnit` previously did `curIdx + count`
+    in unchecked int32; `count = int.MinValue` underflowed to
+    a positive value due to wrap, slipping past the `max 0`
+    clamp and returning a wrong-direction result. Both sites
+    now widen to int64 before the add, then narrow back to
+    int after the bounds clamp. Same observed clamping
+    behaviour for legitimate inputs; the underflow class
+    disappears.
+
+  Three new tests in `tests/Tests.Unit/WordBoundaryTests.fs`
+  pin the jagged-snapshot contract (no
+  `IndexOutOfRangeException` from any of the three helpers
+  on a deliberately-jagged `Cell[][]`). Three new tests in
+  `tests/Tests.Unit/UpdateMessagesTests.fs` pin the
+  control-char strip contract end-to-end (BiDi override
+  printable-Unicode preserved; BEL stripped from `IOException`
+  message; clipboard-OSC `\x1b]52;c;...\x07` stripped from
+  catch-all message). New `tests/Tests.Unit/AnnounceSanitiserTests.fs`
+  exercises the sanitiser directly: empty / null tolerance,
+  pure-ASCII identity, each control class stripped, BiDi /
+  multi-byte UTF-8 / combining-mark printable Unicode
+  preserved, long control-byte runs handled.
+
+  Companion PRs: SR-1 (parser hardening, merged via #76);
+  SR-3 (`SECURITY.md` audit response, queued). The full
+  plan is in `/root/.claude/plans/replicated-riding-sketch.md`.
+
+- **Security audit cycle SR-1: parser bounds against malicious
+  input.** Closes three HIGH/MEDIUM findings from the
+  comprehensive code-level security audit. All three are
+  ANSI-bomb-class DoS protections — they don't change
+  behaviour for legitimate input, just cap the parser-state
+  accumulators so an adversarially-shaped byte stream
+  can't allocate without bound or wrap into negative
+  values.
+
+  - **`currentParam` int32 clamp at 65535** (alacritty / vte
+    parity). Input like `\x1b[999999999999999999m` previously
+    overflowed int32 to a negative SGR param; now it clamps.
+    Applied at both CSI and DCS digit-accumulation sites in
+    `src/Terminal.Parser/StateMachine.fs`.
+
+  - **`MAX_DCS_RAW = 4096` cap** on DCS payload emission.
+    `DcsPassthrough` now tracks `dcsTotalLen` and stops
+    emitting `DcsPut` events past the cap (DCS Hook + Unhook
+    pair still fires, so the framing stays intact). Matches
+    the ANSI-bomb resistance pattern Sixel / ReGIS terminal
+    emulators use.
+
+  - **OSC overflow transitions to `OscIgnore`.** Previously
+    the parser silently truncated OSC payloads at
+    `MAX_OSC_RAW = 1024` but stayed in `OscString`, where an
+    embedded `\x1B` in dropped bytes could be misread as ST
+    and desynchronise the state machine. New `OscIgnore`
+    sub-state mirrors the existing `DcsIgnore` pattern:
+    consumes bytes until ST/BEL terminator, then dispatches
+    an empty `OscDispatch`.
+
+  - **`Screen.csiDispatch` catch-all comment** documents that
+    response-generating sequences (DSR, DA1/2/3, DECRQM,
+    DECRQSS, CPR, title/font reports) are deliberately
+    dropped per `SECURITY.md` row TC-1. Reviewers are
+    instructed to block any PR that adds a handler in this
+    match without a matching `SECURITY.md` update.
+
+  Four new tests in `tests/Tests.Unit/VtParserTests.fs` pin
+  each contract: SGR param clamp returns non-negative;
+  8 KiB DCS payload produces ≤ 4096 `DcsPut` events with
+  Hook+Unhook intact; 8 KiB OSC payload dispatches once
+  with empty params; parser returns to `Ground` after OSC
+  overflow + terminator.
+
+  Companion PRs in this audit cycle (queued):
+  SR-2 (accessibility hardening: jagged-array bounds,
+  control-char `AnnounceSanitiser`, `Move` overflow guard);
+  SR-3 (`SECURITY.md` audit response: 6 new inventory rows
+  + cross-references). The full plan is in
+  `/root/.claude/plans/replicated-riding-sketch.md`.
 
 ## [0.0.1-preview.18] — 2026-04-28
 
