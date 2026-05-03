@@ -40,11 +40,13 @@ in a custom WPF `FrameworkElement`, exposes that buffer to NVDA
 via UIA Document role + Text pattern with working Line / Word /
 Character / Document review-cursor navigation, and self-updates
 to subsequent previews via `Ctrl+Shift+U` with NVDA progress
-narration plus an audible version-flip on restart. Stage 4.5
-shipped in two PRs (mode coverage + alt-screen back-buffer);
-the Screen layer now applies DECTCEM, DECSC/DECRC, 256/truecolor
-SGR, alt-screen 1049, and the OSC 52 SECURITY-CRITICAL silent
-drop. Stage 5 closes the loop on output narrating itself: the
+narration plus an audible version-flip on restart. **Stage 4a**
+(Claude Code rendering substrate, formalized in `spec/tech-plan.md`
+§4a per chat 2026-05-03; previously informally referred to as
+"Stage 4.5") shipped in two PRs (mode coverage + alt-screen
+back-buffer); the Screen layer now applies DECTCEM, DECSC/DECRC,
+256/truecolor SGR, alt-screen 1049, and the OSC 52
+SECURITY-CRITICAL silent drop. Stage 5 closes the loop on output narrating itself: the
 new `Coalescer` module (FNV-1a per-row + frame hash dedup,
 sliding-window spinner suppression, leading- + trailing-edge
 200ms debounce, alt-screen flush barrier, per-row
@@ -161,7 +163,7 @@ disconnects mid-session.
         path; the underlying script's PASS/FAIL output is
         the source of truth and was confirmed by the
         maintainer.)
-     2. ↻ **After Stage 4.5 PR-B ships (`v0.0.1-preview.28`+
+     2. ↻ **After Stage 4a PR-B ships (`v0.0.1-preview.28`+
         carry the alt-screen back-buffer)** — re-run via
         `Ctrl+Shift+D` to confirm the alt-screen rework
         didn't introduce a process-lifecycle regression.
