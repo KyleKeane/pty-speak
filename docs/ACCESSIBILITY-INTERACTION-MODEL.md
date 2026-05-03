@@ -1085,6 +1085,45 @@ about each:
 - Microsoft UIA docs (Text pattern):
   <https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-implementingtextandtextrange>
 
+## Pending architecture cycles (May-2026 plan)
+
+Two of the design tensions surfaced in this document are
+the explicit subjects of the May-2026 strategic plan:
+
+- **Output presentation strategies** are addressed by the
+  Output-handling framework cycle (Part 3 of
+  [`PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md)). The
+  current `renderRows`-on-every-emit behaviour is one strategy
+  ("emit the whole rendered screen") trying to serve every
+  paradigm; the framework introduces Stream / REPL / TUI /
+  Form / Selection profiles each with their own presentation
+  strategy. Profile detection draws on the same signals this
+  document discusses (alt-screen mode, application-name
+  lookup, OSC 133 prompt markers).
+
+- **Input interpretation** is addressed by the
+  Input-interpretation framework cycle (Part 4). The current
+  pass-through pipeline (`OnPreviewKeyDown` → encoder → PTY)
+  gives blind developers no completion or lint feedback
+  equivalent to the visual cues sighted developers get from
+  bash on the screen. The framework introduces a per-keystroke
+  rolling buffer feeding a tokeniser → lexer → suggestion
+  engine pipeline, surfaced on demand via `Ctrl+Space` /
+  `Tab` / `Ctrl+H` so the speech queue isn't spammed.
+
+The two cycles share infrastructure (profile detection,
+app-name lookup, per-app config, settings UI) and explicitly
+bridge via an echo-correlation API: the Output framework's
+Stream profile queries the Input framework's
+recently-emitted-bytes record to suppress double-spoken
+character echoes (closes the typed-input half of Issue #115).
+
+This document will be revised as those cycles' RFCs land —
+specifically `docs/RFC-OUTPUT-FRAMEWORK.md` (Part 3.2) and
+`docs/RFC-INPUT-FRAMEWORK.md` (Part 4.2) — to reflect the
+chosen profile taxonomy, the system-caret-in-review-mode
+contract, and the speech-queue management decisions.
+
 ## Status
 
 This document is a **skeleton**. The maintainer will fill
