@@ -17,6 +17,52 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **`FileLoggerSink.FlushPending(timeoutMs)` API.** New public
+  member that returns a `Task<bool>` completing when the
+  background drain finishes its next per-batch flush, or after
+  the timeout — whichever comes first. `true` means a flush
+  completed within the window; `false` means the timeout fired
+  (channel was idle, or the host pegged for longer than the
+  budget).
+
+  Implementation: a TCS-barrier owned by the sink. The drain
+  loop atomically swaps the current `flushTcs` for a fresh one
+  after every successful `StreamWriter.Flush` and completes
+  the swapped one — so a caller that captures the current TCS
+  and awaits it gets signalled the next time the drain
+  completes a flush. Lock-protected swap; idempotent
+  `TrySetResult`; signalled once more after the dispose-time
+  final flush so callers awaiting at shutdown see completion
+  rather than timeout.
+
+  **Wired into `runCopyLatestLog` (`Ctrl+Shift+;`)** with a
+  500ms budget. Without this barrier, the bounded channel
+  could hold ~milliseconds of recent entries that hadn't been
+  written yet — the clipboard would capture a stale snapshot
+  of the file. The 500ms cap is the worst-case dispatcher
+  block under user-pressed-the-hotkey conditions; in practice
+  the drain finishes in low ms. On timeout, the handler logs
+  an `Information`-level note and proceeds with the
+  not-quite-current file content (better than no copy at all).
+
+  Caveat: if the channel is fully idle (no pending entries),
+  the drain loop is parked in `WaitToReadAsync` and won't fire
+  a flush until something arrives. `FlushPending` returns
+  `false` (timeout) in that case — but the file already
+  contains everything the writer has produced, so the
+  not-drained path is benign.
+
+  Test:
+  `tests/Tests.Unit/FileLoggerTests.fs` gains
+  `FlushPending makes recently-enqueued entries readable while
+  the writer is active` — enqueues 5 entries with a unique
+  marker, calls `FlushPending(2000)`, then reads the file
+  with `FileShare.ReadWrite` (matching `runCopyLatestLog`'s
+  production path) WITHOUT disposing the sink first, and
+  asserts every entry made it to disk. Failure here means
+  the drain's `signalFlushComplete` wiring or the TCS-swap
+  path regressed.
+
 - **Strategic plan committed to repo:
   [`docs/PROJECT-PLAN-2026-05.md`](docs/PROJECT-PLAN-2026-05.md).**
   Captures the post-PR-#116 architecture review and sequences

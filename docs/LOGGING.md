@@ -13,7 +13,12 @@ session:
   hand position. NVDA announces the byte count on success
   ("Log copied to clipboard. N bytes; ready to paste."). Most
   efficient way to send a log to a maintainer: press the hotkey,
-  switch to the chat / email / issue, paste.
+  switch to the chat / email / issue, paste. Before reading,
+  the handler waits up to 500ms for any in-flight log entries
+  to reach disk via `FileLoggerSink.FlushPending` so the
+  clipboard captures up-to-the-moment state — without that
+  barrier the bounded channel could still hold ~milliseconds
+  of recent entries that hadn't been written yet.
 
 ## Where the logs live
 

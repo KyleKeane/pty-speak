@@ -270,6 +270,57 @@ let ``session filename uses yyyy-MM-dd-HH-mm-ss-fff format per Issue #107`` () =
 // `Logger.configure` running in `Program.fs compose ()`.
 
 [<Fact>]
+let ``FlushPending makes recently-enqueued entries readable while the writer is active`` () =
+    // FlushPending lets a caller (e.g. Ctrl+Shift+; log-copy)
+    // wait until the bounded-channel drain has written its
+    // queue to disk before reading the file. Without it, the
+    // reader could capture a stale snapshot with recent entries
+    // still in flight. Test enqueues a batch, calls FlushPending,
+    // then reads the file with FileShare.ReadWrite (matching
+    // runCopyLatestLog's production path) WITHOUT disposing
+    // the sink first, and asserts every entry made it to disk.
+    let dir = freshTempDir ()
+    use sink = new FileLoggerSink(optionsAt dir LogLevel.Information)
+    let provider = new FileLoggerProvider(sink) :> ILoggerProvider
+    let logger = provider.CreateLogger("Test")
+
+    // Unique-per-run marker so concurrent test runs don't
+    // collide via the shared file system tempdir parent.
+    let marker = Guid.NewGuid().ToString("N")
+    for i in 1..5 do
+        logger.LogInformation("flush-test-{Marker}-{Num}", marker, i)
+
+    // 2-second budget; on a healthy CI box this completes in
+    // low ms. Failure here means the drain loop didn't fire a
+    // flush within the window — likely a regression in
+    // signalFlushComplete wiring or the TCS-swap path.
+    let drained = sink.FlushPending(2000).Result
+    Assert.True(
+        drained,
+        "Expected FlushPending to signal completion within 2 seconds")
+
+    // Read while the writer is still active. File.ReadAllText
+    // would fail with the default FileShare.Read — the writer
+    // holds the file with FileAccess.Write, so the OS rejects
+    // the read open unless we opt into FileShare.ReadWrite
+    // (the same fix shipped via PR #114 for runCopyLatestLog).
+    let content =
+        use stream =
+            new FileStream(
+                sink.ActiveLogPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite)
+        use reader =
+            new StreamReader(stream, System.Text.Encoding.UTF8)
+        reader.ReadToEnd()
+
+    for i in 1..5 do
+        Assert.Contains(sprintf "flush-test-%s-%d" marker i, content)
+
+    (provider :> IDisposable).Dispose()
+
+[<Fact>]
 let ``concurrent writes from multiple threads all land in the file`` () =
     // Stress test: spawn N threads each writing M entries.
     // Channel + single-reader drain should serialise them
