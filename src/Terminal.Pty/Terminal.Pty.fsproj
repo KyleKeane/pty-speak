@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <Compile Include="Native.fs" />
+    <Compile Include="ShellRegistry.fs" />
     <Compile Include="PseudoConsole.fs" />
     <Compile Include="ConPtyHost.fs" />
   </ItemGroup>
