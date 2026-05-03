@@ -71,6 +71,15 @@ type ConPtyHost internal (session: PtySession,
     /// `PtySession` dispose path inside this host).
     member _.JobHandle = session.JobHandle
 
+    /// Stage 7 PR-A — count of parent environment variables
+    /// stripped by the env-scrub deny-list (`*_TOKEN`, `*_SECRET`,
+    /// `*_KEY` minus the `ANTHROPIC_API_KEY` exemption,
+    /// `*_PASSWORD`) before this child was spawned. Exposed so
+    /// `Program.fs compose ()` can log the count at `Information`
+    /// level. Names and values are NEVER captured (per
+    /// `SECURITY.md` logging discipline).
+    member _.EnvScrubStrippedCount: int = session.EnvScrubStrippedCount
+
     /// Convenience: wait for the child process to exit. Returns when
     /// WaitForSingleObject signals on the process handle. Does not
     /// itself stop the reader — that happens when the pipe drains.
