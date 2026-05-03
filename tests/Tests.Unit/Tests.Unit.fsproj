@@ -41,7 +41,6 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="FsCheck.Xunit" />
-    <PackageReference Include="FluentAssertions" />
     <!--
       Stage 5 — FakeTimeProvider so CoalescerTests can pin
       debounce + spinner-window assertions deterministically

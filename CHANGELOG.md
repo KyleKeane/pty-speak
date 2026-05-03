@@ -2452,6 +2452,16 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   The file's other smoke ("Terminal.Core assembly loads") is
   preserved as a project-reference / type-loading sanity check.
 
+- **Unused `FluentAssertions` package dependency.** The package was
+  pinned in `Directory.Packages.props` and referenced in
+  `tests/Tests.Unit/Tests.Unit.fsproj` but no test file used it
+  (no `open FluentAssertions` / `using FluentAssertions` anywhere
+  in the codebase). The project's testing convention is xUnit +
+  FsCheck.Xunit (per `CONTRIBUTING.md` § Tests); FluentAssertions
+  was never adopted. Removing the dead reference shrinks the
+  restore graph and removes a meaningless dependency-update
+  surface for Dependabot.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
