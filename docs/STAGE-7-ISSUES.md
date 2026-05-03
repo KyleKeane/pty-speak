@@ -122,6 +122,85 @@ predictions that don't reproduce empirically may indicate the
 substrate is more capable than the spec assumed, and the
 framework design adjusts accordingly.
 
+### [other] Spurious "parser/reader loop" error announce on shell hot-switch
+
+**What broke.** Pressing `Ctrl+Shift+1` (cmd) or `Ctrl+Shift+2`
+(claude) reliably produced this NVDA announcement sequence:
+
+1. "Switching to Claude Code." (or "...Command Prompt.")
+2. ~700ms pause
+3. **"Terminal parser error: Parser/reader loop: The channel
+   has been closed."** ← spurious; sounds like a fatal error
+4. "Switched to Claude Code." (or "...Command Prompt.")
+
+The switch itself succeeded (the new ConPtyHost spawned and
+took over input/output), but the spurious error message in
+between made the switch sound broken to a screen-reader user.
+Combined with claude's quiet welcome screen and the persisting
+cmd screen contents (the documented `[output-tui]` no-screen-
+reset limitation), the user perceived the switch as "didn't
+work."
+
+**Why it matters.** The shell-switch UX (`Ctrl+Shift+1` /
+`Ctrl+Shift+2` per Stage 7 PR-C) is unusable when every press
+generates a fake error announcement.
+
+**Reproduction.** Launch pty-speak; let it settle in cmd. Press
+`Ctrl+Shift+2`. NVDA announces all four lines including the
+parser-error one. Empirically confirmed in the 2026-05-03
+NVDA pass; full log slice available with the inventory entry.
+
+**Hypothesised root cause.** Confirmed: when `switchToShell`
+disposes the old `ConPtyHost`, the host's internal stdout
+channel completes (`chan.Writer.TryComplete()` runs in
+`Dispose`). The reader loop's `host.Stdout.ReadAsync(ct)` then
+throws `ChannelClosedException` — which is NOT
+`OperationCanceledException` — so the catch-all `| ex ->` arm
+in `startReaderLoop` mis-classifies it as a real parser
+fault and writes a `ParserError` to the SHARED notification
+channel. The drain task announces it via `ActivityIds.error`
+in the gap between "Switching..." and "Switched..." cues.
+PR-I fixes by adding silent-shutdown arms for
+`ChannelClosedException`, `IOException`, and
+`ObjectDisposedException` to the reader-loop catch chain
+(all three indicate intentional pipe/channel teardown).
+
+**Inventory date.** 2026-05-03; pty-speak post-PR-#140
+(Velopack preview cut between Stage 7 PR-D and PR-I);
+NVDA version unrecorded. **Source: NVDA pass 2026-05-03;
+fixed in PR-I.**
+
+### [other] Heartbeat + health-check report stale shell name after hot-switch
+
+**What broke.** After a successful `Ctrl+Shift+1` or
+`Ctrl+Shift+2` hot-switch, the 5-second heartbeat log line +
+the `Ctrl+Shift+H` health-check announcement continued to
+report `Shell=Command Prompt` even when the running shell
+had switched to claude.exe (and vice versa). Cosmetic — the
+PID was correct (heartbeat showed `Pid=2596` after the
+switch to claude.exe), but the shell-name field was wrong.
+
+**Why it matters.** Mostly affects post-mortem log analysis:
+the 2026-05-03 NVDA pass log alone, without the explicit
+`Shell-switch: spawning Claude Code` event line, would not
+have made it obvious that claude was the active shell during
+heartbeats — making the wrong shell name a source of
+confusion when triaging future issues. For the user, the
+health-check announcement is also wrong-but-not-dangerously-so.
+
+**Reproduction.** Same as above: launch, press `Ctrl+Shift+2`,
+press `Ctrl+Shift+H`. Verdict text says "Command Prompt
+shell" instead of "Claude Code shell".
+
+**Hypothesised root cause.** Confirmed: `chosenShell` is
+captured at startup and never updated. PR-I adds a
+`mutable currentShell` field that `switchToShell` sets
+after a successful spawn; heartbeat and health-check both
+read from `currentShell` instead of `chosenShell`.
+
+**Inventory date.** 2026-05-03; same release as the entry
+above. **Source: NVDA pass 2026-05-03; fixed in PR-I.**
+
 ### [other] Ctrl+Shift+; dispatcher deadlock from FlushPending(500).Result
 
 **What broke.** Pressing `Ctrl+Shift+;` (copy log to clipboard)

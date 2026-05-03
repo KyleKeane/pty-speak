@@ -106,6 +106,32 @@ module Program =
                                 ()
                 with
                 | :? OperationCanceledException -> ()
+                // Stage 7-followup PR-I — clean-shutdown exceptions
+                // from the underlying ConPTY pipe / channel shouldn't
+                // be reported as parser errors. The empirical NVDA
+                // pass on 2026-05-03 surfaced a spurious "Terminal
+                // parser error: ...the channel has been closed."
+                // announcement firing every time the user pressed
+                // Ctrl+Shift+1 / Ctrl+Shift+2 (shell hot-switch),
+                // because `switchToShell` disposes the old
+                // ConPtyHost — completing its internal stdout
+                // channel — and `host.Stdout.ReadAsync(ct)` then
+                // throws ChannelClosedException, which the
+                // catch-all arm below mis-classifies as a real
+                // parser/reader fault.
+                //
+                // The three exception types caught here all indicate
+                // the pipe / channel was intentionally shut down:
+                //   * ChannelClosedException — channel completed
+                //     (host.Dispose calls chan.Writer.TryComplete()).
+                //   * IOException — underlying pipe handle was
+                //     closed while a read was in flight.
+                //   * ObjectDisposedException — the FileStream /
+                //     SafeFileHandle was disposed mid-read.
+                // Treat all three as silent shutdown.
+                | :? System.Threading.Channels.ChannelClosedException -> ()
+                | :? System.IO.IOException -> ()
+                | :? ObjectDisposedException -> ()
                 | ex ->
                     // Audit-cycle SR-2: sanitise ex.Message before
                     // it reaches NVDA via the notification channel.
@@ -1034,6 +1060,19 @@ module Program =
             chosenShell.DisplayName,
             commandLine)
 
+        // Stage 7-followup PR-I — `chosenShell` is the value chosen
+        // at startup and never changes. Hot-switching shells
+        // (`Ctrl+Shift+1` / `Ctrl+Shift+2`) updates `currentShell`
+        // below; the heartbeat + health-check both read this for
+        // their state snapshots. The empirical NVDA pass on
+        // 2026-05-03 surfaced this as a follow-on finding: the
+        // post-switch heartbeat continued reporting
+        // "Shell=Command Prompt" after the user had switched to
+        // claude.exe, because `chosenShell.DisplayName` was the
+        // captured-at-startup value. Cosmetic for the user but
+        // confusing for log analysis.
+        let mutable currentShell : ShellRegistry.Shell = chosenShell
+
         let cfg : PtyConfig =
             { Cols = int16 ScreenCols
               Rows = int16 ScreenRows
@@ -1123,7 +1162,7 @@ module Program =
                     sprintf
                         "%s %s shell, PID %d, log level %s. Reader last byte %.0f ms ago. Notification queue %d of 256. Coalesced queue %d of 16."
                         verdict
-                        chosenShell.DisplayName
+                        currentShell.DisplayName
                         pid
                         levelStr
                         staleness
@@ -1173,7 +1212,7 @@ module Program =
                 let coalDepth = coalescedChannel.Reader.Count
                 log.LogInformation(
                     "Heartbeat. Shell={Shell} Pid={Pid} Level={Level} LastReadAgoMs={Staleness:F0} NotifQueue={Notif}/{NotifCap} CoalQueue={Coal}/{CoalCap}",
-                    chosenShell.DisplayName,
+                    currentShell.DisplayName,
                     pid,
                     level,
                     staleness,
@@ -1360,6 +1399,20 @@ module Program =
                                             ActivityIds.error)
                                     | Ok newHost ->
                                         hostHandle <- Some newHost
+                                        // Stage 7-followup PR-I — update
+                                        // currentShell so subsequent
+                                        // heartbeats + health checks
+                                        // report the post-switch shell
+                                        // identity. Captured-at-startup
+                                        // `chosenShell` was never
+                                        // updated previously; the
+                                        // 2026-05-03 NVDA pass log
+                                        // showed
+                                        // "Heartbeat. Shell=Command Prompt Pid=2596"
+                                        // after switching to claude
+                                        // (cosmetic but confusing for
+                                        // log analysis).
+                                        currentShell <- shell
                                         wirePostSpawn newHost
                                         window.TerminalSurface.Announce(
                                             sprintf "Switched to %s." shell.DisplayName,
