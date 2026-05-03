@@ -1251,6 +1251,54 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Changed
 
+- **Per-session log filenames now use full date+time + millisecond
+  tie-breaker** ([#107](https://github.com/KyleKeane/pty-speak/issues/107),
+  Option A). Filename scheme moves from
+  `pty-speak-HH-mm-ss.log` to
+  `pty-speak-yyyy-MM-dd-HH-mm-ss-fff.log`; day folders stay
+  `yyyy-MM-dd`. Two motivating concerns:
+
+  1. **Self-describing when extracted.** The old filename
+     dropped the date because the day-folder carried it; the
+     moment a user copied a single log out of its folder
+     (email attachment, paste into a bug report, drag into a
+     chat) it lost its date context and became hard to
+     correlate with the session it described. Embedding the
+     full date in the filename keeps it self-describing
+     anywhere it lands.
+
+  2. **Uniqueness when the second tier collides.** Two
+     launches in the same UTC second produced identical
+     filenames under the old scheme; Issue #107's three
+     candidate tie-breakers (millisecond suffix, short UUID,
+     incremental counter) settled on milliseconds via Option
+     A — alphabetical sort still equals chronological sort,
+     no UUID-readability cost, no concurrent-counter retry
+     code path. Two launches inside the same millisecond
+     remain a theoretical collision but are vanishingly
+     unlikely for human-launched terminal sessions.
+
+  Affected code: `src/Terminal.Core/FileLogger.fs`'s
+  `pathsForLaunch ()` (one-line format-string change) plus
+  the doc-comment file-layout example. Tests:
+  `tests/Tests.Unit/FileLoggerTests.fs` gains a
+  `assertSessionFilenameFormat` helper that parses the
+  filename through `DateTime.TryParseExact` against the new
+  format string; the two existing tests
+  (`active log lives inside a day-folder named yyyy-MM-dd`
+  and `ActiveLogPath member exposes the per-session file
+  inside today's day-folder`) tighten via the helper, plus
+  a new test
+  (`session filename uses yyyy-MM-dd-HH-mm-ss-fff format per
+  Issue #107`) pins the parsed timestamp within 5 seconds of
+  `DateTime.UtcNow` so the format reflects the launch
+  instant rather than random digits. `docs/LOGGING.md`
+  example tree updated. `tests/Tests.Unit/FileLoggerTests.fs`
+  retention-sweep test fixtures use derived filenames
+  (`pty-speak-{stale-or-fresh-yyyy-MM-dd}-12-00-00-000.log`)
+  so the placeholder filenames match their day-folder for
+  readability.
+
 - **Restored two strategic INFO log entries that PR #111
   over-demoted.** Coalescer "Emit OutputBatch (leading-edge
   | trailing-edge)" and `TerminalView.Announce`
@@ -1333,27 +1381,28 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   folders.** The previous layout kept one daily-rolled file
   per UTC day; long-running development days produced massive
   aggregated files that were painful to navigate when grabbing
-  a slice for a bug report. New layout:
+  a slice for a bug report. New layout (filename refined per
+  Issue #107 — see the matching Changed entry):
 
   ```
   %LOCALAPPDATA%\PtySpeak\logs\
   ├── 2026-05-02\
-  │   ├── pty-speak-13-45-23.log    ← session that launched at 13:45:23
-  │   ├── pty-speak-15-12-08.log
-  │   └── pty-speak-16-30-44.log
+  │   ├── pty-speak-2026-05-02-13-45-23-189.log    ← session that launched at 13:45:23.189 UTC
+  │   ├── pty-speak-2026-05-02-15-12-08-401.log
+  │   └── pty-speak-2026-05-02-16-30-44-027.log
   ├── 2026-05-01\
-  │   └── pty-speak-09-15-22.log
+  │   └── pty-speak-2026-05-01-09-15-22-318.log
   └── ... (up to 7 days)
   ```
 
   Each launch creates a fresh session file named with its
-  launch timestamp inside today's day-folder. Sessions don't
-  split across midnight (a long-running session stays in its
-  launch-day folder). Retention deletes whole day-folders
-  older than 7 days; folders with non-date names are ignored
-  defensively. New `FileLoggerSink.ActiveLogPath` member
-  exposes this session's file path for tools that want to
-  grab the active session directly.
+  full launch timestamp inside today's day-folder. Sessions
+  don't split across midnight (a long-running session stays
+  in its launch-day folder). Retention deletes whole
+  day-folders older than 7 days; folders with non-date names
+  are ignored defensively. New `FileLoggerSink.ActiveLogPath`
+  member exposes this session's file path for tools that
+  want to grab the active session directly.
 
   `Ctrl+Shift+L` still opens the logs root; the user
   navigates one click into today's day-folder and picks the

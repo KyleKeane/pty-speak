@@ -19,20 +19,26 @@ session:
 
 ```
 %LOCALAPPDATA%\PtySpeak\logs\
-├── 2026-05-02\                                ← today's day-folder
-│   ├── pty-speak-13-45-23.log                 ← session that launched at 13:45:23 UTC
-│   ├── pty-speak-15-12-08.log                 ← session that launched at 15:12:08 UTC
-│   └── pty-speak-16-30-44.log                 ← active session (still being written)
-├── 2026-05-01\                                ← yesterday's day-folder
-│   ├── pty-speak-09-15-22.log
-│   └── pty-speak-22-04-11.log
+├── 2026-05-02\                                            ← today's day-folder
+│   ├── pty-speak-2026-05-02-13-45-23-189.log              ← session that launched at 13:45:23.189 UTC
+│   ├── pty-speak-2026-05-02-15-12-08-401.log              ← session that launched at 15:12:08.401 UTC
+│   └── pty-speak-2026-05-02-16-30-44-027.log              ← active session (still being written)
+├── 2026-05-01\                                            ← yesterday's day-folder
+│   ├── pty-speak-2026-05-01-09-15-22-318.log
+│   └── pty-speak-2026-05-01-22-04-11-902.log
 └── ... (up to 7 days of day-folders)
 ```
 
 - **One file per launch / session** inside a per-day folder
-  named `yyyy-MM-dd` (UTC). Each session gets its own file
-  named with its launch timestamp (`pty-speak-HH-mm-ss.log`,
-  no colons because Windows file paths reject them).
+  named `yyyy-MM-dd` (UTC). Each session file is named with
+  its full launch timestamp (`pty-speak-yyyy-MM-dd-HH-mm-ss-fff.log`,
+  no colons because Windows file paths reject them). The full
+  date+time in the filename keeps the file self-describing
+  when extracted from its day-folder context (e.g. attached
+  to a bug report) and means alphabetical sort equals
+  chronological sort. The trailing `fff` is the millisecond
+  tie-breaker — two launches in the same UTC second produce
+  different filenames per [Issue #107](https://github.com/KyleKeane/pty-speak/issues/107).
 - **7-day retention** — entire day-folders older than 7 days
   are deleted on every fresh launch. Folders with names that
   don't parse as `yyyy-MM-dd` (manual subfolders, etc.) are

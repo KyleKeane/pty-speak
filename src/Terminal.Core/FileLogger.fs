@@ -101,15 +101,15 @@ type internal LogEntry =
 /// process. Owns the background drain task + the active file
 /// stream.
 ///
-/// File layout (post-restructure):
+/// File layout (per-session files in per-day folders):
 ///
 /// ```text
 /// %LOCALAPPDATA%\PtySpeak\logs\
 /// ├── 2026-05-02\
-/// │   ├── pty-speak-13-45-23.log    ← session that launched at 13:45:23 UTC
-/// │   └── pty-speak-15-30-44.log
+/// │   ├── pty-speak-2026-05-02-13-45-23-189.log    ← session that launched at 13:45:23.189 UTC
+/// │   └── pty-speak-2026-05-02-15-30-44-027.log
 /// └── 2026-05-01\
-///     └── pty-speak-09-15-22.log
+///     └── pty-speak-2026-05-01-09-15-22-318.log
 /// ```
 ///
 /// One file per launch (per-session) inside a day-folder.
@@ -167,8 +167,17 @@ type FileLoggerSink (options: FileLoggerOptions) =
 
     /// Compute the day-folder path + session-file path for the
     /// launch instant. Day folder named `yyyy-MM-dd`; file
-    /// named `pty-speak-HH-mm-ss.log` (no colons; Windows file
-    /// paths reject `:`).
+    /// named `pty-speak-yyyy-MM-dd-HH-mm-ss-fff.log` (no colons;
+    /// Windows file paths reject `:`). The full date+time in the
+    /// filename keeps the file self-describing when extracted
+    /// from its day-folder context (e.g. when emailed as a bug
+    /// report attachment) and means alphabetical sort equals
+    /// chronological sort. The `fff` (millisecond) suffix is the
+    /// uniqueness tie-breaker per Issue #107: two launches in
+    /// the same UTC second collide on the seconds field but
+    /// differ on milliseconds, so `FileMode.CreateNew`-style
+    /// retry isn't required. Time fields are UTC for
+    /// timezone-independent sorting.
     let pathsForLaunch () : string * string =
         let dayFolder =
             Path.Combine(
@@ -176,7 +185,7 @@ type FileLoggerSink (options: FileLoggerOptions) =
                 launchUtc.UtcDateTime.ToString("yyyy-MM-dd"))
         let fileName =
             sprintf "pty-speak-%s.log"
-                (launchUtc.UtcDateTime.ToString("HH-mm-ss"))
+                (launchUtc.UtcDateTime.ToString("yyyy-MM-dd-HH-mm-ss-fff"))
         let filePath = Path.Combine(dayFolder, fileName)
         dayFolder, filePath
 

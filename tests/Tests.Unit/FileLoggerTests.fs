@@ -30,6 +30,32 @@ let private optionsAt (dir: string) (minLevel: LogLevel) : FileLoggerOptions =
       MinLevel = minLevel
       ChannelCapacity = 256 }
 
+/// Asserts that `fileName` matches the per-Issue-#107 session
+/// filename scheme `pty-speak-yyyy-MM-dd-HH-mm-ss-fff.log` and
+/// returns the parsed launch `DateTime` (UTC). Used by the
+/// filename-shape tests + the Issue-#107 acceptance test.
+let private assertSessionFilenameFormat (fileName: string) : DateTime =
+    Assert.StartsWith("pty-speak-", fileName)
+    Assert.EndsWith(".log", fileName)
+    let prefixLen = "pty-speak-".Length
+    let suffixLen = ".log".Length
+    let timestampPart =
+        fileName.Substring(prefixLen, fileName.Length - prefixLen - suffixLen)
+    let mutable parsed = DateTime.MinValue
+    let parsedOk =
+        DateTime.TryParseExact(
+            timestampPart,
+            "yyyy-MM-dd-HH-mm-ss-fff",
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None,
+            &parsed)
+    Assert.True(
+        parsedOk,
+        sprintf
+            "Expected filename timestamp matching yyyy-MM-dd-HH-mm-ss-fff per Issue #107; got '%s'"
+            timestampPart)
+    parsed
+
 /// Read the active session's log file via the sink's
 /// `ActiveLogPath` accessor. Tests in this file capture the
 /// sink before disposal (or use the sink directly) so they
@@ -78,7 +104,8 @@ let ``active log lives inside a day-folder named yyyy-MM-dd`` () =
     let logger = provider.CreateLogger("Test")
     logger.LogInformation("create the file")
     (provider :> IDisposable).Dispose()
-    // ActiveLogPath should be: {dir}\{yyyy-MM-dd}\pty-speak-{HH-mm-ss}.log
+    // ActiveLogPath should be:
+    //   {dir}\{yyyy-MM-dd}\pty-speak-{yyyy-MM-dd-HH-mm-ss-fff}.log
     let parentFolder = Path.GetDirectoryName(sink.ActiveLogPath)
     let parentName = Path.GetFileName(parentFolder)
     let mutable parsed = DateTime.MinValue
@@ -92,8 +119,8 @@ let ``active log lives inside a day-folder named yyyy-MM-dd`` () =
     Assert.True(parsedOk,
         sprintf "Expected day-folder named yyyy-MM-dd; got '%s'" parentName)
     let fileName = Path.GetFileName(sink.ActiveLogPath)
-    Assert.StartsWith("pty-speak-", fileName)
-    Assert.EndsWith(".log", fileName)
+    let _ = assertSessionFilenameFormat fileName
+    ()
 
 [<Fact>]
 let ``logger respects minimum level filtering`` () =
@@ -135,7 +162,9 @@ let ``retention sweep deletes day-folders older than RetentionDays`` () =
     let staleDir = Path.Combine(dir, staleDirName)
     Directory.CreateDirectory(staleDir) |> ignore
     File.WriteAllText(
-        Path.Combine(staleDir, "pty-speak-12-00-00.log"),
+        Path.Combine(
+            staleDir,
+            sprintf "pty-speak-%s-12-00-00-000.log" staleDirName),
         "old content\n")
     Assert.True(Directory.Exists(staleDir))
     // Plant a fresh day-folder (yesterday) — should survive.
@@ -144,7 +173,9 @@ let ``retention sweep deletes day-folders older than RetentionDays`` () =
     let freshDir = Path.Combine(dir, freshDirName)
     Directory.CreateDirectory(freshDir) |> ignore
     File.WriteAllText(
-        Path.Combine(freshDir, "pty-speak-12-00-00.log"),
+        Path.Combine(
+            freshDir,
+            sprintf "pty-speak-%s-12-00-00-000.log" freshDirName),
         "fresh content\n")
     // Plant a folder with a non-date name — should be ignored
     // entirely (defensive: stray folders shouldn't crash).
@@ -191,11 +222,33 @@ let ``ActiveLogPath member exposes the per-session file inside today's day-folde
     let dir = freshTempDir ()
     use sink = new FileLoggerSink(optionsAt dir LogLevel.Information)
     // The path should start with `{dir}\{yyyy-MM-dd}\` and end
-    // with `pty-speak-{HH-mm-ss}.log`.
+    // with `pty-speak-{yyyy-MM-dd-HH-mm-ss-fff}.log`.
     Assert.StartsWith(dir, sink.ActiveLogPath)
     let fileName = Path.GetFileName(sink.ActiveLogPath)
-    Assert.StartsWith("pty-speak-", fileName)
-    Assert.EndsWith(".log", fileName)
+    let _ = assertSessionFilenameFormat fileName
+    ()
+
+[<Fact>]
+let ``session filename uses yyyy-MM-dd-HH-mm-ss-fff format per Issue #107`` () =
+    // Issue #107 (Option A): the filename must be self-describing
+    // when extracted from the day-folder context AND must include a
+    // millisecond tie-breaker so two launches in the same UTC second
+    // produce different filenames. Asserts the parse-back chain end
+    // to end + sanity-checks the parsed timestamp is within a few
+    // seconds of `DateTime.UtcNow` (proves the timestamp reflects
+    // launch time, not random digits).
+    let dir = freshTempDir ()
+    use sink = new FileLoggerSink(optionsAt dir LogLevel.Information)
+    let fileName = Path.GetFileName(sink.ActiveLogPath)
+    let parsed = assertSessionFilenameFormat fileName
+    let now = DateTime.UtcNow
+    let delta = (now - parsed).Duration()
+    Assert.True(
+        delta.TotalSeconds < 5.0,
+        sprintf
+            "Expected timestamp ~UtcNow; got %s (delta %s)"
+            (parsed.ToString("o"))
+            (delta.ToString()))
 
 // Note: a "Logger module returns NullLogger before configure"
 // test was tried and removed. The Logger module's `factory`
