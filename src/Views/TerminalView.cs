@@ -402,25 +402,36 @@ public class TerminalView : FrameworkElement
             (Key.OemSemicolon, ModifierKeys.Control | ModifierKeys.Shift, "Copy active log to clipboard"),
 
             // Stage 7 PR-C — hot-switch the spawned shell mid-session.
-            // `Ctrl+Shift+1` selects cmd.exe; `Ctrl+Shift+2` selects
-            // claude.exe. Designed extensibly so future shells
-            // (PowerShell, WSL, Python REPL) claim higher digits
-            // without breaking the contract. The handler tears down
-            // the running ConPtyHost, resolves the target via
-            // `ShellRegistry.tryFind`, spawns a new ConPtyHost, and
-            // re-wires `SetPtyHost` callbacks. Both digits are number-
-            // row (`Key.D1`/`Key.D2`), NOT numpad — numpad-with-
-            // NumLock-off carries NVDA review-cursor commands and
-            // must stay reachable per the accessibility non-
-            // negotiables in CONTRIBUTING.md. NVDA collision check:
-            // `Ctrl+Shift+1`/`Ctrl+Shift+2` have no default NVDA
-            // bindings (digit-only `1`/`Shift+1` browse-mode
-            // heading-quick-nav doesn't fire in focus mode, which is
-            // pty-speak's mode). Spec authority: §7.5 (added by
-            // this PR per chat 2026-05-03 maintainer authorisation
+            // PR-J (2026-05-03) reordered the slots and added
+            // PowerShell as a third built-in. Current assignment:
+            //   `Ctrl+Shift+1` → cmd.exe
+            //   `Ctrl+Shift+2` → powershell.exe (PowerShell)
+            //   `Ctrl+Shift+3` → claude.exe (Claude Code)
+            // PowerShell sits in slot 2 deliberately: it's the
+            // diagnostic control shell — always installed, no auth,
+            // no terminal-capability detection — so isolating
+            // shell-switch infrastructure bugs from claude-specific
+            // issues is one keypress away. Future shells (WSL,
+            // Python REPL, bash) claim higher digits without breaking
+            // the contract.
+            //
+            // The handler tears down the running ConPtyHost, resolves
+            // the target via `ShellRegistry.tryFind`, spawns a new
+            // ConPtyHost, and re-wires `SetPtyHost` callbacks. All
+            // three digits are number-row (`Key.D1`/`D2`/`D3`), NOT
+            // numpad — numpad-with-NumLock-off carries NVDA review-
+            // cursor commands and must stay reachable per the
+            // accessibility non-negotiables in CONTRIBUTING.md. NVDA
+            // collision check: `Ctrl+Shift+1`/`+2`/`+3` have no
+            // default NVDA bindings (digit-only `1`/`2`/`3` and
+            // `Shift+1`/`+2`/`+3` browse-mode heading-quick-nav
+            // doesn't fire in focus mode, which is pty-speak's
+            // mode). Spec authority: §7.5 (added by PR-C, extended
+            // by PR-J per chat 2026-05-03 maintainer authorisation
             // for shell registry + hot-switch UX).
             (Key.D1, ModifierKeys.Control | ModifierKeys.Shift, "Switch to cmd shell"),
-            (Key.D2, ModifierKeys.Control | ModifierKeys.Shift, "Switch to claude shell"),
+            (Key.D2, ModifierKeys.Control | ModifierKeys.Shift, "Switch to PowerShell shell"),
+            (Key.D3, ModifierKeys.Control | ModifierKeys.Shift, "Switch to claude shell"),
 
             // Stage 7-followup PR-E — toggle FileLogger min-level
             // between Information (default) and Debug at runtime,
@@ -462,8 +473,8 @@ public class TerminalView : FrameworkElement
             //    "Stage 9 earcon mute"),
             //   (Key.R, ModifierKeys.Alt | ModifierKeys.Shift,
             //    "Stage 10 review-mode toggle"),
-            //   Higher Ctrl+Shift+digit slots (3, 4, 5, ...) reserved
-            //   for additional shells per Stage 7 PR-C.
+            //   Higher Ctrl+Shift+digit slots (4, 5, 6, ...) reserved
+            //   for additional shells per Stage 7 PR-C / PR-J.
         ];
 
     /// <summary>

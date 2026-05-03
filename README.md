@@ -156,11 +156,17 @@ preserve this list per the app-reserved-hotkey contract in
 
 - **`Ctrl+Shift+U`** — self-update via Velopack (Stage 11). Checks
   GitHub Releases and applies the delta in ~2 seconds.
-- **`Ctrl+Shift+D`** — launch the bundled process-cleanup diagnostic
-  in a separate PowerShell window. Verifies that closing pty-speak
-  via Alt+F4 or the X button leaves no orphan `Terminal.App.exe` /
-  ConPTY child processes. Output is plain text NVDA reads aloud
-  naturally.
+- **`Ctrl+Shift+D`** — first announces an inline shell-process
+  snapshot via NVDA ("Diagnostic snapshot: 1 cmd, 0 powershell,
+  0 pwsh, 1 claude, 1 Terminal.App. Launching cleanup test.")
+  so a one-keystroke "what's currently running?" answer
+  doesn't require running the full close-and-recheck flow.
+  Then launches the bundled `test-process-cleanup.ps1` in a
+  separate PowerShell window for the close-and-recheck flow,
+  which verifies that closing pty-speak via Alt+F4 or the X
+  button leaves no orphan `Terminal.App.exe` / ConPTY child
+  processes. Output is plain text NVDA reads aloud naturally.
+  PR-J added the inline snapshot.
 - **`Ctrl+Shift+R`** — open the GitHub "draft a new release" form in
   your default browser. Maintainer shortcut — the normal release flow
   is to publish a release in the Releases UI (which creates the tag
@@ -183,13 +189,23 @@ preserve this list per the app-reserved-hotkey contract in
   spawns cmd in its place. NVDA announces "Switching to
   Command Prompt." → ~700ms pause → "Switched to Command
   Prompt." (Stage 7 PR-C).
-- **`Ctrl+Shift+2`** — switch the spawned shell to `claude.exe`
+- **`Ctrl+Shift+2`** — switch the spawned shell to
+  `powershell.exe` (Windows PowerShell, always available on
+  Windows 10+). Same teardown + respawn as `Ctrl+Shift+1`. NVDA
+  announces "Switching to PowerShell." → "Switched to
+  PowerShell." PowerShell sits in slot 2 deliberately as the
+  diagnostic control shell — always installed, no auth, no
+  terminal-capability detection — so isolating shell-switch
+  infrastructure bugs from claude-specific behaviour is one
+  keystroke from cmd (Stage 7-followup PR-J).
+- **`Ctrl+Shift+3`** — switch the spawned shell to `claude.exe`
   (resolved via `where.exe claude` per spec §7.1). Same teardown
   + respawn as `Ctrl+Shift+1`. NVDA announces "Switching to
   Claude Code." → "Switched to Claude Code." If Claude Code
   isn't on `PATH`, NVDA announces "Cannot switch to Claude
   Code: not found on PATH." and the existing shell keeps
-  running (Stage 7 PR-C).
+  running. Was `Ctrl+Shift+2` in PR-C; moved to slot 3 by PR-J
+  when PowerShell took slot 2.
 - **`Ctrl+Shift+G`** — toggle `FileLogger` min-level between
   `Information` (default) and `Debug` at runtime. Each press
   flips the level and NVDA announces the new state ("Debug
@@ -198,13 +214,18 @@ preserve this list per the app-reserved-hotkey contract in
   the previous env-var-and-relaunch workflow. Mnemonic: G for
   "loGging" (Stage 7-followup PR-E).
 - **`Ctrl+Shift+H`** — health check. Announces a one-line state
-  snapshot via NVDA: verdict ("Pty-speak healthy." / "Reader
-  appears wedged." / "Notification queue near capacity.") +
-  shell name + PID + log level + reader last-byte staleness +
-  channel queue depths. Lets a screen-reader user determine in
-  one keystroke whether pty-speak is functioning, instead of
-  inferring from "is NVDA reading anything?". Mnemonic: H for
-  "Health" (Stage 7-followup PR-F).
+  snapshot via NVDA: verdict ("Pty-speak healthy." / "Child
+  shell process N has exited." / "Reader appears wedged." /
+  "Notification queue near capacity.") + shell name + PID +
+  alive flag + log level + reader last-byte staleness +
+  channel queue depths. PR-J added the liveness probe (a
+  `Process.GetProcessById(pid)` call that throws if the kernel
+  no longer knows the PID) so the announce distinguishes
+  "child exited" from "child running but quiet" — a
+  distinction that previously required reading the log file.
+  Lets a screen-reader user determine in one keystroke whether
+  pty-speak is functioning. Mnemonic: H for "Health" (Stage
+  7-followup PR-F + PR-J).
 - **`Ctrl+Shift+B`** — incident marker. Logs a clear
   `=== INCIDENT MARKER {timestamp} ===` boundary line into the
   active log file and announces "Incident marker logged.
@@ -217,10 +238,11 @@ preserve this list per the app-reserved-hotkey contract in
 
 Reserved but not yet implemented: `Ctrl+Shift+M` (Stage 9 mute
 toggle), `Alt+Shift+R` (Stage 10 review-mode toggle).
-Higher digit slots (`Ctrl+Shift+3`, `Ctrl+Shift+4`, ...) are
-reserved for future shells (PowerShell, WSL, Python REPL)
-per the shell-registry extensibility model in
-[`spec/tech-plan.md`](spec/tech-plan.md) §7.5.
+Higher digit slots (`Ctrl+Shift+4`, `Ctrl+Shift+5`, ...) are
+reserved for future shells (WSL, Python REPL, bash) per the
+shell-registry extensibility model in
+[`spec/tech-plan.md`](spec/tech-plan.md) §7.5. Slots 1–3 are
+already taken (cmd / PowerShell / Claude per PR-J).
 
 The historical Stage 0 preview installer opens an empty window. Once
 the next preview is cut from the current `main`, the installer launches

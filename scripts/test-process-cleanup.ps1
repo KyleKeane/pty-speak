@@ -58,6 +58,23 @@ function Get-PtySpeakProcesses {
     }
 }
 
+# PR-J — enumerate live shell-related processes by NAME, not just
+# by parent-PID. Catches sibling instances (a separate cmd window
+# the user opened, an orphaned claude.exe from a previous crashed
+# pty-speak session) that the parent-PID query misses. Mirrors the
+# F# `enumerateShellProcesses` helper in
+# `src/Terminal.App/Program.fs` so the inline Ctrl+Shift+D announce
+# and the script's report use the same vocabulary.
+function Get-ShellProcessSnapshot {
+    $names = @('cmd', 'powershell', 'pwsh', 'claude', 'Terminal.App')
+    $parts = @()
+    foreach ($n in $names) {
+        $procs = @(Get-Process -Name $n -ErrorAction SilentlyContinue)
+        $parts += "$($procs.Count) $n"
+    }
+    return ($parts -join ', ')
+}
+
 function Wait-ForExit {
     param(
         [int]$TimeoutSeconds = 60
@@ -102,6 +119,7 @@ function Run-Pass {
     } else {
         Write-Host "    Child process count: 0"
     }
+    Write-Host "    Sibling snapshot: $(Get-ShellProcessSnapshot)"
 
     if ($running.Main.Count -eq 0) {
         Write-Host "FAIL: pty-speak failed to start. Aborting this pass."
@@ -130,6 +148,7 @@ function Run-Pass {
     Write-Host "Process state after close:"
     Write-Host "    Terminal.App.exe instances: $($after.Main.Count)"
     Write-Host "    Child process count: $($after.Children.Count)"
+    Write-Host "    Sibling snapshot: $(Get-ShellProcessSnapshot)"
 
     if ($after.Main.Count -eq 0 -and $after.Children.Count -eq 0) {
         Write-Host "RESULT: PASS"
@@ -149,6 +168,16 @@ Write-Host ""
 Write-Host "==========================================="
 Write-Host "  pty-speak process-cleanup baseline test"
 Write-Host "==========================================="
+Write-Host ""
+
+# PR-J — print the shell-process snapshot up front so a
+# screen-reader user (or a Claude session triaging on their
+# behalf) gets the "what's currently running" answer in one
+# scrollback page WITHOUT having to run the full close-and-recheck
+# flow. The two passes below still cover that flow for orphan
+# detection.
+Write-Host "Shell process snapshot (sibling counts by name):"
+Write-Host "    $(Get-ShellProcessSnapshot)"
 Write-Host ""
 
 $exePath = Find-PtySpeakInstall

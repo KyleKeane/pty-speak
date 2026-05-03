@@ -446,13 +446,21 @@ The “spinner problem” is real (Claude Code’s Ink renderer redraws the same
 >
 > Stage 7 PR-C additions (ADR-style amendment 2026-05-03,
 > maintainer-authorised — bundled with the shell registry +
-> hot-switch UX in §7.5 below):
+> hot-switch UX in §7.5 below). Stage 7-followup PR-J reordered
+> the slots and added PowerShell as a third built-in (the
+> diagnostic control shell — always installed, no auth, no
+> terminal-capability detection — sitting next to cmd at slot 2):
 >   - `Ctrl+Shift+1` — switch the spawned shell to cmd.exe.
 >     Bound in `setupShellSwitchKeybindings` in
 >     `src/Terminal.App/Program.fs`.
->   - `Ctrl+Shift+2` — switch the spawned shell to claude.exe
+>   - `Ctrl+Shift+2` — switch the spawned shell to powershell.exe
+>     (Windows PowerShell, always available; resolved as a
+>     constant `Ok "powershell.exe"` through PATH).
+>     Bound in the same setup function. Added by PR-J.
+>   - `Ctrl+Shift+3` — switch the spawned shell to claude.exe
 >     (resolved via `where.exe claude` per §7.1).
->     Bound in the same setup function.
+>     Bound in the same setup function. Was on slot 2 in PR-C;
+>     moved to slot 3 by PR-J.
 >
 > Stage 7-followup PR-E addition (ADR-style amendment 2026-05-03,
 > maintainer-authorised — diagnostic-workflow accessibility
@@ -505,9 +513,9 @@ The “spinner problem” is real (Claude Code’s Ink renderer redraws the same
 > when their owning stage ships):
 >   - `Ctrl+Shift+M` — Stage 9 earcon mute toggle.
 >   - `Alt+Shift+R` — Stage 10 review-mode toggle.
->   - `Ctrl+Shift+3` / `4` / `...` — additional shells
->     (PowerShell, WSL, Python REPL, etc.) per the §7.5
->     extensibility model.
+>   - `Ctrl+Shift+4` / `5` / `...` — additional shells (WSL,
+>     Python REPL, bash, etc.) per the §7.5 extensibility model.
+>     PowerShell took slot 2 and Claude moved to slot 3 in PR-J.
 >
 > Failure mode if violated: app-level hotkeys silently stop
 > working — `Ctrl+Shift+U` no longer triggers self-update,
@@ -676,7 +684,7 @@ On first invocation Claude Code will:
   - Red error text is announced as plain text → Stage 9.
   - No way to jump back through the response after focus moves → Stage 10.
 
-### 7.5 Shell registry + hot-switch UX (Stage 7 PR-B + PR-C)
+### 7.5 Shell registry + hot-switch UX (Stage 7 PR-B + PR-C + PR-J)
 
 > **ADR-style amendment 2026-05-03** — added per maintainer
 > authorisation (chat 2026-05-03; mirrors the chat-2026-05-03
@@ -700,7 +708,7 @@ without restarting pty-speak.
 resolver:
 
 ```fsharp
-type ShellId = | Cmd | Claude
+type ShellId = | Cmd | Claude | PowerShell
 type Shell =
     { Id: ShellId
       DisplayName: string
@@ -711,9 +719,20 @@ type Shell =
 Adding a shell requires (a) extending `ShellId`, (b) adding a
 `builtIns` entry with a resolver closure, (c) updating
 `parseEnvVar`'s recognised-values list, (d) updating
-`ShellRegistryTests.builtIns contains exactly Cmd and Claude` to
-pin the new keyset, and (e) adding a `Ctrl+Shift+N` hotkey if
-the new shell wants hot-switch participation.
+`ShellRegistryTests.builtIns contains exactly Cmd, Claude, and
+PowerShell` to pin the new keyset, and (e) adding a
+`Ctrl+Shift+N` hotkey if the new shell wants hot-switch
+participation.
+
+Stage 7-followup PR-J added `PowerShell` (Windows PowerShell,
+`powershell.exe`) as the third built-in. PowerShell-Core
+(`pwsh.exe`, the PowerShell 7+ rename) is intentionally NOT a
+separate case — it's an optional install; `powershell.exe` is
+the always-available baseline. The `parseEnvVar` arm accepts
+both `"powershell"` and `"pwsh"` as aliases that route to the
+same `PowerShell` ShellId; a Phase 2 user-settings TOML can
+split this into "PowerShell prefers pwsh.exe when present" if
+desired.
 
 `tryFind` and `tryFindIn` separate the production lookup
 (`tryFind`, delegates to `builtIns`) from the test seam
@@ -724,28 +743,40 @@ test.
 
 #### 7.5.2 Default + override (Stage 7 PR-B)
 
-Cmd is the default. `PTYSPEAK_SHELL=claude` (case-insensitive
-after trim) flips to claude at startup. Unrecognised non-empty
-values produce a `LogWarning` and fall back to cmd. Resolution
-failure (e.g. claude.exe not on PATH) likewise falls back to
-cmd with a warning.
+Cmd is the default. `PTYSPEAK_SHELL=claude` /
+`=powershell` / `=pwsh` (case-insensitive after trim) flips to
+the requested shell at startup. Unrecognised non-empty values
+produce a `LogWarning` and fall back to cmd. Resolution failure
+(e.g. claude.exe not on PATH) likewise falls back to cmd with a
+warning.
 
 Rationale: a fresh-install user without Claude Code installed
 should still see a working terminal. The maintainer-primary
 workload (Claude Code) is opt-in via the env var or the §7.5.3
-hotkey.
+hotkey. PowerShell is always-available on Windows 10+ so the
+`powershell` alias is reliable across all install configurations.
 
-#### 7.5.3 Hot-switch hotkeys (Stage 7 PR-C)
+#### 7.5.3 Hot-switch hotkeys (Stage 7 PR-C, reordered + extended in PR-J)
 
-`Ctrl+Shift+1` → cmd.exe; `Ctrl+Shift+2` → claude.exe. Both
-are reserved in `TerminalView.AppReservedHotkeys` per §6.
-Number-row digits, NOT numpad — numpad-with-NumLock-off
-carries NVDA review-cursor commands and must stay reachable.
+`Ctrl+Shift+1` → cmd.exe; `Ctrl+Shift+2` → powershell.exe;
+`Ctrl+Shift+3` → claude.exe. All three are reserved in
+`TerminalView.AppReservedHotkeys` per §6. Number-row digits, NOT
+numpad — numpad-with-NumLock-off carries NVDA review-cursor
+commands and must stay reachable.
 
-NVDA collision check: `Ctrl+Shift+1`/`Ctrl+Shift+2` have no
-default NVDA bindings. The bare `1`/`Shift+1` browse-mode
-heading-quick-nav doesn't fire in focus mode (which is what
-NVDA uses for terminal applications by default).
+PR-J reordered the slots and added PowerShell because the
+maintainer's NVDA validation pass on 2026-05-03 surfaced
+suspected shell-switch infrastructure bugs that needed a
+diagnostic control shell to isolate. PowerShell is always
+installed, has zero auth or terminal-capability detection, and
+produces visible banner + prompt output within milliseconds —
+making it the ideal control. Putting it adjacent to cmd at slot
+2 means the diagnostic comparison is one keystroke away.
+
+NVDA collision check: `Ctrl+Shift+1`/`+2`/`+3` have no default
+NVDA bindings. The bare `1`/`2`/`3` and `Shift+1`/`+2`/`+3`
+browse-mode heading-quick-nav doesn't fire in focus mode (which
+is what NVDA uses for terminal applications by default).
 
 Switch sequence (handler runs on the WPF dispatcher thread):
 
@@ -793,17 +824,26 @@ failure is mild (residual paint, not crash) and the
 architectural fix lives in Stage 4a's substrate / the framework
 cycles' RFC scope.
 
-#### 7.5.5 Validation (Stage 7 PR-C row in `docs/ACCESSIBILITY-TESTING.md`)
+#### 7.5.5 Validation (Stage 7 PR-C / PR-J rows in `docs/ACCESSIBILITY-TESTING.md`)
 
 - Launch pty-speak; default cmd shell is announced.
-- Press `Ctrl+Shift+2`; NVDA reads "Switching to Claude Code."
+- Press `Ctrl+Shift+3`; NVDA reads "Switching to Claude Code."
   → ~700ms pause → claude welcome screen reads.
 - Type a prompt; claude responds; review-cursor navigates the
   response.
 - Press `Ctrl+Shift+1`; NVDA reads "Switching to Command
   Prompt." → cmd prompt reads.
-- `Ctrl+Shift+D` (process-cleanup diagnostic) confirms no
-  orphan claude.exe processes after the switch.
+- Press `Ctrl+Shift+2`; NVDA reads "Switching to PowerShell."
+  → PowerShell banner + prompt read. Use this slot when
+  isolating shell-switch infrastructure bugs from claude-
+  specific behaviour.
+- `Ctrl+Shift+H` after each switch announces the new shell's
+  name + PID + alive flag — verifies the child is actually
+  running (PR-J liveness probe).
+- `Ctrl+Shift+D` announces the inline shell-process snapshot
+  (PR-J inline enumeration) before launching the cleanup
+  test window. Confirms no orphan claude/powershell/cmd
+  processes after a switch.
 - Press `Ctrl+Shift+2` when claude.exe isn't installed; NVDA
   reads the resolve-failure announcement; the existing cmd
   shell continues to work.

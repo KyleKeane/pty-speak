@@ -397,15 +397,31 @@ via `HandleAppLevelShortcut`.
 Currently shipped:
 
 - `Ctrl+Shift+U` — Velopack auto-update (Stage 11)
-- `Ctrl+Shift+D` — process-cleanup diagnostic launcher
+- `Ctrl+Shift+D` — process-cleanup diagnostic launcher (PR-J adds
+  inline shell-process snapshot announce before the script
+  window opens)
 - `Ctrl+Shift+R` — draft-a-new-release form launcher
 - `Ctrl+Shift+L` — open logs folder
 - `Ctrl+Shift+;` — copy active log to clipboard
+- `Ctrl+Shift+1` / `+2` / `+3` — hot-switch the spawned shell
+  (`+1` = cmd, `+2` = PowerShell, `+3` = Claude Code). PR-J
+  reordered: PowerShell sits in slot 2 deliberately so the
+  diagnostic control shell is one keystroke from cmd.
+- `Ctrl+Shift+G` — toggle FileLogger min-level between
+  Information and Debug at runtime (Stage 7-followup PR-E)
+- `Ctrl+Shift+H` — health-check announce: shell + PID + alive,
+  log level, reader staleness, queue depths (PR-F + PR-J
+  liveness probe)
+- `Ctrl+Shift+B` — incident marker: writes a clear
+  `=== INCIDENT MARKER {timestamp} ===` line into the active
+  log so post-hoc grep extracts the relevant slice (PR-F)
 
 Reserved (not yet bound):
 
 - `Ctrl+Shift+M` — Stage 9 earcon mute
 - `Alt+Shift+R` — Stage 10 review-mode toggle
+- `Ctrl+Shift+4` / `+5` / `+6` — additional shells (WSL, Python
+  REPL, etc.) per Phase 2 plans
 
 ### Accessibility (the non-negotiable rules)
 
@@ -436,18 +452,119 @@ canonical list. Highlights:
   `src/Terminal.Pty/Native.fs` — see CONTRIBUTING.md §"F# / P/Invoke
   conventions" for the full list.
 
+### The maintainer is a screen-reader user — no GUI dialog walks
+
+The maintainer uses NVDA. **Never** propose a fix or workflow that
+requires walking through a GUI dialog tree (System Properties →
+Advanced → Environment Variables → New…, Task Manager →
+Processes-tab chevron-expand, "right-click → Properties → Details
+tab", etc.). Every such suggestion is a multi-minute frustration
+sink because dialog trees are not always cleanly screen-reader-
+navigable, and the maintainer has explicitly called this out as
+unacceptable.
+
+Instead, surface keyboard- or shell-only equivalents:
+
+- Setting a user env var → `setx VAR value` from cmd. (Persists
+  across sessions; needs a fresh process to pick up.)
+- Setting a process-scoped env var → `set VAR=value` from cmd
+  before launching the child.
+- Inspecting running processes → `tasklist | findstr /I name`
+  from cmd, or
+  `Get-Process -Name name -ErrorAction SilentlyContinue` from
+  PowerShell. **Use these yourself first** before asking the
+  maintainer to check anything (see the diagnostic-recipes section
+  below).
+- Killing a stuck process → `taskkill /PID 1234 /F` from cmd, or
+  `Stop-Process -Id 1234 -Force` from PowerShell.
+- Inspecting / setting registry keys → `reg query` / `reg add`
+  from cmd, or `Get-ItemProperty` / `Set-ItemProperty` from
+  PowerShell.
+
+If a CLI / keyboard equivalent doesn't exist, say so explicitly
+and ask the maintainer how they want to proceed — don't paper
+over the gap with a dialog walk and hope.
+
+### Diagnostic recipes — triage without bothering the maintainer
+
+A standing problem in this codebase is "is the child shell
+actually running, or did it exit silently?". Before asking the
+maintainer to verify by hand, run these yourself via the user's
+existing `Ctrl+Shift+D` flow OR via direct CLI commands. Same
+recipes Ctrl+Shift+D uses internally.
+
+**Inline child-process check (the everyday triage tool):**
+
+The user can press `Ctrl+Shift+D` in pty-speak and NVDA reads back
+"Diagnostic snapshot: 1 cmd, 0 powershell, 0 pwsh, 1 claude, 1
+Terminal.App. Launching cleanup test." in one announcement —
+that's the inline enumeration the F# `enumerateShellProcesses`
+helper produces (`src/Terminal.App/Program.fs`). For Claude
+sessions reasoning about what the user might be seeing, the
+equivalent CLI commands are:
+
+```
+:: Enumerate shell processes by name (run in cmd)
+tasklist | findstr /I "cmd.exe powershell.exe pwsh.exe claude.exe Terminal.App.exe"
+
+:: Or in PowerShell:
+Get-Process -Name cmd, powershell, pwsh, claude, Terminal.App -ErrorAction SilentlyContinue |
+    Group-Object Name |
+    Select-Object @{Name='Name'; Expression='Name'}, Count
+```
+
+**Liveness probe for a specific PID:**
+
+`Ctrl+Shift+H` (PR-F + PR-J) announces the current child's PID
+and an `alive`/`dead` flag computed via
+`Process.GetProcessById(pid)`. The corresponding CLI form:
+
+```
+:: cmd
+tasklist /FI "PID eq 1234"
+:: PowerShell
+Get-Process -Id 1234 -ErrorAction SilentlyContinue
+```
+
+**Heartbeat trail:**
+
+The 5s background heartbeat
+(`runHeartbeat` in `Program.fs`) writes a line per tick to the
+active log including `Pid={Pid} Alive={Alive}`. When triaging
+"why did NVDA stop reading?" post-hoc, ask for the log slice
+covering that time window (`Ctrl+Shift+;` copies the active log)
+and grep `Heartbeat` to find the moment `Alive=False` first
+appears. That's the precise wedge timestamp.
+
+**Process tree diagnostic:**
+
+`Ctrl+Shift+D` launches `scripts/test-process-cleanup.ps1` in a
+new PowerShell window for the close-and-recheck flow. That
+script enumerates Terminal.App.exe + its parent-PID children +
+sibling shell counts (`Get-ShellProcessSnapshot`), then asks the
+user to close pty-speak via Alt+F4 / X-button and reports
+whether anything was orphaned. Use this when diagnosing Job
+Object cascade-kill regressions, NOT for "is the child alive
+right now?" — that's the inline check above.
+
 ## Current sequencing (May 2026)
 
 The cleanup cycle (Part 1 of the May-2026 plan) shipped 2026-05-03.
 Active sequence:
 
-- **Stage 7** = validation gate. Four sequenced PRs:
+- **Stage 7** = validation gate. Four sequenced PRs + followups:
   - **PR-A** — env-scrub PO-5 (shipped: PR #131)
   - **PR-B** — shell registry + `PTYSPEAK_SHELL` (shipped: PR #132)
   - **PR-C** — hot-switch hotkeys `Ctrl+Shift+1` / `Ctrl+Shift+2`
-    (next; depends on PR-B)
+    (shipped)
   - **PR-D** — NVDA validation matrix + `docs/STAGE-7-ISSUES.md`
-    seeding (after PR-C)
+    seeding (shipped)
+  - **PR-E…I** — diagnostic-surface + bug-fix followups from
+    NVDA-pass empirical findings (shipped)
+  - **PR-J** — PowerShell as third built-in shell + Ctrl+Shift+H
+    liveness probe + Ctrl+Shift+D inline child-process snapshot
+    (this PR; reorders hotkeys to `+1`=cmd / `+2`=PowerShell /
+    `+3`=Claude so the diagnostic control shell sits next to cmd)
 - **Output framework cycle** (Part 3, subsumes original Stages 8+9)
   — research → RFC → eight sub-stages, each with NVDA validation.
 - **Input framework cycle** (Part 4) — same shape.

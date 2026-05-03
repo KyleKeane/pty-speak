@@ -31,11 +31,26 @@ module ShellRegistry =
     /// how to launch. Add cases here to extend the registry; each
     /// case needs a registration in `builtIns` below.
     ///
-    /// Future cases (Phase 2 territory): `PowerShell`, `Wsl of
-    /// distro: string`, `Python`, `Node`, `Bash`, etc.
+    /// Stage 7-followup PR-J added `PowerShell` (Windows
+    /// PowerShell, `powershell.exe`) as a third built-in
+    /// alongside `Cmd` and `Claude`. Diagnostic value: PowerShell
+    /// is always installed on Windows, has zero auth or
+    /// terminal-capability detection, and produces visible banner
+    /// + prompt output within milliseconds of launch — making it
+    /// an ideal control shell for isolating shell-switch bugs
+    /// from claude.exe-specific issues.
+    ///
+    /// Future cases (Phase 2 territory): `Wsl of distro: string`,
+    /// `Python`, `Node`, `Bash`, etc. PowerShell-Core (`pwsh.exe`,
+    /// the PowerShell 7+ rename) is intentionally NOT a separate
+    /// case — it's an optional install; `powershell.exe` is the
+    /// always-available baseline. A Phase 2 user-settings TOML
+    /// can let the `PowerShell` resolver prefer `pwsh.exe` when
+    /// present.
     type ShellId =
         | Cmd
         | Claude
+        | PowerShell
 
     /// The runtime descriptor for a shell. `Resolve` is called at
     /// most once per session by the composition root; tests inject
@@ -121,7 +136,17 @@ module ShellRegistry =
               Claude,
                 { Id = Claude
                   DisplayName = "Claude Code"
-                  Resolve = fun () -> whereExe "claude" } ]
+                  Resolve = fun () -> whereExe "claude" }
+              PowerShell,
+                { Id = PowerShell
+                  DisplayName = "PowerShell"
+                  // Windows PowerShell is always present on
+                  // Windows 10+; the bare command name resolves
+                  // through the parent's PATH (which our env-scrub
+                  // preserves). Not using `where.exe powershell`
+                  // because the bare resolution is faster and the
+                  // command is guaranteed available.
+                  Resolve = fun () -> Ok "powershell.exe" } ]
 
     /// Look up a shell in a registry. Production callers pass
     /// `builtIns`; tests pass a synthetic Map to inject
@@ -135,11 +160,19 @@ module ShellRegistry =
 
     /// Map a `PTYSPEAK_SHELL` env-var value to a `ShellId`.
     /// Recognised values (case-insensitive after trim): `"cmd"`,
-    /// `"claude"`. Returns `None` for unrecognised values so the
-    /// caller can log a warning + fall back to the default.
-    /// `null` and empty/whitespace are treated as "not set" (also
-    /// returns `None`); callers distinguish via the source-side
-    /// null check.
+    /// `"claude"`, `"powershell"` / `"pwsh"`. Returns `None` for
+    /// unrecognised values so the caller can log a warning + fall
+    /// back to the default. `null` and empty/whitespace are
+    /// treated as "not set" (also returns `None`); callers
+    /// distinguish via the source-side null check.
+    ///
+    /// `"pwsh"` is an alias for `PowerShell` because the
+    /// PowerShell Core 7+ executable is named `pwsh.exe` and
+    /// some users set `PTYSPEAK_SHELL=pwsh` thinking that's the
+    /// canonical name. Both currently route to
+    /// `powershell.exe` (Windows PowerShell, always available);
+    /// a Phase 2 user-settings TOML can split this into
+    /// "PowerShell prefers pwsh.exe when present" if desired.
     let parseEnvVar (value: string | null) : ShellId option =
         match value with
         | null -> None
@@ -148,4 +181,6 @@ module ShellRegistry =
             | "" -> None
             | "cmd" -> Some Cmd
             | "claude" -> Some Claude
+            | "powershell" -> Some PowerShell
+            | "pwsh" -> Some PowerShell
             | _ -> None

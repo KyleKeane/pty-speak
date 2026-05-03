@@ -266,16 +266,75 @@ module Program =
     /// next to this one and routed through the same hotkey via
     /// a sub-menu, OR added as their own hotkeys following the
     /// app-reserved-hotkey contract in `spec/tech-plan.md` §6.
+    /// PR-J — enumerate the live shell-related processes and
+    /// return both a per-name count list and a one-line announce-
+    /// safe summary. Used by the Ctrl+Shift+D handler to report
+    /// state inline BEFORE launching the cleanup script — gives
+    /// the user (or a Claude session triaging on their behalf)
+    /// an immediate "what's currently running" snapshot without
+    /// the close-and-recheck round trip.
+    ///
+    /// Names checked: `cmd`, `powershell`, `pwsh`, `claude`,
+    /// `Terminal.App`. `Process.GetProcessesByName` is the supported
+    /// .NET API — case-insensitive, no `.exe` suffix in the name
+    /// argument. The returned `Process` objects are disposed
+    /// immediately; we only need the count.
+    ///
+    /// Logged at Information level too so post-hoc log analysis
+    /// captures the snapshot even if the user pressed Ctrl+Shift+D
+    /// without writing down what NVDA said.
+    let private enumerateShellProcesses () : string =
+        let names = [| "cmd"; "powershell"; "pwsh"; "claude"; "Terminal.App" |]
+        let counts =
+            names
+            |> Array.map (fun n ->
+                let count =
+                    try
+                        let procs = System.Diagnostics.Process.GetProcessesByName(n)
+                        for p in procs do
+                            try p.Dispose() with _ -> ()
+                        procs.Length
+                    with _ -> -1
+                n, count)
+        let parts =
+            counts
+            |> Array.map (fun (n, c) ->
+                if c < 0 then sprintf "%s ?" n
+                else sprintf "%d %s" c n)
+        String.concat ", " parts
+
     let private runDiagnostic (window: MainWindow) : unit =
         let scriptPath =
             System.IO.Path.Combine(
                 System.AppContext.BaseDirectory,
                 "test-process-cleanup.ps1")
+        // PR-J — inline process enumeration. The user's previous
+        // diagnostic ritual was "press Ctrl+Shift+D, close the
+        // window, watch what gets reaped" — fine for a deliberate
+        // close-and-recheck sweep but heavyweight for a quick "is
+        // anything weird running right now?" check. Enumerating
+        // up-front and announcing the counts means a screen-reader
+        // user gets the snapshot in one keystroke without losing
+        // their pty-speak session. Maintainer feedback 2026-05-03:
+        // "you should automatically check child processes when you
+        // launch diagnostics".
+        //
+        // The full close-and-recheck flow (PowerShell script in a
+        // separate window) STILL launches afterwards so the
+        // existing orphan-detection workflow continues working;
+        // the inline enumeration is purely additive.
+        let snapshot = enumerateShellProcesses ()
+        let log = Logger.get "Terminal.App.Program.runDiagnostic"
+        log.LogInformation(
+            "Diagnostic snapshot. ProcessCounts={Snapshot}",
+            snapshot)
         if not (System.IO.File.Exists scriptPath) then
             window.TerminalSurface.Announce(
                 sprintf
-                    "Diagnostic script not found at %s. Re-install pty-speak or report this as a packaging regression."
-                    scriptPath)
+                    "Diagnostic snapshot: %s. Cleanup script not found at %s."
+                    snapshot
+                    scriptPath,
+                ActivityIds.diagnostic)
         else
             // Announce FIRST so NVDA's speech queue holds the message
             // before focus shifts. The new PowerShell window's
@@ -287,16 +346,18 @@ module Program =
             // window's title). Pre-Stage-5 NVDA verification on
             // `v0.0.1-preview.NN` confirmed the regression.
             //
-            // Fix: announce a SHORT cue ("Launching diagnostic.") that
-            // NVDA can fully read in well under the focus-grab latency,
-            // wait ~700ms, then start the process. The PowerShell
-            // window's title takes over from there — which is the
-            // natural way for screen-reader users to confirm the new
-            // window arrived.
+            // PR-J prefixes the snapshot to the launch cue so a
+            // screen-reader user hears "1 cmd, 0 powershell, 0 pwsh,
+            // 1 claude, 1 Terminal.App. Launching diagnostic." in
+            // one announcement — strictly additive to the previous
+            // "Launching diagnostic." cue. The 700ms-then-spawn
+            // pattern below stays unchanged.
             // TODO Phase 2: the 700ms delay should come from a TOML
             // setting alongside the Stage 5 coalescer constants.
             window.TerminalSurface.Announce(
-                "Launching diagnostic.",
+                sprintf
+                    "Diagnostic snapshot: %s. Launching cleanup test."
+                    snapshot,
                 ActivityIds.diagnostic)
             let _ =
                 task {
@@ -997,11 +1058,12 @@ module Program =
 
         // Stage 7 PR-B — resolve which shell to spawn. cmd.exe stays
         // the default per maintainer instruction; `PTYSPEAK_SHELL=claude`
-        // (or any future menu UI) flips it. Unrecognised env-var values
-        // fall back to cmd with a warning log so the user isn't locked
-        // out of a working terminal by a typo. PR-C adds Ctrl+Shift+1
-        // (cmd) / Ctrl+Shift+2 (claude) hotkeys for mid-session
-        // hot-switching.
+        // / `=powershell` / `=pwsh` (or any future menu UI) flips it.
+        // Unrecognised env-var values fall back to cmd with a warning
+        // log so the user isn't locked out of a working terminal by a
+        // typo. PR-C added Ctrl+Shift+1 (cmd) / Ctrl+Shift+2 hotkeys;
+        // PR-J reordered: Ctrl+Shift+1 = cmd, +2 = PowerShell, +3 =
+        // claude.
         let resolveStartupShell () : ShellRegistry.Shell * string =
             let envVar = Environment.GetEnvironmentVariable("PTYSPEAK_SHELL")
             // Distinguish "unset" from "set to garbage" so the
@@ -1019,7 +1081,7 @@ module Program =
                 | v when System.String.IsNullOrWhiteSpace(v) -> ()
                 | v ->
                     log.LogWarning(
-                        "PTYSPEAK_SHELL=\"{Value}\" not recognised; falling back to cmd.exe. Recognised values: cmd, claude.",
+                        "PTYSPEAK_SHELL=\"{Value}\" not recognised; falling back to cmd.exe. Recognised values: cmd, claude, powershell, pwsh.",
                         v)
             let requested =
                 match ShellRegistry.parseEnvVar envVar with
@@ -1136,19 +1198,50 @@ module Program =
                     match hostHandle with
                     | Some h -> int h.ProcessId
                     | None -> 0
+                // Stage 7-followup PR-J — liveness probe. The
+                // ConPtyHost handle's recorded PID is the value we
+                // captured at spawn; the OS may have already reaped
+                // the child (e.g. claude.exe exited silently after
+                // a terminal-capability handshake stalled, or
+                // PowerShell's startup banner threw). Check whether
+                // the kernel still knows about that PID via
+                // Process.GetProcessById, which throws
+                // ArgumentException for a reaped/non-existent PID.
+                // The result feeds both the verdict and the
+                // user-facing announce so a screen-reader user can
+                // distinguish "child exited" from "child running
+                // but quiet" — a distinction that previously
+                // required reading the log file.
+                let alive =
+                    if pid <= 0 then
+                        false
+                    else
+                        try
+                            use _ = System.Diagnostics.Process.GetProcessById(pid)
+                            true
+                        with _ -> false
                 let levelStr =
                     match loggerSink with
                     | Some s -> s.MinLevel.ToString()
                     | None -> "Unknown"
                 let notifDepth = notificationChannel.Reader.Count
                 let coalDepth = coalescedChannel.Reader.Count
-                // Verdict heuristic: reader-wedge if no bytes in
-                // 5+ seconds AND there's pending work; queue-near-
-                // capacity if the notification channel is past 95%
-                // (the DropOldest mode means past-capacity is silent
-                // data loss); otherwise healthy.
+                // Verdict heuristic, in priority order:
+                //   1. Child PID dead → "Child shell process has
+                //      exited." (highest signal — explains every
+                //      downstream symptom).
+                //   2. Reader wedge: no bytes in 5+ seconds AND
+                //      pending work in the notification queue.
+                //   3. Notification queue near capacity (95%) —
+                //      DropOldest means past-capacity is silent
+                //      data loss; warn before that.
+                //   4. Healthy.
                 let verdict =
-                    if staleness > 5000.0 && notifDepth > 0 then
+                    if pid > 0 && not alive then
+                        sprintf
+                            "Child shell process %d has exited."
+                            pid
+                    elif staleness > 5000.0 && notifDepth > 0 then
                         sprintf
                             "Reader appears wedged. Last byte %.0f seconds ago."
                             (staleness / 1000.0)
@@ -1158,12 +1251,14 @@ module Program =
                             notifDepth
                     else
                         "Pty-speak healthy."
+                let aliveStr = if alive then "alive" else "dead"
                 let summary =
                     sprintf
-                        "%s %s shell, PID %d, log level %s. Reader last byte %.0f ms ago. Notification queue %d of 256. Coalesced queue %d of 16."
+                        "%s %s shell, PID %d (%s), log level %s. Reader last byte %.0f ms ago. Notification queue %d of 256. Coalesced queue %d of 16."
                         verdict
                         currentShell.DisplayName
                         pid
+                        aliveStr
                         levelStr
                         staleness
                         notifDepth
@@ -1204,6 +1299,19 @@ module Program =
                     match hostHandle with
                     | Some h -> int h.ProcessId
                     | None -> 0
+                // PR-J — same liveness probe as runHealthCheck.
+                // Logging the alive flag every 5s gives post-hoc
+                // log analysis a clean "child died at HH:MM:SS"
+                // breadcrumb without needing the user to press
+                // Ctrl+Shift+H at the right moment.
+                let alive =
+                    if pid <= 0 then
+                        false
+                    else
+                        try
+                            use _ = System.Diagnostics.Process.GetProcessById(pid)
+                            true
+                        with _ -> false
                 let level =
                     match loggerSink with
                     | Some s -> s.MinLevel
@@ -1211,9 +1319,10 @@ module Program =
                 let notifDepth = notificationChannel.Reader.Count
                 let coalDepth = coalescedChannel.Reader.Count
                 log.LogInformation(
-                    "Heartbeat. Shell={Shell} Pid={Pid} Level={Level} LastReadAgoMs={Staleness:F0} NotifQueue={Notif}/{NotifCap} CoalQueue={Coal}/{CoalCap}",
+                    "Heartbeat. Shell={Shell} Pid={Pid} Alive={Alive} Level={Level} LastReadAgoMs={Staleness:F0} NotifQueue={Notif}/{NotifCap} CoalQueue={Coal}/{CoalCap}",
                     currentShell.DisplayName,
                     pid,
+                    alive,
                     level,
                     staleness,
                     notifDepth,
@@ -1431,7 +1540,13 @@ module Program =
                         }
                     ()
 
-        // Wire `Ctrl+Shift+1` → cmd, `Ctrl+Shift+2` → claude.
+        // Wire `Ctrl+Shift+1` → cmd, `Ctrl+Shift+2` → PowerShell,
+        // `Ctrl+Shift+3` → claude. PR-J reordered the slots and
+        // added PowerShell as the diagnostic control shell (always
+        // installed, no auth, fast prompt) so isolating shell-switch
+        // infrastructure bugs from claude-specific issues is one
+        // keypress away.
+        //
         // Pattern matches `setupAutoUpdateKeybinding` etc.; same
         // window-level KeyBinding + RoutedCommand + CommandBinding
         // triple. The keys are listed in
@@ -1439,22 +1554,18 @@ module Program =
         // doesn't mark them Handled before InputBindings can fire.
         let setupShellSwitchKeybindings (window: MainWindow)
                                         (switchTo: ShellRegistry.ShellId -> unit) : unit =
-            let cmdRouted = RoutedCommand("SwitchToCmdShell", typeof<MainWindow>)
-            let cmdGesture = KeyGesture(Key.D1, ModifierKeys.Control ||| ModifierKeys.Shift)
-            window.InputBindings.Add(KeyBinding(cmdRouted, cmdGesture)) |> ignore
-            window.CommandBindings.Add(
-                CommandBinding(
-                    cmdRouted,
-                    ExecutedRoutedEventHandler(fun _ _ -> switchTo ShellRegistry.Cmd)))
-            |> ignore
-            let claudeRouted = RoutedCommand("SwitchToClaudeShell", typeof<MainWindow>)
-            let claudeGesture = KeyGesture(Key.D2, ModifierKeys.Control ||| ModifierKeys.Shift)
-            window.InputBindings.Add(KeyBinding(claudeRouted, claudeGesture)) |> ignore
-            window.CommandBindings.Add(
-                CommandBinding(
-                    claudeRouted,
-                    ExecutedRoutedEventHandler(fun _ _ -> switchTo ShellRegistry.Claude)))
-            |> ignore
+            let bind (name: string) (key: Key) (target: ShellRegistry.ShellId) : unit =
+                let routed = RoutedCommand(name, typeof<MainWindow>)
+                let gesture = KeyGesture(key, ModifierKeys.Control ||| ModifierKeys.Shift)
+                window.InputBindings.Add(KeyBinding(routed, gesture)) |> ignore
+                window.CommandBindings.Add(
+                    CommandBinding(
+                        routed,
+                        ExecutedRoutedEventHandler(fun _ _ -> switchTo target)))
+                |> ignore
+            bind "SwitchToCmdShell" Key.D1 ShellRegistry.Cmd
+            bind "SwitchToPowerShellShell" Key.D2 ShellRegistry.PowerShell
+            bind "SwitchToClaudeShell" Key.D3 ShellRegistry.Claude
 
         setupShellSwitchKeybindings window switchToShell
 

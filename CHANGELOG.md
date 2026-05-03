@@ -15,6 +15,68 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Stage 7-followup PR-J)
+
+- **PowerShell as third built-in shell + reordered hotkeys.**
+  `ShellRegistry` gains `PowerShell` (Windows PowerShell,
+  always available on Windows 10+) alongside `Cmd` and
+  `Claude`. The hot-switch hotkeys reorder to put PowerShell
+  next to cmd as the diagnostic control shell:
+  - `Ctrl+Shift+1` — switch to cmd (unchanged)
+  - `Ctrl+Shift+2` — switch to PowerShell (new; was claude in PR-C)
+  - `Ctrl+Shift+3` — switch to Claude (was Ctrl+Shift+2 in PR-C)
+
+  Rationale: the maintainer's NVDA validation pass on
+  2026-05-03 surfaced suspected shell-switch infrastructure
+  bugs that needed a diagnostic control shell to isolate.
+  PowerShell has zero auth, no terminal-capability
+  detection, and produces visible banner + prompt output
+  within milliseconds — making it the ideal control. Putting
+  it adjacent to cmd at slot 2 means the comparison "does
+  switching from cmd to PowerShell work?" is one keystroke
+  away. The `PTYSPEAK_SHELL` env var also recognises
+  `powershell` and `pwsh` (as aliases routing to the same
+  `PowerShell` ShellId).
+
+- **`Ctrl+Shift+H` liveness probe.** The health-check
+  announce now distinguishes "child running" from "child
+  exited". Each press calls
+  `Process.GetProcessById(currentShell.Pid)` (which throws
+  `ArgumentException` for a reaped/non-existent PID) and
+  announces "alive" / "dead" alongside the rest of the
+  state snapshot. Verdict heuristic gains a top-priority
+  "Child shell process N has exited." arm so a screen-
+  reader user gets the dispositive "the shell crashed"
+  signal without reading the log file. The 5s background
+  heartbeat (`runHeartbeat`) gains the same `Alive=`
+  field for log forensics — post-hoc grep for the moment
+  `Alive=False` first appears pinpoints the wedge
+  timestamp.
+
+- **`Ctrl+Shift+D` inline shell-process snapshot.** The
+  diagnostic launcher now announces a one-line process
+  enumeration BEFORE the cleanup-test PowerShell window
+  opens: "Diagnostic snapshot: 1 cmd, 0 powershell, 0
+  pwsh, 1 claude, 1 Terminal.App. Launching cleanup test."
+  Lets a screen-reader user (or a Claude session triaging
+  on their behalf) get the "what's currently running?"
+  answer in one keystroke, without losing their pty-speak
+  session to the close-and-recheck flow. The full
+  close-and-recheck flow still launches afterwards for
+  orphan-detection use cases. The bundled
+  `scripts/test-process-cleanup.ps1` gains a matching
+  `Get-ShellProcessSnapshot` helper that prints the same
+  vocabulary at script start + before/after each pass.
+
+- **CLAUDE.md "Diagnostic recipes" section + no-GUI rule.**
+  Adds explicit guidance for Claude sessions: `tasklist |
+  findstr /I` and `Get-Process` are the canonical "is the
+  child alive?" recipes; never propose GUI dialog walks
+  (System Properties / Task Manager / etc.) to a screen-
+  reader user. CLI / keyboard-only equivalents are listed
+  for the common cases (`setx`, `set`, `taskkill`, `reg
+  query`).
+
 ### Fixed (Stage 7-followup PR-I)
 
 - **Spurious "parser/reader loop: channel has been closed"

@@ -268,10 +268,18 @@ defaults; they shouldn't be the only options.
 ### Current state
 
 Stage 7 PR-B added an extensible `ShellRegistry` in
-`src/Terminal.Pty/ShellRegistry.fs` exposing two built-in shells:
+`src/Terminal.Pty/ShellRegistry.fs`. PR-J added PowerShell as
+the third built-in (the diagnostic control shell). Current
+shipped set:
 
 - **`Cmd`** — Windows Command Prompt (`cmd.exe`). The Stage 7
   default; what new users see if they haven't configured anything.
+- **`PowerShell`** — Windows PowerShell (`powershell.exe`,
+  always available on Windows 10+). PR-J added; selected by
+  setting `PTYSPEAK_SHELL=powershell` or `=pwsh` (the `pwsh`
+  alias is for users who think of PowerShell as the
+  cross-platform `pwsh.exe`; both currently route to
+  `powershell.exe`).
 - **`Claude`** — Claude Code (`claude.exe`, resolved via
   `where.exe claude`). The maintainer's primary target workload;
   selected by setting `PTYSPEAK_SHELL=claude` (case-insensitive)
@@ -280,8 +288,9 @@ Stage 7 PR-B added an extensible `ShellRegistry` in
 Resolution lives in `compose ()` (`src/Terminal.App/Program.fs`):
 
 1. Read `PTYSPEAK_SHELL` env var. Recognised values: `cmd`,
-   `claude` (after trim, case-insensitive). Unrecognised non-empty
-   values produce a `LogWarning` and fall back to the default.
+   `claude`, `powershell`, `pwsh` (after trim, case-insensitive).
+   Unrecognised non-empty values produce a `LogWarning` and fall
+   back to the default.
 2. Default: `Cmd`.
 3. Resolve via `ShellRegistry.tryFind`. If the resolver returns
    `Error` (e.g. Claude Code not installed), log a warning at
@@ -298,8 +307,10 @@ Stage 7's job is to validate Claude Code under NVDA, not to ship
 a configuration UI. `PTYSPEAK_SHELL` is the smallest possible
 selection surface: an env var any user can set in their shell rc
 or via a desktop-shortcut "Run with environment" wrapper. Stage 7
-PR-C adds `Ctrl+Shift+1` / `Ctrl+Shift+2` hotkeys for in-session
-hot-switching (cmd ↔ claude); Phase 2 adds the menu / palette UI
+PR-C added `Ctrl+Shift+1` / `Ctrl+Shift+2` hotkeys for in-session
+hot-switching; PR-J added PowerShell + reordered the slots
+(`Ctrl+Shift+1` = cmd, `Ctrl+Shift+2` = PowerShell,
+`Ctrl+Shift+3` = Claude). Phase 2 adds the menu / palette UI
 that exposes the registry to the user without requiring shell
 literacy.
 
@@ -311,12 +322,14 @@ Three plausible levels of configurability, increasing in cost:
    Recognised names map to built-in registry entries. No file I/O,
    no parsing risk, easy to revert by unsetting.
 
-2. **Hotkey-driven hot-switch (Stage 7 PR-C).** `Ctrl+Shift+1`
-   selects cmd; `Ctrl+Shift+2` selects claude. The architectural
-   lift is mid-session `ConPtyHost` teardown + respawn, which PR-C
-   ships. Future shells claim higher digit slots (`Ctrl+Shift+3` for
-   PowerShell, etc.). `AppReservedHotkeys` contract + spec §6 update
-   land in PR-C.
+2. **Hotkey-driven hot-switch (Stage 7 PR-C, reordered + extended in PR-J).**
+   `Ctrl+Shift+1` selects cmd; `Ctrl+Shift+2` selects PowerShell;
+   `Ctrl+Shift+3` selects claude. The architectural lift is
+   mid-session `ConPtyHost` teardown + respawn, which PR-C
+   shipped. Future shells claim higher digit slots
+   (`Ctrl+Shift+4`, `+5`, ... for WSL / Python REPL / bash, etc.).
+   `AppReservedHotkeys` contract + spec §6 update land in PR-C
+   / PR-J.
 
 3. **Phase 2 TOML config + menu UI.** A `shells` table in the
    user-settings file lists shell-id + display-name + executable
@@ -332,7 +345,7 @@ Three plausible levels of configurability, increasing in cost:
   discriminated union, (b) adding an entry to `builtIns` with a
   resolver closure, (c) updating `parseEnvVar` to recognise the
   new name, and (d) updating
-  `tests/Tests.Unit/ShellRegistryTests.fs ``builtIns contains exactly Cmd and Claude```
+  `tests/Tests.Unit/ShellRegistryTests.fs ``builtIns contains exactly Cmd, Claude, and PowerShell```
   (the assertion intentionally pins the exact set so a reviewer is
   forced to acknowledge each addition).
 - `tryFindIn` exists separate from `tryFind` so tests can inject
