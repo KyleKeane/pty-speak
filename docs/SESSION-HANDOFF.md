@@ -28,10 +28,10 @@ canonical strategic plan for the next ~8-12 weeks of work),
 
 | | |
 |---|---|
-| **Last merged stages** | **Stages 0 → 6 + 11** all merged to `main`. Stage 5 (streaming output via `Coalescer`) and Stage 6 (keyboard input, paste, focus reporting, dynamic resize, Job Object lifecycle) shipped through PRs #100s; Stage 4 + Stage 11 NVDA-verified on `v0.0.1-preview.26`. The post-Stage-5/6 cycle then surfaced and fixed a series of streaming-pipeline bugs: PR #108 (`Ctrl+Alt+L` SystemKey-aware filter), PR #109 (streaming-path INFO instrumentation), PR #111 (`Ctrl+Shift+;` log-copy hotkey + Alt+F4 restoration + log-level demote), PR #114 (FileShare bug + restored two INFO entries), and **PR #116** (the cap-stone: removed the broken `AllHashHistory` spinner gate that was instantly silencing every event). As of PR #116 the streaming pipeline is provably alive end-to-end: cmd.exe banner reads on launch, typed characters trigger speech, command output triggers speech. |
-| **Last shipped release** | `v0.0.1-preview.43` (preview cadence has continued through the post-Stage-6 cycle of fixes). |
-| **In-flight branch** | `claude/audit-repo-handoff-FCsnT` — 2026-05-03 audit of the original `spec/tech-plan.md` Stages 7-10 against the post-#116 state, leading to the [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md) sequencing. The branch lands the plan doc + the docs-freshness sweep (this file, ROADMAP.md, ACCESSIBILITY-INTERACTION-MODEL.md, README.md). Subsequent Part-1 cleanup PRs (FluentAssertions removal, CHANGELOG consolidation, Issue #107 log filename, FlushPending API) ship on separate `chore/`, `docs/`, and `feat/` branches per CONTRIBUTING.md's one-concern-per-PR rule. |
-| **Next stage** | Per [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md): **Part 1 cleanup** (this branch + its sibling PRs, ~1-2 days) → **Part 2: Stage 7 — Claude Code roundtrip + env-scrub PO-5** (~3-5 days, the validation gate before the framework cycles) → **Part 3: Output-handling framework cycle** (multi-week; subsumes original Stages 8 + 9 as Selection profile + earcons sink) → **Part 4: Input-interpretation framework cycle** (multi-week; partly overlaps Part 3) → **Part 5: Stage 10 — Review mode + quick-nav** (~1 week; first non-built-in consumer of the new semantic-event taxonomy). The original-plan Stages 7, 8, 9, 10 are all addressed: 7 is the validation gate, 8 + 9 fold into Part 3, 10 ships post-frameworks as their first consumer. **Open follow-up logged for a future stage**: Screen-buffer runtime resize. Stage 6 resizes the PTY (so cmd.exe and Claude Code see the right column count), but the in-process `Cell[,]` Screen grid stays at construction-time 30×120 — oversize windows have empty padding, undersize windows clip. Spec §6 says "ResizePseudoConsole", which Stage 6 satisfies; full grid resize is a Phase 2 stage. |
+| **Last merged stages** | **Stages 0 → 6 + 11** all merged to `main`, plus the retroactively-formalized **Stages 4a / 4b / 5a** (per chat 2026-05-03 maintainer authorization, now in `spec/tech-plan.md` §4a / §4b / §5a). Stage 4 + Stage 11 NVDA-verified on `v0.0.1-preview.26`. Stage 4a (Claude Code rendering substrate: alt-screen 1049 + DECTCEM + 256/truecolor SGR + DECSC/DECRC + OSC 52 silent drop) shipped via PR-A #85 + PR-B #86. Stage 4b (process-cleanup diagnostic + `Ctrl+Shift+D`) shipped via PR #81. Stage 5 (streaming output via `Coalescer`) shipped via PR #89; functional end-to-end as of PR #116 after the post-Stage-5 streaming-fix cycle (PRs #108 / #109 / #111 / #114 / #116). Stage 6 (keyboard input + paste + focus reporting + dynamic resize + Job Object lifecycle) shipped via PR-A #92 + PR-B #99 + fixup #100. Stage 5a (diagnostic logging surface: `FileLogger.fs` + `Ctrl+Shift+L` + `Ctrl+Shift+;` + Issue #107 filename refinement + `FlushPending` TCS-barrier) shipped via the multi-PR cycle through #102/#103/#109/#111/#114/#116/#121/#122. The May-2026 cleanup cycle (PRs #118 → #128) shipped Part 1 of [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md) plus the spec stage-numbering hygiene (Stages 4a/4b/5a in spec) plus the Stage 7 implementation sketch in this file plus the `baseline/stage-N` rollback rows for all shipped post-Stage-3b stages plus the F# 9 nullness + fixup-commit-rhythm gotchas in `CONTRIBUTING.md`. |
+| **Last shipped release** | `v0.0.1-preview.43` (latest code-bearing preview as of plan authorship; preview cadence may have continued through subsequent docs-only PRs in the May-2026 cleanup cycle, but the last functional code change was Stage 5a's `FlushPending` API in PR #122). |
+| **In-flight branch** | _None._ The May-2026 cleanup cycle (Part 1 of the plan) is complete. Next session starts fresh from Part 2 — see "Next stage" + the **Stage 7 implementation sketch (next)** section below in this file. |
+| **Next stage** | **Stage 7 — Claude Code roundtrip + env-scrub PO-5** per [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md) Part 2. The pre-digested execution plan is in this file's **"Stage 7 implementation sketch (next)"** section: `claude.exe` resolution via `where.exe`, `PTYSPEAK_SHELL` env-var override, `lpEnvironment`-based env-scrub with allow-list-with-deny-list-override scheme for PO-5, NVDA validation flow, `docs/STAGE-7-ISSUES.md` inventory format with framework-taxonomy category tags. Stage 7 is sequenced as the **validation gate** before the Output / Input framework cycles begin — the inventory it produces is the design input for Parts 3 + 4. After Stage 7 ships and NVDA-validates, the Output framework cycle (Part 3) starts with its research phase (`docs/research/OUTPUT-FRAMEWORK-PRIOR-ART.md`). **Open follow-ups logged for future stages**: (a) Screen-buffer runtime resize — Stage 6 resizes the PTY but the in-process `Cell[,]` Screen grid stays at construction-time 30×120 (Phase 2 stage). (b) The screen-reader-native diagnostic-launcher rework deferred per item 6 below — now actionable since Stage 6 keyboard input ships; user can type `pwsh ./scripts/test-process-cleanup.ps1` directly into pty-speak's child shell with output narrated via Stage 5's streaming announcements. |
 
 The end-to-end pipeline now reaches the auto-update boundary:
 launching the app spawns `cmd.exe` under ConPTY, parses its
@@ -120,11 +120,24 @@ GitHub-website access. They've accumulated because the development
 sandbox can't push tags and the GitHub MCP server occasionally
 disconnects mid-session.
 
-1. **Push the five pending baseline tags.** Exact commands are in
+1. **Push the twelve pending baseline tags.** Exact commands are in
    [`docs/CHECKPOINTS.md`](CHECKPOINTS.md#pending-checkpoint-tags):
-   `baseline/stage-{0-ci-release, 1-conpty-hello-world, 2-vt-parser,
-   3a-screen-model, 3b-wpf-rendering}`. Tags don't trigger any
-   workflow; they're rollback handles only.
+   - **Original five (Stages 0-3b):** `baseline/stage-{0-ci-release,
+     1-conpty-hello-world, 2-vt-parser, 3a-screen-model,
+     3b-wpf-rendering}`.
+   - **Seven added per PR #127 (post-Stage-3b shipped stages):**
+     `baseline/stage-{4-uia-document-text-pattern,
+     11-velopack-auto-update, 4b-process-cleanup-diagnostic,
+     4a-claude-code-substrate, 5-streaming-coalescer,
+     6-keyboard-input, 5a-diagnostic-logging}`.
+
+   Tags don't trigger any workflow; they're rollback handles only.
+   The dev sandbox can't push tags (proxy returns 403 on `refs/tags/`),
+   so this is a maintainer-side action from a workstation. After
+   pushing each tag, **delete the matching row from the "Pending
+   checkpoint tags" table** in `docs/CHECKPOINTS.md` per the
+   existing convention (avoids orphan rows in the table claiming
+   tags exist that don't).
 
 2. **Stage 4 + Stage 11 NVDA verification — complete except
    for one process-cleanup row.** The maintainer ran the
@@ -1197,7 +1210,21 @@ prefer asking for whole-log paste over "search for X then paste a
 snippet". Small focused PRs with detailed test plans are
 appreciated; sprawling PRs with multiple moving parts are not.
 
+The May-2026 cleanup cycle (PRs #118 → #128, all merged) closed
+out Part 1 of [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md)
+and produced the handoff infrastructure that makes this file
+useful as a starting point: the canonical plan doc itself, the
+Stage 7 implementation sketch, the spec stage-numbering hygiene
+(Stages 4a/4b/5a in spec), the rollback-tag rows for all shipped
+post-Stage-3b stages, and the F# 9 nullness + fixup-commit-rhythm
+gotchas in `CONTRIBUTING.md`. The cycle also exercised the
+fixup-commit-on-open-PR rhythm (PR #121 hit FS3261 in CI; fixup
+commit on the same branch closed it) and confirmed that the
+small-focused-PR cadence the maintainer prefers works smoothly
+when paired with the squash-merge convention. The next session
+starts at Part 2 — Stage 7.
+
 Thanks for picking it up. The accessibility differentiation
 (`UIA_ForegroundColorAttributeId`, semantic prompts, listbox
 exposure) is what actually makes this project worth shipping —
-Stages 4–10 are where that work happens.
+Stages 4–10 are where that work happens; Stage 7 is next.

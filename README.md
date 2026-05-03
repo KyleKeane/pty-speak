@@ -5,27 +5,34 @@ from the ground up for blind developers using NVDA, JAWS, or Narrator —
 with Anthropic's Claude Code (and other Ink/React TUIs) as the primary
 target workload.
 
-> Status: **pre-alpha.** Latest preview is
-> [`v0.0.1-preview.43`](../../releases) (preview cadence has
-> continued through the post-Stage-6 streaming-fix cycle).
-> Shipped on `main` and NVDA-verified on Windows 11:
+> Status: **pre-alpha.** Latest code-bearing preview is
+> [`v0.0.1-preview.43`](../../releases). Shipped on `main`
+> and NVDA-verified on Windows 11:
 > Stages 0-4 (skeleton + CI, ConPTY host, Williams VT500
 > parser, screen model + WPF rendering, UIA Document role
-> + Text pattern + Line/Word/Character navigation), Stage
-> 4.5 (Claude Code rendering substrate: alt-screen + DECTCEM
-> + 256/truecolor SGR), Stage 5 (streaming output via
+> + Text pattern + Line/Word/Character navigation),
+> **Stage 4a** (Claude Code rendering substrate: alt-screen
+> + DECTCEM + 256/truecolor SGR + DECSC/DECRC + OSC 52 silent
+> drop), **Stage 4b** (process-cleanup diagnostic via
+> `Ctrl+Shift+D`), **Stage 5** (streaming output via
 > `Coalescer`; functional end-to-end as of PR #116 — pipeline
 > reaches NVDA, though the verbose-readback issue is the
 > first foundational architecture decision the May-2026 plan
-> addresses), Stage 6 (keyboard input to PTY + paste +
-> focus reporting + dynamic resize + Job Object lifecycle),
-> and Stage 11 (Velopack auto-update via `Ctrl+Shift+U`).
-> Stages 7-10 are sequenced via
+> addresses), **Stage 5a** (diagnostic logging surface:
+> `FileLogger.fs` + `Ctrl+Shift+L` + `Ctrl+Shift+;` log-copy
+> with `FlushPending` barrier), **Stage 6** (keyboard input
+> to PTY + paste + focus reporting + dynamic resize + Job
+> Object lifecycle), and **Stage 11** (Velopack auto-update
+> via `Ctrl+Shift+U`). Stages 4a / 4b / 5a were formalized
+> in the spec per chat 2026-05-03 maintainer authorization;
+> see [`spec/tech-plan.md`](spec/tech-plan.md) §4a / §4b /
+> §5a. Stages 7-10 are sequenced via
 > [`docs/PROJECT-PLAN-2026-05.md`](docs/PROJECT-PLAN-2026-05.md)
-> as cleanup → Stage 7 (validation gate) → Output framework
-> cycle (subsumes Stages 8 + 9) → Input framework cycle →
-> Stage 10. Follow [Releases](../../releases) for new
-> builds; once installed, `Ctrl+Shift+U` updates in place.
+> as cleanup (✓ shipped May 2026) → Stage 7 (validation
+> gate; **next**) → Output framework cycle (subsumes Stages
+> 8 + 9) → Input framework cycle → Stage 10. Follow
+> [Releases](../../releases) for new builds; once installed,
+> `Ctrl+Shift+U` updates in place.
 
 ## Why this exists
 
