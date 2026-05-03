@@ -1297,6 +1297,29 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Changed
 
+- **Spec formalization: Stage 4b — Process-cleanup diagnostic.**
+  Per chat 2026-05-03 maintainer authorization, the `Ctrl+Shift+D`
+  diagnostic-launcher work (PR #81) is now formally documented in
+  `spec/tech-plan.md` as **Stage 4b**. Same letter-suffix
+  convention as the prior Stage 4a spec edit; same Stage 3a/3b
+  precedent. Sub-sections cover hotkey + script bundling,
+  announce-before-launch pattern (700ms `Task.Delay` so NVDA's
+  speech queue plays the cue before the spawned conhost steals
+  focus), validation matrix, and the documented known limitation
+  (conhost NVDA reading is unreliable; in-pty-speak rework is
+  deferred per SESSION-HANDOFF item 6 and now actionable since
+  Stage 6 shipped). `docs/ROADMAP.md` gains a Stage 4b row
+  between Stage 11 and Stage 4a in shipping order;
+  `docs/SESSION-HANDOFF.md` item 6 gains a §4b cross-link so
+  future sessions land on the spec section directly.
+
+  No other prose alignment needed because user-facing references
+  to this work use the `Ctrl+Shift+D` hotkey name as the
+  pointer rather than a stage number.
+
+  Companion Stage 5a (diagnostic logging surface) ships next per
+  the same chat 2026-05-03 authorization.
+
 - **Spec formalization: Stage 4a — Claude Code rendering substrate.**
   Per chat 2026-05-03 maintainer authorization, the post-Stage-4
   rendering-substrate work (alt-screen 1049, DECTCEM cursor visibility,

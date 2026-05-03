@@ -350,6 +350,30 @@ NVDA validation is implicit in Stage 7's Claude Code roundtrip — no separate m
 
 -----
 
+## Stage 4b — Process-cleanup diagnostic
+
+> **Authorship note.** This stage was added retroactively per maintainer authorization (chat 2026-05-03). The work shipped via PR #81 as a hygiene tool to support Stage 4 NVDA verification — Task Manager's Processes-tab chevron-expand affordance is not screen-reader-accessible, so the Stage 4 process-cleanup matrix row could not be exercised by an NVDA-using maintainer via the original Task Manager walkthrough.
+
+**Goal.** Bundle a process-cleanup diagnostic that an NVDA user can run from inside pty-speak via a single keystroke, producing one-fact-per-line PASS/FAIL output the screen reader can read. Verifies that closing pty-speak via Alt+F4 or the X button leaves no orphan `Terminal.App.exe` or ConPTY child processes — the recurring acceptance check tracked in `docs/SESSION-HANDOFF.md` "Pending action items" item 2.
+
+### 4b.1 Hotkey + script bundling
+
+`Ctrl+Shift+D` is reserved in `TerminalView.cs`'s `AppReservedHotkeys` and short-circuits at the top of `OnPreviewKeyDown` (per the Stage 6 reserved-hotkey contract). The handler in `Program.fs`'s `runDiagnostic` resolves the script path via `AppContext.BaseDirectory` so the install location isn't hardcoded; the `scripts/test-process-cleanup.ps1` file ships into the Velopack install via `Terminal.App.fsproj`'s `<Content>` include with `CopyToOutputDirectory=PreserveNewest`. PowerShell launches with `-NoExit` so the diagnostic window stays open after the test completes; the user reads the output and closes it manually.
+
+### 4b.2 Announce-before-launch pattern
+
+The hotkey announces a short cue ("Launching diagnostic.") **before** `Process.Start`, then schedules the actual launch on a ~700ms `Task.Delay`. Without the delay, NVDA's speech queue is interrupted as soon as the new PowerShell window activates and steals focus (NVDA's default interrupt-on-focus-change). The same pattern protects `Ctrl+Shift+R` (open new-release form). The 700ms is hardcoded with a `// TODO Phase 2: TOML-configurable` comment and logged in `docs/USER-SETTINGS.md` as a candidate setting; both announcements are tagged with `ActivityIds.diagnostic` so NVDA users can configure per-tag handling.
+
+### 4b.3 Validation (Stage 4b)
+
+Manual NVDA matrix row in `docs/ACCESSIBILITY-TESTING.md` "Launch and process hygiene" section: launch pty-speak, press `Ctrl+Shift+D`, switch to the spawned PowerShell window, follow the diagnostic's instructions to close pty-speak via Alt+F4 or the X button, read the PASS/FAIL output. The script exits cleanly when both close paths complete. Recurring acceptance check schedule (run after each stage that touches process lifecycle: Stages 4a, 5, 6, 7) is tracked in `docs/SESSION-HANDOFF.md` "Pending action items" item 2.
+
+### 4b.4 Known limitation: conhost NVDA reading
+
+NVDA's reading of the spawned PowerShell window is unreliable in practice — `conhost`'s UIA exposure isn't on par with pty-speak's own `Document` + `Text` pattern peer (the script's line-by-line stdout works in design but doesn't always reach NVDA reliably in the spawned window). The right replacement, deferred per `docs/SESSION-HANDOFF.md` item 6, is to run diagnostics **inside pty-speak itself** rather than spawning a separate process — now actionable since Stage 6 (keyboard input to PTY) ships and a user can type `pwsh ./scripts/test-process-cleanup.ps1` directly into pty-speak's child shell, with the output narrated through Stage 5's streaming announcements via the well-tested UIA peer. `Ctrl+Shift+D` stays in place as a usable-but-imperfect diagnostic until the in-pty-speak flow is validated as the screen-reader-native path; the spec slot for the eventual rework is open under this stage.
+
+-----
+
 ## Stage 5 — Streaming output notifications
 
 **Goal.** When PTY output arrives, NVDA reads it aloud at conversational pace. Spinner doesn’t flood. Multi-line output is announced line by line. Tested with `echo`, `dir`, busy loops.
