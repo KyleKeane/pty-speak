@@ -15,6 +15,56 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Documentation (Stage 7 wrap-up PR-L)
+
+- **`docs/DOC-MAP.md` (new).** Canonical "which doc owns what" index
+  with audience + when-to-read + one-line purpose per file, plus
+  per-audience entry-point lists ("I'm Claude Code starting a
+  session", "I'm a human contributor", "I'm the maintainer cutting
+  a release", "I'm orienting on the project"). Pre-designed in
+  `docs/SESSION-HANDOFF.md` "Queued before Output framework cycle
+  starts"; ships now to set clean structure before the framework
+  cycles spawn their RFC + research files.
+- **`CLAUDE.md` slimmed.** Duplicated material (F# 9 / .NET 9
+  gotchas, accessibility non-negotiables, branching + PR shape,
+  test conventions, logging discipline, app-reserved-hotkey
+  contract, walking-skeleton + spec-immutability rules) collapsed
+  into pointers + 2-3-line summaries that point at the canonical
+  owner (`CONTRIBUTING.md` for most). The Claude-runtime layer
+  (sandbox quirks, MCP behaviour, ask-for-CI-logs rule, no-GUI-
+  walks-for-screen-reader-users rule, diagnostic recipes) stays
+  canonical here. Net change: ~150 lines shorter, zero rules lost.
+- **`CONTRIBUTING.md` "F# gotchas learned in practice" expanded.**
+  Absorbs the four CLAUDE.md-unique entries: F# delegate
+  conversion only fires for `Func` / `Action` (`Predicate<T>`
+  doesn't auto-convert; bit PR #131); record literal type
+  inference fails when the record's module isn't auto-opened
+  (`FS0039` at the field name; bit PR #132); NUL bytes in F#
+  source (use the explicit Unicode escape, not a raw NUL);
+  sequence-in-match-arm (extract a named local function rather
+  than relying on the offside rule under `TreatWarningsAsErrors`).
+  Same shape as the existing entries; CONTRIBUTING is now the
+  single F#-gotchas source of truth.
+- **`README.md` "Quick links" reorganised by audience.** Four
+  sections: human contributor / Claude Code / maintainer /
+  orienting. Top of section points at `docs/DOC-MAP.md` as the
+  full ownership table.
+- **`docs/SESSION-HANDOFF.md` "Where we left off" reset.** Stage 7
+  substrate marked shipped across all 11 sequenced PRs (A → K) +
+  this wrap-up PR-L; NVDA validation confirmed green by maintainer
+  on 2026-05-03; next active work is the Output framework cycle
+  (Part 3) starting from its research phase. Open follow-up:
+  Issue #117 (coalescer cross-row spinner detection) flagged as a
+  separately-mergeable small fix.
+- **`docs/STAGE-7-ISSUES.md` status block updated.** All 11 Stage 7
+  PRs (A → K) listed with one-line summaries + cross-references
+  to the empirical NVDA finding that drove each fix; status flipped
+  to "NVDA validation green (2026-05-03)".
+- **`docs/CHECKPOINTS.md` `baseline/stage-7-claude-roundtrip` row
+  added** to both the "Current checkpoints" table and "Pending
+  checkpoint tags" (anchor at PR #143 `001ec54`; maintainer pushes
+  the tag from a workstation when convenient).
+
 ### Fixed (Stage 7-followup PR-K)
 
 - **Env-scrub allow-list was too narrow — PowerShell + claude.exe

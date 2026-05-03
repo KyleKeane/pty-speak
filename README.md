@@ -108,25 +108,37 @@ tests/                   xUnit + FsCheck.Xunit + FlaUI placeholder
 
 ## Quick links
 
-- **Claude Code session rules (auto-loaded):** [`CLAUDE.md`](CLAUDE.md) — standing instructions every Claude Code session reads at startup; consolidates the non-negotiable working rules and project-specific F# 9 / .NET 9 gotchas.
-- **Design and rationale:** [`spec/overview.md`](spec/overview.md)
-- **Implementation plan (Stages 0–11):** [`spec/tech-plan.md`](spec/tech-plan.md)
-- **Strategic plan (May 2026 — supersedes Stages 7-10 sequencing):** [`docs/PROJECT-PLAN-2026-05.md`](docs/PROJECT-PLAN-2026-05.md)
-- **Roadmap:** [`docs/ROADMAP.md`](docs/ROADMAP.md)
-- **Architecture map:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-- **Build from source:** [`docs/BUILD.md`](docs/BUILD.md)
-- **Release process:** [`docs/RELEASE-PROCESS.md`](docs/RELEASE-PROCESS.md)
-- **Stable checkpoints (rollback guide):** [`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md)
-- **ConPTY platform notes:** [`docs/CONPTY-NOTES.md`](docs/CONPTY-NOTES.md)
-- **Session handoff (for picking up between Claude Code sessions):** [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)
-- **Historical context (May-2026 cleanup cycle, supplementary reference):** [`docs/HISTORICAL-CONTEXT-2026-05.md`](docs/HISTORICAL-CONTEXT-2026-05.md) — _not_ a primary handoff source; backup curated list of guiding principles + technology specificities + paradigms that emerged during the May-2026 cycle, in case interesting details aren't captured in CHANGELOG / commit messages.
-- **Manual smoke-test matrix (every release):** [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
-- **User settings catalog (current and planned):** [`docs/USER-SETTINGS.md`](docs/USER-SETTINGS.md)
-- **Stage 11 update-failure announcements (NVDA reference):** [`docs/UPDATE-FAILURES.md`](docs/UPDATE-FAILURES.md)
-- **Install latest preview (PowerShell helper):** [`scripts/install-latest-preview.ps1`](scripts/install-latest-preview.ps1) — see [`scripts/README.md`](scripts/README.md)
-- **Security and trust model:** [`SECURITY.md`](SECURITY.md)
-- **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- **Changelog:** [`CHANGELOG.md`](CHANGELOG.md)
+The full doc-ownership table + per-audience routing lives in
+[`docs/DOC-MAP.md`](docs/DOC-MAP.md). The lists below are
+shortcuts for the four most common audiences.
+
+**If you're a human contributor opening a PR:**
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — PR shape, branch naming, F# / .NET 9 gotchas, accessibility non-negotiables, P/Invoke conventions, tests
+- [`docs/BUILD.md`](docs/BUILD.md) — local dev setup
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — code orientation
+- [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md) — NVDA acceptance criteria
+
+**If you're Claude Code starting a session:**
+- [`CLAUDE.md`](CLAUDE.md) — Claude-runtime-only rules (auto-loaded; sandbox quirks, MCP behaviour, ask-for-CI-logs, no-GUI-walks rule, diagnostic recipes)
+- [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md) — "Where we left off"
+- [`docs/PROJECT-PLAN-2026-05.md`](docs/PROJECT-PLAN-2026-05.md) — strategic plan
+- [`spec/tech-plan.md`](spec/tech-plan.md) — stage-by-stage spec
+
+**If you're the maintainer cutting a release:**
+- [`docs/RELEASE-PROCESS.md`](docs/RELEASE-PROCESS.md) — Velopack release flow
+- [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md) — manual NVDA pass per stage
+- [`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md) — pending baseline-tag pushes
+- [`CHANGELOG.md`](CHANGELOG.md) — promote `[Unreleased]` to the new version
+
+**If you're orienting on the project:**
+- [`spec/overview.md`](spec/overview.md) — design and rationale
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — high-level stage list
+- [`SECURITY.md`](SECURITY.md) — threat model + mitigation status
+- [`docs/CONPTY-NOTES.md`](docs/CONPTY-NOTES.md) — Win32 ConPTY quirks
+- [`docs/USER-SETTINGS.md`](docs/USER-SETTINGS.md) — current and planned settings
+- [`docs/UPDATE-FAILURES.md`](docs/UPDATE-FAILURES.md) — Stage 11 update-failure NVDA reference
+- [`docs/HISTORICAL-CONTEXT-2026-05.md`](docs/HISTORICAL-CONTEXT-2026-05.md) — May-2026 cleanup cycle archaeology (supplementary reference, not primary handoff)
+- [`scripts/install-latest-preview.ps1`](scripts/install-latest-preview.ps1) — install latest preview (PowerShell helper); see [`scripts/README.md`](scripts/README.md)
 
 ## Install
 

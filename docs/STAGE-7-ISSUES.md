@@ -10,10 +10,8 @@ end-to-end and **surface every gap that NVDA validation reveals** —
 not solve them. Each gap below becomes a framework requirement that
 the corresponding cycle's RFC must address.
 
-> **Status:** Stage 7 substrate **shipped** across four sequenced
-> PRs (per
-> [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md)
-> Part 2):
+> **Status: Stage 7 NVDA validation green (2026-05-03).** The full
+> 11-PR Stage 7 sequence has shipped:
 >
 > - **PR #131 (PR-A)** — env-scrub PO-5 (closes
 >   [`SECURITY.md`](../SECURITY.md) row PO-5).
@@ -21,19 +19,44 @@ the corresponding cycle's RFC must address.
 >   `PTYSPEAK_SHELL` startup override.
 > - **PR #134 (PR-C)** — hot-switch hotkeys
 >   `Ctrl+Shift+1` / `Ctrl+Shift+2`.
-> - **PR-D (this PR)** — manual NVDA-validation matrix expansion
->   in [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
+> - **PR #135 (PR-D)** — NVDA validation matrix expansion in
+>   [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
 >   "Stage 7 — Claude Code roundtrip" + this inventory's first
 >   pre-seeded entries.
+> - **PR-E** — `Ctrl+Shift+G` runtime debug-log toggle.
+> - **PR-F** — `Ctrl+Shift+H` health check + `Ctrl+Shift+B`
+>   incident marker + 5s background heartbeat.
+> - **PR-G** — `Ctrl+Shift+;` dispatcher-deadlock fix
+>   (`FlushPending(500).Result` sync-over-async).
+> - **PR-H** — 500-char streaming-announce cap stopgap (tracked by
+>   Issue #139 for Stream-profile-driven removal).
+> - **PR #141 (PR-I)** — silent reader-loop shutdown on shell-switch
+>   (`ChannelClosedException` was being mis-classified as a parser
+>   error) + `currentShell` mutable so heartbeat / health-check
+>   report the post-switch identity.
+> - **PR #142 (PR-J)** — PowerShell as third built-in shell;
+>   hotkeys reordered to `+1`=cmd / `+2`=PowerShell / `+3`=Claude
+>   so the diagnostic control shell sits next to cmd; Ctrl+Shift+H
+>   liveness probe (`Process.GetProcessById` alive/dead flag);
+>   Ctrl+Shift+D inline shell-process snapshot announce.
+> - **PR #143 (PR-K)** — env-scrub allow-list expanded with the
+>   Windows runtime baseline (`SystemRoot`, `WINDIR`, `TEMP`,
+>   `ProgramFiles`, `PSModulePath`, etc.) after the 2026-05-03 NVDA
+>   pass surfaced PowerShell + claude.exe both dying on spawn
+>   because the original 7-name allow-list stripped vars they
+>   needed to initialise; misleading "stripped 0" log line replaced
+>   with `"kept K of M parent vars; dropped D as sensitive"`.
+> - **PR-L** (Stage 7 wrap-up) — doc-purpose audit; this status
+>   block.
 >
-> **Empirical NVDA validation is maintainer-driven.** This PR
-> ships the validation matrix + the design-derived inventory
-> entries below; the maintainer runs the matrix, confirms or
-> refines the predicted entries, and adds any additional gaps
-> surfaced empirically. Per the May-2026 plan: **don't fix
-> anything from the inventory in Stage 7; that's framework-cycle
-> work.** The Output framework cycle (Part 3) consumes this
-> inventory as design input for its research phase
+> **Maintainer's empirical confirmation:** post-PR-K NVDA pass
+> (2026-05-03) confirmed all three shells spawn, stay alive, and
+> announce correctly under hot-switch; `Ctrl+Shift+H` reports
+> `alive` for the running shell.
+>
+> **Don't fix anything from the inventory in Stage 7; that's
+> framework-cycle work.** The Output framework cycle (Part 3)
+> consumes this inventory as design input for its research phase
 > (`docs/research/OUTPUT-FRAMEWORK-PRIOR-ART.md`).
 
 ## How to use this file

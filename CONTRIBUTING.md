@@ -246,9 +246,9 @@ new code.
   .NET-API methods are typed `string?` (nullable string) under
   `<Nullable>enable</Nullable>` — `Path.GetFileName`,
   `Path.GetDirectoryName`, `Environment.GetEnvironmentVariable`,
-  `StreamReader.ReadLine`, etc. Passing the result to a non-null
-  `string` parameter compiles to an `FS3261` warning that becomes
-  a build error under
+  `StreamReader.ReadLine`, `Process.Start(ProcessStartInfo)`, etc.
+  Passing the result to a non-null `string` parameter compiles to
+  an `FS3261` warning that becomes a build error under
   `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` (CI fails
   on Windows-latest with the actual error text reading
   "Nullness warning: A non-nullable 'string' was expected but
@@ -272,7 +272,11 @@ new code.
     - **Coerce at the call site** with `nonNull` (from `FSharp.Core`)
       or an inline `match ... with | null -> ... | s -> s`. Useful
       for one-off boundary crossings without changing helper
-      signatures.
+      signatures. `nonNull` is the cleaner choice when the value
+      is known non-null at the call site (e.g. just-tested via
+      `String.IsNullOrEmpty` or guaranteed by a contract). See
+      `src/Terminal.Core/AnnounceSanitiser.fs:56` for the canonical
+      pattern.
 
     Issue #107's filename-format helper hit this when test code
     passed `Path.GetFileName(...)` to a non-null parameter; PR #121
@@ -280,6 +284,79 @@ new code.
     pattern-match. The fix landed as a fixup commit on the same
     branch (see "Branching and pull requests" — fixup-commit
     rhythm) so the PR auto-extended without scope churn.
+
+- **F# delegate conversion only fires for `Func` / `Action`.** F#
+  auto-converts lambdas to `System.Func<...>` and `System.Action<...>`
+  but NOT to other delegate types like `Predicate<T>` or custom
+  delegates. xUnit's `Assert.DoesNotContain(IEnumerable<T>,
+  Predicate<T>)` in particular doesn't auto-convert from F#; use
+  `List.tryFind ... = None` + `Assert.Equal` instead. PR #131
+  burned a CI cycle on this.
+
+- **Record literal type inference fails when the record's module
+  isn't auto-opened.** When a record `T` is declared inside a
+  `module M` that is not auto-opened, an unqualified record
+  literal `{ Field = ... }` outside that module fails to resolve
+  the field names — F# can't infer which record type the literal
+  belongs to. Add an explicit type annotation on the binding:
+
+  ```fsharp
+  // Fails with FS0039 "record label not defined":
+  let registry =
+      Map.ofList
+          [ ShellRegistry.Cmd,
+              { Id = ShellRegistry.Cmd
+                DisplayName = "fake"
+                Resolve = fun () -> Ok "x.exe" } ]
+
+  // Works:
+  let shell : ShellRegistry.Shell =
+      { Id = ShellRegistry.Cmd
+        DisplayName = "fake"
+        Resolve = fun () -> Ok "x.exe" }
+  let registry = Map.ofList [ ShellRegistry.Cmd, shell ]
+  ```
+
+  Bit PR #132 (Stage 7 PR-B). The error message is unhelpful — it
+  points at the field, not the missing type annotation.
+
+- **NUL bytes in F# source: use `' '` not raw `\0`.** Use the
+  explicit `' '` escape (or `'\x00'`) for NUL char literals,
+  not a raw NUL byte in source. Raw NULs survive Edit-tool
+  round-trips but are brittle to tooling and reviewers' editors.
+  Convention enforced by
+  `tests/Tests.Unit/AnnounceSanitiserTests.fs` header note. Same
+  shape as the literal-`0x1B`-in-source foot-gun (see "Test
+  fixtures: CSI / OSC / DCS sequences" below) — invisible bytes
+  in source are landmines.
+
+- **Sequence-in-match-arm: extract a named local function rather
+  than relying on the offside rule to sequence side-effect +
+  return value.** When a match-arm body needs to do a
+  side-effect-then-return-value, the F# offside rule does work
+  in most cases, but
+  `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` makes the
+  brittle parses fail unpredictably:
+
+  ```fsharp
+  // Brittle:
+  | None ->
+      match envVar with
+      | null -> ()
+      | v -> log.LogWarning(...)
+      ShellRegistry.Cmd
+
+  // Safer:
+  let logIfUnrecognised () : unit =
+      match envVar with
+      | null -> ()
+      | v -> log.LogWarning(...)
+      match parseEnvVar envVar with
+      | Some id -> id
+      | None ->
+          logIfUnrecognised ()
+          ShellRegistry.Cmd
+  ```
 
 ### WPF gotchas learned in practice
 
