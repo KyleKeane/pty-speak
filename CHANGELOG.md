@@ -1297,6 +1297,47 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Changed
 
+- **Spec formalization: Stage 5a — Diagnostic logging surface.**
+  Per chat 2026-05-03 maintainer authorization, the post-Stage-6
+  diagnostic-logging cycle is now formally documented in
+  `spec/tech-plan.md` as **Stage 5a**. Same letter-suffix
+  convention as Stages 4a and 4b. Sub-sections cover:
+
+  - **5a.1** `FileLogger.fs` structured-logging substrate
+    (off-thread `Channel<LogEntry>` drain, `Microsoft.Extensions.Logging.Abstractions`
+    contract, retention, `PTYSPEAK_LOG_LEVEL` env var, "never log
+    secrets" call-site discipline).
+  - **5a.2** Per-session files in per-day folders
+    (`pty-speak-yyyy-MM-dd-HH-mm-ss-fff.log` per Issue #107;
+    `FileLoggerSink.ActiveLogPath` accessor).
+  - **5a.3** `Ctrl+Shift+L` open-logs hotkey + announce-before-launch
+    pattern (parallel to Stage 4b).
+  - **5a.4** `Ctrl+Shift+;` copy-active-log hotkey + `FileShare.ReadWrite`
+    matching the writer's policy + hotkey-choice rationale
+    (Magnifier collision avoidance, SystemKey-unwrap → Alt+F4
+    breakage, US-layout physical proximity to `L`).
+  - **5a.5** `FileLoggerSink.FlushPending(timeoutMs)` TCS-barrier
+    so the copy hotkey captures up-to-the-moment state.
+  - **5a.6** Validation matrix (xUnit + manual NVDA).
+  - **5a.7** Post-Stage-5/6 streaming-pipeline diagnostics
+    (PRs #109/#111/#114/#116) — the cycle the diagnostic
+    logging surface itself enabled.
+
+  `docs/ROADMAP.md` gains a Stage 5a row between Stage 6 and
+  Stage 7 (matches shipping order — work began after Stage 6
+  PR-B #99 / fixup #100 and continued through the post-Stage-6
+  streaming-pipeline-fix PRs plus this session's Issue #107 +
+  FlushPending refinements).
+
+  No prose alignment needed in other docs because user-facing
+  references use the hotkey names (`Ctrl+Shift+L`,
+  `Ctrl+Shift+;`) and module name (`FileLogger.fs`) as pointers
+  rather than a stage number.
+
+  This completes the three-PR spec-stage-numbering chunk
+  authorized in chat 2026-05-03 (Stage 4a + Stage 4b + Stage 5a
+  all formally documented in the spec).
+
 - **Spec formalization: Stage 4b — Process-cleanup diagnostic.**
   Per chat 2026-05-03 maintainer authorization, the `Ctrl+Shift+D`
   diagnostic-launcher work (PR #81) is now formally documented in
