@@ -132,12 +132,17 @@ let ``Claude entry has DisplayName "Claude Code"`` () =
 
 [<Fact>]
 let ``tryFindIn returns Some when the id is registered`` () =
-    let registry =
-        Map.ofList
-            [ ShellRegistry.Cmd,
-                { Id = ShellRegistry.Cmd
-                  DisplayName = "fake-cmd"
-                  Resolve = fun () -> Ok "fake.exe" } ]
+    // F# 9 record-literal inference can't see the `Shell` record's
+    // fields without the type annotation: `Shell` lives inside
+    // `module ShellRegistry` (not auto-opened), so `Id`/`DisplayName`/
+    // `Resolve` aren't unqualified-resolvable from the test scope.
+    // The annotation pins the record's type and the field names
+    // resolve cleanly.
+    let shell : ShellRegistry.Shell =
+        { Id = ShellRegistry.Cmd
+          DisplayName = "fake-cmd"
+          Resolve = fun () -> Ok "fake.exe" }
+    let registry = Map.ofList [ ShellRegistry.Cmd, shell ]
     let found = ShellRegistry.tryFindIn registry ShellRegistry.Cmd
     Assert.True(found.IsSome)
     Assert.Equal("fake-cmd", found.Value.DisplayName)
@@ -158,12 +163,11 @@ let ``tryFindIn allows tests to inject deterministic Resolve closures`` () =
     // higher-level orchestration (which is in `Program.fs compose ()`
     // for now; will move into a testable helper if PR-C's hot-switch
     // logic justifies the extraction).
-    let synthetic =
-        Map.ofList
-            [ ShellRegistry.Claude,
-                { Id = ShellRegistry.Claude
-                  DisplayName = "synthetic Claude"
-                  Resolve = fun () -> Error "synthetic-failure-for-test" } ]
+    let claudeShell : ShellRegistry.Shell =
+        { Id = ShellRegistry.Claude
+          DisplayName = "synthetic Claude"
+          Resolve = fun () -> Error "synthetic-failure-for-test" }
+    let synthetic = Map.ofList [ ShellRegistry.Claude, claudeShell ]
     let claude = (ShellRegistry.tryFindIn synthetic ShellRegistry.Claude).Value
     match claude.Resolve() with
     | Error reason -> Assert.Equal("synthetic-failure-for-test", reason)
