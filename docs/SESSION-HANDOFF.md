@@ -348,7 +348,10 @@ disconnects mid-session.
 
 6. **Diagnostic-launcher UX needs a screen-reader-native
    replacement — now actionable (Stages 5 + 6 shipped, PR
-   #116 functional end-to-end).** PR #81 shipped
+   #116 functional end-to-end).** Original ship is **Stage 4b**
+   (`spec/tech-plan.md` §4b); the in-pty-speak rework path
+   below is documented in §4b.4 as the deferred
+   screen-reader-native replacement. PR #81 shipped
    `Ctrl+Shift+D` to launch
    `scripts/test-process-cleanup.ps1` in a separate
    PowerShell window, with the working hypothesis that the
