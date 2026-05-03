@@ -771,10 +771,75 @@ module Program =
                         with _ -> ()
                 } :> Task)
 
+        // Stage 7 PR-B — resolve which shell to spawn. cmd.exe stays
+        // the default per maintainer instruction; `PTYSPEAK_SHELL=claude`
+        // (or any future menu UI) flips it. Unrecognised env-var values
+        // fall back to cmd with a warning log so the user isn't locked
+        // out of a working terminal by a typo. PR-C adds Ctrl+Shift+1
+        // (cmd) / Ctrl+Shift+2 (claude) hotkeys for mid-session
+        // hot-switching.
+        let resolveStartupShell () : ShellRegistry.Shell * string =
+            let envVar = Environment.GetEnvironmentVariable("PTYSPEAK_SHELL")
+            // Distinguish "unset" from "set to garbage" so the
+            // log line is actionable. `null` / empty / whitespace
+            // is the common case (no env var set); a non-empty
+            // unrecognised value is a typo or stale config and
+            // earns a warning. Extracted to a helper so the
+            // arm body of `parseEnvVar`'s `None` case stays a
+            // single expression — F# 9 + `TreatWarningsAsErrors`
+            // can be brittle about sequence-in-match-arm
+            // shapes, and the helper sidesteps that risk.
+            let logIfUnrecognised () : unit =
+                match envVar with
+                | null -> ()
+                | v when System.String.IsNullOrWhiteSpace(v) -> ()
+                | v ->
+                    log.LogWarning(
+                        "PTYSPEAK_SHELL=\"{Value}\" not recognised; falling back to cmd.exe. Recognised values: cmd, claude.",
+                        v)
+            let requested =
+                match ShellRegistry.parseEnvVar envVar with
+                | Some id -> id
+                | None ->
+                    logIfUnrecognised ()
+                    ShellRegistry.Cmd
+            // `tryFind` only returns None for ids not registered in
+            // `builtIns`; both Cmd and Claude are registered, so this
+            // is unreachable for the requested id, but the cmd-fallback
+            // is shared with the resolution-failure branch below.
+            let cmdShell =
+                match ShellRegistry.tryFind ShellRegistry.Cmd with
+                | Some s -> s
+                | None -> failwith "Cmd not registered in ShellRegistry.builtIns"
+            match ShellRegistry.tryFind requested with
+            | None ->
+                cmdShell, "cmd.exe"
+            | Some shell ->
+                match shell.Resolve() with
+                | Ok cmdLine ->
+                    shell, cmdLine
+                | Error reason ->
+                    log.LogWarning(
+                        "Shell {Shell} unavailable: {Reason}. Falling back to {Fallback}.",
+                        shell.DisplayName,
+                        reason,
+                        cmdShell.DisplayName)
+                    let fallbackCmd =
+                        match cmdShell.Resolve() with
+                        | Ok c -> c
+                        | Error _ -> "cmd.exe"
+                    cmdShell, fallbackCmd
+
+        let chosenShell, commandLine = resolveStartupShell ()
+        log.LogInformation(
+            "Startup shell: {Shell} (command line: {CommandLine}).",
+            chosenShell.DisplayName,
+            commandLine)
+
         let cfg : PtyConfig =
             { Cols = int16 ScreenCols
               Rows = int16 ScreenRows
-              CommandLine = "cmd.exe" }
+              CommandLine = commandLine }
 
         let mutable hostHandle : ConPtyHost option = None
 

@@ -263,6 +263,88 @@ defaults; they shouldn't be the only options.
   manual smoke matrix already covers Stage 9 with NVDA-
   audible verification.
 
+## Default shell
+
+### Current state
+
+Stage 7 PR-B added an extensible `ShellRegistry` in
+`src/Terminal.Pty/ShellRegistry.fs` exposing two built-in shells:
+
+- **`Cmd`** — Windows Command Prompt (`cmd.exe`). The Stage 7
+  default; what new users see if they haven't configured anything.
+- **`Claude`** — Claude Code (`claude.exe`, resolved via
+  `where.exe claude`). The maintainer's primary target workload;
+  selected by setting `PTYSPEAK_SHELL=claude` (case-insensitive)
+  before launching pty-speak.
+
+Resolution lives in `compose ()` (`src/Terminal.App/Program.fs`):
+
+1. Read `PTYSPEAK_SHELL` env var. Recognised values: `cmd`,
+   `claude` (after trim, case-insensitive). Unrecognised non-empty
+   values produce a `LogWarning` and fall back to the default.
+2. Default: `Cmd`.
+3. Resolve via `ShellRegistry.tryFind`. If the resolver returns
+   `Error` (e.g. Claude Code not installed), log a warning at
+   `Information`-adjacent severity and fall back to `Cmd`.
+4. Log the chosen shell + resolved command line at `Information`.
+
+The Stage 7 PR-A env-scrub block from `Terminal.Pty.Native.EnvBlock`
+is applied uniformly to whichever shell is selected — adding new
+shells doesn't broaden the env-leak surface.
+
+### Why hardcoded now
+
+Stage 7's job is to validate Claude Code under NVDA, not to ship
+a configuration UI. `PTYSPEAK_SHELL` is the smallest possible
+selection surface: an env var any user can set in their shell rc
+or via a desktop-shortcut "Run with environment" wrapper. Stage 7
+PR-C adds `Ctrl+Shift+1` / `Ctrl+Shift+2` hotkeys for in-session
+hot-switching (cmd ↔ claude); Phase 2 adds the menu / palette UI
+that exposes the registry to the user without requiring shell
+literacy.
+
+### What configurability would look like
+
+Three plausible levels of configurability, increasing in cost:
+
+1. **`PTYSPEAK_SHELL` env-var override (today's surface).**
+   Recognised names map to built-in registry entries. No file I/O,
+   no parsing risk, easy to revert by unsetting.
+
+2. **Hotkey-driven hot-switch (Stage 7 PR-C).** `Ctrl+Shift+1`
+   selects cmd; `Ctrl+Shift+2` selects claude. The architectural
+   lift is mid-session `ConPtyHost` teardown + respawn, which PR-C
+   ships. Future shells claim higher digit slots (`Ctrl+Shift+3` for
+   PowerShell, etc.). `AppReservedHotkeys` contract + spec §6 update
+   land in PR-C.
+
+3. **Phase 2 TOML config + menu UI.** A `shells` table in the
+   user-settings file lists shell-id + display-name + executable
+   path + optional argument list, and a palette UI lets the user
+   pick from the resolved set. Plugin-style third-party shells
+   (Python, Node, custom scripts) become possible. Requires the
+   Phase 2 user-settings substrate (Issue #112).
+
+### Implementation notes
+
+- `ShellRegistry.builtIns: Map<ShellId, Shell>` is the single source
+  of truth. Adding a shell requires (a) extending the `ShellId`
+  discriminated union, (b) adding an entry to `builtIns` with a
+  resolver closure, (c) updating `parseEnvVar` to recognise the
+  new name, and (d) updating
+  `tests/Tests.Unit/ShellRegistryTests.fs ``builtIns contains exactly Cmd and Claude```
+  (the assertion intentionally pins the exact set so a reviewer is
+  forced to acknowledge each addition).
+- `tryFindIn` exists separate from `tryFind` so tests can inject
+  synthetic registries without touching `builtIns`. Production code
+  uses `tryFind` (which delegates to `builtIns`).
+- `whereExe` is a thin `Process.Start` wrapper with a 2-second
+  timeout. Not unit-tested directly; the real path is exercised in
+  `docs/ACCESSIBILITY-TESTING.md`'s Stage 7 row (PR-D).
+- Persistence: `PTYSPEAK_SHELL` is per-process; the user sets it in
+  their shell environment or via a launcher wrapper. Future TOML
+  config persists across launches.
+
 ## Keybindings
 
 ### Current state

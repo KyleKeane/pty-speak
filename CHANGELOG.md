@@ -17,6 +17,55 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Stage 7 PR-B — extensible shell registry + `PTYSPEAK_SHELL`
+  startup override.** New `Terminal.Pty.ShellRegistry` module
+  (`src/Terminal.Pty/ShellRegistry.fs`) exposes two built-in shells
+  pty-speak can spawn as the ConPTY child: `Cmd` (`cmd.exe`, the
+  Stage 7 default) and `Claude` (`claude.exe`, resolved at startup
+  via `where.exe claude`). Each shell carries a lazy `Resolve`
+  closure returning either the command line to pass to
+  `PtyConfig.CommandLine` or a human-readable failure reason. The
+  shape is designed so future shells (PowerShell, WSL, Python REPL,
+  others) plug in by extending the `ShellId` DU and registering an
+  entry in `builtIns` — no spawn-path changes required.
+
+  The composition root (`src/Terminal.App/Program.fs compose ()`)
+  reads `PTYSPEAK_SHELL` at launch (recognised values: `cmd`,
+  `claude`, case-insensitive after trim), resolves the requested
+  shell, and falls back to `cmd.exe` with a `LogWarning` if either
+  the env-var value is unrecognised or the resolver returns `Error`
+  (e.g. Claude Code not installed — pty-speak still works as a
+  generic terminal in that case rather than failing the launch).
+  Chosen shell + resolved command line are logged at `Information`
+  level after spawn.
+
+  Stage 7 PR-A's env-scrub PO-5 block applies uniformly to
+  whichever shell is selected — extending the registry doesn't
+  broaden the env-leak surface.
+
+  Pinned by `tests/Tests.Unit/ShellRegistryTests.fs`:
+  `parseEnvVar` recognised values + case-insensitivity + trim +
+  null/empty/whitespace handling + non-substring-match (`cmd.exe`
+  is not recognised as `cmd`); `builtIns` keyset pin (force
+  reviewer acknowledgement on every shell addition); `tryFindIn`
+  synthetic-registry injection so tests don't depend on the
+  production `where.exe` invocation. The `whereExe` helper itself
+  is exercised manually via `docs/ACCESSIBILITY-TESTING.md`'s
+  Stage 7 matrix row (extended in PR-D).
+
+  `docs/USER-SETTINGS.md` "Default shell" section logs `PTYSPEAK_SHELL`
+  as today's hardcoded knob and traces the configurability ladder
+  (env var today → Ctrl+Shift+1/2 hotkeys in PR-C → Phase 2 TOML
+  menu UI). Spec deviation note: the spec §7 launch story doesn't
+  mention a registry — the registry is an extension within Stage
+  7's scope per maintainer authorization in this session, formalised
+  in PR-C's spec update alongside the hotkey contract.
+
+  Second of four sequenced Stage 7 PRs per
+  `docs/PROJECT-PLAN-2026-05.md` Part 2; depends on PR-A so the
+  env-scrub applies to claude.exe as well. PR-C layers the
+  Ctrl+Shift+1 / Ctrl+Shift+2 hot-switch hotkeys on top.
+
 - **`docs/HISTORICAL-CONTEXT-2026-05.md` — supplementary backup
   reference, NOT a primary handoff source.** Curated knowledge dump
   capturing the May-2026 cleanup cycle's guiding principles
