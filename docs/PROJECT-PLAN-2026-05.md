@@ -17,6 +17,31 @@ should land as new dated plans (`PROJECT-PLAN-2026-MM.md`) rather than
 edits in place — the sequence shapes the architecture cycles below
 and rewriting it would lose decision history.
 
+> **Status as of 2026-05-03 cleanup cycle close (PR #128 merged).**
+> **Part 1 is shipped.** Every Part 1 sub-item below
+> (1.1 FluentAssertions removal, 1.2 CHANGELOG `[Unreleased]`
+> consolidation, 1.3 Issue #107 log-filename refinement, 1.4
+> `FlushPending` API, 1.5 docs freshness sweep, 1.6 plan committed
+> to repo) has merged to `main`. The spec stage-numbering hygiene
+> the plan flagged ("Stages 4a / 4b / 5a should be formal in the
+> spec") is also done — see `spec/tech-plan.md` §4a / §4b / §5a.
+> Part 1.7 (pre-architecture preview cut as a tagged save point)
+> remains a maintainer-side action.
+>
+> Bonus context-dump work shipped during the same cycle but not in
+> the original Part 1 scope: the **Stage 7 implementation sketch**
+> in `docs/SESSION-HANDOFF.md` (so the next session has a
+> pre-digested plan for Part 2), the **`baseline/stage-N`
+> rollback rows** for all shipped post-Stage-3b stages in
+> `docs/CHECKPOINTS.md`, and two new gotchas in `CONTRIBUTING.md`
+> (F# 9 `string | null` at .NET-API boundaries; fixup-commit
+> rhythm on open PRs that fail CI).
+>
+> **Next session starts at Part 2** (Stage 7). The plan body
+> below is preserved verbatim for decision-history continuity —
+> read it as the snapshot it was at authorship time, not as a
+> live to-do list.
+
 ## Context
 
 Streaming output reaches NVDA end-to-end as of PR #116 (the broken

@@ -17,6 +17,60 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Final-handoff audit closing the May-2026 cleanup cycle.** Sweeps
+  the last staleness in the entry-point docs so the next session
+  picks up cleanly:
+
+  - **`docs/SESSION-HANDOFF.md` "Where we left off" cell rewritten**
+    to reflect post-cleanup-cycle state. "In-flight branch" flips
+    from the long-merged `claude/audit-repo-handoff-FCsnT` to
+    explicit "_None._ The May-2026 cleanup cycle is complete; next
+    session starts from Part 2." "Last merged stages" gains the
+    spec-formalized Stages 4a / 4b / 5a + the full PR #118 → #128
+    cleanup-cycle narrative. "Next stage" rewritten to point at
+    Stage 7 with explicit reference to the Stage 7 implementation
+    sketch in this same file. "Last shipped release" caveat clarified
+    (preview.43 is the latest code-bearing preview; subsequent PRs
+    are docs-only).
+  - **`docs/SESSION-HANDOFF.md` "Pending action items" #1
+    expanded** from "five pending baseline tags" (Stages 0-3b) to
+    twelve (5 original + 7 added per PR #127 for Stages 4 / 4a /
+    4b / 5 / 5a / 6 / 11). Maintainer-side action: push the tags
+    from a workstation, then delete each row from the
+    `docs/CHECKPOINTS.md` "Pending checkpoint tags" table per the
+    existing convention.
+  - **`docs/SESSION-HANDOFF.md` closing notes** gain a paragraph
+    documenting the May-2026 cleanup-cycle context (PRs #118 →
+    #128 closed Part 1 + the bonus context-dump work; the
+    fixup-commit rhythm was exercised on PR #121; small-focused-PR
+    cadence works smoothly with squash-merge).
+  - **`README.md` status block** realigned: "Stage 4.5" updates to
+    "Stage 4a" (matches the spec-formalization in `spec/tech-plan.md`
+    §4a); explicit mentions of newly-formalized Stages 4b and 5a
+    added; cleanup is marked shipped; Stage 7 explicitly called out
+    as next.
+  - **`docs/PROJECT-PLAN-2026-05.md`** gains a "Status as of
+    2026-05-03 cleanup cycle close" note at the top so a reader
+    doesn't mistake Part 1's sub-items for live to-dos. The plan
+    body below the note is preserved verbatim for decision-history
+    continuity per the doc's own "Future revisions should land as
+    new dated plans" rule.
+  - **New `docs/STAGE-7-ISSUES.md` stub.** Pre-creates the file the
+    Stage 7 implementation sketch references (per
+    `docs/SESSION-HANDOFF.md` §5 of the sketch). Contains the
+    framework-taxonomy category tags (`[output-stream]`,
+    `[output-form]`, `[output-selection]`, `[output-earcon]`,
+    `[output-tui]`, `[output-repl]`, `[input-suggest]`,
+    `[input-buffer]`, `[input-form]`, `[input-nl]`,
+    `[review-mode]`, `[other]`), an entry template, instructions
+    for use, and explicit cross-references to the spec / plan /
+    sketch. Empty entries section so the next session writes into
+    a structured place without making meta-decisions.
+
+  Closes the final context-dump candidate from the May-2026
+  cleanup-cycle handoff queue. **Next session starts at Part 2 —
+  Stage 7. Read `docs/SESSION-HANDOFF.md` first.**
+
 - **`CONTRIBUTING.md` gains two session-tested practice notes** —
   one F# gotcha and one PR-workflow convention captured during the
   May-2026 cleanup cycle so future contributors don't re-learn them:
