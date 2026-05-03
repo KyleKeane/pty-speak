@@ -126,6 +126,18 @@ type FileLoggerSink (options: FileLoggerOptions) =
     /// folders.
     let launchUtc = DateTimeOffset.UtcNow
 
+    /// Stage 7-followup PR-E — runtime-mutable min-level so the
+    /// `Ctrl+Shift+G` hotkey can toggle Debug ↔ Information without
+    /// requiring an env-var + relaunch cycle. Initialised from
+    /// `options.MinLevel`; updated via `SetMinLevel`. Reads through
+    /// `currentMinLevel` are unsynchronised — the level is a single
+    /// `LogLevel` enum (4-byte read), atomic on x64, and the
+    /// hotkey-driven write happens on the WPF dispatcher thread
+    /// while reads happen on the Channel-drain thread; a stale read
+    /// for one entry is acceptable (worst case: one log line at the
+    /// previous level after a toggle).
+    let mutable currentMinLevel = options.MinLevel
+
     let channel =
         let opts =
             BoundedChannelOptions(options.ChannelCapacity,
@@ -329,7 +341,36 @@ type FileLoggerSink (options: FileLoggerOptions) =
             } :> Task)
 
     member _.IsEnabled (level: LogLevel) : bool =
-        level >= options.MinLevel
+        level >= currentMinLevel
+
+    /// Stage 7-followup PR-E — current min-level read-out. Used by
+    /// the `Ctrl+Shift+G` hotkey to announce the current state via
+    /// NVDA before/after toggling.
+    member _.MinLevel : LogLevel = currentMinLevel
+
+    /// Stage 7-followup PR-E — runtime-mutable min-level setter.
+    /// Wired to the `Ctrl+Shift+G` toggle hotkey in
+    /// `src/Terminal.App/Program.fs`. Effective for every TryWrite
+    /// call after this returns; the `currentMinLevel` field is a
+    /// 4-byte enum (atomic read on x64). Logs the change at
+    /// `Information` level so the audit trail captures every
+    /// transition regardless of the new state's filtering
+    /// (Information is always at-or-above the new min for the two
+    /// levels the hotkey toggles between).
+    member this.SetMinLevel (newLevel: LogLevel) : unit =
+        let prev = currentMinLevel
+        currentMinLevel <- newLevel
+        // Self-log via TryWrite so the transition appears in the
+        // log file even when downgrading from Debug to Information
+        // (the new-level filter passes Information).
+        let msg =
+            sprintf "FileLogger min-level changed: %A -> %A" prev newLevel
+        this.TryWrite(
+            DateTimeOffset.UtcNow,
+            LogLevel.Information,
+            "Terminal.Core.FileLoggerSink.SetMinLevel",
+            msg,
+            ValueNone)
 
     /// Enqueue an entry. Returns immediately. Drops silently if
     /// the channel is closed (post-shutdown).
@@ -339,7 +380,7 @@ type FileLoggerSink (options: FileLoggerOptions) =
              category: string,
              message: string,
              ex: exn voption) : unit =
-        if level >= options.MinLevel then
+        if level >= currentMinLevel then
             let entry =
                 { Timestamp = timestamp
                   Level = level

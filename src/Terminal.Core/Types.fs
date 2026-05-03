@@ -282,3 +282,12 @@ module ActivityIds =
     /// processing for shell-switch announcements separately
     /// from streaming output.
     let shellSwitch = "pty-speak.shell-switch"
+
+    /// Debug-logging toggle announcements (Stage 7-followup
+    /// PR-E `Ctrl+Shift+G`). Emits "Debug logging on." /
+    /// "Debug logging off." after each toggle so the user can
+    /// confirm the current state without checking a log file.
+    /// Distinct ActivityId so users can configure NVDA's
+    /// notification processing for diagnostic-config
+    /// announcements separately from streaming output.
+    let logToggle = "pty-speak.log-toggle"

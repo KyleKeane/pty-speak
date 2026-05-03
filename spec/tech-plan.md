@@ -454,6 +454,22 @@ The “spinner problem” is real (Claude Code’s Ink renderer redraws the same
 >     (resolved via `where.exe claude` per §7.1).
 >     Bound in the same setup function.
 >
+> Stage 7-followup PR-E addition (ADR-style amendment 2026-05-03,
+> maintainer-authorised — diagnostic-workflow accessibility
+> improvement after the maintainer spent two hours fighting
+> env-var manipulation to enable Debug-level logging):
+>   - `Ctrl+Shift+G` — toggle `FileLogger` min-level between
+>     `Information` (default) and `Debug` at runtime. Each press
+>     flips the level and announces the new state via NVDA
+>     ("Debug logging on." / "Debug logging off."). Eliminates
+>     the previous `PTYSPEAK_LOG_LEVEL=Debug` env-var-and-relaunch
+>     workflow that depended on shell-launch sequencing the
+>     screen-reader user couldn't reliably verify. Bound in
+>     `setupToggleDebugLogKeybinding` in
+>     `src/Terminal.App/Program.fs`. Mnemonic: G for "loGging".
+>     No NVDA collision (default NVDA bindings don't claim
+>     `Ctrl+Shift+G`).
+>
 > Future entries (declared as code comments today; activated
 > when their owning stage ships):
 >   - `Ctrl+Shift+M` — Stage 9 earcon mute toggle.

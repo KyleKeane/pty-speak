@@ -555,9 +555,64 @@ module Program =
         let gesture = KeyGesture(Key.L, ModifierKeys.Control ||| ModifierKeys.Shift)
         window.InputBindings.Add(KeyBinding(cmd, gesture)) |> ignore
         window.CommandBindings.Add(
+                CommandBinding(
+                    cmd,
+                    ExecutedRoutedEventHandler(fun _ _ -> runOpenLogs window)))
+        |> ignore
+
+    /// Stage 7-followup PR-E — toggle the active `FileLoggerSink`'s
+    /// min-level between Information (default) and Debug, and
+    /// announce the new state via NVDA. Lets the maintainer enable
+    /// verbose debug logging from inside pty-speak without an
+    /// env-var dance + relaunch (the previous workflow). Each
+    /// press flips the level; the level is persistent for the
+    /// lifetime of the session, but does NOT survive across
+    /// launches (a future Phase-2 user-settings TOML can persist
+    /// it if desired).
+    ///
+    /// The toggle event itself logs at `Information` level so the
+    /// audit trail captures every transition regardless of which
+    /// state we just left (Information passes both filters).
+    /// Announcement uses `ActivityIds.logToggle` so users can
+    /// configure NVDA's notification processing for diagnostic-
+    /// config announcements separately from streaming output.
+    let private runToggleDebugLog (window: MainWindow) : unit =
+        match loggerSink with
+        | None ->
+            let log = Logger.get "Terminal.App.Program.runToggleDebugLog"
+            log.LogWarning(
+                "Ctrl+Shift+G pressed but loggerSink is None; toggle skipped.")
+            window.TerminalSurface.Announce(
+                "Logger not initialised; toggle skipped.",
+                ActivityIds.error)
+        | Some sink ->
+            let log = Logger.get "Terminal.App.Program.runToggleDebugLog"
+            let next =
+                if sink.MinLevel = LogLevel.Debug then LogLevel.Information
+                else LogLevel.Debug
+            sink.SetMinLevel(next)
+            log.LogInformation(
+                "Ctrl+Shift+G pressed; FileLogger min-level toggled to {NewLevel}.",
+                next)
+            let cue =
+                match next with
+                | LogLevel.Debug -> "Debug logging on."
+                | _ -> "Debug logging off."
+            window.TerminalSurface.Announce(cue, ActivityIds.logToggle)
+
+    /// Wire `Ctrl+Shift+G` to trigger `runToggleDebugLog`. Same
+    /// pattern as the other reserved hotkeys above. The gesture
+    /// is reserved in `TerminalView.AppReservedHotkeys` so Stage 6's
+    /// `OnPreviewKeyDown` filter doesn't mark it `Handled = true`
+    /// before WPF's `InputBindings` machinery can fire.
+    let private setupToggleDebugLogKeybinding (window: MainWindow) : unit =
+        let cmd = RoutedCommand("ToggleDebugLog", typeof<MainWindow>)
+        let gesture = KeyGesture(Key.G, ModifierKeys.Control ||| ModifierKeys.Shift)
+        window.InputBindings.Add(KeyBinding(cmd, gesture)) |> ignore
+        window.CommandBindings.Add(
             CommandBinding(
                 cmd,
-                ExecutedRoutedEventHandler(fun _ _ -> runOpenLogs window)))
+                ExecutedRoutedEventHandler(fun _ _ -> runToggleDebugLog window)))
         |> ignore
 
     /// Composition seam — Stage 4+ plugs Elmish.WPF and the UIA peer
@@ -612,6 +667,13 @@ module Program =
         // contents to the clipboard. Useful for sending the log
         // to a maintainer without navigating Explorer.
         setupCopyLatestLogKeybinding window
+
+        // Stage 7-followup PR-E — wire Ctrl+Shift+G to toggle the
+        // FileLogger min-level (Information ↔ Debug) at runtime,
+        // with an audible NVDA announcement of the new state. Lets
+        // the maintainer enable verbose debug logging without the
+        // env-var-and-relaunch dance.
+        setupToggleDebugLogKeybinding window
 
         // Direct dispatch via TerminalView.OnPreviewKeyDown is
         // kept as a defence-in-depth path because Window-level
