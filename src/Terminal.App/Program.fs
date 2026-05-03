@@ -519,7 +519,7 @@ module Program =
                                 window.TerminalSurface.Announce(
                                     "Active log file does not exist yet; press a key or wait for an event first.",
                                     ActivityIds.error)
-                            do! window.Dispatcher.InvokeAsync(Action(action)).Task :> Task
+                            do! window.Dispatcher.InvokeAsync(Action(action)).Task
                         else
                             // FileShare.ReadWrite matches the
                             // FileLogger writer's open mode (the
@@ -585,7 +585,7 @@ module Program =
                                     ActivityIds.error
                             let action () =
                                 window.TerminalSurface.Announce(msg, activityId)
-                            do! window.Dispatcher.InvokeAsync(Action(action)).Task :> Task
+                            do! window.Dispatcher.InvokeAsync(Action(action)).Task
                     with ex ->
                         let safe = AnnounceSanitiser.sanitise ex.Message
                         log.LogError(ex, "Failed to copy active log to clipboard.")
@@ -594,7 +594,7 @@ module Program =
                                 sprintf "Could not copy log: %s" safe,
                                 ActivityIds.error)
                         try
-                            do! window.Dispatcher.InvokeAsync(Action(action)).Task :> Task
+                            do! window.Dispatcher.InvokeAsync(Action(action)).Task
                         with _ -> ()
                 }
             ()
