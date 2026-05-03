@@ -15,6 +15,53 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Stage 7-followup PR-H)
+
+- **500-character announce-length cap on streaming output.**
+  The drain task in `src/Terminal.App/Program.fs` now truncates
+  any `Coalescer.OutputBatch` announcement longer than 500
+  characters and appends a footer:
+  `"...announcement truncated; N more characters available — press Ctrl+Shift+; to copy full log."`
+  Only `OutputBatch` is affected; `ErrorPassthrough`,
+  `ModeBarrier`, and the diagnostic announcements (health
+  check, incident marker, log-toggle, shell-switch) pass
+  through unchanged.
+
+  **Why a cap.** The 2026-05-03 NVDA pass empirically confirmed
+  the `[output-stream]` verbose-readback prediction in
+  `docs/STAGE-7-ISSUES.md` with concrete numbers: trivial cmd
+  interaction (`dir`, `set`, single keystrokes) produced
+  1316 / 1347-character announces taking 30-45 seconds each
+  for NVDA to read, making the terminal effectively unusable.
+  500 characters ≈ 15-20 seconds — tolerable upper bound that
+  preserves enough content for the user to follow what's
+  happening while leaving the speech queue responsive enough
+  to keep up with new input.
+
+  **Why this number.** **Arbitrary.** No empirical evidence
+  yet that 500 is right vs 250 / 750 / 1000. Tracked in
+  [issue #139](https://github.com/KyleKeane/pty-speak/issues/139)
+  for tuning based on real-feel data from subsequent NVDA
+  passes, AND for surfacing as a user-configurable setting
+  (likely `audio.maxAnnounceChars` in Phase 2 TOML, or a
+  hotkey-cycled preset). Catalog entry in
+  `docs/USER-SETTINGS.md` "Verbosity / NVDA narration" →
+  "Stopgap: announce-length cap".
+
+  **Why this is a stopgap.** The proper architectural fix is
+  the Output framework cycle's Stream profile (per
+  `docs/PROJECT-PLAN-2026-05.md` Part 3.2 RFC) — suffix-diff
+  append-only emission eliminates the verbose-readback at its
+  source rather than capping its output. When Stream profile
+  ships, this cap + footer become redundant and should be
+  deleted. Issue #139 tracks that deletion at the ship
+  boundary.
+
+  Inline code comment in `Program.fs` documents the
+  arbitrary-threshold disclaimer + the issue reference + the
+  ship-boundary-delete contract so a future contributor
+  doesn't preserve the stopgap by accident.
+
 ### Fixed (Stage 7-followup PR-G)
 
 - **`Ctrl+Shift+;` dispatcher deadlock.** Empirically confirmed in NVDA pass 2026-05-03:

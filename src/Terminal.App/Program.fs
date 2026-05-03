@@ -870,7 +870,41 @@ module Program =
                                     let msg, activityId =
                                         match peek with
                                         | Coalescer.OutputBatch text ->
-                                            text, ActivityIds.output
+                                            // Stage 7-followup PR-H — announce-length
+                                            // stopgap. The 500-character cap below is
+                                            // ARBITRARY: empirical NVDA pass 2026-05-03
+                                            // showed `dir`/`set`-class output produced
+                                            // 1316/1347-character announces taking
+                                            // 30-45 seconds of NVDA speech each, making
+                                            // the terminal effectively unusable. 500
+                                            // chars is approximately 15-20 seconds —
+                                            // tolerable upper bound balanced against
+                                            // information loss at the cut. Tracked in
+                                            // GitHub issue #139 for revisiting the
+                                            // threshold once the next NVDA pass yields
+                                            // real-feel data, AND for surfacing this
+                                            // as a user-configurable setting (catalog
+                                            // entry in `docs/USER-SETTINGS.md`).
+                                            //
+                                            // The proper architectural fix is the
+                                            // Output framework cycle's Stream profile
+                                            // (`docs/PROJECT-PLAN-2026-05.md` Part 3.2)
+                                            // — suffix-diff append-only emission
+                                            // eliminates the verbose-readback at its
+                                            // source rather than capping the output.
+                                            // Delete this cap + the footer cue when
+                                            // the Stream profile ships.
+                                            let limit = 500
+                                            let capped =
+                                                if text.Length <= limit then text
+                                                else
+                                                    let head = text.Substring(0, limit)
+                                                    let extra = text.Length - limit
+                                                    sprintf
+                                                        "%s ...announcement truncated; %d more characters available — press Ctrl+Shift+; to copy full log."
+                                                        head
+                                                        extra
+                                            capped, ActivityIds.output
                                         | Coalescer.ErrorPassthrough s ->
                                             sprintf "Terminal parser error: %s" s,
                                             ActivityIds.error

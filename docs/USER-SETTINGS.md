@@ -608,6 +608,34 @@ is. Other power-user knobs:
   Stream profile during Part 3 Stage A; nothing in the
   pipeline (parser, screen, drain, peer) needs to move.
 
+### Stopgap: announce-length cap (Stage 7-followup PR-H)
+
+`src/Terminal.App/Program.fs`'s drain task currently caps every
+`Coalescer.OutputBatch` announcement at **500 characters**.
+When the announce text exceeds the cap, the head is preserved
+and a footer is appended:
+
+> `...announcement truncated; N more characters available — press Ctrl+Shift+; to copy full log.`
+
+**This is an arbitrary stopgap**, not the architectural fix.
+500 was chosen because it's roughly 15-20 seconds of NVDA
+speech at default rate — the empirical 2026-05-03 NVDA pass
+showed 1316 / 1347-character announces (30-45 seconds each)
+making the terminal effectively unusable. 500 trades some
+information loss for survivable speech-queue latency.
+
+**Tracked in [issue #139](https://github.com/KyleKeane/pty-speak/issues/139)**
+for revisiting both the threshold and whether to surface it as
+a user-configurable setting (likely `audio.maxAnnounceChars`
+in the Phase 2 TOML config, or a hotkey to cycle preset
+thresholds).
+
+When the Output framework cycle's Stream profile ships
+(suffix-diff append-only emission), this stopgap becomes
+redundant — the new emission strategy doesn't produce
+1000+-character announces in the first place. Issue #139
+also tracks the deletion of this cap at that ship boundary.
+
 ## Process for adding a new setting
 
 When the project moves from "hardcoded" to "user-configurable"
