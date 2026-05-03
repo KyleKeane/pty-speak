@@ -61,8 +61,10 @@ corresponding stage in [`spec/tech-plan.md`](spec/tech-plan.md).
   **full screen contents**, **environment variables** (parent
   process env may contain `GITHUB_TOKEN`, `OPENAI_API_KEY`, etc.
   — Stage 7's env-scrub work handles the parent-to-child
-  filtering; logs enforce the same discipline at the file
-  boundary). PRs that add log calls MUST honour this list;
+  filtering, sequenced as Part 2 of
+  [`docs/PROJECT-PLAN-2026-05.md`](docs/PROJECT-PLAN-2026-05.md);
+  logs enforce the same discipline at the file boundary). PRs
+  that add log calls MUST honour this list;
   reviewers reject log sites that risk leaking these categories.
   Full description in [`docs/LOGGING.md`](docs/LOGGING.md).
 - **Bracketed-paste injection defence.** *(shipped, Stage 6 PR-B.)*
@@ -506,14 +508,14 @@ when those surfaces became code-bearing.
 | TC-2 | OSC 52 clipboard write from child | High (one-paste-from-RCE class) | `Screen.Apply`'s `OscDispatch` arm silently drops every OSC dispatch with a SECURITY-CRITICAL long-form comment naming OSC 52 specifically (Stage 4.5 PR-A); parser-hardening pass for the catch-all-arm fills (response-generating sequences, etc.) is shipped via SR-1 + Stage 4.5 PR-A | n/a | **partial** (silent drop in place; never forwards OSC 52 bytes anywhere — re-enabling requires SECURITY.md update + security-test row per the comment block) |
 | TC-3 | OSC 0/2 window title escape injection (CVE-2022-44702) | Medium | Not yet — parser hardening pass | n/a | **planned** |
 | TC-4 | OSC 8 hyperlink with non-allowlisted scheme (`javascript:`, `data:`, etc.) | Medium | Not yet — Stage 4+ when OSC 8 surface lands | n/a | **planned** |
-| TC-5 | Control characters in NVDA `displayString` | Low (defense in depth) | `Terminal.Core.AnnounceSanitiser.sanitise` strips C0/DEL/C1 from every announcement-bound exception message (audit-cycle SR-2, PR #77); Stage 5 coalescer-side stripping still pending | n/a | **partial** (exception-message interpolations sanitised; streaming-notification path still planned) |
+| TC-5 | Control characters in NVDA `displayString` | Low (defense in depth) | `Terminal.Core.AnnounceSanitiser.sanitise` strips C0/DEL/C1 from every announcement-bound exception message (audit-cycle SR-2, PR #77); Stage 5 Coalescer pipes every per-row announcement through the same `AnnounceSanitiser.sanitise` chokepoint (`src/Terminal.Core/Coalescer.fs:178`), closing the streaming-notification path. | n/a | **shipped** (both exception-message and streaming-notification paths sanitised) |
 | TC-6 | Output-rate ANSI bomb DoS | Medium | Parser-state caps prevent unbounded accumulation: `MAX_PARAM_VALUE = 65535` clamp on CSI/DCS digit accumulators, `MAX_DCS_RAW = 4096` cap on DCS payload emission, `OscIgnore` overflow state on OSC payload past `MAX_OSC_RAW = 1024` (audit-cycle SR-1, PR #76); Stage 5 will add the ingestion-rate cap (~10 MB/s) | n/a | **partial** (parser-state ANSI-bomb closed; ingestion-rate cap planned for Stage 5) |
 | **Process / OS** ||||||
 | PO-1 | Pipe handle inheritance to child (allowing child to write back into our pipes) | High | `bInheritHandles=FALSE`; ConPTY duplicates via attribute list (Stage 1, **shipped**) | n/a | **shipped** |
 | PO-2 | Orphan child process after parent exit | Medium (resource / accountability) | Not yet — Job Object lifecycle deferred from Stage 1 | n/a | **planned** |
 | PO-3 | Child running with elevated privileges relative to parent | High (privilege confusion) | Not yet — "we never run elevated with unelevated child" planned | n/a | **planned** |
 | PO-4 | Per-user install elevation (UAC) on update | Low | `asInvoker` manifest (Stage 11, **shipped**) | n/a | **shipped** |
-| PO-5 | ConPTY child inherits parent process environment block | Medium (env-var leak: `GITHUB_TOKEN`, `OPENAI_API_KEY`, etc., reach the child shell) | None specific — `lpEnvironment=IntPtr.Zero` in `CreateProcess` causes the child to inherit the full parent environment. Allow/deny-list scrubbing requires non-trivial F# wrapper around the ConPTY env block; tracked in `docs/SESSION-HANDOFF.md` | n/a | **accepted risk** (significant change required; defer until env-handling becomes user-facing) |
+| PO-5 | ConPTY child inherits parent process environment block | Medium (env-var leak: `GITHUB_TOKEN`, `OPENAI_API_KEY`, etc., reach the child shell) | None specific — `lpEnvironment=IntPtr.Zero` in `CreateProcess` causes the child to inherit the full parent environment. Allow/deny-list scrubbing requires non-trivial F# wrapper around the ConPTY env block. Sequenced as Part 2 of [`docs/PROJECT-PLAN-2026-05.md`](docs/PROJECT-PLAN-2026-05.md) (Stage 7 Claude Code roundtrip + env-scrub PO-5 — the validation gate before the framework cycles). Lands together with the Claude-Code-as-spawned-child wiring so coverage is exercised against Claude's actual env expectations during NVDA validation. | n/a | **planned** (sequenced as plan Part 2; ships ahead of the framework cycles) |
 | **Application surfaces** ||||||
 | A-1 | Jagged-snapshot `IndexOutOfRangeException` in word-boundary helpers | Medium (DoS in the screen-reader read path; today's `Screen.SnapshotRows` returns uniform rows, but `TerminalTextRange` constructor doesn't enforce uniformity) | `c >= rows.[r].Length` guards added inside `WordEndFrom`, `NextWordStart`, `PrevWordStart` in `TerminalAutomationPeer.fs` (audit-cycle SR-2, PR #77) | n/a | **shipped** |
 | A-2 | `Move(Character, count)` int32 underflow when `count = int.MinValue` | Medium (wrong-direction range mutation slips past the `max 0` clamp via wraparound) | `int64` widening before the `curIdx + count` add, applied to both `Move` and `MoveEndpointByUnit` Character arms (audit-cycle SR-2, PR #77) | n/a | **shipped** |

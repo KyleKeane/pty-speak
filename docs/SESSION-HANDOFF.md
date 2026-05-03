@@ -295,16 +295,17 @@ disconnects mid-session.
    identified three items genuinely worth deferring rather than
    shipping inline. Each is tracked in `SECURITY.md`'s inventory;
    the items below are the action handles a future maintainer
-   needs to actually close them. The 2026-05-01 strategic stage
-   review (logged at
-   `/root/.claude/plans/replicated-riding-sketch.md`) made
-   refinements to where each lands — see "Recommended adjustments"
-   §E (PO-5 env scrub bundles into Stage 7's env contract per
-   `spec/tech-plan.md` §7.2).
+   needs to actually close them. The 2026-05-03 strategic
+   review (canonical:
+   [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md))
+   sequences PO-5 as the security half of Part 2 (Stage 7
+   Claude Code roundtrip + env-scrub PO-5 — the validation
+   gate before the framework cycles).
 
-   1. **ConPTY environment scrub (PO-5).** Parent's full env
-      block inherits to the child via `lpEnvironment=IntPtr.Zero`
-      in `CreateProcess`, so sensitive vars (`GITHUB_TOKEN`,
+   1. **ConPTY environment scrub (PO-5) — sequenced as
+      May-2026 plan Part 2.** Parent's full env block inherits
+      to the child via `lpEnvironment=IntPtr.Zero` in
+      `CreateProcess`, so sensitive vars (`GITHUB_TOKEN`,
       `OPENAI_API_KEY`, etc.) reach the child shell. To close:
       build an allow/deny-list inside `Terminal.Pty/Native.fs`,
       construct an env block from filtered entries, pass to
@@ -312,7 +313,12 @@ disconnects mid-session.
       breaking developer workflows that depend on inherited
       `PATH` / locale variables; getting the F# string-block
       marshalling exactly right (must be double-NUL terminated,
-      sorted order matters for some tools).
+      sorted order matters for some tools). Lands together
+      with the Claude-Code-as-spawned-child wiring per the
+      May-2026 plan; both pieces of Stage 7 ship as a single
+      cycle so the env-scrub coverage is exercised against
+      Claude Code's actual environment expectations during
+      NVDA validation.
    2. **`install-latest-preview.ps1` TOCTOU (D-1, T-10).**
       A local attacker can swap the `Setup.exe` in `%TEMP%`
       between `Unblock-File` and `Start-Process`. Mitigation
@@ -339,32 +345,31 @@ disconnects mid-session.
       contract.
 
 6. **Diagnostic-launcher UX needs a screen-reader-native
-   replacement (post-Stage-5/6).** PR #81 shipped
+   replacement — now actionable (Stages 5 + 6 shipped, PR
+   #116 functional end-to-end).** PR #81 shipped
    `Ctrl+Shift+D` to launch
    `scripts/test-process-cleanup.ps1` in a separate
    PowerShell window, with the working hypothesis that the
    spawned conhost window would route the script's stdout
    through Windows' default screen-reader path. Manual
-   verification on `v0.0.1-preview.27` (and the next preview
-   that picks up PR #82's script fix) found that **NVDA's
+   verification on `v0.0.1-preview.27` found that **NVDA's
    reading of the spawned PowerShell window is unreliable**
    in practice — line-by-line stdout is the script's design
    but conhost's UIA exposure isn't on par with pty-speak's
    own `Document` + `Text` pattern peer.
 
-   The right replacement, suspected by the maintainer
-   during the manual test, is to run diagnostics **inside
+   The right replacement is to run diagnostics **inside
    pty-speak itself** rather than spawning a separate
-   process:
+   process. As of PR #116 (streaming pipeline functional
+   end-to-end) the foundations are all in place:
 
-   - **Once Stage 6 (keyboard input to PTY) ships:** the
-     user types `pwsh ./test-process-cleanup.ps1` (or
-     similar) directly into pty-speak's child shell. The
-     output flows through the screen and NVDA reads it
-     via the well-tested UIA peer.
-   - **Once Stage 5 (streaming announcements) ships:** the
-     output is also actively narrated as it streams in,
-     not just available via review cursor.
+   - **Stage 6 keyboard-input-to-PTY (shipped).** The user
+     can type `pwsh ./scripts/test-process-cleanup.ps1`
+     directly into pty-speak's child shell.
+   - **Stage 5 streaming announcements (functional via PR
+     #116).** Output is actively narrated as it streams in
+     via the well-tested UIA peer + `TerminalView.Announce`
+     chokepoint, not just available via review cursor.
    - **Optional architectural alternative** if multi-instance
      launch becomes a desired feature: `Ctrl+Shift+D`
      could launch a second pty-speak instance whose child
@@ -377,19 +382,30 @@ disconnects mid-session.
      accessible, but duplicates the logic.
 
    `Ctrl+Shift+D` stays in place as a usable-but-imperfect
-   diagnostic until the above lands; the
-   `docs/ACCESSIBILITY-TESTING.md` "Diagnostic decoder for
-   the launcher hotkeys" subsection notes the limitation
-   so future runs aren't surprised.
+   diagnostic until a screen-reader-native replacement
+   lands; the `docs/ACCESSIBILITY-TESTING.md` "Diagnostic
+   decoder for the launcher hotkeys" subsection notes the
+   limitation so future runs aren't surprised. Filing this
+   as a tracked issue (or folding into Part 1 spec hygiene
+   via a "type the diagnostic into pty-speak directly"
+   note in `ACCESSIBILITY-TESTING.md`) is a reasonable
+   next move; deferred from the May-2026 plan because the
+   diagnostic's verbose-readback experience will benefit
+   from the Output framework cycle's per-profile tuning
+   (Part 3) anyway.
 
-7. **One-time bulk-delete of 77 stale post-merge branches
+7. **One-time bulk-delete of stale post-merge branches
    on `origin/`.** The post-Stage-4.5 hygiene audit
    identified 77 remote branches whose work has been
-   squash-merged into `main` (every branch's PR has
-   either `merged_at` or a `closed` state per the GitHub
-   API). They've accumulated because the
+   squash-merged into `main`; the count has since grown
+   to ~100 as the post-Stage-6 streaming-fix cycle added
+   more merged-but-not-deleted branches. Every branch's
+   PR has either `merged_at` or a `closed` state per the
+   GitHub API. They've accumulated because the
    delete-branch-after-merge convention wasn't codified
-   until PR #87 added it to CONTRIBUTING.md.
+   until PR #87 added it to CONTRIBUTING.md, and the rule
+   has been observed inconsistently for sandbox-pushed
+   branches the agent can't delete from origin.
 
    The agent sandbox cannot delete remote branches
    (proxy returns HTTP 403 on `git push --delete`), so
@@ -505,7 +521,14 @@ all validation happens in CI on `windows-latest`. Implications:
   aware of this and will say "try smaller actions" if a long write
   hangs.
 
-## Stage 11 implementation sketch (next)
+## Stage 11 implementation sketch (shipped — retained as reference)
+
+> **Status:** Stage 11 has shipped. The sketch below is the
+> pre-digested execution plan that drove PRs #63 and #66; it's
+> preserved as reference for the architectural reasoning
+> (especially the Velopack `VelopackApp.Build().Run()` ordering
+> requirement and the structured-error-announcement contract)
+> but is no longer the active plan.
 
 Stage 11 was re-prioritised to land next — see "Where we left off"
 and `docs/ROADMAP.md` "Stage ordering" for the rationale.
