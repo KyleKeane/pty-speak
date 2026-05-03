@@ -17,6 +17,39 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **`CONTRIBUTING.md` gains two session-tested practice notes** —
+  one F# gotcha and one PR-workflow convention captured during the
+  May-2026 cleanup cycle so future contributors don't re-learn them:
+
+  - **F# 9 nullness annotations bite at .NET-API boundaries**
+    (under "F# gotchas learned in practice"). Many .NET-API
+    methods are typed `string?` under `<Nullable>enable</Nullable>`
+    — `Path.GetFileName`, `Path.GetDirectoryName`,
+    `Environment.GetEnvironmentVariable`, `StreamReader.ReadLine`,
+    etc. Passing the result to a non-null `string` parameter
+    compiles to an `FS3261` warning that becomes a build error
+    under `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`.
+    Two acceptable patterns documented: helper signature accepts
+    `string | null` and pattern-matches the null case (matches
+    the `AnnounceSanitiser.sanitise` / `KeyEncoding.encodeOrNull`
+    convention), or coerce at the call site via `nonNull` /
+    inline `match`. PR #121 (Issue #107 filename refinement) hit
+    this and is the worked example.
+
+  - **CI failure on an open PR → push a fixup commit to the same
+    branch** (under "Branching and pull requests"). GitHub PRs
+    track the branch HEAD, not a snapshot at PR-creation time;
+    pushing additional commits auto-extends the PR and re-runs
+    CI without disturbing the PR number, title, body, or
+    `Closes #N` references. **Don't open a new PR for a fixup**
+    — the squash-merge convention combines original + fixup
+    into a single canonical commit on `main`. PR #121 (same
+    Issue #107 work) used this rhythm and is the worked
+    example.
+
+  Both bullets cross-reference each other so a reader landing on
+  either entry finds the other.
+
 - **`docs/CHECKPOINTS.md` checkpoint rows for shipped post-Stage-3b
   stages.** The 2026-05-03 audit (in
   [`docs/PROJECT-PLAN-2026-05.md`](docs/PROJECT-PLAN-2026-05.md))
