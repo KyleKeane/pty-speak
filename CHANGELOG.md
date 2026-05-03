@@ -62,6 +62,54 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   ship-boundary-delete contract so a future contributor
   doesn't preserve the stopgap by accident.
 
+### Fixed (Stage 7-followup PR-G)
+
+- **`Ctrl+Shift+;` dispatcher deadlock.** Empirically confirmed in NVDA pass 2026-05-03:
+  pressing `Ctrl+Shift+;` (copy log to clipboard) while NVDA
+  had a long readout queued permanently wedged the WPF
+  dispatcher. The 5-second background heartbeat kept firing
+  (proving the runtime alive), but no further dispatcher
+  events processed — typing did nothing, Alt+F4 didn't close
+  the window, no other app-reserved hotkey produced an
+  announcement. Force-kill via Task Manager was the only way
+  out.
+
+  Root cause: `runCopyLatestLog` called
+  `sink.FlushPending(500).Result` synchronously on the
+  dispatcher. `FlushPending` is implemented as
+  `task { let! winner = Task.WhenAny(...) }` — the `let!`
+  captures the WPF dispatcher's `SynchronizationContext`. When
+  the dispatcher thread blocks on `.Result`, the task's
+  continuation can never resume because the dispatcher is
+  blocked. The 500ms timeout never fires because the timeout's
+  continuation also needs the dispatcher. Classic
+  sync-over-async deadlock. The bug has been latent since
+  PR #122 (Stage 5a's FlushPending introduction); only manifests
+  under sufficient dispatcher / NVDA-queue contention to expose
+  it, which the post-Stage-7-PR-D NVDA validation pass
+  reliably triggered.
+
+  Fix: run the entire `runCopyLatestLog` body in a `task` off
+  the dispatcher. `FlushPending` is awaited normally (no
+  `.Result`). The clipboard write itself runs on a dedicated
+  STA thread (`System.Windows.Clipboard.SetText` requires the
+  STA apartment, so we can't use the thread pool which is MTA)
+  with a 3-second timeout to bound clipboard contention with
+  NVDA's clipboard hooks / clipboard managers / antivirus
+  hooks. The announcement dispatches back to the WPF thread on
+  completion. The hotkey handler returns immediately; the
+  dispatcher never blocks regardless of clipboard or flush
+  state.
+
+  `docs/STAGE-7-ISSUES.md` records both this bug
+  (`[other]` tag, **Source: NVDA pass 2026-05-03; fixed in
+  PR-G**) and the empirical confirmation of the
+  `[output-stream]` verbose-readback prediction (concrete
+  numbers from this pass: 1316 / 1347-character announces
+  per cmd command, character-by-character announce growth on
+  typed input — the architectural fix remains in scope for
+  the Output framework cycle Part 3.2 RFC).
+
 ### Added
 
 - **Stage 7-followup PR-F — diagnostic surface: `Ctrl+Shift+H`
