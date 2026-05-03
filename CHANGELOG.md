@@ -17,6 +17,48 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Stage 7 implementation sketch in `docs/SESSION-HANDOFF.md`.**
+  The next session that picks up Part 2 of the May-2026 plan
+  (Claude Code roundtrip + env-scrub PO-5 — the validation gate
+  before the Output / Input framework cycles) gets a
+  pre-digested execution plan parallel to the existing Stage 4
+  / Stage 11 sketches in the same file. ~250 lines covering:
+
+  - **Why Stage 7 is the validation gate** — the framework
+    cycles need ground-truth signal from the primary target
+    workload before they can be designed coherently.
+  - **Implementation outline** — `claude.exe` resolution
+    (`where.exe claude` with cmd.exe fallback), configurable
+    shell via `PTYSPEAK_SHELL` env var, child-process
+    environment block construction via `lpEnvironment` to
+    `CreateProcess` (allow-list-with-deny-list-override scheme
+    for PO-5 env-scrub), NVDA validation flow, Stage 7 issues
+    inventory format (`docs/STAGE-7-ISSUES.md` with
+    framework-taxonomy category tags as design input for
+    Parts 3 + 4).
+  - **Pre-digested decisions** — cmd.exe stays default;
+    `ANTHROPIC_API_KEY` in allow-list; env-scrub log line
+    counts but never names/values per `SECURITY.md` logging
+    discipline; no spec-§7-deltas without ADR-style
+    authorization.
+  - **Critical files to touch** + **existing primitives to
+    reuse** + **what this stage deliberately does NOT do** +
+    **known risks** (F# string-block marshalling silently
+    fails; Claude Code's NVDA experience may already exceed
+    the coalescer's capacity; spawned-Claude lifecycle
+    differs from cmd.exe; `where.exe claude` may resolve a
+    stale wrapper).
+  - **Scope discipline** — one PR with the env-scrub
+    potentially as a fixup; STAGE-7-ISSUES.md grows over
+    multiple NVDA verification cycles but doesn't block PR
+    merge.
+
+  Reading-order item 4 in the same file updates: §1-§6 are
+  fully shipped, §4a/4b/5a are retroactively-formalized
+  shipped stages, §7 is the next stage with the
+  implementation plan in this file's "Stage 7 implementation
+  sketch (next)" section.
+
 - **`FileLoggerSink.FlushPending(timeoutMs)` API.** New public
   member that returns a `Task<bool>` completing when the
   background drain finishes its next per-batch flush, or after

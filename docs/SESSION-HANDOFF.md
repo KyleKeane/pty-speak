@@ -526,6 +526,253 @@ all validation happens in CI on `windows-latest`. Implications:
   aware of this and will say "try smaller actions" if a long write
   hangs.
 
+## Stage 7 implementation sketch (next)
+
+> **Status:** Stage 7 is **next** per
+> [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md) Part 2 —
+> sequenced as the **validation gate** before the Output / Input
+> framework cycles begin. `spec/tech-plan.md` §7 has the canonical
+> specification (launch resolution, environment baseline, expected
+> Claude Code startup behaviour, validation criteria); this sketch is
+> the pre-digested implementation plan layered on top per the
+> May-2026 plan's framing (env-scrub PO-5 bundled in; "Stage 7
+> issues inventory" feeds Parts 3 + 4). Mirrors the existing
+> Stage 4 / Stage 11 sketch pattern (shipped — retained as
+> reference) so a future session can promote this section to
+> "shipped — retained as reference" once Stage 7 ships.
+
+### Why Stage 7 is the validation gate
+
+Stage 7 ships the maintainer's primary target workload — Claude
+Code running inside pty-speak end-to-end. Without that validation,
+the Output / Input framework cycles (Parts 3 + 4 of the May-2026
+plan) would optimise for theoretical paradigms (Stream / REPL /
+TUI / Form / Selection) without ground-truth signal from the
+workload they're supposed to serve best. Concretely: Claude Code
+is **Ink-rendered** (full-frame redraws on every state change),
+uses **alt-screen + cursor visibility tricks** (Stage 4a substrate
+validates this works), **renders Markdown** with code blocks +
+lists + headings, presents **interactive prompts** (multi-choice,
+text input, file selection — Stage 8 territory), produces
+**structured streaming output** (assistant turns + tool calls +
+tool results — Stage 5 / Output framework territory). Each
+characteristic maps to a framework-design decision. Watching Claude
+Code break (or not break) under the current Stage 5 generic
+coalescer + Stage 6 pass-through input tells us what the
+frameworks MUST handle correctly — far better than enumerating
+paradigms in the abstract.
+
+### Goal
+
+Spawn Claude Code as the ConPTY child shell, complete a roundtrip
+prompt → response, hear the streaming response via NVDA, navigate
+the response with the review cursor, accept a tool-use
+confirmation, and hear the result. Strip sensitive env-vars (PO-5)
+before child spawn so secrets that reach pty-speak don't reach
+Claude. Produce a "Stage 7 issues inventory" enumerating every
+gap surfaced during NVDA validation — the inventory becomes
+design input for the framework cycles.
+
+### Implementation outline
+
+1. **Resolve `claude.exe` per `spec/tech-plan.md` §7.1.**
+   `where.exe claude` from the spawn entrypoint; if missing,
+   spawn cmd.exe instead and announce a one-time "Claude Code
+   not found on PATH; install it first" notice (don't fail the
+   launch — pty-speak should work as a generic terminal
+   regardless of whether Claude Code is installed).
+
+2. **Configurable shell.** Add a single environment variable
+   `PTYSPEAK_SHELL` (defaults to `cmd.exe`; Stage 7 sets it to
+   `claude.exe` when found). Phase 2 user-settings TOML
+   eventually exposes this via the menu/palette (Issue #112
+   territory). Stage 7 ships the env var only — no UI yet.
+   Logged in `docs/USER-SETTINGS.md` as a candidate setting.
+
+3. **Build a child-process environment block**
+   (`lpEnvironment` parameter to `CreateProcess` in
+   `Terminal.Pty/Native.fs`) instead of inheriting the parent's
+   full block via `lpEnvironment=IntPtr.Zero`:
+
+   - **Allow-list** preserves the env-vars Claude Code needs
+     per spec §7.2: `PATH`, `USERPROFILE`, `APPDATA`,
+     `LOCALAPPDATA`, `HOME` (set to `%USERPROFILE%` if absent),
+     plus the Claude Code knobs (`ANTHROPIC_API_KEY`,
+     `CLAUDE_CODE_GIT_BASH_PATH`).
+   - **Always set:** `TERM=xterm-256color`,
+     `COLORTERM=truecolor`.
+   - **Deny-list overrides allow-list** for the
+     security-sensitive vars surfaced in `SECURITY.md` PO-5:
+     any variable name matching `*_TOKEN`, `*_SECRET`, `*_KEY`
+     (except the explicit `ANTHROPIC_API_KEY` allow),
+     `*_PASSWORD` is dropped. Logged at `Information` level:
+     "Env-scrub: stripped N variables before child spawn" —
+     count only, never names or values (per the `SECURITY.md`
+     logging-discipline contract; env-var names like
+     `BANK_API_KEY` are themselves sensitive).
+   - **F# string-block marshalling:** UTF-16, double-NUL
+     terminated, sorted by name (Win32 convention). The
+     `Terminal.Pty/Native.fs` env-block constructor needs
+     careful unit tests because getting the marshalling wrong
+     silently fails (child sees no env vars at all — confusing
+     failure mode).
+
+4. **NVDA-validate the end-to-end flow.** Manual matrix row in
+   `docs/ACCESSIBILITY-TESTING.md` "Stage 7 — Claude Code
+   roundtrip":
+
+   - Launch pty-speak; Claude Code spawns; NVDA reads the
+     welcome screen.
+   - Type a prompt ("Say hi"); press Enter; Claude responds;
+     NVDA reads the streaming response.
+   - Use `Caps Lock+Numpad 7/8/9` (review cursor up / current /
+     down) to navigate the response after it's complete.
+   - Trigger an interactive prompt (e.g. ask Claude to edit a
+     file → "Edit / Yes / Always / No" listbox); accept a
+     choice; NVDA reads the result.
+   - Inside Claude, type `Get-ChildItem env:` (PowerShell) or
+     `set` (cmd) to enumerate the child's env block;
+     **confirm sensitive vars from the deny-list are absent**
+     (`GITHUB_TOKEN`, `OPENAI_API_KEY`, `AWS_*`, etc.).
+
+5. **Capture a Stage 7 issues inventory.** As the maintainer
+   NVDA-validates, every gap (broken / awkward / verbose /
+   silent / "this should be a list but reads as text") goes
+   into `docs/STAGE-7-ISSUES.md` (new file) with a brief
+   category tag matching the framework taxonomy:
+   `[output-stream]`, `[output-form]`, `[output-selection]`,
+   `[output-earcon]`, `[input-suggest]`, `[input-buffer]`,
+   `[review-mode]`, `[other]`. The inventory is the explicit
+   design input for Parts 3 + 4 of the May-2026 plan — each
+   framework-cycle Stage starts by reading this file.
+   **Don't try to fix anything from the inventory in Stage 7;
+   that's framework-cycle work. Stage 7's job is to surface,
+   not solve.**
+
+### Pre-digested decisions
+
+- **Cmd.exe stays default.** Stage 7 makes Claude Code reachable,
+  doesn't make it the default. Reasoning: a fresh-install user
+  without Claude Code installed should still see a working
+  terminal. The `PTYSPEAK_SHELL` env var (or future menu setting)
+  flips it.
+- **Env-scrub is allow-list-with-deny-list-override.** Pure
+  deny-list would strip env-vars Claude Code might depend on
+  that we haven't enumerated; pure allow-list would over-strip
+  and break workflows. Allow-list-then-deny gives us conservative
+  defaults plus a safety override for the patterns we know are
+  sensitive (`*_TOKEN`, etc.).
+- **`ANTHROPIC_API_KEY` is in the allow-list.** Claude Code is
+  the primary target workload; stripping its auth would defeat
+  the purpose. A future "guest mode" setting could deny it for
+  sandboxed sessions — Phase 2 territory.
+- **The env-scrub log line counts but never names/values.** Per
+  `SECURITY.md`'s logging-discipline contract.
+- **No spec-§7-deltas without explicit authorization.** Spec §7.2's
+  environment baseline (TERM, COLORTERM, allow-list of
+  PATH/USERPROFILE/etc.) is the authoritative source. Stage 7's
+  implementation matches it; any deviation needs an ADR-style
+  spec PR with maintainer authorization (parallel to the
+  Stage 4a / 4b / 5a chunk in chat 2026-05-03).
+
+### Critical files to touch
+
+| File | Change |
+|---|---|
+| `src/Terminal.Pty/Native.fs` | New env-block constructor: allow-list filter + deny-list override + Win32 marshalling (UTF-16, double-NUL, sorted). Pass to `CreateProcess` via `lpEnvironment`. |
+| `src/Terminal.Pty/PseudoConsole.fs` | Resolve `claude.exe` via `where.exe claude`; fall back to `cmd.exe` with one-time announcement. Read `PTYSPEAK_SHELL` env var to override. |
+| `src/Terminal.App/Program.fs compose ()` | Wire the env-block constructor into the spawn path; log the env-scrub count at `Information` level. |
+| `tests/Tests.Unit/Tests.Unit.fsproj` | Env-scrub fixture tests (allow-list preservation, deny-list pattern matching, marshalling round-trip). |
+| `SECURITY.md` | PO-5 row flips from "planned" to "shipped" with the allow-list-with-deny-override scheme documented. |
+| `docs/ACCESSIBILITY-TESTING.md` | New "Stage 7 — Claude Code roundtrip" matrix row. |
+| `docs/STAGE-7-ISSUES.md` | New file; inventory grows as NVDA validation surfaces gaps. |
+| `docs/USER-SETTINGS.md` | New "Default shell" candidate setting noting `PTYSPEAK_SHELL` as today's hardcoded knob. |
+
+### Existing primitives to reuse
+
+- **`PseudoConsole.create`** (`src/Terminal.Pty/PseudoConsole.fs`) —
+  the 9-step ConPTY lifecycle wrapper from Stage 1. Just need
+  to pass a different command line + env block.
+- **`AnnounceSanitiser.sanitise`** (audit-cycle SR-2) — for any
+  error-message interpolation surfacing during launch failure.
+- **`Logger.get`** (`src/Terminal.Core/FileLogger.fs`) — for the
+  Information-level env-scrub-count log call.
+- **`ActivityIds`** (Stage 5) — `pty-speak.error` for the
+  "Claude Code not found" announcement.
+- **Stage 4a's parser substrate** — Claude Code's alt-screen +
+  DECTCEM + truecolor SGR + DECSC/DECRC are already handled.
+  Stage 7 just exercises the substrate, doesn't extend it.
+- **Stage 6's keyboard input pipeline** — Claude Code's
+  interactive prompts (DECCKM application-cursor mode,
+  bracketed paste) are already encoded correctly.
+
+### What this stage deliberately does NOT do
+
+(Per [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md)
+Part 2 "Out of scope":)
+
+- **Fixing the gaps surfaced during NVDA validation.** Those
+  become framework requirements, not Stage 7 hotfixes. Surface,
+  don't solve.
+- **Configurable shell beyond the `PTYSPEAK_SHELL` toggle.**
+  Phase 2 user-settings work owns the menu/palette UI.
+- **Distributing pty-speak with Claude Code bundled.**
+  Packaging concern; Stage 7 expects Claude Code already
+  installed on the user's `PATH`.
+- **The "command output complete" prompt-redraw signal.**
+  Strategic review §G assigned this to Stage 8; can land in
+  Stage 7's tail if Claude's redraw rhythm benefits, but not
+  required.
+
+### Known risks
+
+- **F# string-block marshalling silently fails.** Get the
+  UTF-16 + double-NUL + sorted-order wrong and the child shell
+  sees no environment at all — Claude Code probably crashes
+  immediately or behaves bizarrely. The `Tests.Unit` round-trip
+  fixture is the canary. Test the byte-level layout against a
+  known input/output pair before any integration test.
+- **Claude Code's NVDA experience may already exceed our
+  coalescer's capacity.** Stage 5's `renderRows` design
+  announces the whole rendered screen on every emit. Claude's
+  Ink does whole-frame redraws ~10 Hz (per spec §7.3). The
+  combination may produce so much speech that NVDA queues fall
+  behind and the user can't keep up. **This is the headline
+  finding the Stage 7 issues inventory will document** — it's
+  the first foundational architecture decision the Output
+  framework cycle (Part 3) addresses.
+- **Spawned Claude Code's lifecycle may differ from cmd.exe.**
+  Stage 6's Job Object cleanup with `KILL_ON_JOB_CLOSE` should
+  still work, but Claude Code spawns subprocesses (npm, git,
+  the file tools). The recurring acceptance check
+  ("Pending action items" item 2 in this file) needs to run
+  after Stage 7 ships specifically to verify cascade cleanup.
+- **`where.exe claude` may resolve a stale wrapper.** Older
+  Claude Code distributions (npm-installed, WSL) live in
+  different paths. The npm version may not work under ConPTY.
+  Document in `docs/STAGE-7-ISSUES.md` if encountered; redirect
+  users to the official native installer per spec §7.1.
+
+### Scope discipline
+
+Stage 7 is **one PR** (with the env-scrub potentially as a fixup
+commit if the F# marshalling needs iteration). The Stage 7 issues
+inventory file grows over multiple manual-NVDA verification
+cycles but doesn't block PR merge — first cut documents what's
+broken at land time, subsequent passes refine.
+
+If during implementation we discover that Claude Code's launch
+needs more glue than expected (e.g. Git Bash discovery,
+working-directory handling, native-installer path resolution
+edge cases), spike the gluing first as a small isolated PR
+before bundling into Stage 7. Same Stage-4-spike-then-PR
+pattern that worked for Stages 4 and 11.
+
+After Stage 7 ships and NVDA-validates, **the Output framework
+cycle (May-2026 plan Part 3) starts** — its research phase
+(`docs/research/OUTPUT-FRAMEWORK-PRIOR-ART.md`) reads the
+Stage 7 issues inventory as design input.
+
 ## Stage 11 implementation sketch (shipped — retained as reference)
 
 > **Status:** Stage 11 has shipped. The sketch below is the
@@ -905,10 +1152,16 @@ Guard against scope creep:
 3. [`CONTRIBUTING.md`](../CONTRIBUTING.md) — PR shape, branching,
    CHANGELOG discipline, F# / WPF gotchas, documentation policy.
    Working conventions all live here.
-4. [`spec/tech-plan.md`](../spec/tech-plan.md) §1–§6 (the stages
-   already shipped) — establishes the architectural grain. §7-§10
-   are the original-plan stages that the May-2026 plan reshapes
-   (see plan doc for sequencing).
+4. [`spec/tech-plan.md`](../spec/tech-plan.md) §1–§6 plus the
+   retroactively-formalized Stages **4a** (Claude Code rendering
+   substrate), **4b** (process-cleanup diagnostic), and **5a**
+   (diagnostic logging surface) — establishes the architectural
+   grain. §7 is the **next stage**; the in-flight implementation
+   plan lives in this file's "Stage 7 implementation sketch
+   (next)" section. §8–§10 are the original-plan stages that
+   the May-2026 plan reshapes (see plan doc for sequencing —
+   Stages 8 and 9 fold into the Output framework cycle; Stage
+   10 ships post-frameworks as their first consumer).
 5. [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) — what's stable, what
    tags need pushing, how rollback works.
 6. [`docs/CONPTY-NOTES.md`](CONPTY-NOTES.md) — observed platform
