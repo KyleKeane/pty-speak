@@ -197,6 +197,23 @@ preserve this list per the app-reserved-hotkey contract in
   enable verbose debug logging from inside pty-speak without
   the previous env-var-and-relaunch workflow. Mnemonic: G for
   "loGging" (Stage 7-followup PR-E).
+- **`Ctrl+Shift+H`** — health check. Announces a one-line state
+  snapshot via NVDA: verdict ("Pty-speak healthy." / "Reader
+  appears wedged." / "Notification queue near capacity.") +
+  shell name + PID + log level + reader last-byte staleness +
+  channel queue depths. Lets a screen-reader user determine in
+  one keystroke whether pty-speak is functioning, instead of
+  inferring from "is NVDA reading anything?". Mnemonic: H for
+  "Health" (Stage 7-followup PR-F).
+- **`Ctrl+Shift+B`** — incident marker. Logs a clear
+  `=== INCIDENT MARKER {timestamp} ===` boundary line into the
+  active log file and announces "Incident marker logged.
+  Reproduce your issue, then press Ctrl+Shift+; to copy the
+  log." Pair with `Ctrl+Shift+G` (debug logging on) and
+  `Ctrl+Shift+;` (copy log to clipboard) for a complete
+  three-keystroke debug-capture workflow that doesn't require
+  any env-var manipulation. Mnemonic: B for "Bug" (Stage
+  7-followup PR-F).
 
 Reserved but not yet implemented: `Ctrl+Shift+M` (Stage 9 mute
 toggle), `Alt+Shift+R` (Stage 10 review-mode toggle).

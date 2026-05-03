@@ -17,6 +17,85 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Stage 7-followup PR-F — diagnostic surface: `Ctrl+Shift+H`
+  health check, `Ctrl+Shift+B` incident marker, background
+  heartbeat.** Closes the in-app debug-capture workflow alongside
+  PR-E's `Ctrl+Shift+G` toggle. The maintainer's two-hour
+  env-var-debug ordeal is the trigger; the goal is to make
+  "capture and send a diagnostic log" achievable in three
+  keystrokes (G to enable Debug logging, B to mark the incident,
+  ; to copy the log to clipboard) without any out-of-app
+  manipulation.
+
+  **`Ctrl+Shift+H` — health check.** Announces a one-line state
+  snapshot via NVDA: verdict ("Pty-speak healthy." / "Reader
+  appears wedged. Last byte N seconds ago." / "Notification
+  queue near capacity (N of 256).") + shell name + PID + log
+  level + reader last-byte staleness + notification-channel
+  depth + coalesced-channel depth. Lets a screen-reader user
+  determine in one keystroke whether pty-speak is functioning,
+  instead of inferring from "is NVDA reading anything?". Verdict
+  heuristic: reader-wedge if staleness > 5000ms AND notification
+  queue non-empty; queue-near-capacity if notification queue at
+  ≥244/256 (DropOldest mode means past-capacity is silent data
+  loss); otherwise healthy. Wired in
+  `setupHealthCheckKeybinding` with the closure
+  `runHealthCheck` constructed inside `compose ()` (captures
+  compose-local state — `lastReadUtc`, `hostHandle`, channels,
+  `chosenShell`).
+
+  **`Ctrl+Shift+B` — incident marker.** Writes a clear
+  `=== INCIDENT MARKER {timestamp} === (Ctrl+Shift+B)`
+  boundary line into the active log at `Information` level via
+  the standard `ILogger` path, then announces via NVDA:
+  "Incident marker logged. Reproduce your issue, then press
+  Ctrl+Shift+; to copy the log." The user reproduces the issue,
+  then copies the full log via `Ctrl+Shift+;`; server-side grep
+  for the marker extracts the relevant slice. Wired in
+  `setupIncidentMarkerKeybinding` with `runIncidentMarker`
+  closure inside `compose ()`.
+
+  **Background heartbeat (no hotkey).** A
+  `System.Threading.Timer` ticks every 5 seconds and logs an
+  `Information`-level "Heartbeat" line with the same fields as
+  the health-check announcement (shell, PID, level, last-read
+  staleness, channel queues). Heartbeats stopping in the log
+  are a clean wedge timestamp for post-mortem triage. Runs on
+  the timer thread pool (NOT the WPF dispatcher), so heartbeats
+  keep emitting even if the dispatcher is wedged — the gap
+  between the last successful heartbeat and the next captured
+  event localises the problem. Initialised in `compose ()`;
+  disposed in `app.Exit` BEFORE the logger is disposed (so the
+  timer doesn't fire one last entry into a closed channel and
+  log a confusing exception).
+
+  **Last-read timestamp threading.** `startReaderLoop` now takes
+  an `onChunkRead: int -> unit` callback parameter that the
+  reader fires on every non-empty chunk. `compose ()` passes
+  `(fun _ -> lastReadUtc <- DateTimeOffset.UtcNow)` to share
+  the timestamp across the heartbeat + health-check + every
+  reader (initial spawn AND each shell hot-switch — the
+  callback is captured in the closure, not the host).
+  Unsynchronised reads are acceptable for a diagnostic; one
+  weird-looking entry occasionally is OK.
+
+  Two new `ActivityIds` for the announcements:
+  `healthCheck = "pty-speak.health-check"`,
+  `incidentMarker = "pty-speak.incident-marker"`. Distinct so
+  diagnostic-config announcements stay configurable separately
+  from streaming output.
+
+  Spec deviation: bundled spec update (§6 hotkey-list amendment)
+  per chat 2026-05-03 maintainer authorisation. Same ADR-style
+  retroactive-formalisation pattern as PR-C and PR-E.
+
+  Followup to the Stage 7 sequence; closes the diagnostic-
+  workflow accessibility gap that surfaced when the maintainer
+  attempted manual NVDA validation per
+  `docs/ACCESSIBILITY-TESTING.md` Stage 7 row and could not
+  reliably enable Debug-level logging or capture an in-progress
+  hang.
+
 - **Stage 7-followup PR-E — `Ctrl+Shift+G` toggle debug logging
   + announce state.** Eliminates the previous
   `PTYSPEAK_LOG_LEVEL=Debug` env-var-and-relaunch workflow that
