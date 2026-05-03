@@ -121,7 +121,7 @@ encouraged to add to this list when they hit a new one.
   signal EOF. Single missed close causes hangs on shutdown.
   Documented inline in `PseudoConsole.fs:create`.
 - **The ConPTY init prologue includes `\x1b[?9001h\x1b[?1004h`**
-  emitted by ConPTY itself before the child runs. Stage 4.5's
+  emitted by ConPTY itself before the child runs. Stage 4a's
   parser must not choke on these; Stage 6 PR-A's
   FocusReporting arm now handles `?1004h` explicitly.
 - **`ResizePseudoConsole` is documented thread-safe** but the
@@ -201,7 +201,7 @@ encouraged to add to this list when they hit a new one.
 ### VT escape sequence parser
 
 - **Only a fraction of xterm's sequence space is implemented.**
-  Stage 4.5 covers DECTCEM, DECSC/DECRC, alt-screen 1049,
+  Stage 4a covers DECTCEM, DECSC/DECRC, alt-screen 1049,
   256/truecolor SGR, OSC 52 (silent drop). Stage 6 adds
   DECCKM, bracketed paste, focus reporting. **Hundreds of
   other private modes** exist; they're silently dropped.
@@ -369,7 +369,7 @@ response, line by line; know when Claude is "thinking"
 vs "done"; be able to interrupt or follow up; navigate
 back through prior responses for reference.
 
-**Current state:** Substrate exists (Stage 4.5 alt-screen
+**Current state:** Substrate exists (Stage 4a alt-screen
 + DECCKM via Stage 6). End-to-end roundtrip is **Stage 7**
 — not yet shipped.
 
@@ -1014,7 +1014,7 @@ is a future expansion section the maintainer will fill in:
   shell detection a Phase 2 candidate.
 - **Resize during long output** — Stage 6 debounce; tested.
 - **Alt-screen toggle (`vim` / `less` / `claude-code`)** —
-  Stage 4.5 PR-B; coalescer flush barrier shipped.
+  Stage 4a PR-B; coalescer flush barrier shipped.
 
 ## Open architectural questions
 
@@ -1040,7 +1040,7 @@ decisions before specific stages or PRs can land:
 5. **How do we handle TUI mode entry/exit
    announcements?** When `vim` opens, the screen reader
    should know "we're in vim now"; when it closes, "back
-   to shell". Stage 4.5 PR-B's alt-screen flush barrier
+   to shell". Stage 4a PR-B's alt-screen flush barrier
    is the substrate; what announcement text?
 
 ## Inspiration / prior art

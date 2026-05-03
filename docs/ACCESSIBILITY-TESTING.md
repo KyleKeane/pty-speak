@@ -124,10 +124,10 @@ section against:
 
 1. **Current `v0.0.1-preview.26` baseline.** Establishes
    whether the shipped code already has any orphan-process
-   issues independent of upcoming work. Run before Stage 4.5
+   issues independent of upcoming work. Run before Stage 4a
    starts so any failure here gets diagnosed against
    pre-Stage-4.5 code, not bundled into 4.5's diffs.
-2. **After Stage 4.5 ships.** Confirms the alt-screen
+2. **After Stage 4a ships.** Confirms the alt-screen
    back-buffer rework didn't introduce process leaks (the
    buffer-switching code itself is in F# and shouldn't
    touch ConPTY lifetime, but verifying is cheap).

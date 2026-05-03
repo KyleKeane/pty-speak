@@ -180,14 +180,26 @@ commit." Rollback point if the architecture cycle hits dead-ends.
 The audit flagged three shipped features without stage numbers in
 `spec/tech-plan.md`:
 
-- `Ctrl+Shift+D` diagnostic launcher (PR #81)
-- `Ctrl+Shift+;` log-copy (PRs #111 / #114)
-- Alt-screen 1049 + DECTCEM coverage (sometimes informally called
-  "Stage 4.5")
+- `Ctrl+Shift+D` diagnostic launcher (PR #81) — **resolved**
+  per chat 2026-05-03; formalized as **Stage 4b** in
+  `spec/tech-plan.md` §4b.
+- `Ctrl+Shift+;` log-copy (PRs #111 / #114) — **resolved** per
+  chat 2026-05-03; formalized as part of **Stage 5a** (diagnostic
+  logging surface) in `spec/tech-plan.md` §5a alongside the
+  `FileLogger.fs` ship.
+- Alt-screen 1049 + DECTCEM coverage — **resolved** per chat
+  2026-05-03; formalized as **Stage 4a** (Claude Code rendering
+  substrate) in `spec/tech-plan.md` §4a. Letter-suffix naming
+  (matches Stage 3a/3b precedent) avoids collision with the
+  existing `### 4.5` NVDA validation sub-section of Stage 4.
+  Forward-looking references in this repo previously read
+  "Stage 4.5"; historical CHANGELOG entries from when the work
+  shipped keep their original "Stage 4.5" labels as
+  release-notes-shaped artifacts.
 
 Per `CONTRIBUTING.md`, `spec/tech-plan.md` is immutable for planners
 but maintainer-editable. Either: assign stage numbers (e.g. "Stage
-4.5", "Stage 6.1", etc.) and document in spec, OR add an "Out-of-stage
+4a", "Stage 6.1", etc.) and document in spec, OR add an "Out-of-stage
 shipped features" section to `docs/ROADMAP.md`. Maintainer's call
 which surface owns this.
 

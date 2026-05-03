@@ -326,6 +326,30 @@ UIA calls into your provider on the **UIA RPC thread, not the WPF Dispatcher**. 
 
 -----
 
+## Stage 4a — Claude Code rendering substrate
+
+> **Authorship note.** This stage was identified mid-cycle when post-Stage-4 NVDA verification surfaced VT-mode coverage gaps the Stage 3 Screen model deferred (`_ -> ()` catch-all arms) but Stage 7's Claude Code roundtrip exercises on every state change. Added retroactively to the spec per maintainer authorization (chat 2026-05-03). Letter-suffix naming (matching the Stage 3a/3b precedent) avoids collision with the existing `### 4.5` sub-section.
+
+**Goal.** Give the Screen model the dispatch arms Claude Code's Ink reconciler — and other modern TUIs (`less`, `vim`, `fzf`, `npm` progress bars) — depend on: cursor-visibility toggling, save/restore, 256/truecolor SGR, and the alt-screen back-buffer. The parser already emits the corresponding events; this stage stops the Screen model from silently dropping them.
+
+Ships in two PRs: PR-A (mode + SGR coverage; private-CSI / ESC dispatch substrate); PR-B (alt-screen 1049 back-buffer).
+
+### 4a.1 TerminalModes + dispatch substrate (PR-A)
+
+A new `TerminalModes` record in `Terminal.Core/Types.fs` centralises the mode bits Stages 5/6/7 read: `CursorVisible` (DECTCEM `?25`), `AltScreen` (DECSET `?1049`), and stubs for Stage 6's `DECCKM` (`?1`), `BracketedPaste` (`?2004`), `FocusReporting` (`?1004`). `Apply`'s `CsiDispatch` arm splits private-marker (`?`-prefixed) sequences into a new `csiPrivateDispatch` from public-marker sequences (existing `csiDispatch`). A new `escDispatch` handles DECSC (ESC 7) / DECRC (ESC 8) via `Cursor.SaveStack: CursorSave list` where `CursorSave = { Row; Col; Attrs }` so cursor-restore also restores SGR attrs (xterm convention). 256-colour and truecolor SGR (`\x1b[38;5;n m`, `\x1b[38;2;r;g;b m`) walk the parameter array index-by-index with malformed-input bounds-guards (degrades to "ignore" rather than throw — hostile-input parity with audit-cycle SR-1's `MAX_PARAM_VALUE` clamps). OSC 52 (clipboard manipulation) is silently dropped via an explicit arm with a SECURITY-CRITICAL inline comment cross-referenced by `SECURITY.md` row TC-2; a future maintainer adding clipboard support has to remove the arm deliberately, not by accident.
+
+### 4a.2 Alt-screen back-buffer (PR-B)
+
+`Screen` holds two `Cell[,]` buffers (`primaryBuffer`, `altBuffer`) plus a `mutable activeBuffer` that points at one of them. Every cell read/write site (`printRune`, `executeC0` for BS/HT/LF/CR, `eraseDisplay`, `eraseLine`, `csiDispatch` cursor moves, `SnapshotRows`, `GetCell`) routes through `activeBuffer.[r, c]`. `csiPrivateDispatch` handles `?1049h` → `enterAltScreen ()` and `?1049l` → `exitAltScreen ()` — both idempotent. Save/restore semantics match xterm `?1049`: on enter, cursor row/col/SGR attrs are captured into a `savedPrimary: (int * int * SgrAttrs) option` field, `activeBuffer` is repointed at `altBuffer`, the alt buffer is cleared (xterm convention — alt-screen always starts blank), and cursor moves to (0, 0) with default attrs. On exit, the saved state is restored. **Primary cells are never copied** — they sit unchanged in `primaryBuffer` because nothing wrote to them during the alt session. `Modes.AltScreen` flips with the swap; `SequenceNumber` bumps on every `?1049h/l` so Stage 5's coalescer can treat the toggle as a hard invalidation barrier (flush pending debounce window, then resume).
+
+### 4a.3 Validation (Stage 4a)
+
+xUnit fixture coverage in `tests/Tests.Unit/ScreenTests.fs`. PR-A added 18 facts: DECTCEM toggle + non-private isolation, DECSC/DECRC round-trip, DECSC-saves-attrs, DECRC-on-empty-stack default, multi-level DECSC LIFO, 256-colour Fg/Bg, truecolor Fg/Bg, Print-carries-Indexed-into-cell, malformed `38;5` doesn't throw, malformed `38;2;…` doesn't throw, mixed SGR with truecolor in the middle, OSC 52 bumps `SequenceNumber` but doesn't mutate cells. PR-B added 9 facts: AltScreen flag toggle, primary preservation across alt entry/exit, alt-buffer reset on every entry, cursor + attrs reset on enter and restore on exit, idempotent enter/exit, `SnapshotRows` returns alt content during alt mode and primary content after exit, `SequenceNumber` bumps on `?1049h/l`.
+
+NVDA validation is implicit in Stage 7's Claude Code roundtrip — no separate manual smoke matrix because the Ink reconciler exercising alt-screen + DECTCEM + truecolor SGR is the user-facing test. Stage 5's streaming-coalescer alt-screen-barrier behaviour is verified separately under Stage 5's `### 5.5` validation row.
+
+-----
+
 ## Stage 5 — Streaming output notifications
 
 **Goal.** When PTY output arrives, NVDA reads it aloud at conversational pace. Spinner doesn’t flood. Multi-line output is announced line by line. Tested with `echo`, `dir`, busy loops.

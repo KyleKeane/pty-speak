@@ -1297,6 +1297,29 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Changed
 
+- **Spec formalization: Stage 4a — Claude Code rendering substrate.**
+  Per chat 2026-05-03 maintainer authorization, the post-Stage-4
+  rendering-substrate work (alt-screen 1049, DECTCEM cursor visibility,
+  256/truecolor SGR, DECSC/DECRC, OSC 52 silent drop, `TerminalModes`
+  record + private-CSI / ESC dispatch substrate) is now formally
+  documented in `spec/tech-plan.md` as **Stage 4a**. Letter-suffix
+  naming follows the existing Stage 3a/3b precedent and avoids
+  collision with the `### 4.5` NVDA validation sub-section of
+  Stage 4. `docs/ROADMAP.md` gains a Stage 4a row; forward-looking
+  references in `docs/SESSION-HANDOFF.md`,
+  `docs/ACCESSIBILITY-INTERACTION-MODEL.md`,
+  `docs/ACCESSIBILITY-TESTING.md`,
+  `docs/CHECKPOINTS.md`, and
+  `docs/PROJECT-PLAN-2026-05.md` realign from "Stage 4.5" to
+  "Stage 4a". Historical CHANGELOG entries from when the work
+  shipped (PR-A #85, PR-B #86) keep their original "Stage 4.5"
+  labels as release-notes-shaped artifacts of the moment they
+  shipped.
+
+  Companion Stage 4b (process-cleanup diagnostic) and Stage 5a
+  (diagnostic logging surface) ship as separate PRs per the
+  same chat 2026-05-03 authorization.
+
 - **Per-session log filenames now use full date+time + millisecond
   tie-breaker** ([#107](https://github.com/KyleKeane/pty-speak/issues/107),
   Option A). Filename scheme moves from

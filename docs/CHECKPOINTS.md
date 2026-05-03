@@ -58,8 +58,9 @@ session with maintainer-supplied scope text) should:
 1. Identify the `main` merge-commit SHA for each stage:
    - Stage 4 — UIA Document role + Text pattern + navigation + focus
      (PRs #54-#56, #59, #60, #66, #68)
-   - Stage 4.5 — Claude Code rendering substrate (PR-A #85; PR-B
-     alt-screen back-buffer #86)
+   - Stage 4a — Claude Code rendering substrate (PR-A #85; PR-B
+     alt-screen back-buffer #86) — formalized in `spec/tech-plan.md`
+     §4a per chat 2026-05-03
    - Stage 5 — Streaming output via Coalescer
      ([`e2f62f9`](https://github.com/KyleKeane/pty-speak/commit/e2f62f9),
      PR #89; functional end-to-end as of PR #116)
