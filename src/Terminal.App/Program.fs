@@ -780,21 +780,28 @@ module Program =
         // hot-switching.
         let resolveStartupShell () : ShellRegistry.Shell * string =
             let envVar = Environment.GetEnvironmentVariable("PTYSPEAK_SHELL")
+            // Distinguish "unset" from "set to garbage" so the
+            // log line is actionable. `null` / empty / whitespace
+            // is the common case (no env var set); a non-empty
+            // unrecognised value is a typo or stale config and
+            // earns a warning. Extracted to a helper so the
+            // arm body of `parseEnvVar`'s `None` case stays a
+            // single expression — F# 9 + `TreatWarningsAsErrors`
+            // can be brittle about sequence-in-match-arm
+            // shapes, and the helper sidesteps that risk.
+            let logIfUnrecognised () : unit =
+                match envVar with
+                | null -> ()
+                | v when System.String.IsNullOrWhiteSpace(v) -> ()
+                | v ->
+                    log.LogWarning(
+                        "PTYSPEAK_SHELL=\"{Value}\" not recognised; falling back to cmd.exe. Recognised values: cmd, claude.",
+                        v)
             let requested =
                 match ShellRegistry.parseEnvVar envVar with
                 | Some id -> id
                 | None ->
-                    // Distinguish "unset" from "set to garbage" so the
-                    // log line is actionable. `null` / empty is the
-                    // common case (no env var set); a non-empty
-                    // unrecognised value is a typo or stale config.
-                    match envVar with
-                    | null -> ()
-                    | v when System.String.IsNullOrWhiteSpace(v) -> ()
-                    | v ->
-                        log.LogWarning(
-                            "PTYSPEAK_SHELL=\"{Value}\" not recognised; falling back to cmd.exe. Recognised values: cmd, claude.",
-                            v)
+                    logIfUnrecognised ()
                     ShellRegistry.Cmd
             // `tryFind` only returns None for ids not registered in
             // `builtIns`; both Cmd and Claude are registered, so this

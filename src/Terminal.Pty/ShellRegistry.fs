@@ -72,24 +72,35 @@ module ShellRegistry =
             psi.RedirectStandardError <- true
             psi.UseShellExecute <- false
             psi.CreateNoWindow <- true
-            use p = Process.Start(psi)
             // CodeQL-clean: Process.Start with explicit
             // ProcessStartInfo (no shell=true) per
             // CONTRIBUTING.md's Process.Start convention.
-            let exited = p.WaitForExit(2000)
-            if not exited then
-                try p.Kill() with _ -> ()
-                Error (sprintf "%s: where.exe timed out after 2s" name)
-            elif p.ExitCode = 0 then
-                let out = p.StandardOutput.ReadToEnd()
-                let firstLine =
-                    out.Split([| '\n'; '\r' |])
-                    |> Array.tryFind (fun l -> l.Trim().Length > 0)
-                match firstLine with
-                | Some line -> Ok (line.Trim())
-                | None -> Error (sprintf "%s: where.exe returned no path" name)
-            else
-                Error (sprintf "%s: not found on PATH" name)
+            //
+            // F# 9 nullness: `Process.Start(ProcessStartInfo)` is
+            // annotated `Process | null` (the .NET docs document
+            // this — Start returns null when no resource is
+            // started, e.g. attempting to start a no-op process).
+            // Match-on-null and surface a usable Error so the
+            // composition root's fallback path runs predictably.
+            match Process.Start(psi) with
+            | null ->
+                Error (sprintf "%s: Process.Start returned null" name)
+            | p ->
+                use _ = p
+                let exited = p.WaitForExit(2000)
+                if not exited then
+                    try p.Kill() with _ -> ()
+                    Error (sprintf "%s: where.exe timed out after 2s" name)
+                elif p.ExitCode = 0 then
+                    let out = p.StandardOutput.ReadToEnd()
+                    let firstLine =
+                        out.Split([| '\n'; '\r' |])
+                        |> Array.tryFind (fun l -> l.Trim().Length > 0)
+                    match firstLine with
+                    | Some line -> Ok (line.Trim())
+                    | None -> Error (sprintf "%s: where.exe returned no path" name)
+                else
+                    Error (sprintf "%s: not found on PATH" name)
         with ex ->
             // AnnounceSanitiser is applied at the announcement
             // boundary in Program.fs, not here, so the raw
