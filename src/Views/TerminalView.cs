@@ -433,6 +433,29 @@ public class TerminalView : FrameworkElement
             // graphics, which is a different modifier).
             (Key.G, ModifierKeys.Control | ModifierKeys.Shift, "Toggle debug logging"),
 
+            // Stage 7-followup PR-F — diagnostic-surface hotkeys.
+            //
+            // Ctrl+Shift+H — health check: announce a one-line
+            // state snapshot (shell + PID, log level, reader
+            // last-byte staleness, channel queue depths). Lets a
+            // screen-reader user determine in one keystroke whether
+            // pty-speak is healthy or wedged, instead of inferring
+            // from "is NVDA reading anything?".
+            //
+            // Ctrl+Shift+B — incident marker: write a clear
+            // "=== INCIDENT MARKER {timestamp} ===" line into the
+            // active log + announce. The user reproduces the issue,
+            // then copies the log via Ctrl+Shift+; — server-side
+            // grep for the marker extracts the relevant slice.
+            // Replaces the env-var-and-relaunch debug capture
+            // workflow with three keystrokes (G, B, ;) entirely
+            // inside pty-speak.
+            //
+            // No NVDA collisions: Ctrl+Shift+H and Ctrl+Shift+B
+            // are not default NVDA bindings.
+            (Key.H, ModifierKeys.Control | ModifierKeys.Shift, "Health check"),
+            (Key.B, ModifierKeys.Control | ModifierKeys.Shift, "Incident marker"),
+
             // Future entries (NOT yet bound; commented for
             // forward-planning):
             //   (Key.M, ModifierKeys.Control | ModifierKeys.Shift,

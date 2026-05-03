@@ -57,6 +57,7 @@ module Program =
             (screen: Screen)
             (view: TerminalView)
             (notifications: System.Threading.Channels.ChannelWriter<ScreenNotification>)
+            (onChunkRead: int -> unit)
             (ct: CancellationToken) : Task =
         Task.Run(fun () ->
             task {
@@ -65,6 +66,13 @@ module Program =
                     while not ct.IsCancellationRequested do
                         let! chunk = host.Stdout.ReadAsync(ct).AsTask()
                         if chunk.Length > 0 then
+                            // Stage 7-followup PR-F — record the
+                            // moment of last live PTY activity. The
+                            // heartbeat timer + Ctrl+Shift+H health
+                            // check both read this to detect reader
+                            // staleness (a wedged reader vs a quiet
+                            // shell).
+                            onChunkRead chunk.Length
                             let events = Parser.feedArray parser chunk
                             if events.Length > 0 then
                                 let action () =
@@ -615,6 +623,46 @@ module Program =
                 ExecutedRoutedEventHandler(fun _ _ -> runToggleDebugLog window)))
         |> ignore
 
+    /// Stage 7-followup PR-F — wire `Ctrl+Shift+H` to a caller-
+    /// supplied health-check callback. The callback is a closure
+    /// constructed inside `compose ()` that reads compose-local
+    /// state (host, channel queue depths, last-byte timestamp,
+    /// log level) and announces a one-line summary via NVDA.
+    /// Same closure-passing pattern as
+    /// `setupShellSwitchKeybindings` (which takes
+    /// `ShellId -> unit`); keeps this setup function pure
+    /// boilerplate.
+    let private setupHealthCheckKeybinding
+            (window: MainWindow)
+            (run: unit -> unit) : unit =
+        let cmd = RoutedCommand("HealthCheck", typeof<MainWindow>)
+        let gesture = KeyGesture(Key.H, ModifierKeys.Control ||| ModifierKeys.Shift)
+        window.InputBindings.Add(KeyBinding(cmd, gesture)) |> ignore
+        window.CommandBindings.Add(
+            CommandBinding(
+                cmd,
+                ExecutedRoutedEventHandler(fun _ _ -> run ())))
+        |> ignore
+
+    /// Stage 7-followup PR-F — wire `Ctrl+Shift+B` to a caller-
+    /// supplied incident-marker callback. The callback writes a
+    /// clear "=== INCIDENT MARKER {timestamp} ===" line into the
+    /// active log + announces. Replaces the env-var-and-relaunch
+    /// debug-capture workflow with three keystrokes
+    /// (`Ctrl+Shift+G`, `Ctrl+Shift+B`, `Ctrl+Shift+;`) entirely
+    /// inside pty-speak.
+    let private setupIncidentMarkerKeybinding
+            (window: MainWindow)
+            (run: unit -> unit) : unit =
+        let cmd = RoutedCommand("IncidentMarker", typeof<MainWindow>)
+        let gesture = KeyGesture(Key.B, ModifierKeys.Control ||| ModifierKeys.Shift)
+        window.InputBindings.Add(KeyBinding(cmd, gesture)) |> ignore
+        window.CommandBindings.Add(
+            CommandBinding(
+                cmd,
+                ExecutedRoutedEventHandler(fun _ _ -> run ())))
+        |> ignore
+
     /// Composition seam — Stage 4+ plugs Elmish.WPF and the UIA peer
     /// in here. For Stage 3b we just hold references to the long-lived
     /// pieces and ensure they're disposed on Application.Exit.
@@ -905,6 +953,162 @@ module Program =
 
         let mutable hostHandle : ConPtyHost option = None
 
+        // Stage 7-followup PR-F — last-byte timestamp shared across
+        // every reader (initial spawn + each shell hot-switch). The
+        // heartbeat timer + Ctrl+Shift+H health check both read
+        // this to derive reader-loop staleness ("how long since the
+        // PTY produced output"), which is the single most useful
+        // signal for distinguishing "pty-speak is wedged" from
+        // "the shell is just idle waiting for input". Updates are
+        // unsynchronised — DateTimeOffset is 16 bytes (torn read
+        // possible) but the heartbeat is a diagnostic; one
+        // weird-looking entry occasionally is acceptable.
+        let mutable lastReadUtc = DateTimeOffset.UtcNow
+
+        // Stage 7-followup PR-F — incident-marker handler. Single
+        // press writes a clear "=== INCIDENT MARKER {timestamp} ==="
+        // boundary line to the active log via the standard
+        // ILogger/FileLogger path, then announces via NVDA. The
+        // user reproduces the issue, then copies the log via
+        // Ctrl+Shift+;; server-side grep for the marker extracts
+        // the relevant slice from the full log. Replaces the
+        // env-var-and-relaunch debug-capture workflow with three
+        // keystrokes (G, B, ;) entirely inside pty-speak.
+        let runIncidentMarker () : unit =
+            try
+                let timestamp =
+                    DateTimeOffset.UtcNow.ToString(
+                        "yyyy-MM-ddTHH:mm:ss.fffZ")
+                let markerLog = Logger.get "Terminal.App.IncidentMarker"
+                markerLog.LogInformation(
+                    "=== INCIDENT MARKER {Timestamp} === (Ctrl+Shift+B)",
+                    timestamp)
+                window.TerminalSurface.Announce(
+                    "Incident marker logged. Reproduce your issue, then press Ctrl+Shift+; to copy the log.",
+                    ActivityIds.incidentMarker)
+            with ex ->
+                let safe = AnnounceSanitiser.sanitise ex.Message
+                log.LogError(ex, "Incident marker raised exception.")
+                window.TerminalSurface.Announce(
+                    sprintf "Incident marker failed: %s" safe,
+                    ActivityIds.error)
+
+        // Stage 7-followup PR-F — health-check handler. Reads
+        // current runtime state (shell + PID, log level, last-byte
+        // staleness, channel queue depths) and announces a one-line
+        // summary. The summary opens with a status verdict
+        // (healthy / queue-near-capacity / reader-wedged) so a
+        // screen-reader user can determine in one keystroke whether
+        // pty-speak is functioning, instead of inferring from "is
+        // NVDA reading anything?".
+        let runHealthCheck () : unit =
+            try
+                let now = DateTimeOffset.UtcNow
+                let staleness = (now - lastReadUtc).TotalMilliseconds
+                let pid =
+                    match hostHandle with
+                    | Some h -> int h.ProcessId
+                    | None -> 0
+                let levelStr =
+                    match loggerSink with
+                    | Some s -> s.MinLevel.ToString()
+                    | None -> "Unknown"
+                let notifDepth = notificationChannel.Reader.Count
+                let coalDepth = coalescedChannel.Reader.Count
+                // Verdict heuristic: reader-wedge if no bytes in
+                // 5+ seconds AND there's pending work; queue-near-
+                // capacity if the notification channel is past 95%
+                // (the DropOldest mode means past-capacity is silent
+                // data loss); otherwise healthy.
+                let verdict =
+                    if staleness > 5000.0 && notifDepth > 0 then
+                        sprintf
+                            "Reader appears wedged. Last byte %.0f seconds ago."
+                            (staleness / 1000.0)
+                    elif notifDepth >= 244 then
+                        sprintf
+                            "Notification queue near capacity (%d of 256)."
+                            notifDepth
+                    else
+                        "Pty-speak healthy."
+                let summary =
+                    sprintf
+                        "%s %s shell, PID %d, log level %s. Reader last byte %.0f ms ago. Notification queue %d of 256. Coalesced queue %d of 16."
+                        verdict
+                        chosenShell.DisplayName
+                        pid
+                        levelStr
+                        staleness
+                        notifDepth
+                        coalDepth
+                log.LogInformation("Health check requested. {Summary}", summary)
+                window.TerminalSurface.Announce(
+                    summary,
+                    ActivityIds.healthCheck)
+            with ex ->
+                let safe = AnnounceSanitiser.sanitise ex.Message
+                log.LogError(ex, "Health check raised exception.")
+                window.TerminalSurface.Announce(
+                    sprintf "Health check failed: %s" safe,
+                    ActivityIds.error)
+
+        // Stage 7-followup PR-F — wire Ctrl+Shift+H and Ctrl+Shift+B
+        // through the standard reserved-hotkey machinery. Both
+        // closures capture compose-local state (lastReadUtc,
+        // hostHandle, channels, chosenShell) so they're built
+        // here rather than as module-level handlers like the
+        // Ctrl+Shift+G toggle (which only needs loggerSink).
+        setupHealthCheckKeybinding window runHealthCheck
+        setupIncidentMarkerKeybinding window runIncidentMarker
+
+        // Stage 7-followup PR-F — background heartbeat. Every 5
+        // seconds, log a single Information-level "Heartbeat" line
+        // capturing the same state the health check announces.
+        // Heartbeats stopping appear as a clean wedge timestamp in
+        // the log when troubleshooting later. Runs on the
+        // System.Threading.Timer thread pool — does NOT touch the
+        // WPF dispatcher, so the heartbeat keeps emitting even if
+        // the dispatcher is wedged.
+        let runHeartbeat () : unit =
+            try
+                let now = DateTimeOffset.UtcNow
+                let staleness = (now - lastReadUtc).TotalMilliseconds
+                let pid =
+                    match hostHandle with
+                    | Some h -> int h.ProcessId
+                    | None -> 0
+                let level =
+                    match loggerSink with
+                    | Some s -> s.MinLevel
+                    | None -> LogLevel.Information
+                let notifDepth = notificationChannel.Reader.Count
+                let coalDepth = coalescedChannel.Reader.Count
+                log.LogInformation(
+                    "Heartbeat. Shell={Shell} Pid={Pid} Level={Level} LastReadAgoMs={Staleness:F0} NotifQueue={Notif}/{NotifCap} CoalQueue={Coal}/{CoalCap}",
+                    chosenShell.DisplayName,
+                    pid,
+                    level,
+                    staleness,
+                    notifDepth,
+                    256,
+                    coalDepth,
+                    16)
+            with ex ->
+                // Don't let heartbeat crashes propagate to the
+                // timer thread — log and continue.
+                try
+                    log.LogWarning(
+                        ex,
+                        "Heartbeat raised exception: {Message}",
+                        ex.Message)
+                with _ -> ()
+        let heartbeatTimer =
+            new System.Threading.Timer(
+                callback = TimerCallback(fun _ -> runHeartbeat ()),
+                state = null,
+                dueTime = TimeSpan.FromSeconds(5.0),
+                period = TimeSpan.FromSeconds(5.0))
+
         // Stage 7 PR-C — extracted from the initial-spawn branch
         // so the shell-switch coordinator below can reuse the
         // exact same wiring without duplication. Wires the
@@ -941,6 +1145,7 @@ module Program =
                     screen
                     window.TerminalSurface
                     notificationChannel.Writer
+                    (fun _ -> lastReadUtc <- DateTimeOffset.UtcNow)
                     cts.Token
             window.TerminalSurface.SetPtyHost(
                 Action<byte[]>(fun bytes -> host.WriteBytes(bytes)),
@@ -1115,6 +1320,11 @@ module Program =
         app.Exit.Add(fun _ ->
             try log.LogInformation("pty-speak exiting.") with _ -> ()
             try cts.Cancel() with _ -> ()
+            // Stage 7-followup PR-F — stop the heartbeat timer
+            // before the logger is disposed so the timer doesn't
+            // fire one last entry into a closed channel and log a
+            // confusing exception.
+            try heartbeatTimer.Dispose() with _ -> ()
             // Complete both writers so the coalescer and drain
             // tasks exit cleanly when their channels run dry.
             try notificationChannel.Writer.TryComplete() |> ignore with _ -> ()

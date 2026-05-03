@@ -291,3 +291,23 @@ module ActivityIds =
     /// notification processing for diagnostic-config
     /// announcements separately from streaming output.
     let logToggle = "pty-speak.log-toggle"
+
+    /// Health-check announcements (Stage 7-followup PR-F
+    /// `Ctrl+Shift+H`). Emits a one-line state snapshot — shell
+    /// name + PID, log level, reader liveness (last-byte
+    /// staleness), notification-channel and coalesced-channel
+    /// queue depths. Lets a screen-reader user determine in one
+    /// keystroke whether pty-speak is healthy or wedged, instead
+    /// of inferring from "is NVDA reading anything?". Distinct
+    /// ActivityId so diagnostic-config announcements stay
+    /// configurable separately from streaming output.
+    let healthCheck = "pty-speak.health-check"
+
+    /// Incident-marker announcements (Stage 7-followup PR-F
+    /// `Ctrl+Shift+B`). Emits a confirmation that the user just
+    /// dropped a marker line into the active log file, plus the
+    /// instruction to reproduce the issue and copy the log via
+    /// `Ctrl+Shift+;`. Distinct ActivityId so the marker
+    /// announcement isn't suppressed by streaming-output
+    /// processing.
+    let incidentMarker = "pty-speak.incident-marker"

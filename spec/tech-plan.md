@@ -470,6 +470,37 @@ The “spinner problem” is real (Claude Code’s Ink renderer redraws the same
 >     No NVDA collision (default NVDA bindings don't claim
 >     `Ctrl+Shift+G`).
 >
+> Stage 7-followup PR-F additions (ADR-style amendment 2026-05-03,
+> maintainer-authorised — diagnostic-surface bundle that completes
+> the in-app debug-capture workflow alongside `Ctrl+Shift+G`):
+>   - `Ctrl+Shift+H` — health check: announce a one-line state
+>     snapshot (shell + PID, log level, reader last-byte
+>     staleness, channel queue depths) with a verdict prefix
+>     ("Pty-speak healthy." / "Reader appears wedged." /
+>     "Notification queue near capacity."). Lets a screen-reader
+>     user determine in one keystroke whether pty-speak is
+>     functional. Bound in `setupHealthCheckKeybinding` in
+>     `src/Terminal.App/Program.fs`. Mnemonic: H for "Health".
+>   - `Ctrl+Shift+B` — incident marker: log a
+>     `=== INCIDENT MARKER {timestamp} ===` boundary line at
+>     `Information` level and announce. The user reproduces the
+>     issue, then copies the log via `Ctrl+Shift+;` — server-side
+>     grep for the marker extracts the relevant slice. Replaces
+>     the env-var-and-relaunch debug-capture workflow with three
+>     keystrokes (G, B, ;) entirely inside pty-speak. Bound in
+>     `setupIncidentMarkerKeybinding`. Mnemonic: B for "Bug".
+>   - **Background heartbeat (no hotkey).** A
+>     `System.Threading.Timer` ticks every 5 seconds and logs an
+>     `Information`-level state snapshot (same fields as the
+>     health-check announcement). Heartbeats stopping in the log
+>     are a clean wedge timestamp for post-mortem triage.
+>     Initialised in `compose ()`; disposed in `app.Exit`.
+>   - All three are independent: the heartbeat runs on the timer
+>     thread regardless of dispatcher liveness; the hotkeys run
+>     on the dispatcher (so a wedged dispatcher would stop them,
+>     but the heartbeat's silence in the log captures that
+>     condition).
+>
 > Future entries (declared as code comments today; activated
 > when their owning stage ships):
 >   - `Ctrl+Shift+M` — Stage 9 earcon mute toggle.
