@@ -17,6 +17,95 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **Stage 7 PR-D — NVDA validation matrix expansion +
+  `docs/STAGE-7-ISSUES.md` design-derived seed entries.**
+  Closes the four-PR Stage 7 sequence per
+  `docs/PROJECT-PLAN-2026-05.md` Part 2; depends on PR-A
+  (#131, env-scrub PO-5), PR-B (#132, shell registry +
+  `PTYSPEAK_SHELL`), and PR-C (#134, hot-switch hotkeys
+  `Ctrl+Shift+1` / `Ctrl+Shift+2`).
+
+  `docs/ACCESSIBILITY-TESTING.md` "Stage 7 — Claude Code
+  roundtrip" row expanded from 4 tests to 14, covering:
+  default-shell launch (PR-B), env-scrub empirical check via
+  `set` enumeration confirming deny-list strips (PR-A),
+  Claude-shell launch via `PTYSPEAK_SHELL=claude` (PR-B),
+  welcome screen + prompt → response (Claude), review-cursor
+  navigation of streaming response (`Caps Lock+Numpad 7/8/9`),
+  spinner-flood guard, tool-use prompt (Edit/Yes/Always/No),
+  hot-switch cmd → claude + claude → cmd (PR-C), hot-switch
+  resolve failure announcement when claude.exe isn't on PATH,
+  process-cleanup verification post-switch via `Ctrl+Shift+D`
+  diagnostic (Job Object `KILL_ON_JOB_CLOSE` cascade), clean
+  quit via `/exit` / `exit` / `Ctrl+D`, and
+  `PTYSPEAK_SHELL=garbage` unrecognised-value fallback. Each
+  test row specifies the exact procedure + expected NVDA
+  announcement so the maintainer's manual pass is mechanically
+  reproducible.
+
+  Diagnostic-decoder section expanded with new failure-mode
+  entries: env-scrub leak indicating `EnvBlock.isDenied`
+  regression (security-class), allow-list missing var
+  indicating spec §7.2 sync drift, hot-switch silent-announce
+  indicating `AppReservedHotkeys` table or filter-ordering
+  regression, hot-switch orphan-child accumulation indicating
+  `ConPtyHost.Dispose` race with the new spawn (Job Object
+  cascade is the safety net), hot-switch announce-but-no-shell
+  indicating `wirePostSpawn` not invoked or `SetPtyHost`
+  callbacks not re-bound. Each decoder names the specific
+  source file or test fixture to triage against.
+
+  `docs/STAGE-7-ISSUES.md` status header flipped from
+  "stub created in PR #129; no entries yet" to "Stage 7
+  substrate shipped via PRs #131 / #132 / #134; PR-D this
+  PR; empirical NVDA validation maintainer-driven." The
+  inventory body pre-seeded with **four design-derived
+  entries** sourced from `spec/tech-plan.md` §7.4 "Known
+  issues you'll hit (drives next stages)" plus the headline
+  architectural finding from `docs/SESSION-HANDOFF.md` Stage
+  7 sketch "Known risks":
+
+  - `[output-stream]` Verbose readback: whole-screen
+    announcement on every Ink frame redraw — the first
+    foundational architecture decision the Output framework
+    cycle (Part 3) addresses; framework cycle's Stream
+    profile with suffix-diff append-only emission resolves.
+  - `[output-selection]` Tool-use prompt
+    (Edit/Yes/Always/No) reads as flat text instead of
+    listbox — original Stage 8 scope, folded into the
+    Output framework cycle's Selection profile.
+  - `[output-earcon]` Red error text reads as plain text
+    with no severity signal — original Stage 9 scope,
+    folded into the Output framework cycle's Earcons
+    presentation-sink layer.
+  - `[review-mode]` No quick-nav after focus moves past a
+    response — Stage 10 scope; depends on the
+    semantic-event taxonomy landing in the parser →
+    semantic-mapper layer first.
+
+  Each entry is marked **Source: design prediction** at the
+  bottom; the maintainer's empirical NVDA pass either
+  confirms with concrete reproduction steps + version pins,
+  refines the prediction, or marks as not-reproducible (in
+  which case the substrate is more capable than the spec
+  assumed and the framework cycle adjusts accordingly).
+  Entries surfaced empirically use the **Source: NVDA pass
+  YYYY-MM-DD** marker instead. The distinction matters for
+  the Output framework cycle's research phase
+  (`docs/research/OUTPUT-FRAMEWORK-PRIOR-ART.md`) which
+  reads this inventory as design input.
+
+  Per the May-2026 plan: **don't fix anything from the
+  inventory in Stage 7; that's framework-cycle work.** PR-D's
+  merge gate is the matrix being green for the rows that
+  should be green and the inventory documenting (not solving)
+  the rows that aren't.
+
+  After PR-D ships, the doc-purpose audit queued in
+  `docs/SESSION-HANDOFF.md` "Queued before Output framework
+  cycle starts" runs as the transition-window work before
+  the Output framework cycle's Phase 3.1 research begins.
+
 - **Stage 7 PR-C — hot-switch hotkeys `Ctrl+Shift+1` (cmd) /
   `Ctrl+Shift+2` (claude).** Mid-session shell switching via WPF
   `KeyBinding` -> `RoutedCommand` -> orchestrator closure in

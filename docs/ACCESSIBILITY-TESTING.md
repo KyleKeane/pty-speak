@@ -372,12 +372,35 @@ pattern at the right element.
 
 ### Stage 7 — Claude Code roundtrip
 
+Stage 7 ships across four sequenced PRs (per
+[`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md) Part 2):
+PR-A (env-scrub PO-5; #131), PR-B (shell registry +
+`PTYSPEAK_SHELL`; #132), PR-C (hot-switch hotkeys
+`Ctrl+Shift+1`/`Ctrl+Shift+2`; #134), and PR-D (this matrix
+expansion + `docs/STAGE-7-ISSUES.md` seeding). The matrix below
+exercises the full surface end-to-end. Per
+[`docs/SESSION-HANDOFF.md`](SESSION-HANDOFF.md) "Stage 7
+implementation sketch (next)" §5, **gaps surfaced during this
+matrix go into [`docs/STAGE-7-ISSUES.md`](STAGE-7-ISSUES.md)
+with framework-taxonomy category tags — Stage 7's job is to
+surface, not solve.**
+
 | Test                              | Procedure                                       | Expected behaviour                                               |
 |-----------------------------------|-------------------------------------------------|------------------------------------------------------------------|
-| Welcome screen                    | Launch `claude`                                 | NVDA reads the welcome screen                                    |
-| Prompt → response                 | Type "Say hi", Enter                            | Claude responds; NVDA reads the response                         |
-| Spinner does not flood            | Trigger a long-thinking response                | Spinner is announced at most once or as a periodic earcon; NVDA never freezes |
-| Quitting cleanly                  | `/exit` or Ctrl+D                               | Process exits; NVDA announces it; terminal returns to host shell |
+| **Default-shell launch (PR-B)**     | Launch pty-speak with `PTYSPEAK_SHELL` unset    | cmd.exe spawns; NVDA reads the cmd prompt; log line "Startup shell: Command Prompt (command line: cmd.exe)" appears in the active session log (`Ctrl+Shift+L` → today's folder) |
+| **Env-scrub empirical check (PR-A)** | At the cmd prompt, type `set` and press Enter | Output enumerates the child's env block. Confirm sensitive vars from the deny-list are ABSENT: `GITHUB_TOKEN`, `OPENAI_API_KEY` (any `*_TOKEN`/`*_SECRET`/`*_PASSWORD`/non-Anthropic `*_KEY`). Confirm allow-list vars are PRESENT: `PATH`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `HOME`, `TERM=xterm-256color`, `COLORTERM=truecolor`. Active session log includes "Env-scrub: stripped {N} variables before child spawn." (count only; never names or values) |
+| **Claude-shell launch (PR-B)**      | Quit pty-speak; relaunch with `PTYSPEAK_SHELL=claude` (or with claude.exe on PATH and PR-C's hotkey approach below) | claude.exe spawns; NVDA reads the welcome screen; log line "Startup shell: Claude Code (command line: <resolved path>)" |
+| **Welcome screen (Claude)**         | After Claude spawns, listen                     | NVDA reads the welcome screen                                    |
+| **Prompt → response (Claude)**      | Type "Say hi", Enter                            | Claude responds; NVDA reads the streaming response               |
+| **Review-cursor navigation**        | After Claude's response completes, press `Caps Lock + Numpad 7` / `Numpad 8` / `Numpad 9` (or `Insert + Up/Down/Left/Right` depending on NVDA layout) | NVDA's review cursor moves through the response by line / current-line / next-line; NVDA reads the line under the review cursor |
+| **Spinner does not flood**          | Trigger a long-thinking response                | Spinner is announced at most once or as a periodic earcon; NVDA never freezes |
+| **Tool-use prompt (Claude)**        | Ask Claude to edit a file in the current dir; when "Edit / Yes / Always / No" prompt appears, accept a choice | NVDA reads the prompt text. (Reads as flat text in PR-D; Stage 8 / Output framework's Selection profile fixes this — log the failure mode in `STAGE-7-ISSUES.md` with `[output-selection]` tag.) Pressing Enter accepts; Claude proceeds |
+| **Hot-switch cmd → claude (PR-C)**  | At the cmd prompt, press `Ctrl+Shift+2`         | NVDA announces "Switching to Claude Code." → ~700ms pause → "Switched to Claude Code." → claude welcome reads. Active session log includes "Shell-switch: spawning Claude Code. CommandLine=<path>" |
+| **Hot-switch claude → cmd (PR-C)**  | After claude is running, press `Ctrl+Shift+1`   | NVDA announces "Switching to Command Prompt." → ~700ms pause → "Switched to Command Prompt." → cmd prompt reads. Brief alt-screen residue is acceptable for v1 — log severity to `STAGE-7-ISSUES.md` with `[output-tui]` tag if it confuses the read |
+| **Hot-switch resolve failure (PR-C)** | On a machine WITHOUT claude.exe on PATH, press `Ctrl+Shift+2` | NVDA announces "Cannot switch to Claude Code: not found on PATH." (sanitised). The existing cmd shell continues to work; the user is NOT dropped into a dead window |
+| **Process-cleanup after switch (PR-C)** | After at least one Ctrl+Shift+1 / Ctrl+Shift+2 cycle, press `Ctrl+Shift+D` (process-cleanup diagnostic) | Diagnostic confirms no orphan `claude.exe` / cmd.exe / Terminal.App processes from the previous host. (Job Object's `KILL_ON_JOB_CLOSE` is the kernel-enforced cleanup.) |
+| **Quitting cleanly**                | `/exit` (Claude), `exit` (cmd), or Ctrl+D       | Process exits; NVDA announces it; terminal returns to host shell or window closes |
+| **PTYSPEAK_SHELL unrecognised value** | Launch pty-speak with `PTYSPEAK_SHELL=garbage` | cmd.exe still spawns (fallback); active session log includes "PTYSPEAK_SHELL=\"garbage\" not recognised; falling back to cmd.exe. Recognised values: cmd, claude." NVDA-bound behaviour is identical to default-shell launch |
 
 **Diagnostic decoder for Stage 7:**
 
@@ -385,7 +408,10 @@ pattern at the right element.
   Check `tests/fixtures/claude-thinking.txt` replay through
   Stage 5's coalescing path; if the unit tests pass, the
   semantic-layer hashing is fine and the regression is in how
-  Stage 7's spinner detector classifies the row.
+  Stage 7's spinner detector classifies the row. **This is also
+  the headline finding the Output framework cycle's research
+  phase consumes from `STAGE-7-ISSUES.md`** — log it with
+  `[output-stream]` even if you also fix the regression.
 - **Welcome screen silent** → Claude's TUI emits its first paint
   in a way that bypasses our coalescing entry point. Compare against
   Stage 5's `dir` test — if `dir` works but `claude` doesn't, the
@@ -394,6 +420,38 @@ pattern at the right element.
 - **`/exit` leaves orphaned `claude` process** → Same class as
   Stage 3b's "orphan cmd.exe" — the ConPTY shutdown isn't
   signalling the child correctly.
+- **Env-scrub empirical check shows a `*_TOKEN`/`*_SECRET` leak**
+  → `EnvBlock.isDenied` regression. Re-run
+  `tests/Tests.Unit/EnvBlockTests.fs` first; if the suffix-match
+  fixture passes, the leak is in the parent-env collection step
+  (the env var name didn't reach the deny-list). Symptom is
+  PO-5-class — file as a security regression, not an inventory
+  entry.
+- **Allow-list var missing from `set` output** → `EnvBlock.allowedNames`
+  edit landed without the spec-§7.2 sync. Cross-check
+  `EnvBlockTests.allowedNames contains exactly the spec-7-2 baseline`
+  fixture; if that passes, the parent process didn't have the
+  expected var set in the first place (sandbox / launcher
+  environment issue, not an env-scrub regression).
+- **Hot-switch announce is silent** → `Ctrl+Shift+1`/`Ctrl+Shift+2`
+  not in `TerminalView.AppReservedHotkeys`, OR `OnPreviewKeyDown`
+  marked `Handled = true` before `InputBindings` fired. Same
+  diagnosis path as the Stage 6 `Ctrl+V` paste regression: check
+  the `AppReservedHotkeys` table first, then the filter ordering.
+- **Hot-switch produces orphan child after several switches** →
+  `ConPtyHost.Dispose` race with the new spawn. Job Object's
+  `KILL_ON_JOB_CLOSE` should still cascade-kill on the next
+  switch (each switch creates a new Job, closing the previous
+  Job's last handle), but if `Ctrl+Shift+D` shows accumulating
+  orphans across many switches, file as `[other]` with the
+  exact sequence to reproduce.
+- **Hot-switch announce reads but new shell never appears** →
+  `wirePostSpawn` not invoked OR `SetPtyHost` callbacks not
+  re-bound. Check the active session log for "ConPTY child
+  spawned. Pid=<N>" + "Env-scrub: stripped {N}..." — if both
+  are present but no shell output reaches NVDA, the reader
+  loop didn't restart. If neither is present,
+  `ConPtyHost.start` failed.
 
 ### Stage 8 — selection lists
 
