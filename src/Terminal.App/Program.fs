@@ -467,6 +467,20 @@ module Program =
                 ActivityIds.error)
         | Some sink ->
             try
+                // Wait briefly for any in-flight log entries to reach
+                // disk before reading. Without this, the bounded
+                // channel can hold ~milliseconds of recent entries
+                // that haven't been written yet — the clipboard
+                // would then capture a stale snapshot of the file.
+                // Bounded by 500ms so the dispatcher can't freeze
+                // for longer than that worst-case; if no flush
+                // completes (channel idle, nothing to flush), the
+                // file already contains everything the writer has
+                // produced, so the false-return path is benign.
+                let drained = sink.FlushPending(500).Result
+                if not drained then
+                    log.LogInformation(
+                        "FlushPending timed out after 500ms; clipboard may be missing entries enqueued in the last few hundred ms.")
                 let path = sink.ActiveLogPath
                 if not (System.IO.File.Exists path) then
                     window.TerminalSurface.Announce(

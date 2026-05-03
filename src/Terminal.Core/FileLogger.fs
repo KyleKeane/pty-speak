@@ -136,6 +136,29 @@ type FileLoggerSink (options: FileLoggerOptions) =
 
     let cts = new CancellationTokenSource()
 
+    // Flush-barrier TCS used by `FlushPending`. The drain loop
+    // atomically swaps in a fresh TCS after every successful
+    // `StreamWriter.Flush`, then completes the previous one — so a
+    // caller that captures the current TCS and awaits it gets
+    // signalled the next time the loop completes a flush. Used by
+    // `Ctrl+Shift+;` log-copy so the clipboard captures
+    // up-to-the-moment state instead of the file contents minus
+    // however many entries are still in flight in the channel.
+    let flushTcsLock = obj ()
+    let mutable flushTcs = TaskCompletionSource<unit>()
+
+    /// Atomically swap the current `flushTcs` for a fresh one and
+    /// complete the previous one. Called from the drain loop after
+    /// every successful flush. Idempotent — `TrySetResult` on an
+    /// already-completed TCS is a no-op.
+    let signalFlushComplete () =
+        let prev =
+            lock flushTcsLock (fun () ->
+                let p = flushTcs
+                flushTcs <- TaskCompletionSource<unit>()
+                p)
+        prev.TrySetResult(()) |> ignore
+
     /// Format one log entry as a single line. Multi-line text
     /// (exception stack traces) is preserved as-is so readers
     /// can navigate it; downstream tooling that expects
@@ -276,6 +299,11 @@ type FileLoggerSink (options: FileLoggerOptions) =
                                 | null -> ()
                                 | w -> w.Flush()
                             with _ -> ()
+                            // Signal any FlushPending callers that
+                            // a flush just completed; entries
+                            // enqueued before this iteration are
+                            // now on disk.
+                            signalFlushComplete ()
                 with
                 | :? OperationCanceledException -> ()
                 | _ -> ()
@@ -293,6 +321,11 @@ type FileLoggerSink (options: FileLoggerOptions) =
                         w.Flush()
                         (w :> IDisposable).Dispose()
                 with _ -> ()
+                // Final flush signal after cleanup. Unblocks any
+                // FlushPending caller still awaiting the TCS at
+                // dispose time so they hit completion rather than
+                // timeout.
+                signalFlushComplete ()
             } :> Task)
 
     member _.IsEnabled (level: LogLevel) : bool =
@@ -331,6 +364,46 @@ type FileLoggerSink (options: FileLoggerOptions) =
     member _.ActiveLogPath : string =
         let _, filePath = pathsForLaunch ()
         filePath
+
+    /// Wait for any in-flight log entries to reach disk, OR for
+    /// `timeoutMs` to elapse — whichever comes first. Returns
+    /// `true` if a flush completed within the window, `false` on
+    /// timeout. Pass `0` (or negative) to wait indefinitely.
+    ///
+    /// Use case: `Ctrl+Shift+;` log-copy needs the file to reflect
+    /// the most recent log entries before reading. Without this,
+    /// the bounded channel may still hold ~milliseconds of
+    /// entries that haven't been written yet, and the clipboard
+    /// captures a stale snapshot. Caller invokes this on the
+    /// dispatcher thread before reading the file; the brief block
+    /// is acceptable for an explicit-user-gesture hotkey but
+    /// unsuitable for hot paths (use `TryWrite` + best-effort
+    /// reads there).
+    ///
+    /// Caveat: if the channel is idle (no pending entries) the
+    /// drain loop is parked in `WaitToReadAsync` and won't fire
+    /// a flush until something arrives. In that case `FlushPending`
+    /// hits timeout and returns `false`. The caller's read still
+    /// produces correct output because there's nothing in the
+    /// pipeline to be missing — the timeout is benign in this
+    /// scenario.
+    member _.FlushPending (timeoutMs: int) : Task<bool> =
+        task {
+            // Capture the current TCS atomically. The drain loop
+            // will swap it for a fresh one after the next flush
+            // and complete the captured one — at which point our
+            // await returns.
+            let tcs =
+                lock flushTcsLock (fun () -> flushTcs)
+            // `Task.Delay(-1)` waits forever per Microsoft docs
+            // (Timeout.Infinite). Lets the same `WhenAny` line
+            // handle both bounded and unbounded waits without an
+            // extra `if`-branch.
+            let delayMs = if timeoutMs <= 0 then -1 else timeoutMs
+            let! winner =
+                Task.WhenAny(tcs.Task, Task.Delay(delayMs))
+            return winner = (tcs.Task :> Task)
+        }
 
     interface IDisposable with
         member _.Dispose() =
