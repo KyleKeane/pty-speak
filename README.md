@@ -95,6 +95,9 @@ docs/                    Living developer documentation
   CHECKPOINTS.md         Stable-baseline tags per shipped stage
   CONPTY-NOTES.md        Observed Windows ConPTY platform quirks
   SESSION-HANDOFF.md     Bridge between Claude Code coding sessions
+  PROJECT-PLAN-2026-05.md  Strategic plan supersedes Stages 7-10 sequencing
+  HISTORICAL-CONTEXT-2026-05.md  Supplementary backup reference (NOT a primary handoff source)
+  STAGE-7-ISSUES.md      Stub for Stage 7 NVDA-validation gap inventory (Part 2)
 .github/
   workflows/             CI and release automation
   ISSUE_TEMPLATE/        Bug, feature, accessibility-issue templates
@@ -115,6 +118,7 @@ tests/                   xUnit + FsCheck.Xunit + FlaUI placeholder
 - **Stable checkpoints (rollback guide):** [`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md)
 - **ConPTY platform notes:** [`docs/CONPTY-NOTES.md`](docs/CONPTY-NOTES.md)
 - **Session handoff (for picking up between Claude Code sessions):** [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)
+- **Historical context (May-2026 cleanup cycle, supplementary reference):** [`docs/HISTORICAL-CONTEXT-2026-05.md`](docs/HISTORICAL-CONTEXT-2026-05.md) — _not_ a primary handoff source; backup curated list of guiding principles + technology specificities + paradigms that emerged during the May-2026 cycle, in case interesting details aren't captured in CHANGELOG / commit messages.
 - **Manual smoke-test matrix (every release):** [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
 - **User settings catalog (current and planned):** [`docs/USER-SETTINGS.md`](docs/USER-SETTINGS.md)
 - **Stage 11 update-failure announcements (NVDA reference):** [`docs/UPDATE-FAILURES.md`](docs/UPDATE-FAILURES.md)

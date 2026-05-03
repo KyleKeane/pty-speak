@@ -17,6 +17,45 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **`docs/HISTORICAL-CONTEXT-2026-05.md` — supplementary backup
+  reference, NOT a primary handoff source.** Curated knowledge dump
+  capturing the May-2026 cleanup cycle's guiding principles
+  (cleanup before architecture; surface-don't-solve at validation
+  gates; spec immutability + dated plans; letter suffixes for
+  retroactive stages; historical CHANGELOG entries are frozen;
+  small focused PRs over bundling; maintainer-side actions cluster;
+  NVDA validation gates every stage; the maintainer's working
+  constraints shape the workflow), the technology specificities
+  that surfaced (F# 9 nullness at .NET-API boundaries; WPF
+  dispatcher / `OnRender` / routed-event ordering; NVDA
+  `MostRecent` vs `ImportantAll` activityId processing;
+  `AutomationPeer.GetPatternCore` reachability; ConPTY init
+  prologue + Job Object lifecycle; `PeriodicTimer` reuse bug;
+  AllHashHistory spinner-gate threshold; bounded-channel +
+  TCS-barrier patterns; Velopack constraints; xUnit test
+  conventions), the coding paradigms specific to pty-speak
+  (walking-skeleton stages; two-channel composition;
+  `AnnounceSanitiser` chokepoint; `ActivityIds` as NVDA
+  configuration vocabulary; `AppReservedHotkeys` filter ordering;
+  OSC 52 silent-drop boundary; bracketed-paste injection defence),
+  and the process patterns the cycle settled into (manual PR-create
+  URL fallback; three-PR chunking for spec-numbering; CHECKPOINTS
+  rows in shipping order; status-as-of header on dated docs;
+  mechanical merges with content-hash verification; verify diff
+  stat before commit; cross-link doc references; fixup-commit
+  rhythm).
+
+  Each entry has a "lives in" cross-reference back to the primary
+  source (CONTRIBUTING.md, spec sections, CHANGELOG entries,
+  module-level doc-comments, etc.). The doc is **explicitly not
+  authoritative** — its job is to help a future contributor find
+  a curated list rather than archaeology across git history.
+
+  Linked from `README.md` "Quick links" + "Project layout" with
+  the explicit "NOT a primary handoff source" framing per
+  maintainer instruction. **Read `docs/SESSION-HANDOFF.md`
+  first**; this file is the backup reference.
+
 - **Final-handoff audit closing the May-2026 cleanup cycle.** Sweeps
   the last staleness in the entry-point docs so the next session
   picks up cleanly:
