@@ -519,6 +519,59 @@ For `e.Text` (string), encode UTF-8 and write to PTY. WPF’s `TextInput` alread
 
 -----
 
+## Stage 5a — Diagnostic logging surface
+
+> **Authorship note.** This stage was added retroactively per maintainer authorization (chat 2026-05-03). The work landed across multiple PRs through the post-Stage-6 cycle as diagnostic infrastructure to support manual NVDA verification: file-based structured logging (so the maintainer can paste a log slice in a bug report), per-session-per-day-folder layout, the Issue #107 filename refinement (full datetime + millisecond tie-breaker), the `Ctrl+Shift+L` open-logs hotkey, the `Ctrl+Shift+;` copy-active-log hotkey, and the `FlushPending` barrier so the copy hotkey captures up-to-the-moment state.
+
+**Goal.** Make session diagnostics trivially shareable. A user reporting a bug presses one hotkey to copy the current session's log to the clipboard, pastes it into a chat / email / issue, and has everything the maintainer needs to diagnose. Off-thread file-writing so the WPF dispatcher never blocks on disk; per-session files (no daily-rolled monsters); 7-day retention; on-demand flush so clipboard captures up-to-the-moment state.
+
+### 5a.1 FileLogger.fs structured logging
+
+`Terminal.Core/FileLogger.fs` implements `ILogger` / `ILoggerProvider` directly against `Microsoft.Extensions.Logging.Abstractions` (first-party SDK; no Serilog or other third-party dependency). A single background `Task.Run` drains a bounded `Channel<LogEntry>` (256 capacity, `BoundedChannelFullMode.Wait`, `SingleReader=true`), formats entries, and appends to disk. Off-thread by design: log call sites enqueue and return immediately; the WPF dispatcher never blocks on file I/O. Retention deletes whole day-folders older than `RetentionDays` (default 7) on every fresh launch; folders with non-date names are ignored defensively.
+
+Default log level: `Information`. `PTYSPEAK_LOG_LEVEL=Debug` env var (parsed in `Logger.configure`) flips to verbose for diagnosis sessions; invalid values silently fall back to `Information`. The `AnnounceSanitiser` chokepoint (audit-cycle SR-2) sanitises ALL announce-bound exception messages before they reach NVDA; the file logger enforces a parallel "never log secrets" discipline at every call site (no typed input, no paste content, no full screen contents, no environment variables) cross-referenced from `SECURITY.md`'s logging-discipline entry.
+
+### 5a.2 Per-session files in per-day folders
+
+Sessions never split across midnight (a long-running session stays in its launch-day folder); the next launch creates a file in the new day's folder. Filename scheme is `pty-speak-yyyy-MM-dd-HH-mm-ss-fff.log` per [Issue #107](https://github.com/KyleKeane/pty-speak/issues/107): full date+time keeps the file self-describing when extracted from its day-folder context (email attachment, bug-report paste); millisecond suffix is the uniqueness tie-breaker so two launches in the same UTC second produce distinct filenames; alphabetical sort equals chronological sort. Layout:
+
+```text
+%LOCALAPPDATA%\PtySpeak\logs\
+├── 2026-05-02\
+│   ├── pty-speak-2026-05-02-13-45-23-189.log
+│   └── pty-speak-2026-05-02-15-30-44-027.log
+└── 2026-05-01\
+    └── pty-speak-2026-05-01-09-15-22-318.log
+```
+
+`FileLoggerSink.ActiveLogPath` exposes the current session's path so the copy hotkey (5a.4) and a future Claude-Code-on-the-machine integration can reach the active session directly without scanning the directory.
+
+### 5a.3 `Ctrl+Shift+L` — open logs folder
+
+Reserved in `TerminalView.cs`'s `AppReservedHotkeys`. Opens the logs root in File Explorer via `Process.Start("explorer.exe", path)`. Uses the same announce-before-launch pattern as Stage 4b (~700ms delay before `Process.Start` so NVDA's speech queue plays the cue before File Explorer steals focus). The user navigates one click into today's day-folder and picks the most recent session by alphabetical sort.
+
+### 5a.4 `Ctrl+Shift+;` — copy active session's log to clipboard
+
+Reserved in `AppReservedHotkeys`. Opens the active log file with `FileShare.ReadWrite` (matching the writer's policy — `File.ReadAllText`'s default `FileShare.Read` would fail because the writer holds the file with `FileAccess.Write`). Reads contents, sets the OS clipboard via `Clipboard.SetText` (STA-thread requirement satisfied because the hotkey handler runs on the WPF dispatcher), and announces the byte count via NVDA ("Log copied to clipboard. N bytes; ready to paste."). Clipboard `COMException` (transient under contention) becomes an audible error rather than a silent no-op.
+
+Hotkey-choice rationale: `Ctrl+Shift+;` puts the copy gesture under one-hand reach of `Ctrl+Shift+L` (open folder) on a US-layout keyboard — semicolon/colon sits immediately to the right of `L`. `Ctrl+Alt+L` was tried first but collided with the Windows Magnifier zoom-in shortcut, and the SystemKey-aware filter required for the `Alt`-modifier path inadvertently broke `Alt+F4`. Layout caveat: on non-US keyboards the `OemSemicolon` virtual-key sits in a different physical position; remap support is on the Phase 2 user-settings roadmap.
+
+### 5a.5 `FileLoggerSink.FlushPending(timeoutMs)` API
+
+`Task<bool>`-returning member that lets the copy hotkey wait until the bounded-channel drain has written its queue to disk before reading the file. Without it, the channel can hold ~milliseconds of recent entries that haven't been flushed; the clipboard would capture a stale snapshot. Implementation: a TCS-barrier owned by the sink. The drain loop atomically swaps `flushTcs` for a fresh one after every successful `StreamWriter.Flush` and completes the swapped one — so a caller capturing the current TCS gets signalled the next time the drain finishes a flush. Lock-protected swap; idempotent `TrySetResult`; signalled once more after the dispose-time final flush so callers awaiting at shutdown see completion rather than timeout. `runCopyLatestLog` invokes with a 500ms budget; on timeout (channel idle, or host pegged for longer), proceeds with the not-quite-current file content rather than blocking the dispatcher beyond the bounded window.
+
+### 5a.6 Validation (Stage 5a)
+
+xUnit fixture coverage in `tests/Tests.Unit/FileLoggerTests.fs`: the original FileLogger ship pinned the basic contract (Information entries land, min-level filtering drops below-min entries, exception details land, retention deletes >7-day folders, log directory is created on demand, `LogDirectory` member exposes the path, `Logger.get` returns `NullLogger` before configure, configured factory's logger produces correctly-categorised output, concurrent writes from multiple threads all land, formatter throwing does not crash the sink, `PTYSPEAK_LOG_LEVEL` env var override + invalid-fallback). Issue #107 added 3 more facts (`active log lives inside a day-folder named yyyy-MM-dd`, `ActiveLogPath member exposes...`, `session filename uses yyyy-MM-dd-HH-mm-ss-fff format per Issue #107`). FlushPending added `FlushPending makes recently-enqueued entries readable while the writer is active`.
+
+NVDA validation row in `docs/ACCESSIBILITY-TESTING.md` "Logging surface" section: open the folder via `Ctrl+Shift+L`, copy the active log via `Ctrl+Shift+;`, paste in a text editor, confirm content includes the just-typed events. Exercised every preview cut as part of the standing manual matrix.
+
+### 5a.7 Post-Stage-5/6 streaming-pipeline diagnostics
+
+The diagnostic logging surface itself enabled the post-Stage-5/6 streaming-fix cycle by giving the maintainer a way to capture and share the log evidence: PR #109 instrumented the streaming path with INFO-level entries; PR #111 rebound the copy hotkey + restored Alt+F4 + demoted PR-#109's instrumentation to Debug so the steady-state log volume stayed quiet; PR #114 fixed the `FileShare` bug that prevented the copy from reading its own writer's file + restored two strategic INFO entries; PR #116 removed the broken `AllHashHistory` spinner gate (root cause of the "streaming output silent end-to-end" symptom). Each of these landed in cycles of "user pastes log → maintainer diagnoses → patch ships." The Stage 5a infrastructure is what made that loop possible without the maintainer needing a debugger or a screen-sharing session.
+
+-----
+
 ## Stage 7 — Run Claude Code end-to-end
 
 **Goal.** Launch Claude Code as the child process, complete a roundtrip prompt → response, hear it via NVDA. Document what works and what doesn’t (the latter informs Stages 8–10).
