@@ -1155,17 +1155,28 @@ Guard against scope creep:
 
 ## Recommended reading order for a new session
 
-1. **This file.**
-2. **[`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md)** —
+1. **[`CLAUDE.md`](../CLAUDE.md)** — auto-loaded standing
+   instructions for every Claude Code session. Working rules
+   (one concern per PR, ask-for-CI-logs-don't-guess, squash-merge
+   default, `mcp__github__create_pull_request` for the
+   auto-subscribe webhook, etc.), F# 9 + .NET 9 gotchas
+   (nullness at API boundaries, record-literal type inference,
+   `out SafeHandle&` byref interop, ` ` escape for NUL
+   literals, F# delegate conversion), the app-reserved hotkey
+   contract, the accessibility non-negotiables, and the current
+   stage sequencing index. Read this first; it indexes
+   everything below.
+2. **This file** (SESSION-HANDOFF.md).
+3. **[`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md)** —
    the canonical strategic plan for the next ~8-12 weeks
    (cleanup → Stage 7 validation gate → output framework cycle
    → input framework cycle → Stage 10). Supersedes the per-stage
    ordering of `spec/tech-plan.md` for Stages 7-10 specifically;
    the spec remains immutable as architectural rationale.
-3. [`CONTRIBUTING.md`](../CONTRIBUTING.md) — PR shape, branching,
+4. [`CONTRIBUTING.md`](../CONTRIBUTING.md) — PR shape, branching,
    CHANGELOG discipline, F# / WPF gotchas, documentation policy.
    Working conventions all live here.
-4. [`spec/tech-plan.md`](../spec/tech-plan.md) §1–§6 plus the
+5. [`spec/tech-plan.md`](../spec/tech-plan.md) §1–§6 plus the
    retroactively-formalized Stages **4a** (Claude Code rendering
    substrate), **4b** (process-cleanup diagnostic), and **5a**
    (diagnostic logging surface) — establishes the architectural
@@ -1175,19 +1186,19 @@ Guard against scope creep:
    the May-2026 plan reshapes (see plan doc for sequencing —
    Stages 8 and 9 fold into the Output framework cycle; Stage
    10 ships post-frameworks as their first consumer).
-5. [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) — what's stable, what
+6. [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) — what's stable, what
    tags need pushing, how rollback works.
-6. [`docs/CONPTY-NOTES.md`](CONPTY-NOTES.md) — observed platform
+7. [`docs/CONPTY-NOTES.md`](CONPTY-NOTES.md) — observed platform
    quirks. Render-cadence finding is the one most likely to bite
    again.
-7. [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md) "Common pitfalls"
+8. [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md) "Common pitfalls"
    section — every diagnostic loop's lessons end up here.
-8. Skim [`CHANGELOG.md`](../CHANGELOG.md) `[Unreleased]` for
+9. Skim [`CHANGELOG.md`](../CHANGELOG.md) `[Unreleased]` for
    in-flight work and the most recent shipped section for the
    last release narrative shape.
-9. Browse `src/` top-down: `Terminal.Core` (data) → `Terminal.Pty`
-   (ConPTY) → `Terminal.Parser` (VT500) → `Views` (WPF) →
-   `Terminal.App/Program.fs` (composition).
+10. Browse `src/` top-down: `Terminal.Core` (data) → `Terminal.Pty`
+    (ConPTY) → `Terminal.Parser` (VT500) → `Views` (WPF) →
+    `Terminal.App/Program.fs` (composition).
 
 Tests are in `tests/Tests.Unit/` (xUnit + FsCheck) — `SmokeTests`,
 `ConPtyHostTests` (Windows-only, runtime-skipped elsewhere),
