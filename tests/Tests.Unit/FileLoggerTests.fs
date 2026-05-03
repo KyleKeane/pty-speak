@@ -34,7 +34,16 @@ let private optionsAt (dir: string) (minLevel: LogLevel) : FileLoggerOptions =
 /// filename scheme `pty-speak-yyyy-MM-dd-HH-mm-ss-fff.log` and
 /// returns the parsed launch `DateTime` (UTC). Used by the
 /// filename-shape tests + the Issue-#107 acceptance test.
-let private assertSessionFilenameFormat (fileName: string) : DateTime =
+///
+/// Accepts `string | null` because `Path.GetFileName` (the typical
+/// caller) is annotated `string?` in .NET 9; the helper handles
+/// the null case with an explicit failure rather than forcing
+/// every call site to coerce.
+let private assertSessionFilenameFormat (fileName: string | null) : DateTime =
+    let fileName =
+        match fileName with
+        | null -> failwith "session log filename was null (Path.GetFileName returned null)"
+        | name -> name
     Assert.StartsWith("pty-speak-", fileName)
     Assert.EndsWith(".log", fileName)
     let prefixLen = "pty-speak-".Length
