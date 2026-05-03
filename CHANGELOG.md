@@ -17,6 +17,47 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ### Added
 
+- **`docs/CHECKPOINTS.md` checkpoint rows for shipped post-Stage-3b
+  stages.** The 2026-05-03 audit (in
+  [`docs/PROJECT-PLAN-2026-05.md`](docs/PROJECT-PLAN-2026-05.md))
+  flagged a "Post-Stage-3b checkpoint rows pending" hygiene gap:
+  Stages 4, 4a, 4b, 5, 5a, 6, and 11 had all merged to `main` and
+  shipped in maintainer-tested previews, but no `baseline/stage-N`
+  rollback-tag rows existed. This PR fills the gap with seven new
+  rows in shipping order:
+
+  - `baseline/stage-4-uia-document-text-pattern` — anchor PR #68
+    (real word-navigation closing the Stage 4 follow-up).
+  - `baseline/stage-11-velopack-auto-update` — anchor PR #66
+    (window-title version suffix + structured update-failure
+    messages).
+  - `baseline/stage-4b-process-cleanup-diagnostic` — anchor PR #81
+    (`Ctrl+Shift+D` diagnostic launcher).
+  - `baseline/stage-4a-claude-code-substrate` — anchor PR-B #86
+    (alt-screen 1049 back-buffer; Stage 4a complete with PR-A #85
+    + PR-B #86).
+  - `baseline/stage-5-streaming-coalescer` — anchor PR #89
+    (Coalescer module + alt-screen flush barrier + Acc/9 OnRender
+    lock fix bundled).
+  - `baseline/stage-6-keyboard-input` — anchor PR #100 (post-Stage-6
+    stability fixup completing PR-A #92 + PR-B #99).
+  - `baseline/stage-5a-diagnostic-logging` — anchor PR #122
+    (FlushPending; the most recent constituent that completes the
+    Stage 5a scope per spec §5a).
+
+  Each row includes a paragraph-length scope description matching
+  the existing Stage 0–3b row tone (PR links + release link where
+  applicable + technical narrative). Each row also has a matching
+  "Pending checkpoint tags" entry with the exact `git tag -a SHA -m`
+  + `git push` commands the maintainer runs from a workstation
+  (the dev sandbox proxy returns 403 on tag pushes per
+  `docs/SESSION-HANDOFF.md` "Sandbox + tools caveats"). The
+  obsolete "Post-Stage-3b checkpoint rows pending" notice is
+  removed.
+
+  No code touched. Pure docs hygiene closing out the audit
+  branch's flagged TODO.
+
 - **Stage 7 implementation sketch in `docs/SESSION-HANDOFF.md`.**
   The next session that picks up Part 2 of the May-2026 plan
   (Claude Code roundtrip + env-scrub PO-5 — the validation gate
