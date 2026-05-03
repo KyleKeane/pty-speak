@@ -655,14 +655,46 @@ Resolution order:
 
 ### 7.2 Environment
 
-Set in the `lpEnvironment` block (UTF-16, double-null terminated):
+Set in the `lpEnvironment` block (UTF-16, double-null terminated). Two layers:
+
+**Always-set (override parent):**
 
 - `TERM=xterm-256color` (Claude Code/Ink expects this).
 - `COLORTERM=truecolor` (enables 24-bit RGB output — see [termstandard/colors](https://github.com/termstandard/colors)).
-- Inherit the parent’s `PATH`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `HOME` (set HOME to `%USERPROFILE%` if absent for npm/git compatibility).
-- Pass through `ANTHROPIC_API_KEY` if set (or rely on `claude login` having stored creds).
 
-Claude Code also has one Windows-specific knob worth surfacing: `CLAUDE_CODE_GIT_BASH_PATH` to point at Git Bash, since Claude internally uses Git Bash for shell tools ([Claude Code terminal config](https://code.claude.com/docs/en/terminal-config)).
+**Inherited from parent (allow-list; everything else is dropped). Two sub-layers:**
+
+*Layer 1 — pty-speak-specific:*
+
+- `PATH`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `HOME` (set HOME to `%USERPROFILE%` if absent for npm/git compatibility).
+- `ANTHROPIC_API_KEY` (Claude auth — explicit deny-list exemption, see below).
+- `CLAUDE_CODE_GIT_BASH_PATH` — Windows-specific knob surfaced by Claude Code's terminal-config docs ([Claude Code terminal config](https://code.claude.com/docs/en/terminal-config)).
+
+*Layer 2 — Windows runtime baseline (Stage 7-followup PR-K, 2026-05-03 maintainer authorisation):*
+
+The empirical NVDA validation pass on 2026-05-03 surfaced that PowerShell + claude.exe both die immediately on spawn while cmd.exe survives. Diagnosis: layer 1 alone strips Windows runtime vars that PowerShell's .NET initialisation and claude.exe's Node runtime both require to start. cmd.exe is unusual — it reads most of what it needs straight from the registry — but every non-trivial Windows shell crashes without these vars. None are sensitive: they're public machine identity / paths readable from registry by any unprivileged process.
+
+- `SystemRoot`, `WINDIR`, `SystemDrive` — Win32 loader resolves DLLs against these; .NET runtime depends on them.
+- `TEMP`, `TMP` — PowerShell + Node both write a temp file at startup.
+- `ProgramFiles`, `ProgramFiles(x86)`, `ProgramW6432`, `ProgramData`, `ALLUSERSPROFILE`, `PUBLIC` — module / installer / package resolution.
+- `PATHEXT` — Windows binary resolution.
+- `PSModulePath` — PowerShell module loading.
+- `COMPUTERNAME`, `USERNAME`, `USERDOMAIN`, `USERDOMAIN_ROAMINGPROFILE` — identity (read-only; standard inherit pattern).
+- `PROCESSOR_ARCHITECTURE`, `PROCESSOR_IDENTIFIER`, `PROCESSOR_LEVEL`, `PROCESSOR_REVISION`, `NUMBER_OF_PROCESSORS`, `OS` — runtime sniffing.
+- `LOGONSERVER`, `SESSIONNAME`, `HOMEDRIVE`, `HOMEPATH` — session context PowerShell reads at prompt construction.
+- `DriverData` — Windows 10+ baseline.
+
+**Deny-list (overrides allow-list):**
+
+Any name matching `*_TOKEN`, `*_SECRET`, `*_KEY`, `*_PASSWORD` (suffix match on uppercase, leading underscore required) is dropped. Single explicit exemption: `ANTHROPIC_API_KEY`, since Claude Code is the primary target workload and stripping its credential would defeat Stage 7's purpose.
+
+**Logging:** the env-scrub emits one `Information`-level line per spawn:
+
+```
+Env-scrub: kept K of M parent vars; dropped D as sensitive (deny-list).
+```
+
+PR-K replaced the prior `"stripped {Count}"` line, which was misleading: it reported only deny-list strikes, hiding the much larger silent drop count from the allow-list filter. The full kept/parent picture surfaces silent stripping regressions at a glance. Names and values are NEVER captured (per `SECURITY.md` logging discipline: env-var names like `BANK_API_KEY` are themselves sensitive).
 
 ### 7.3 Expected Claude Code startup behavior
 

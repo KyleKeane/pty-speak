@@ -69,7 +69,19 @@ type PtySession =
       /// NEVER captured (per `SECURITY.md` logging discipline:
       /// env-var names like `BANK_API_KEY` are themselves
       /// sensitive). Closes `SECURITY.md` row PO-5.
-      EnvScrubStrippedCount: int }
+      EnvScrubStrippedCount: int
+      /// PR-K — total parent env-var count (pre-filter). Together
+      /// with `EnvScrubKeptCount` and `EnvScrubStrippedCount` lets
+      /// the composition-root log line report the full kept /
+      /// dropped picture instead of just the deny-list count
+      /// (which the empirical 2026-05-03 NVDA pass surfaced as
+      /// misleading: "stripped 0" while ~50 parent vars were
+      /// being silently dropped because they weren't on the
+      /// allow-list).
+      EnvScrubParentCount: int
+      /// PR-K — count of parent vars that survived BOTH filters
+      /// and landed in the child block.
+      EnvScrubKeptCount: int }
 
     interface IDisposable with
         member this.Dispose() =
@@ -371,7 +383,11 @@ module PseudoConsole =
                                                   AttributeList = attrList
                                                   JobHandle = jobHandle
                                                   EnvScrubStrippedCount =
-                                                      envBuilt.StrippedCount }
+                                                      envBuilt.StrippedCount
+                                                  EnvScrubParentCount =
+                                                      envBuilt.ParentCount
+                                                  EnvScrubKeptCount =
+                                                      envBuilt.KeptCount }
                                 finally
                                     Marshal.FreeHGlobal(jobInfoPtr)
 

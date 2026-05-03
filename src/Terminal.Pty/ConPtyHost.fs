@@ -80,6 +80,16 @@ type ConPtyHost internal (session: PtySession,
     /// `SECURITY.md` logging discipline).
     member _.EnvScrubStrippedCount: int = session.EnvScrubStrippedCount
 
+    /// PR-K — total parent env-var count (pre-filter). Together
+    /// with `EnvScrubKeptCount` and `EnvScrubStrippedCount` lets
+    /// the composition-root log line report the full kept /
+    /// dropped picture.
+    member _.EnvScrubParentCount: int = session.EnvScrubParentCount
+
+    /// PR-K — count of parent vars that survived BOTH filters
+    /// and landed in the child block.
+    member _.EnvScrubKeptCount: int = session.EnvScrubKeptCount
+
     /// Convenience: wait for the child process to exit. Returns when
     /// WaitForSingleObject signals on the process handle. Does not
     /// itself stop the reader — that happens when the pipe drains.

@@ -15,6 +15,74 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed (Stage 7-followup PR-K)
+
+- **Env-scrub allow-list was too narrow — PowerShell + claude.exe
+  could not start.** The 2026-05-03 NVDA validation pass on the
+  PR-J build showed both PowerShell (PID 8440) and claude.exe
+  (multiple PIDs) dying within ~3 seconds of spawn while cmd.exe
+  survived. Diagnosis: the original 7-name allow-list (`PATH`,
+  `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `HOME`,
+  `ANTHROPIC_API_KEY`, `CLAUDE_CODE_GIT_BASH_PATH`) stripped
+  Windows runtime vars that PowerShell's .NET initialisation and
+  claude.exe's Node runtime both require: `SystemRoot`, `WINDIR`,
+  `TEMP`, `TMP`, `ProgramFiles`, `PATHEXT`, `PSModulePath`, etc.
+  cmd.exe survived because it reads most of what it needs
+  straight from the registry, but every non-trivial Windows shell
+  fails without these vars.
+
+  Fix: expand `EnvBlock.allowedNames` to a two-layer set — layer
+  1 (pty-speak-specific, unchanged) + layer 2 (Windows runtime
+  baseline: 24 standard machine-identity / path vars that any
+  unprivileged process can already read from the registry). The
+  deny-list still applies on top, so sensitive `*_TOKEN` /
+  `*_SECRET` / `*_KEY` / `*_PASSWORD` vars are still stripped.
+
+- **Misleading env-scrub log line.** The previous
+  `"Env-scrub: stripped {Count} variables before child spawn"`
+  line read "stripped 0" in the 2026-05-03 NVDA pass log even
+  though ~50 parent vars were being silently dropped — because
+  the `StrippedCount` field only counted deny-list strikes and
+  silently excluded vars dropped by the allow-list filter. Future
+  regressions of the same shape would have been invisible.
+
+  Fix: replaced with
+  `"Env-scrub: kept K of M parent vars; dropped D as sensitive
+  (deny-list)"`. New `EnvBlock.Built` fields `ParentCount` +
+  `KeptCount` plumbed through to `ConPtyHost`. Counts only —
+  names and values are still NEVER captured per `SECURITY.md`
+  logging discipline.
+
+What changes:
+
+- `src/Terminal.Pty/Native.fs`:
+  * `allowedNames` set extends with 24 Windows-baseline vars.
+  * `Assembled` + `Built` records gain `ParentCount` +
+    `KeptCount` fields.
+  * `assemble` populates them from `Map.count parent` and
+    `Map.count kept`-pre-fallback-pre-always-set.
+- `src/Terminal.Pty/PseudoConsole.fs` + `ConPtyHost.fs`: plumb
+  the two new fields through `PtySession` into the public
+  `ConPtyHost` API as `EnvScrubParentCount` +
+  `EnvScrubKeptCount`.
+- `src/Terminal.App/Program.fs`: log line replaced; old
+  rationale comment expanded with PR-K provenance.
+- `tests/Tests.Unit/EnvBlockTests.fs`:
+  * `allowedNames contains exactly the spec-7-2 baseline` test
+    extended with all 24 layer-2 names; same ADR-discipline pin
+    so a future tightening can't silently re-break PowerShell +
+    Node-based shells.
+  * New test pinning Windows-baseline preservation
+    (`SystemRoot`, `WINDIR`, `TEMP`, `ProgramFiles`,
+    `PSModulePath`, etc. all survive).
+  * New tests pinning `ParentCount` / `KeptCount` semantics
+    (full filter picture, exclusion of always-set + HOME
+    fallback).
+- `spec/tech-plan.md` §7.2: rewritten to describe the two-layer
+  allow-list explicitly and document the new log-line format.
+- `SECURITY.md` PO-5 row: updated mitigation description to
+  enumerate the layer-2 names and reference PR-K.
+
 ### Added (Stage 7-followup PR-J)
 
 - **PowerShell as third built-in shell + reordered hotkeys.**
