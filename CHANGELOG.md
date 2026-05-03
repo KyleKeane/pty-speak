@@ -96,6 +96,38 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
   (#132) for the `ShellRegistry` registry. PR-D (NVDA
   validation matrix + STAGE-7-ISSUES seeding) follows.
 
+- **`CLAUDE.md` — auto-loaded standing instructions for Claude
+  Code sessions.** Consolidates the working rules and project-
+  specific gotchas every session needs to know upfront, indexed
+  from `docs/SESSION-HANDOFF.md`'s recommended-reading-order
+  (now position #1) and `README.md`'s quick-links. Covers:
+  branching + PR conventions (one concern per PR, conventional
+  commits, squash-merge default, fixup-commit rhythm),
+  ask-for-CI-logs-don't-guess on failures (with rationale —
+  the local sandbox doesn't expose `/actions/runs/.../logs` so
+  speculation produces unfocused fixups), the
+  `mcp__github__create_pull_request` auto-subscribe-on-create
+  webhook behaviour (use the MCP tool, not `gh pr create`, to
+  receive `<github-webhook-activity>` events for CI failures
+  and merges), the dotnet-not-on-sandbox tooling reality, the
+  full F# 9 + .NET 9 nullness gotcha catalogue (`FS3261`-prone
+  APIs: `Environment.GetEnvironmentVariable`, `Process.Start
+  (ProcessStartInfo)`, `Path.GetFileName`, `StreamReader.
+  ReadLine`), F# delegate conversion (auto-converts to
+  `Func`/`Action` only — `Predicate<T>` requires explicit
+  construction), record-literal type inference (the `FS0039`
+  failure mode that bit Stage 7 PR-B in CI: a record declared
+  inside a non-auto-opened module needs an explicit type
+  annotation on the literal), the `out SafeHandle&` byref
+  brokenness, the `\u0000` source-escape convention for NUL
+  literals, the sequence-in-match-arm caveat, the test
+  conventions (xUnit + FsCheck.Xunit, plain ASCII source,
+  InternalsVisibleTo placement), the logging discipline
+  (never log secrets — env-var names like `BANK_API_KEY` are
+  themselves sensitive), the AppReservedHotkey contract, and
+  the current Stage 7 four-PR sequence index. Future
+  CLAUDE.md edits will accumulate gotchas as they surface.
+
 - **Stage 7 PR-B — extensible shell registry + `PTYSPEAK_SHELL`
   startup override.** New `Terminal.Pty.ShellRegistry` module
   (`src/Terminal.Pty/ShellRegistry.fs`) exposes two built-in shells

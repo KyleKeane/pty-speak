@@ -108,6 +108,7 @@ tests/                   xUnit + FsCheck.Xunit + FlaUI placeholder
 
 ## Quick links
 
+- **Claude Code session rules (auto-loaded):** [`CLAUDE.md`](CLAUDE.md) — standing instructions every Claude Code session reads at startup; consolidates the non-negotiable working rules and project-specific F# 9 / .NET 9 gotchas.
 - **Design and rationale:** [`spec/overview.md`](spec/overview.md)
 - **Implementation plan (Stages 0–11):** [`spec/tech-plan.md`](spec/tech-plan.md)
 - **Strategic plan (May 2026 — supersedes Stages 7-10 sequencing):** [`docs/PROJECT-PLAN-2026-05.md`](docs/PROJECT-PLAN-2026-05.md)

@@ -31,7 +31,7 @@ canonical strategic plan for the next ~8-12 weeks of work),
 | **Last merged stages** | **Stages 0 → 6 + 11** all merged to `main`, plus the retroactively-formalized **Stages 4a / 4b / 5a** (per chat 2026-05-03 maintainer authorization, now in `spec/tech-plan.md` §4a / §4b / §5a). Stage 4 + Stage 11 NVDA-verified on `v0.0.1-preview.26`. Stage 4a (Claude Code rendering substrate: alt-screen 1049 + DECTCEM + 256/truecolor SGR + DECSC/DECRC + OSC 52 silent drop) shipped via PR-A #85 + PR-B #86. Stage 4b (process-cleanup diagnostic + `Ctrl+Shift+D`) shipped via PR #81. Stage 5 (streaming output via `Coalescer`) shipped via PR #89; functional end-to-end as of PR #116 after the post-Stage-5 streaming-fix cycle (PRs #108 / #109 / #111 / #114 / #116). Stage 6 (keyboard input + paste + focus reporting + dynamic resize + Job Object lifecycle) shipped via PR-A #92 + PR-B #99 + fixup #100. Stage 5a (diagnostic logging surface: `FileLogger.fs` + `Ctrl+Shift+L` + `Ctrl+Shift+;` + Issue #107 filename refinement + `FlushPending` TCS-barrier) shipped via the multi-PR cycle through #102/#103/#109/#111/#114/#116/#121/#122. The May-2026 cleanup cycle (PRs #118 → #128) shipped Part 1 of [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md) plus the spec stage-numbering hygiene (Stages 4a/4b/5a in spec) plus the Stage 7 implementation sketch in this file plus the `baseline/stage-N` rollback rows for all shipped post-Stage-3b stages plus the F# 9 nullness + fixup-commit-rhythm gotchas in `CONTRIBUTING.md`. |
 | **Last shipped release** | `v0.0.1-preview.43` (latest code-bearing preview as of plan authorship; preview cadence may have continued through subsequent docs-only PRs in the May-2026 cleanup cycle, but the last functional code change was Stage 5a's `FlushPending` API in PR #122). |
 | **In-flight branch** | _None._ The May-2026 cleanup cycle (Part 1 of the plan) is complete. Next session starts fresh from Part 2 — see "Next stage" + the **Stage 7 implementation sketch (next)** section below in this file. |
-| **Next stage** | **Stage 7 — Claude Code roundtrip + env-scrub PO-5** per [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md) Part 2. The pre-digested execution plan is in this file's **"Stage 7 implementation sketch (next)"** section: `claude.exe` resolution via `where.exe`, `PTYSPEAK_SHELL` env-var override, `lpEnvironment`-based env-scrub with allow-list-with-deny-list-override scheme for PO-5, NVDA validation flow, `docs/STAGE-7-ISSUES.md` inventory format with framework-taxonomy category tags. Stage 7 is sequenced as the **validation gate** before the Output / Input framework cycles begin — the inventory it produces is the design input for Parts 3 + 4. After Stage 7 ships and NVDA-validates, the Output framework cycle (Part 3) starts with its research phase (`docs/research/OUTPUT-FRAMEWORK-PRIOR-ART.md`). **Open follow-ups logged for future stages**: (a) Screen-buffer runtime resize — Stage 6 resizes the PTY but the in-process `Cell[,]` Screen grid stays at construction-time 30×120 (Phase 2 stage). (b) The screen-reader-native diagnostic-launcher rework deferred per item 6 below — now actionable since Stage 6 keyboard input ships; user can type `pwsh ./scripts/test-process-cleanup.ps1` directly into pty-speak's child shell with output narrated via Stage 5's streaming announcements. |
+| **Next stage** | **Stage 7 — Claude Code roundtrip + env-scrub PO-5** per [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md) Part 2. The pre-digested execution plan is in this file's **"Stage 7 implementation sketch (next)"** section: `claude.exe` resolution via `where.exe`, `PTYSPEAK_SHELL` env-var override, `lpEnvironment`-based env-scrub with allow-list-with-deny-list-override scheme for PO-5, NVDA validation flow, `docs/STAGE-7-ISSUES.md` inventory format with framework-taxonomy category tags. Stage 7 is sequenced as the **validation gate** before the Output / Input framework cycles begin — the inventory it produces is the design input for Parts 3 + 4. **PR-A (env-scrub PO-5) shipped: PR #131. PR-B (shell registry + `PTYSPEAK_SHELL`) shipped: PR #132. PR-C (hot-switch hotkeys `Ctrl+Shift+1` / `Ctrl+Shift+2`) is next; PR-D (NVDA validation matrix + STAGE-7-ISSUES seeding) follows.** After Stage 7 ships and NVDA-validates, **the doc-purpose audit must land before the Output framework cycle starts** — see "Queued before Output framework cycle starts" section below. After that, the Output framework cycle (Part 3) starts with its research phase (`docs/research/OUTPUT-FRAMEWORK-PRIOR-ART.md`). **Open follow-ups logged for future stages**: (a) Screen-buffer runtime resize — Stage 6 resizes the PTY but the in-process `Cell[,]` Screen grid stays at construction-time 30×120 (Phase 2 stage). (b) The screen-reader-native diagnostic-launcher rework deferred per item 6 below — now actionable since Stage 6 keyboard input ships; user can type `pwsh ./scripts/test-process-cleanup.ps1` directly into pty-speak's child shell with output narrated via Stage 5's streaming announcements. |
 
 The end-to-end pipeline now reaches the auto-update boundary:
 launching the app spawns `cmd.exe` under ConPTY, parses its
@@ -786,6 +786,132 @@ cycle (May-2026 plan Part 3) starts** — its research phase
 (`docs/research/OUTPUT-FRAMEWORK-PRIOR-ART.md`) reads the
 Stage 7 issues inventory as design input.
 
+## Queued before Output framework cycle starts
+
+Items that don't belong to a specific Stage 7 PR but **must
+land between Stage 7 closing (PR-D merge) and the Output
+framework cycle's Phase 3.1 research starting**. Each is
+small relative to a stage; the bundle exists because they're
+the natural transition-window work — the doc surface needs
+to be tidy before the framework cycles spawn their own RFC
++ research files into it.
+
+### Doc-purpose audit + reorganisation
+
+**Status:** queued (chat 2026-05-03 maintainer authorisation;
+this section is the placeholder).
+
+**Why now (and not earlier or later):** the doc set has
+organic-grown overlap. Adding `CLAUDE.md` (PR #133) clarified
+one boundary (Claude Code session rules vs. human-contributor
+PR conventions) but exposed others — content about sandbox /
+tooling constraints lives in both `CLAUDE.md` and
+`docs/SESSION-HANDOFF.md` "Sandbox + tools caveats"; F# /
+.NET 9 gotchas live in both `CLAUDE.md` and `CONTRIBUTING.md`
+"F# gotchas learned in practice"; accessibility non-negotiables
+live in both `CLAUDE.md` and `CONTRIBUTING.md` "The non-
+negotiable accessibility rules". The duplication is harmless
+today (~3 files) but compounds as the framework cycles spawn
+new docs (`docs/research/OUTPUT-FRAMEWORK-PRIOR-ART.md`,
+`docs/RFC-OUTPUT-FRAMEWORK.md`, parallel for Input). Cleaning
+up the principles before those cycles land sets cleaner
+structure for them to slot into.
+
+**Why not before PR-D ships:** Stage 7 is the validation
+gate. The May-2026 plan's explicit sequencing rule is
+"validation before architecture before code." Doc-set
+re-architecture is meta-architecture and shouldn't preempt
+the validation work in flight. PR-C (hot-switch hotkeys)
+is also architecturally heavy (mid-session ConPtyHost
+teardown + respawn + UIA continuity decisions); context-
+switching to doc reorg right before tackling that is bad
+timing.
+
+**Guiding principle the audit will codify:** **each doc has
+exactly one audience and one stage of contribution; cross-
+references go between them rather than content duplicating
+into them.**
+
+**Audience + stage-of-contribution table** (captured here
+for review; the actual reorg PR will commit this into
+`README.md` or a dedicated `docs/DOC-MAP.md`):
+
+| Doc | Audience | When read |
+|---|---|---|
+| `README.md` | Anyone hitting the GitHub repo | First contact; routes to the right next doc per audience |
+| `CLAUDE.md` | Claude Code agents | Every session start (auto-loaded) |
+| `CONTRIBUTING.md` | Human contributors opening PRs | When opening a PR |
+| `docs/SESSION-HANDOFF.md` | Next Claude Code session | Session-to-session continuity (mutable, ephemeral) |
+| `spec/*.md` | Architecture review | When changing design (immutable; ADR for edits) |
+| `docs/PROJECT-PLAN-YYYY-MM.md` | Strategic planning | When planning a cycle (dated; status-as-of when stale) |
+| `docs/HISTORICAL-CONTEXT-*.md` | Debugging archived patterns | Backup reference only — NOT primary handoff |
+| `docs/ARCHITECTURE.md` | First-time code navigator | Code orientation |
+| `docs/ROADMAP.md` | Quick "what's next" scan | High-level glance |
+| `docs/CHECKPOINTS.md` | Maintainer at release / rollback | Release cut or stable-baseline rollback |
+| `docs/CONPTY-NOTES.md` | Platform-specific debug | ConPTY-issue triage |
+| `docs/USER-SETTINGS.md` | Contributor adding a hardcoded constant | When introducing config-shaped values |
+| `docs/ACCESSIBILITY-TESTING.md` | Maintainer cutting a release | Manual NVDA pass |
+| `docs/STAGE-N-ISSUES.md` | Framework-cycle research phases | Design input for the cycle |
+| `CHANGELOG.md` | Release history | Every PR + release cut |
+| `SECURITY.md` | Threat-model review | Security questions |
+
+**Concrete deliverables of the audit PR:**
+
+1. New `docs/DOC-MAP.md` (or expanded section in `README.md`)
+   with the audience + stage-of-contribution table above as
+   the canonical "which file should I open?" index, with
+   one-line guiding principles per file.
+2. Cross-reference cleanup: each doc references the others
+   it depends on rather than duplicating their content.
+   Specifically: `CLAUDE.md`'s F#-gotcha section becomes a
+   pointer-with-summary into `CONTRIBUTING.md`; `CLAUDE.md`'s
+   sandbox-constraints section becomes a pointer-with-summary
+   into `docs/SESSION-HANDOFF.md`; `CLAUDE.md`'s accessibility
+   non-negotiables become a pointer-with-summary into
+   `CONTRIBUTING.md`. The Claude-runtime-specific layer
+   (sandbox quirks, MCP behaviour, ask-for-CI-logs rule,
+   webhook auto-subscribe) stays in `CLAUDE.md` because it's
+   genuinely Claude-only.
+3. `README.md` "Quick links" section reorganised by audience
+   (per-audience entry-point lists) rather than the current
+   flat list.
+4. Deduplication pass: any rule that appears in N>1 files
+   gets canonicalised into the single owning doc; the others
+   get a short pointer + 2-3-line summary. Owning docs by
+   topic:
+   - **Working rules** (PR shape, branch naming, fixup-commit
+     rhythm, accessibility-as-acceptance, walking-skeleton
+     discipline) → `CONTRIBUTING.md` is canonical.
+   - **F# / WPF / .NET 9 gotchas** → `CONTRIBUTING.md`
+     "F# gotchas learned in practice" is canonical;
+     `CLAUDE.md` indexes the canonical entries with one-line
+     summaries pointing at line numbers.
+   - **Sandbox / tooling constraints + Claude-runtime
+     specifics** → `CLAUDE.md` is canonical (purely Claude-
+     audience; no human-contributor relevance).
+   - **Strategic sequencing + cycle plans** →
+     `docs/PROJECT-PLAN-YYYY-MM.md` is canonical.
+   - **Stage-by-stage spec** → `spec/tech-plan.md` is
+     canonical (immutable).
+5. `docs/SESSION-HANDOFF.md` adjusted to focus on its core
+   audience: the next Claude Code session continuing from
+   where the previous left off. Generic Claude-runtime rules
+   that don't change session-to-session move to `CLAUDE.md`.
+   "Where we left off" + "Pending action items" + the
+   active-stage implementation sketch stay here (mutable,
+   session-state).
+
+**Estimated scope:** one PR, ~150 lines of edits across 4–6
+docs, no code changes. Mechanical-merge approach (similar to
+PR #120's CHANGELOG `[Unreleased]` consolidation) with
+content-hash verification before/after to prove no rule was
+lost in the dedup.
+
+**Trigger:** PR-D (`docs/STAGE-7-ISSUES.md` seeding) merges
+to main, at which point Stage 7 is closed. Maintainer signs
+off "Stage 7 substrate validated"; this audit PR is the
+first thing on the docket before Phase 3.1 research begins.
+
 ## Stage 11 implementation sketch (shipped — retained as reference)
 
 > **Status:** Stage 11 has shipped. The sketch below is the
@@ -1155,17 +1281,28 @@ Guard against scope creep:
 
 ## Recommended reading order for a new session
 
-1. **This file.**
-2. **[`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md)** —
+1. **[`CLAUDE.md`](../CLAUDE.md)** — auto-loaded standing
+   instructions for every Claude Code session. Working rules
+   (one concern per PR, ask-for-CI-logs-don't-guess, squash-merge
+   default, `mcp__github__create_pull_request` for the
+   auto-subscribe webhook, etc.), F# 9 + .NET 9 gotchas
+   (nullness at API boundaries, record-literal type inference,
+   `out SafeHandle&` byref interop, escape literals for NUL bytes
+   in source, F# delegate conversion), the app-reserved hotkey
+   contract, the accessibility non-negotiables, and the current
+   stage sequencing index. Read this first; it indexes
+   everything below.
+2. **This file** (SESSION-HANDOFF.md).
+3. **[`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md)** —
    the canonical strategic plan for the next ~8-12 weeks
    (cleanup → Stage 7 validation gate → output framework cycle
    → input framework cycle → Stage 10). Supersedes the per-stage
    ordering of `spec/tech-plan.md` for Stages 7-10 specifically;
    the spec remains immutable as architectural rationale.
-3. [`CONTRIBUTING.md`](../CONTRIBUTING.md) — PR shape, branching,
+4. [`CONTRIBUTING.md`](../CONTRIBUTING.md) — PR shape, branching,
    CHANGELOG discipline, F# / WPF gotchas, documentation policy.
    Working conventions all live here.
-4. [`spec/tech-plan.md`](../spec/tech-plan.md) §1–§6 plus the
+5. [`spec/tech-plan.md`](../spec/tech-plan.md) §1–§6 plus the
    retroactively-formalized Stages **4a** (Claude Code rendering
    substrate), **4b** (process-cleanup diagnostic), and **5a**
    (diagnostic logging surface) — establishes the architectural
@@ -1175,19 +1312,19 @@ Guard against scope creep:
    the May-2026 plan reshapes (see plan doc for sequencing —
    Stages 8 and 9 fold into the Output framework cycle; Stage
    10 ships post-frameworks as their first consumer).
-5. [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) — what's stable, what
+6. [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) — what's stable, what
    tags need pushing, how rollback works.
-6. [`docs/CONPTY-NOTES.md`](CONPTY-NOTES.md) — observed platform
+7. [`docs/CONPTY-NOTES.md`](CONPTY-NOTES.md) — observed platform
    quirks. Render-cadence finding is the one most likely to bite
    again.
-7. [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md) "Common pitfalls"
+8. [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md) "Common pitfalls"
    section — every diagnostic loop's lessons end up here.
-8. Skim [`CHANGELOG.md`](../CHANGELOG.md) `[Unreleased]` for
+9. Skim [`CHANGELOG.md`](../CHANGELOG.md) `[Unreleased]` for
    in-flight work and the most recent shipped section for the
    last release narrative shape.
-9. Browse `src/` top-down: `Terminal.Core` (data) → `Terminal.Pty`
-   (ConPTY) → `Terminal.Parser` (VT500) → `Views` (WPF) →
-   `Terminal.App/Program.fs` (composition).
+10. Browse `src/` top-down: `Terminal.Core` (data) → `Terminal.Pty`
+    (ConPTY) → `Terminal.Parser` (VT500) → `Views` (WPF) →
+    `Terminal.App/Program.fs` (composition).
 
 Tests are in `tests/Tests.Unit/` (xUnit + FsCheck) — `SmokeTests`,
 `ConPtyHostTests` (Windows-only, runtime-skipped elsewhere),
