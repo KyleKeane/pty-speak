@@ -62,6 +62,24 @@ See [`docs/BUILD.md`](docs/BUILD.md) for build instructions.
   split them. Past frustrations on this repo trace back to oversized
   PRs with multiple moving parts; small focused PRs review faster and
   bisect cleaner.
+- **CI failure on an open PR → push a fixup commit to the same
+  branch.** GitHub PRs track the branch HEAD, not a snapshot at
+  PR-creation time. A `git push` to the open PR's branch
+  auto-extends the PR with the new commit and re-runs CI against
+  the new HEAD; the PR number, title, body, `Closes #N`
+  references, and any auto-merge configuration are preserved.
+  **Don't open a new PR for a fixup** — that creates a stack the
+  maintainer has to merge in order. The standing rule is
+  **one PR per concern, multiple commits on the branch as needed**;
+  the squash-merge convention combines the original + fixup into
+  a single canonical commit on `main`. PR #121 (Issue #107
+  filename refinement) used this rhythm: initial commit hit a
+  F# 9 nullness `FS3261` error in CI, a single fixup commit on
+  the same branch updated the helper signature, CI re-ran green,
+  the PR auto-extended, and the maintainer merged the
+  two-commit branch as one squashed commit. See "F# gotchas
+  learned in practice" — F# 9 nullness for the underlying
+  technical issue.
 - **PR body**: brief Summary + What changed + Test plan checklist.
   Stage-implementation PRs also include a "What this PR deliberately
   omits" section pointing at the stage(s) that own the deferred items,
@@ -224,6 +242,44 @@ new code.
   `Views/TerminalView.cs` reads `Cell.Attrs.Fg.IsDefaultFg` and
   `Cell.Attrs.Fg.Item` (the `int` payload of the `Indexed` case).
   Worth knowing before the Stage-4 UIA peer crosses the boundary.
+- **F# 9 nullness annotations bite at .NET-API boundaries.** Many
+  .NET-API methods are typed `string?` (nullable string) under
+  `<Nullable>enable</Nullable>` — `Path.GetFileName`,
+  `Path.GetDirectoryName`, `Environment.GetEnvironmentVariable`,
+  `StreamReader.ReadLine`, etc. Passing the result to a non-null
+  `string` parameter compiles to an `FS3261` warning that becomes
+  a build error under
+  `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` (CI fails
+  on Windows-latest with the actual error text reading
+  "Nullness warning: A non-nullable 'string' was expected but
+  this expression is nullable"). Two acceptable patterns:
+
+    - **Helper / function signature accepts `string | null`** and
+      pattern-matches the null case at the boundary. Matches the
+      convention established by `Terminal.Core.AnnounceSanitiser.sanitise`
+      and `Terminal.Core.KeyEncoding.encodeOrNull`. Useful when
+      many call sites would otherwise duplicate null-coercion.
+      Inside the function:
+
+      ```fsharp
+      let foo (x: string | null) : 'T =
+          let x =
+              match x with
+              | null -> failwith "x was null"
+              | s -> s
+          // ... use non-null x ...
+      ```
+    - **Coerce at the call site** with `nonNull` (from `FSharp.Core`)
+      or an inline `match ... with | null -> ... | s -> s`. Useful
+      for one-off boundary crossings without changing helper
+      signatures.
+
+    Issue #107's filename-format helper hit this when test code
+    passed `Path.GetFileName(...)` to a non-null parameter; PR #121
+    moved the helper signature to `string | null` and added the
+    pattern-match. The fix landed as a fixup commit on the same
+    branch (see "Branching and pull requests" — fixup-commit
+    rhythm) so the PR auto-extended without scope churn.
 
 ### WPF gotchas learned in practice
 
