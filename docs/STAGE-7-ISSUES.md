@@ -122,6 +122,48 @@ predictions that don't reproduce empirically may indicate the
 substrate is more capable than the spec assumed, and the
 framework design adjusts accordingly.
 
+### [other] Ctrl+Shift+; dispatcher deadlock from FlushPending(500).Result
+
+**What broke.** Pressing `Ctrl+Shift+;` (copy log to clipboard)
+permanently wedges the WPF dispatcher. After the press: typing
+into pty-speak does nothing, Alt+F4 doesn't close the window,
+clicking the X button doesn't close it, no other app-reserved
+hotkey produces an NVDA announcement (Ctrl+Shift+H, Ctrl+Shift+G,
+etc. are all silent). The 5-second background heartbeat keeps
+firing so the runtime is alive — only the WPF dispatcher is
+seized up. Force-kill via Task Manager is the only way out.
+
+**Why it matters.** The user can no longer interact with
+pty-speak after pressing the very hotkey that exists to capture
+diagnostic logs. The diagnostic-capture workflow is broken at
+its terminal step.
+
+**Reproduction.** Launch pty-speak. Run any cmd command that
+produces enough output to keep NVDA reading for >30 seconds
+(e.g. several `dir /s` invocations or a single `set`). While
+NVDA is mid-readout, press `Ctrl+Shift+;` to copy the log.
+Window wedges; never recovers.
+
+**Hypothesised root cause.** Confirmed: `runCopyLatestLog`
+called `sink.FlushPending(500).Result` synchronously on the
+dispatcher. `FlushPending` is implemented as
+`task { let! winner = Task.WhenAny(...) }` — the `let!`
+captures the WPF dispatcher's `SynchronizationContext`. When
+the dispatcher thread blocks on `.Result`, the task's
+continuation can never resume because the dispatcher is
+blocked. The 500ms timeout never fires because the timeout's
+continuation also needs the dispatcher. Classic
+sync-over-async deadlock. PR-G fixes by running the whole
+operation in a Task off the dispatcher and using a dedicated
+STA thread for `Clipboard.SetText` (which can also hang on
+contention with NVDA's clipboard hooks; bounded by a 3s
+timeout in the fix).
+
+**Inventory date.** 2026-05-03; pty-speak post-PR-#137
+(`v0.0.1-preview.NN` to be cut); cmd.exe Windows 10.0.26200;
+NVDA version unrecorded. **Source: NVDA pass 2026-05-03;
+fixed in PR-G.**
+
 ### [output-stream] Verbose readback: whole-screen announcement on every emit
 
 **What broke.** Stage 5's generic `renderRows` coalescer
@@ -164,8 +206,20 @@ streaming-output workloads.
 **Source: design prediction** (per
 [`spec/tech-plan.md`](../spec/tech-plan.md) §7.4 +
 [`docs/SESSION-HANDOFF.md`](SESSION-HANDOFF.md) Stage 7 sketch
-"Known risks" §2). Empirical confirmation pending in
-maintainer NVDA pass.
+"Known risks" §2) **CONFIRMED empirically NVDA pass 2026-05-03**
+with concrete severity worse than predicted: confirmed even on
+plain `cmd.exe` interaction (not just Claude). Single-character
+typed input produced character-by-character announce growth
+`TextLen=140 → 141 → 142 → 143 → 145 → 146` — every keystroke
+re-announces the full rendered screen. Running `dir` (or
+similar) produced 1316 / 1347 / 847-character announces
+back-to-back; NVDA needed 30-45 seconds to read each one,
+during which any subsequent input queued behind. The terminal
+becomes effectively unusable for any workload that produces
+more than a few characters of output. Architectural fix
+remains in scope for Output framework cycle Part 3.2 RFC; a
+stopgap could cap announce length at the coalescer
+(post-PR-G follow-up if needed).
 
 ### [output-selection] Tool-use prompt reads as flat text instead of listbox
 
