@@ -15,6 +15,64 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed (Stage 7-followup PR-I)
+
+- **Spurious "parser/reader loop: channel has been closed"
+  announce on shell hot-switch.** Empirically confirmed in
+  NVDA pass 2026-05-03: every `Ctrl+Shift+1` / `Ctrl+Shift+2`
+  press produced an unwanted `ActivityIds.error` announce
+  ("Terminal parser error: Parser/reader loop: The channel
+  has been closed.", 71 characters) firing in between the
+  "Switching to {target}." and "Switched to {target}." cues.
+  The switch itself succeeded — the new `ConPtyHost` spawned
+  and took over correctly — but the spurious error
+  announcement made the switch sound broken to the user.
+
+  Root cause: when `switchToShell` disposes the old
+  `ConPtyHost`, the host's internal stdout channel completes
+  (`chan.Writer.TryComplete()` runs in `Dispose`). The reader
+  loop's `host.Stdout.ReadAsync(ct)` then throws
+  `ChannelClosedException` — which is NOT
+  `OperationCanceledException` — so the catch-all `| ex ->`
+  arm in `startReaderLoop` mis-classifies it as a real
+  parser/reader fault and writes a `ParserError` to the
+  SHARED notification channel. The drain task announces
+  it via `ActivityIds.error`.
+
+  Fix: add silent-shutdown arms for
+  `System.Threading.Channels.ChannelClosedException`,
+  `System.IO.IOException`, and `ObjectDisposedException` to
+  the reader-loop catch chain. All three indicate intentional
+  pipe/channel teardown (channel completed; pipe handle
+  closed mid-read; FileStream/SafeFileHandle disposed
+  mid-read). Other exception types still surface as parser
+  errors.
+
+  `docs/STAGE-7-ISSUES.md` records this as
+  `[other]` tag, **Source: NVDA pass 2026-05-03; fixed in
+  PR-I**.
+
+- **Heartbeat + health-check reported stale shell name after
+  hot-switch.** Same NVDA pass log showed
+  `Heartbeat. Shell=Command Prompt Pid=2596` after the user
+  had switched to claude.exe. Cosmetic for the user
+  (`Ctrl+Shift+H` health-check verdict said "Command Prompt
+  shell" instead of "Claude Code shell"); confusing for log
+  analysis (the wrong shell name in heartbeats made
+  post-mortem triage harder).
+
+  Root cause: `chosenShell` was captured at startup and never
+  updated. Heartbeat and health-check closures both read
+  `chosenShell.DisplayName` directly.
+
+  Fix: new `let mutable currentShell` field in `compose ()`;
+  `switchToShell` updates it after a successful spawn; both
+  heartbeat and health-check read from `currentShell`
+  instead of `chosenShell`.
+
+  `docs/STAGE-7-ISSUES.md` records this as a follow-on
+  `[other]` entry from the same NVDA pass.
+
 ### Changed (Stage 7-followup PR-H)
 
 - **500-character announce-length cap on streaming output.**
