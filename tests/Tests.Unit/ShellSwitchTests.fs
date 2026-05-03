@@ -15,13 +15,16 @@ open Terminal.Pty
 // pieces the coordinator relies on:
 //
 //   1. The `ShellId` discriminated union shape — exhaustive
-//      pattern-match coverage for the two built-ins. A future
-//      addition (PowerShell, WSL) lights up the `_` arm and forces
-//      the contributor to update both the registry and the
-//      `Program.fs setupShellSwitchKeybindings` keybinding table.
+//      pattern-match coverage for the three built-ins (Cmd,
+//      Claude, PowerShell). A future addition (WSL, Python REPL)
+//      lights up the `_` arm and forces the contributor to update
+//      both the registry and the `Program.fs
+//      setupShellSwitchKeybindings` keybinding table.
 //   2. Hotkey-to-shell mapping — pinning that `Ctrl+Shift+1` maps
-//      to `Cmd` and `Ctrl+Shift+2` maps to `Claude`. The mapping
-//      lives in Program.fs as two `RoutedCommand` + `KeyBinding`
+//      to `Cmd`, `Ctrl+Shift+2` to `PowerShell`, and `Ctrl+Shift+3`
+//      to `Claude` (the order PR-J established for putting the
+//      diagnostic control shell next to cmd). The mapping lives
+//      in Program.fs as three `RoutedCommand` + `KeyBinding`
 //      pairs; this fixture documents the contract via a parallel
 //      table that the orchestrator's review must match.
 //   3. Synthetic-resolver behaviour — confirming that a registry
@@ -44,20 +47,22 @@ open Terminal.Pty
 // ---------------------------------------------------------------------
 
 [<Fact>]
-let ``ShellId pattern match is exhaustive over Cmd and Claude`` () =
-    // If a future contributor adds a new ShellId case (e.g.
-    // PowerShell), this match becomes non-exhaustive and the
-    // compiler emits FS0025. Under TreatWarningsAsErrors=true,
-    // that fails the build — forcing the contributor to update
-    // both `ShellRegistry.builtIns` (the data) AND this fixture
-    // (the test contract) AND `Program.fs
-    // setupShellSwitchKeybindings` (the UX) in lockstep.
+let ``ShellId pattern match is exhaustive over Cmd, Claude, PowerShell`` () =
+    // If a future contributor adds a new ShellId case (e.g. Wsl,
+    // Python), this match becomes non-exhaustive and the compiler
+    // emits FS0025. Under TreatWarningsAsErrors=true, that fails
+    // the build — forcing the contributor to update both
+    // `ShellRegistry.builtIns` (the data) AND this fixture (the
+    // test contract) AND `Program.fs setupShellSwitchKeybindings`
+    // (the UX) in lockstep.
     let label (id: ShellRegistry.ShellId) : string =
         match id with
         | ShellRegistry.Cmd -> "cmd"
         | ShellRegistry.Claude -> "claude"
+        | ShellRegistry.PowerShell -> "powershell"
     Assert.Equal("cmd", label ShellRegistry.Cmd)
     Assert.Equal("claude", label ShellRegistry.Claude)
+    Assert.Equal("powershell", label ShellRegistry.PowerShell)
 
 // ---------------------------------------------------------------------
 // 2. Hotkey-to-shell mapping contract
@@ -65,12 +70,15 @@ let ``ShellId pattern match is exhaustive over Cmd and Claude`` () =
 //
 // Pins the map that `Program.fs setupShellSwitchKeybindings`
 // implements imperatively. The keys are documented as
-// `Key.D1` / `Key.D2` (number-row digits, NOT numpad) per the
-// AppReservedHotkeys table in `src/Views/TerminalView.cs`.
+// `Key.D1` / `Key.D2` / `Key.D3` (number-row digits, NOT numpad)
+// per the AppReservedHotkeys table in `src/Views/TerminalView.cs`.
+// PR-J reordered: cmd stays at +1; PowerShell takes +2 (the
+// diagnostic control shell sits next to cmd); claude moves to +3.
 
 let private hotkeyMapping : (string * ShellRegistry.ShellId) list =
     [ "Ctrl+Shift+1", ShellRegistry.Cmd
-      "Ctrl+Shift+2", ShellRegistry.Claude ]
+      "Ctrl+Shift+2", ShellRegistry.PowerShell
+      "Ctrl+Shift+3", ShellRegistry.Claude ]
 
 [<Fact>]
 let ``Ctrl+Shift+1 maps to Cmd shell`` () =
@@ -81,10 +89,18 @@ let ``Ctrl+Shift+1 maps to Cmd shell`` () =
     Assert.Equal(Some ShellRegistry.Cmd, target)
 
 [<Fact>]
-let ``Ctrl+Shift+2 maps to Claude shell`` () =
+let ``Ctrl+Shift+2 maps to PowerShell shell`` () =
     let target =
         hotkeyMapping
         |> List.tryFind (fun (g, _) -> g = "Ctrl+Shift+2")
+        |> Option.map snd
+    Assert.Equal(Some ShellRegistry.PowerShell, target)
+
+[<Fact>]
+let ``Ctrl+Shift+3 maps to Claude shell`` () =
+    let target =
+        hotkeyMapping
+        |> List.tryFind (fun (g, _) -> g = "Ctrl+Shift+3")
         |> Option.map snd
     Assert.Equal(Some ShellRegistry.Claude, target)
 
@@ -168,3 +184,12 @@ let ``Cmd DisplayName reads naturally as Command Prompt`` () =
 let ``Claude DisplayName reads naturally as Claude Code`` () =
     let claude = ShellRegistry.builtIns |> Map.find ShellRegistry.Claude
     Assert.Equal("Claude Code", claude.DisplayName)
+
+[<Fact>]
+let ``PowerShell DisplayName reads naturally as PowerShell`` () =
+    // Pinned because future "PowerShell Core" / "Windows
+    // PowerShell" naming churn could break NVDA's announce
+    // pronunciation; the bare "PowerShell" reads cleanly under
+    // the default eSpeak voice.
+    let ps = ShellRegistry.builtIns |> Map.find ShellRegistry.PowerShell
+    Assert.Equal("PowerShell", ps.DisplayName)
