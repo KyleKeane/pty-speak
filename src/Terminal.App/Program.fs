@@ -1366,12 +1366,25 @@ module Program =
             log.LogInformation(
                 "ConPTY child spawned. Pid={Pid}",
                 host.ProcessId)
-            // Stage 7 PR-A — env-scrub PO-5. Count only,
-            // never names or values (per `SECURITY.md`
-            // logging discipline: env-var names like
-            // `BANK_API_KEY` are themselves sensitive).
+            // Stage 7 PR-A — env-scrub PO-5. PR-K expanded the
+            // log line: previous "stripped {Count}" only reported
+            // deny-list strikes (`*_TOKEN`/`*_SECRET`/`*_KEY`/
+            // `*_PASSWORD`) and obscured the much larger drop count
+            // from the allow-list filter. The 2026-05-03 NVDA pass
+            // surfaced this when "stripped 0" appeared in the log
+            // while PowerShell + claude.exe were dying because ~50
+            // parent vars (SystemRoot, WINDIR, TEMP, …) were being
+            // silently stripped. New format reports the full
+            // kept/parent picture so future regressions of the same
+            // shape are visible at a glance.
+            //
+            // Counts only — never names or values (per `SECURITY.md`
+            // logging discipline: env-var names like `BANK_API_KEY`
+            // are themselves sensitive).
             log.LogInformation(
-                "Env-scrub: stripped {Count} variables before child spawn.",
+                "Env-scrub: kept {Kept} of {Parent} parent vars; dropped {Denied} as sensitive (deny-list).",
+                host.EnvScrubKeptCount,
+                host.EnvScrubParentCount,
                 host.EnvScrubStrippedCount)
             let _ =
                 startReaderLoop

@@ -368,9 +368,136 @@ let ``allowedNames contains exactly the spec-7-2 baseline`` () =
     // requires a spec PR + this assertion update — the same
     // ADR-style discipline the chat-2026-05-03 stage-numbering
     // chunk used.
+    //
+    // PR-K (2026-05-03 maintainer authorisation) added the
+    // Windows-baseline runtime vars (SystemRoot, WINDIR, TEMP,
+    // ProgramFiles, …) after the empirical NVDA pass surfaced
+    // that PowerShell + claude.exe both die immediately on spawn
+    // because the original 7-name allow-list was too narrow for
+    // any non-cmd shell to initialise.
     let expected =
         Set.ofList
-            [ "PATH"; "USERPROFILE"; "APPDATA"
+            [ // Layer 1 — pty-speak-specific
+              "PATH"; "USERPROFILE"; "APPDATA"
               "LOCALAPPDATA"; "HOME"
-              "ANTHROPIC_API_KEY"; "CLAUDE_CODE_GIT_BASH_PATH" ]
+              "ANTHROPIC_API_KEY"; "CLAUDE_CODE_GIT_BASH_PATH"
+              // Layer 2 — Windows runtime baseline (PR-K)
+              "SystemRoot"; "WINDIR"; "SystemDrive"
+              "TEMP"; "TMP"
+              "ProgramFiles"; "ProgramFiles(x86)"; "ProgramW6432"
+              "ProgramData"; "ALLUSERSPROFILE"; "PUBLIC"
+              "PATHEXT"; "PSModulePath"
+              "COMPUTERNAME"; "USERNAME"; "USERDOMAIN"
+              "USERDOMAIN_ROAMINGPROFILE"
+              "PROCESSOR_ARCHITECTURE"; "PROCESSOR_IDENTIFIER"
+              "PROCESSOR_LEVEL"; "PROCESSOR_REVISION"
+              "NUMBER_OF_PROCESSORS"; "OS"
+              "LOGONSERVER"; "SESSIONNAME"
+              "HOMEDRIVE"; "HOMEPATH"
+              "DriverData" ]
     Assert.Equal<Set<string>>(expected, EnvBlock.allowedNames)
+
+[<Fact>]
+let ``allow-list preserves Windows runtime baseline vars (PR-K)`` () =
+    // The empirical NVDA pass on 2026-05-03 surfaced that
+    // PowerShell + claude.exe died immediately on spawn while
+    // cmd.exe survived; root cause was the original allow-list
+    // stripping these standard Windows runtime vars. This
+    // fixture pins the layer-2 names so a future "tighten the
+    // allow-list" change can't silently re-break PowerShell +
+    // Node-based shells.
+    let parent =
+        Map.ofList
+            [ "SystemRoot", "C:\\Windows"
+              "WINDIR", "C:\\Windows"
+              "SystemDrive", "C:"
+              "TEMP", "C:\\Users\\test\\AppData\\Local\\Temp"
+              "TMP", "C:\\Users\\test\\AppData\\Local\\Temp"
+              "ProgramFiles", "C:\\Program Files"
+              "ProgramFiles(x86)", "C:\\Program Files (x86)"
+              "ProgramW6432", "C:\\Program Files"
+              "ProgramData", "C:\\ProgramData"
+              "ALLUSERSPROFILE", "C:\\ProgramData"
+              "PUBLIC", "C:\\Users\\Public"
+              "PATHEXT", ".COM;.EXE;.BAT"
+              "PSModulePath", "C:\\Modules"
+              "COMPUTERNAME", "TEST-PC"
+              "USERNAME", "test"
+              "USERDOMAIN", "TEST-PC"
+              "PROCESSOR_ARCHITECTURE", "AMD64"
+              "NUMBER_OF_PROCESSORS", "8"
+              "OS", "Windows_NT"
+              "HOMEDRIVE", "C:"
+              "HOMEPATH", "\\Users\\test" ]
+    let built = EnvBlock.buildFromMap parent
+    try
+        let entries = decodeEntries built |> Set.ofList
+        // All of the above must survive the allow-list filter.
+        // The block uppercases entry names internally, so assert
+        // on uppercase keys.
+        Assert.Contains("SYSTEMROOT=C:\\Windows", entries)
+        Assert.Contains("WINDIR=C:\\Windows", entries)
+        Assert.Contains("SYSTEMDRIVE=C:", entries)
+        Assert.Contains(
+            "TEMP=C:\\Users\\test\\AppData\\Local\\Temp",
+            entries)
+        Assert.Contains(
+            "TMP=C:\\Users\\test\\AppData\\Local\\Temp",
+            entries)
+        Assert.Contains("PROGRAMFILES=C:\\Program Files", entries)
+        Assert.Contains(
+            "PROGRAMFILES(X86)=C:\\Program Files (x86)",
+            entries)
+        Assert.Contains("PROGRAMDATA=C:\\ProgramData", entries)
+        Assert.Contains("PATHEXT=.COM;.EXE;.BAT", entries)
+        Assert.Contains("PSMODULEPATH=C:\\Modules", entries)
+        Assert.Contains("USERNAME=test", entries)
+        Assert.Contains("PROCESSOR_ARCHITECTURE=AMD64", entries)
+        Assert.Contains("OS=Windows_NT", entries)
+    finally freeBuilt built
+
+[<Fact>]
+let ``ParentCount and KeptCount track the full filter picture (PR-K)`` () =
+    // PR-K added these counts so the composition-root log line
+    // can report "kept K of M parent vars; dropped D as
+    // sensitive" instead of just the deny-list count. The
+    // 2026-05-03 NVDA pass surfaced that the prior log line
+    // "Env-scrub: stripped 0 variables" was misleading — it only
+    // counted deny-list strikes, hiding the much larger silent
+    // drop count from the allow-list filter.
+    let parent =
+        Map.ofList
+            [ "PATH", "C:\\Windows"            // kept (allow-list)
+              "USERPROFILE", "C:\\Users\\test" // kept (allow-list)
+              "EDITOR", "vim"                   // dropped silently
+              "PAGER", "less"                   // dropped silently
+              "MY_RANDOM", "1"                  // dropped silently
+              "GITHUB_TOKEN", "ghp_xxx" ]       // dropped (deny-list)
+    let built = EnvBlock.buildFromMap parent
+    try
+        Assert.Equal(6, built.ParentCount)
+        Assert.Equal(2, built.KeptCount)
+        Assert.Equal(1, built.StrippedCount)
+        // Sanity: the missing 3 are the silent drops (EDITOR,
+        // PAGER, MY_RANDOM). ParentCount - KeptCount -
+        // StrippedCount tells the user what fell into the
+        // "outside allow-list" bucket.
+    finally freeBuilt built
+
+[<Fact>]
+let ``KeptCount excludes always-set additions and HOME fallback (PR-K)`` () =
+    // KeptCount tracks PARENT vars that survived; it doesn't
+    // include the always-set TERM/COLORTERM pair (which would
+    // inflate the count regardless of input) or the HOME=
+    // %USERPROFILE% fallback (which is a synthesised entry, not
+    // a parent var). This fixture pins that boundary.
+    let parent = Map.ofList [ "USERPROFILE", "C:\\Users\\test" ]
+    let built = EnvBlock.buildFromMap parent
+    try
+        Assert.Equal(1, built.ParentCount)
+        Assert.Equal(1, built.KeptCount)
+        // But the final block has 4 entries: USERPROFILE, HOME
+        // (fallback), TERM, COLORTERM.
+        let entries = decodeEntries built
+        Assert.Equal(4, entries.Length)
+    finally freeBuilt built

@@ -342,6 +342,51 @@ module EnvBlock =
     /// case-insensitive (Windows env-var names are case-insensitive
     /// by convention).
     ///
+    /// Two layers, both required to ship:
+    ///
+    /// **Layer 1 — pty-speak-specific (preserved across stages):**
+    /// `PATH` (binary resolution), `USERPROFILE` / `APPDATA` /
+    /// `LOCALAPPDATA` / `HOME` (user-data dirs Claude Code looks
+    /// at), `ANTHROPIC_API_KEY` (Claude auth — explicit deny-list
+    /// exemption below), `CLAUDE_CODE_GIT_BASH_PATH` (Claude Code
+    /// terminal-config knob).
+    ///
+    /// **Layer 2 — Windows runtime baseline (PR-K, 2026-05-03
+    /// authorisation):** the empirical NVDA pass on 2026-05-03
+    /// surfaced that PowerShell + claude.exe both die immediately
+    /// on spawn while cmd.exe survives. Diagnosis: the layer-1
+    /// allow-list strips Windows runtime vars that PowerShell's
+    /// .NET initialisation and claude.exe's Node runtime both
+    /// require to start. cmd.exe is unusual — it reads most of
+    /// what it needs straight from the registry — but every
+    /// non-trivial Windows shell crashes without these vars.
+    /// Adding them keeps the env-scrub posture (allow-list +
+    /// deny-list overrides, no wildcard inheritance) while
+    /// restoring the runtime baseline. None of these are
+    /// sensitive: they're public machine identity / paths
+    /// readable from registry by any unprivileged process.
+    ///
+    ///   - `SystemRoot`, `WINDIR`, `SystemDrive` — Win32 loader
+    ///     resolves DLLs against these; .NET runtime depends on
+    ///     them.
+    ///   - `TEMP`, `TMP` — PowerShell + Node both write a temp
+    ///     file at startup.
+    ///   - `ProgramFiles`, `ProgramFiles(x86)`, `ProgramW6432`,
+    ///     `ProgramData`, `ALLUSERSPROFILE`, `PUBLIC` — module /
+    ///     installer / package resolution.
+    ///   - `PATHEXT` — Windows binary resolution.
+    ///   - `PSModulePath` — PowerShell module loading.
+    ///   - `COMPUTERNAME`, `USERNAME`, `USERDOMAIN`,
+    ///     `USERDOMAIN_ROAMINGPROFILE` — identity (read-only;
+    ///     standard inherit pattern).
+    ///   - `PROCESSOR_ARCHITECTURE`, `PROCESSOR_IDENTIFIER`,
+    ///     `PROCESSOR_LEVEL`, `PROCESSOR_REVISION`,
+    ///     `NUMBER_OF_PROCESSORS`, `OS` — runtime sniffing.
+    ///   - `LOGONSERVER`, `SESSIONNAME`, `HOMEDRIVE`,
+    ///     `HOMEPATH` — session context PowerShell reads at
+    ///     prompt construction.
+    ///   - `DriverData` — Windows 10+ baseline.
+    ///
     /// `HOME` is in the allow-list and additionally falls back to
     /// `%USERPROFILE%` when absent (npm/git compatibility on
     /// Windows; spec §7.2).
@@ -356,6 +401,7 @@ module EnvBlock =
     /// surfaced by Claude Code's terminal-config docs.
     let internal allowedNames : Set<string> =
         Set.ofList [
+            // Layer 1 — pty-speak-specific
             "PATH"
             "USERPROFILE"
             "APPDATA"
@@ -363,6 +409,35 @@ module EnvBlock =
             "HOME"
             "ANTHROPIC_API_KEY"
             "CLAUDE_CODE_GIT_BASH_PATH"
+            // Layer 2 — Windows runtime baseline (PR-K)
+            "SystemRoot"
+            "WINDIR"
+            "SystemDrive"
+            "TEMP"
+            "TMP"
+            "ProgramFiles"
+            "ProgramFiles(x86)"
+            "ProgramW6432"
+            "ProgramData"
+            "ALLUSERSPROFILE"
+            "PUBLIC"
+            "PATHEXT"
+            "PSModulePath"
+            "COMPUTERNAME"
+            "USERNAME"
+            "USERDOMAIN"
+            "USERDOMAIN_ROAMINGPROFILE"
+            "PROCESSOR_ARCHITECTURE"
+            "PROCESSOR_IDENTIFIER"
+            "PROCESSOR_LEVEL"
+            "PROCESSOR_REVISION"
+            "NUMBER_OF_PROCESSORS"
+            "OS"
+            "LOGONSERVER"
+            "SESSIONNAME"
+            "HOMEDRIVE"
+            "HOMEPATH"
+            "DriverData"
         ]
 
     /// Always-set name/value pairs that override anything the parent
@@ -397,8 +472,23 @@ module EnvBlock =
         { /// Sorted-by-uppercase-name `NAME=VALUE` entries that will
           /// land in the child block. Includes the always-set pairs.
           Entries: (string * string) list
+          /// Total parent env-var count (before any filtering).
+          /// PR-K — added so the log line can report the full
+          /// kept/dropped picture instead of just the deny-list
+          /// count, which the empirical 2026-05-03 NVDA pass
+          /// surfaced as a misleading metric (the log read
+          /// "stripped 0" while ~50 parent vars were actually
+          /// being dropped because they weren't on the allow-list,
+          /// silently breaking PowerShell + claude.exe spawn).
+          ParentCount: int
+          /// Count of parent vars that survived BOTH filters and
+          /// landed in the child block (deny-list + allow-list).
+          /// Excludes always-set additions and the HOME fallback.
+          /// PR-K.
+          KeptCount: int
           /// Count of parent variables dropped by the deny-list.
-          /// Information-only; for log emission.
+          /// Information-only; for log emission. Names and values
+          /// are NEVER captured.
           StrippedCount: int }
 
     /// Pure assembly: takes a parent environment as a name→value map
@@ -410,6 +500,7 @@ module EnvBlock =
         // count reflects "what was stripped from the parent" rather
         // than "what is missing from the final block".
         let mutable stripped = 0
+        let parentCount = Map.count parent
         let allowedUpper =
             allowedNames |> Set.map (fun s -> s.ToUpperInvariant())
         // 1. Filter parent by allow-list AND deny-list. Deny-list
@@ -429,6 +520,7 @@ module EnvBlock =
                     // toward "stripped" since these aren't sensitive.
                     None)
             |> Map.ofList
+        let keptCount = Map.count kept
         // 2. HOME=%USERPROFILE% fallback per spec §7.2 — applies only
         //    when HOME is not set and USERPROFILE is.
         let kept =
@@ -447,7 +539,10 @@ module EnvBlock =
             final
             |> Map.toList
             |> List.sortBy fst
-        { Entries = entries; StrippedCount = stripped }
+        { Entries = entries
+          ParentCount = parentCount
+          KeptCount = keptCount
+          StrippedCount = stripped }
 
     /// Outcome of building a complete env block. The `Block` field is
     /// HGlobal-allocated UTF-16 bytes ready for `lpEnvironment`; the
@@ -460,6 +555,12 @@ module EnvBlock =
           /// double-NUL terminator. Suitable for `Marshal.Copy`-style
           /// round-trip verification in tests.
           ByteLength: int
+          /// PR-K — total parent env-var count (pre-filter).
+          ParentCount: int
+          /// PR-K — count of parent vars that survived BOTH the
+          /// deny-list and allow-list filters and landed in the
+          /// child block.
+          KeptCount: int
           /// Number of parent env-vars stripped by the deny-list.
           /// Information-only; for `Information`-level logging.
           /// Names and values are NEVER captured.
@@ -502,6 +603,8 @@ module EnvBlock =
         let block, len = marshalBlock assembled.Entries
         { Block = block
           ByteLength = len
+          ParentCount = assembled.ParentCount
+          KeptCount = assembled.KeptCount
           StrippedCount = assembled.StrippedCount }
 
     /// Production entry point: build a block from the current process
