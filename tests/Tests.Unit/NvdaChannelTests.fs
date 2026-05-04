@@ -145,7 +145,10 @@ let ``RenderRaw does not invoke the NVDA marshal callback`` () =
     let calls, recorder = makeRecorder ()
     let channel = NvdaChannel.create recorder
     let event = buildEvent SemanticCategory.SelectionShown ""
-    channel.Send event (RenderRaw (box "uia-listbox-metadata"))
+    // Use `:>` upcast (preserves non-null) rather than `box`
+    // (F# 9 nullness annotates `box: 'T -> obj | null`, which
+    // can't satisfy `RenderRaw of payload: obj`).
+    channel.Send event (RenderRaw ("uia-listbox-metadata" :> obj))
     Assert.Equal(0, calls.Count)
 
 // ---- Channel identity ------------------------------------------
