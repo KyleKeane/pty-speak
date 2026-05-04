@@ -15,6 +15,100 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Pre-framework-cycle PR-O)
+
+- **Hotkey handling unified through `HotkeyRegistry`.** The
+  Stage 7 substrate had hotkey-binding boilerplate scattered
+  across 8 stand-alone `setupXyzKeybinding` functions in
+  `Program.fs` plus a local `bind` helper inside
+  `setupShellSwitchKeybindings` (PR-J extracted that one for the
+  3 shell-switch hotkeys). Each function did the same WPF
+  RoutedCommand + KeyBinding + CommandBinding triple-binding;
+  ~65 lines of near-identical boilerplate. The fragmentation
+  meant adding a new hotkey required touching 3 places (the
+  `AppReservedHotkeys` table, a new `setupXyz` function, the
+  call site in `compose ()`) and the framework cycles (Output
+  Part 3, Input Part 4, Stage 10) would have continued
+  accumulating fragmentation if not pre-factored.
+- **New `Terminal.Core.HotkeyRegistry` module** mirrors the
+  `Terminal.Pty.ShellRegistry` shape: discriminated-union
+  `AppCommand` (11 cases — every shipped hotkey from PR-A
+  through PR-K + the 3 shell-switch slots), `Hotkey` record
+  with `Key` / `Modifiers` / `Description` fields,
+  `builtIns: Hotkey list` as the canonical source of truth,
+  `hotkeyOf` / `tryFind` / `nameOf` / `allCommands` lookups.
+  Uses its own `HotkeyKey` and `Modifier` types to keep
+  Terminal.Core WPF-free (mirrors `KeyEncoding`'s
+  decoupling). Phase 2 user-settings will override
+  individual `Hotkey` records via TOML; the dispatch path
+  stays unchanged.
+- **`bindHotkey` helper in `Program.fs`** replaces all 9
+  call sites (8 setup* functions + 3 shell-switch invocations)
+  with single-line `bindHotkey window AppCommand.X handler`
+  calls. Two small translation functions at the
+  Terminal.Core ↔ WPF boundary (`translateHotkeyKey`,
+  `translateHotkeyModifiers`) convert `HotkeyKey` /
+  `Modifier` to WPF `Key` / `ModifierKeys`.
+- **`TerminalView.cs AppReservedHotkeys` table unchanged** —
+  it stays the C# hot-path filter source consulted per
+  keystroke by `OnPreviewKeyDown` (avoiding C#/F# interop
+  cost per key event). The two surfaces are kept in sync by
+  maintainer convention; the new docstring on
+  `AppReservedHotkeys` documents the contract.
+- **Pinning fixtures in `tests/Tests.Unit/HotkeyRegistryTests.fs`:**
+  `allCommands contains exactly the documented commands`
+  (ADR-discipline mirror of `ShellRegistryTests.builtIns
+  contains exactly Cmd, Claude, and PowerShell` and
+  `EnvBlockTests.allowedNames contains exactly the spec-7-2
+  baseline`); `every AppCommand case has a builtIns entry`;
+  `builtIns has no duplicate AppCommand entries`; `no two
+  hotkeys share the same (key, modifiers) gesture`
+  (collision detection); `tryFind round-trips every
+  builtIns gesture`; specific binding pins for the documented
+  Stage 7 / PR-J hotkey set (Ctrl+Shift+U → CheckForUpdates,
+  Ctrl+Shift+; → CopyLatestLog, Ctrl+Shift+1/2/3 →
+  cmd/PowerShell/Claude per PR-J reordering).
+
+What changes:
+
+- `src/Terminal.Core/HotkeyRegistry.fs` (new, ~213 lines):
+  AppCommand DU + HotkeyKey / Modifier types + Hotkey record +
+  builtIns + nameOf + hotkeyOf + tryFind + allCommands.
+- `src/Terminal.Core/Terminal.Core.fsproj`: register
+  HotkeyRegistry.fs after KeyEncoding.fs in compile order.
+- `src/Terminal.App/Program.fs`:
+  * New `translateHotkeyKey` + `translateHotkeyModifiers` +
+    `bindHotkey` private helpers (~95 lines).
+  * Deleted 8 `setupXyzKeybinding` functions (~125 lines).
+  * Replaced 9 call sites with single-line `bindHotkey`
+    invocations (~12 lines vs ~40 lines previously).
+  * `setupShellSwitchKeybindings` outer function inlined
+    (its local `bind` helper is now superseded by the
+    module-level `bindHotkey`).
+- `src/Views/TerminalView.cs`:
+  * `AppReservedHotkeys` docstring updated to reference
+    `HotkeyRegistry` as the F#-side canonical source and
+    document the two-surface convention.
+- `tests/Tests.Unit/HotkeyRegistryTests.fs` (new, ~150 lines):
+  10 fixtures pinning the registry contracts.
+- `tests/Tests.Unit/Tests.Unit.fsproj`: register
+  HotkeyRegistryTests.fs in compile order.
+
+Net change: ~+335 lines added, ~-178 deleted (~+157 net).
+The substantial deletion of duplicated WPF triple-binding
+boilerplate and the addition of testable registry surface
++ pinning fixtures is the trade. Adding a new hotkey now
+requires 4 touches (extend AppCommand DU, update nameOf,
+append builtIns row, append AppReservedHotkeys row) which the
+pinning fixtures + F# exhaustiveness force in lockstep.
+
+Verification: existing CI (`dotnet test` on Windows-latest)
+runs the new HotkeyRegistryTests fixtures alongside the
+existing 100+ fixtures. Manual NVDA pass on a fresh preview
+build confirms every shipped hotkey still fires
+(Ctrl+Shift+U/D/R/L/G/H/B/;/1/2/3 — 11 hotkeys to walk
+through).
+
 ### Documentation (Pre-framework-cycle PR-N)
 
 - **Substrate-invariant docstring contracts.** A pre-framework-

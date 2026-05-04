@@ -361,8 +361,20 @@ public class TerminalView : FrameworkElement
     ///
     /// Each entry is documented with the stage that owns it and
     /// the binding's command target. New app-level hotkeys
-    /// added in future stages append to this list AND the spec
-    /// §6 clause; the two are co-equal sources of truth.
+    /// added in future stages append to this list AND the
+    /// <c>HotkeyRegistry.builtIns</c> in
+    /// <c>src/Terminal.Core/HotkeyRegistry.fs</c>; the spec §6
+    /// clause is the third co-equal source of truth.
+    ///
+    /// Pre-framework-cycle PR-O introduced
+    /// <c>HotkeyRegistry</c> as the F#-side canonical source for
+    /// the dispatch path (compose-time <c>bindHotkey</c> calls
+    /// in <c>Program.fs</c> read it). This C# table remains the
+    /// hot-path filter source consulted on every keystroke by
+    /// <see cref="OnPreviewKeyDown"/>; keeping it as a static
+    /// array avoids C#/F# interop cost per key event. Maintainer
+    /// convention: a new hotkey requires updating both surfaces
+    /// in the same PR.
     /// </summary>
     public static readonly (Key Key, ModifierKeys Modifiers, string Description)[]
         AppReservedHotkeys =
