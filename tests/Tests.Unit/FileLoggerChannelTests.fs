@@ -39,10 +39,16 @@ type private RecordingLogger() =
     let calls = ResizeArray<LogLevel * string>()
     member _.Calls = calls
     interface ILogger with
-        member _.BeginScope<'TState>(_state: 'TState) : System.IDisposable =
+        // F# 9 + .NET 9 require the `'TState : not null` constraint
+        // here to match the C# `where TState : notnull` on
+        // `ILogger.BeginScope<TState>` and
+        // `ILogger.Log<TState>`. Without the constraint the F#
+        // compiler emits `FS0193: A type parameter is missing a
+        // constraint 'when 'TState: not null'`.
+        member _.BeginScope<'TState when 'TState : not null>(_state: 'TState) : System.IDisposable =
             (new NoopScope()) :> System.IDisposable
         member _.IsEnabled(_: LogLevel) : bool = true
-        member _.Log<'TState>
+        member _.Log<'TState when 'TState : not null>
                 (level: LogLevel,
                  _eventId: EventId,
                  state: 'TState,
