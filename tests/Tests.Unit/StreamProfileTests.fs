@@ -1,12 +1,6 @@
-module PtySpeak.Tests.Unit.CoalescerTests
+module PtySpeak.Tests.Unit.StreamProfileTests
 
 open System
-open System.Collections.Generic
-open System.Text
-open System.Threading
-open System.Threading.Channels
-open System.Threading.Tasks
-open Microsoft.Extensions.Time.Testing
 open Xunit
 open Terminal.Core
 
@@ -18,7 +12,7 @@ open Terminal.Core
 // frame hash, sliding-window spinner suppression, leading- +
 // trailing-edge debounce, and an alt-screen flush barrier).
 // These tests pin each algorithm independently and a few of
-// the interactions, driving `Coalescer.processRowsChanged` /
+// the interactions, driving `StreamProfile.processRowsChanged` /
 // `onTimerTick` / `onModeChanged` directly with explicit
 // `now` timestamps so debounce assertions are deterministic
 // without spinning the production reader loop.
@@ -95,20 +89,20 @@ let ``hashFrame is order-independent for blank suffix rows`` () =
 
 [<Fact>]
 let ``two identical RowsChanged frames in a row → only first emits`` () =
-    let state = Coalescer.createState ()
+    let state = StreamProfile.createState ()
     let snap = snapshotOf 3 5 [ "hello" ]
-    let first = Coalescer.processRowsChanged state (at 0) snap
+    let first = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 0) snap
     Assert.Equal(1, first.Length)
-    let second = Coalescer.processRowsChanged state (at 500) snap
+    let second = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 500) snap
     Assert.Equal(0, second.Length)
 
 [<Fact>]
 let ``frame dedup releases when content actually changes`` () =
-    let state = Coalescer.createState ()
+    let state = StreamProfile.createState ()
     let snap1 = snapshotOf 3 5 [ "hello" ]
     let snap2 = snapshotOf 3 5 [ "world" ]
-    let _ = Coalescer.processRowsChanged state (at 0) snap1
-    let next = Coalescer.processRowsChanged state (at 500) snap2
+    let _ = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 0) snap1
+    let next = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 500) snap2
     Assert.Equal(1, next.Length)
 
 // ---------------------------------------------------------------------
@@ -117,12 +111,12 @@ let ``frame dedup releases when content actually changes`` () =
 
 [<Fact>]
 let ``first event in idle period emits immediately (leading edge)`` () =
-    let state = Coalescer.createState ()
+    let state = StreamProfile.createState ()
     // Width must accommodate the full string; the rowOf helper
     // truncates at cols-1 and renderRows trims trailing blanks,
     // so a 5-col screen would render "echo hello" as "echo".
     let snap = snapshotOf 3 20 [ "echo hello" ]
-    let result = Coalescer.processRowsChanged state (at 0) snap
+    let result = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 0) snap
     Assert.Equal(1, result.Length)
     match result.[0] with
     | Coalescer.OutputBatch text -> Assert.Contains("echo hello", text)
@@ -130,21 +124,21 @@ let ``first event in idle period emits immediately (leading edge)`` () =
 
 [<Fact>]
 let ``burst of events within debounce window collapses to leading + trailing emit`` () =
-    let state = Coalescer.createState ()
+    let state = StreamProfile.createState ()
     let snap1 = snapshotOf 3 5 [ "a" ]
     let snap2 = snapshotOf 3 5 [ "ab" ]
     let snap3 = snapshotOf 3 5 [ "abc" ]
     // Leading edge.
-    let r1 = Coalescer.processRowsChanged state (at 0) snap1
+    let r1 = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 0) snap1
     Assert.Equal(1, r1.Length)
     // Within 200ms — should accumulate, NOT emit.
-    let r2 = Coalescer.processRowsChanged state (at 50) snap2
+    let r2 = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 50) snap2
     Assert.Equal(0, r2.Length)
-    let r3 = Coalescer.processRowsChanged state (at 100) snap3
+    let r3 = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 100) snap3
     Assert.Equal(0, r3.Length)
     // Trailing-edge timer tick at 200ms+ flushes the
     // last accumulated frame.
-    let tick = Coalescer.onTimerTick state (at 250)
+    let tick = StreamProfile.onTimerTick StreamProfile.defaultParameters state (at 250)
     Assert.Equal(1, tick.Length)
     match tick.[0] with
     | Coalescer.OutputBatch text -> Assert.Contains("abc", text)
@@ -152,11 +146,11 @@ let ``burst of events within debounce window collapses to leading + trailing emi
 
 [<Fact>]
 let ``trailing-edge tick with nothing pending is a no-op`` () =
-    let state = Coalescer.createState ()
+    let state = StreamProfile.createState ()
     let snap = snapshotOf 3 5 [ "x" ]
-    let _ = Coalescer.processRowsChanged state (at 0) snap
+    let _ = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 0) snap
     // No accumulator built up; tick should emit nothing.
-    let tick = Coalescer.onTimerTick state (at 250)
+    let tick = StreamProfile.onTimerTick StreamProfile.defaultParameters state (at 250)
     Assert.Equal(0, tick.Length)
 
 // ---------------------------------------------------------------------
@@ -170,15 +164,15 @@ let ``per-key spinner gate fires after threshold same-row-hash hits in window`` 
     // the spinner per-key gate accumulate hits for B's
     // (row=0, hash) key. After threshold hits within the
     // 1s window, the next B frame is spinner-suppressed.
-    let state = Coalescer.createState ()
+    let state = StreamProfile.createState ()
     let frameA = snapshotOf 1 1 [ "A" ]
     let frameB = snapshotOf 1 1 [ "B" ]
-    let _ = Coalescer.processRowsChanged state (at 0) frameA
+    let _ = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 0) frameA
     let mutable suppressedCount = 0
     let mutable emittedCount = 0
     for i in 1 .. 14 do
         let frame = if i % 2 = 1 then frameB else frameA
-        let result = Coalescer.processRowsChanged state (at (i * 60)) frame
+        let result = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at (i * 60)) frame
         // Frame-dedup'd A's also return [] but DO NOT count
         // as spinner suppression — distinguish by checking
         // whether this is a B frame (the one whose history
@@ -211,7 +205,7 @@ let ``cross-row gate accumulates content-hash recurrence as spinner moves betwee
     // rows 0..4 across 6 frames within the 1s spinner window;
     // at the end, HashHistory[content-hash-of-BAR-row] should
     // hold at least `spinnerThreshold` timestamps.
-    let state = Coalescer.createState ()
+    let state = StreamProfile.createState ()
     let cols = 10
     let buildFrame (frameNum: int) (barRow: int) : Cell[][] =
         let arr = Array.init 5 (fun i ->
@@ -220,7 +214,7 @@ let ``cross-row gate accumulates content-hash recurrence as spinner moves betwee
         arr
     // Frame 0 is the seed (LastRowHashes = None initially;
     // every row is "changed" relative to nothing).
-    let _ = Coalescer.processRowsChanged state (at 0) (buildFrame 0 0)
+    let _ = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 0) (buildFrame 0 0)
     // 5 more frames moving BAR through rows 1..4 and back to
     // row 0, each with unique padding so the frame hash differs.
     // Each frame's BAR row produces the SAME content hash
@@ -229,7 +223,7 @@ let ``cross-row gate accumulates content-hash recurrence as spinner moves betwee
     let bars =  [|   1;   2;   3;   4;   0;   1 |]
     for i in 0 .. times.Length - 1 do
         let frame = buildFrame (i + 1) bars.[i]
-        let _ = Coalescer.processRowsChanged state (at times.[i]) frame
+        let _ = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at times.[i]) frame
         ()
     // BAR's content hash should have accumulated 7 entries (the
     // seed frame + 6 loop frames, all within the 1s spinnerWindow).
@@ -277,18 +271,18 @@ let ``static rows do not trip per-key gate at fast typing cadence (PR-M, Issue #
     // LastRowHashes = None initially treats every row as
     // changed); subsequent frames must NOT grow the static-row
     // counts past 1.
-    let state = Coalescer.createState ()
+    let state = StreamProfile.createState ()
     let cols = 5
     let buildFrame (typed: string) : Cell[][] =
         let arr = Array.init 30 (fun _ -> blankRow cols)
         arr.[0] <- rowOf cols typed
         arr
-    let _ = Coalescer.processRowsChanged state (at 0) (buildFrame "a")
+    let _ = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 0) (buildFrame "a")
     // Pump 6 more frames at 50ms intervals; only row 0 changes
     // each frame.
     let typeSeq = [ "ab"; "abc"; "abcd"; "abcde"; "abcdef"; "abcdefg" ]
     for i in 0 .. typeSeq.Length - 1 do
-        let _ = Coalescer.processRowsChanged state (at ((i + 1) * 50)) (buildFrame typeSeq.[i])
+        let _ = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at ((i + 1) * 50)) (buildFrame typeSeq.[i])
         ()
     // Static-row history counts should remain at 1 (only the
     // seed frame contributed; no subsequent frame changed those
@@ -319,15 +313,15 @@ let ``cross-row HashHistory ignores static blank rows (PR-M, Issue #117)`` () =
     // would accumulate 29 entries per frame (one per static
     // blank row) and trip the gate within 1 frame. With change
     // detection, blank-rows-that-stay-blank contribute nothing.
-    let state = Coalescer.createState ()
+    let state = StreamProfile.createState ()
     let cols = 5
     let buildFrame (typed: string) : Cell[][] =
         let arr = Array.init 30 (fun _ -> blankRow cols)
         arr.[0] <- rowOf cols typed
         arr
-    let _ = Coalescer.processRowsChanged state (at 0) (buildFrame "a")
+    let _ = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 0) (buildFrame "a")
     for i in 0 .. 5 do
-        let _ = Coalescer.processRowsChanged state (at ((i + 1) * 50)) (buildFrame (sprintf "x%d" i))
+        let _ = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at ((i + 1) * 50)) (buildFrame (sprintf "x%d" i))
         ()
     // The blank-content hash should have at most 1 entry (the
     // initial seed frame, where every row was "changed"
@@ -348,14 +342,14 @@ let ``ModeChanged resets LastRowHashes and HashHistory (PR-M, Issue #117)`` () =
     // gate could carry forward stale recurrence counts from the
     // previous buffer, and the change-detection's "changed?"
     // check could falsely return false against pre-mode hashes.
-    let state = Coalescer.createState ()
+    let state = StreamProfile.createState ()
     let snap = snapshotOf 1 5 [ "hello" ]
-    let _ = Coalescer.processRowsChanged state (at 0) snap
+    let _ = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 0) snap
     Assert.True(state.LastRowHashes.IsSome,
         "LastRowHashes should be populated after first frame")
     Assert.True(state.HashHistory.Count > 0,
         "HashHistory should be populated after first frame")
-    let _ = Coalescer.onModeChanged state (at 100) AltScreen true
+    let _ = StreamProfile.onModeChanged StreamProfile.defaultParameters state (at 100) AltScreen true
     Assert.True(state.LastRowHashes.IsNone,
         "LastRowHashes should be reset to None after mode change")
     Assert.Equal(0, state.HashHistory.Count)
@@ -366,19 +360,19 @@ let ``spinner per-key history is GC'd after spinnerWindow elapses`` () =
     // Once spinnerWindow of quiet has passed, the per-key
     // history is trimmed by gcHistory and a new frame can
     // re-engage the leading-edge emit path.
-    let state = Coalescer.createState ()
+    let state = StreamProfile.createState ()
     let frameA = snapshotOf 1 1 [ "A" ]
     let frameB = snapshotOf 1 1 [ "B" ]
     // Pump enough alternations to engage spinner suppression.
-    let _ = Coalescer.processRowsChanged state (at 0) frameA
+    let _ = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 0) frameA
     for i in 1 .. 14 do
         let frame = if i % 2 = 1 then frameB else frameA
-        let _ = Coalescer.processRowsChanged state (at (i * 60)) frame
+        let _ = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at (i * 60)) frame
         ()
     // After 1.5s of quiet (well past spinnerWindow=1000ms),
     // a fresh content should emit again.
     let frameC = snapshotOf 1 1 [ "C" ]
-    let result = Coalescer.processRowsChanged state (at 5000) frameC
+    let result = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 5000) frameC
     Assert.True(result.Length >= 1,
         "Expected emit to recover after spinnerWindow of quiet")
 
@@ -388,16 +382,16 @@ let ``spinner per-key history is GC'd after spinnerWindow elapses`` () =
 
 [<Fact>]
 let ``ModeChanged AltScreen flushes pending accumulator first`` () =
-    let state = Coalescer.createState ()
+    let state = StreamProfile.createState ()
     let snap1 = snapshotOf 1 5 [ "hello" ]
     let snap2 = snapshotOf 1 5 [ "world" ]
     // Leading-edge emit at t=0.
-    let _ = Coalescer.processRowsChanged state (at 0) snap1
+    let _ = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 0) snap1
     // Within debounce — accumulates.
-    let r2 = Coalescer.processRowsChanged state (at 50) snap2
+    let r2 = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 50) snap2
     Assert.Equal(0, r2.Length)
     // Mode change should flush the pending then pass through.
-    let result = Coalescer.onModeChanged state (at 100) AltScreen true
+    let result = StreamProfile.onModeChanged StreamProfile.defaultParameters state (at 100) AltScreen true
     Assert.Equal(2, result.Length)
     match result.[0] with
     | Coalescer.OutputBatch text -> Assert.Contains("world", text)
@@ -410,8 +404,8 @@ let ``ModeChanged AltScreen flushes pending accumulator first`` () =
 
 [<Fact>]
 let ``ModeChanged with no pending still passes the barrier through`` () =
-    let state = Coalescer.createState ()
-    let result = Coalescer.onModeChanged state (at 0) AltScreen false
+    let state = StreamProfile.createState ()
+    let result = StreamProfile.onModeChanged StreamProfile.defaultParameters state (at 0) AltScreen false
     Assert.Equal(1, result.Length)
     match result.[0] with
     | Coalescer.ModeBarrier (flag, value) ->
@@ -421,16 +415,16 @@ let ``ModeChanged with no pending still passes the barrier through`` () =
 
 [<Fact>]
 let ``ModeChanged resets frame-dedup state`` () =
-    let state = Coalescer.createState ()
+    let state = StreamProfile.createState ()
     let snap = snapshotOf 1 5 [ "hello" ]
-    let _ = Coalescer.processRowsChanged state (at 0) snap
+    let _ = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 0) snap
     // Frame dedup would normally suppress this repeat...
-    let dup = Coalescer.processRowsChanged state (at 500) snap
+    let dup = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 500) snap
     Assert.Equal(0, dup.Length)
     // ...but a mode barrier resets the dedup state, so the
     // same content emits again afterward.
-    let _ = Coalescer.onModeChanged state (at 600) AltScreen true
-    let after = Coalescer.processRowsChanged state (at 1000) snap
+    let _ = StreamProfile.onModeChanged StreamProfile.defaultParameters state (at 600) AltScreen true
+    let after = StreamProfile.processRowsChanged StreamProfile.defaultParameters state (at 1000) snap
     Assert.Equal(1, after.Length)
 
 // ---------------------------------------------------------------------
@@ -439,7 +433,7 @@ let ``ModeChanged resets frame-dedup state`` () =
 
 [<Fact>]
 let ``ParserError passes through immediately as ErrorPassthrough`` () =
-    let result = Coalescer.onParserError "boom"
+    let result = StreamProfile.onParserError "boom"
     Assert.Equal(1, result.Length)
     match result.[0] with
     | Coalescer.ErrorPassthrough s -> Assert.Equal("boom", s)
@@ -448,7 +442,7 @@ let ``ParserError passes through immediately as ErrorPassthrough`` () =
 [<Fact>]
 let ``ParserError strips control chars via sanitiser`` () =
     // BEL (\x07) must be stripped before NVDA sees it.
-    let result = Coalescer.onParserError "boom\x07!"
+    let result = StreamProfile.onParserError "boom\x07!"
     match result.[0] with
     | Coalescer.ErrorPassthrough s ->
         Assert.False(s.Contains('\x07'),
@@ -515,129 +509,13 @@ let ``mode-barrier activityId is pty-speak.mode`` () =
     Assert.Equal("pty-speak.mode", ActivityIds.mode)
 
 // ---------------------------------------------------------------------
-// runLoop end-to-end with FakeTimeProvider
+// Stage 8b note: the Stage-7 `runLoop` orchestrator has been removed.
+// Its three integration tests (cancellation, end-to-end emit, and the
+// PeriodicTimer-concurrent-call regression) covered the orchestration
+// shell, which now lives in `src/Terminal.App/Program.fs` as the
+// TranslatorPump + TickPump pair. Composition-root orchestration is
+// not unit-tested in this codebase; the algorithm-level pins above
+// + the Stage-5 NVDA-validation matrix in
+// `docs/ACCESSIBILITY-TESTING.md` cover what those three tests
+// covered before.
 // ---------------------------------------------------------------------
-
-let private buildChannels () =
-    let inOpts =
-        BoundedChannelOptions(256,
-            FullMode = BoundedChannelFullMode.DropOldest)
-    let outOpts =
-        BoundedChannelOptions(16,
-            FullMode = BoundedChannelFullMode.Wait)
-    let inCh = Channel.CreateBounded<ScreenNotification>(inOpts)
-    let outCh = Channel.CreateBounded<Coalescer.CoalescedNotification>(outOpts)
-    inCh, outCh
-
-[<Fact>]
-let ``runLoop cancels cleanly when token is cancelled`` () =
-    let inCh, outCh = buildChannels ()
-    let screen = Screen(rows = 3, cols = 5)
-    let cts = new CancellationTokenSource()
-    let timeProvider = FakeTimeProvider(epoch)
-    let task =
-        Coalescer.runLoop
-            inCh.Reader
-            outCh.Writer
-            screen
-            (timeProvider :> TimeProvider)
-            cts.Token
-    cts.Cancel()
-    // Loop should terminate without throwing OCE outwards.
-    let completed = task.Wait(TimeSpan.FromSeconds 2.0)
-    Assert.True(completed, "Coalescer task should exit within 2s of cancellation")
-
-[<Fact>]
-let ``runLoop emits OutputBatch end-to-end via real Screen + FakeTimeProvider`` () =
-    let inCh, outCh = buildChannels ()
-    let screen = Screen(rows = 3, cols = 10)
-    // Apply some content so SnapshotRows has something to hash.
-    let parser = Terminal.Parser.Parser.create ()
-    let bytes = Encoding.ASCII.GetBytes "hi"
-    let events = Terminal.Parser.Parser.feedArray parser bytes
-    for e in events do screen.Apply(e)
-    let cts = new CancellationTokenSource()
-    let timeProvider = FakeTimeProvider(epoch)
-    let task =
-        Coalescer.runLoop
-            inCh.Reader
-            outCh.Writer
-            screen
-            (timeProvider :> TimeProvider)
-            cts.Token
-    // Push a RowsChanged through the input channel.
-    Assert.True(inCh.Writer.TryWrite(RowsChanged []))
-    // Read one CoalescedNotification with a timeout.
-    let readTask = outCh.Reader.ReadAsync(cts.Token).AsTask()
-    let completed = readTask.Wait(TimeSpan.FromSeconds 2.0)
-    Assert.True(completed, "Expected one CoalescedNotification within 2s")
-    match readTask.Result with
-    | Coalescer.OutputBatch text -> Assert.Contains("hi", text)
-    | other -> Assert.Fail(sprintf "Expected OutputBatch; got %A" other)
-    cts.Cancel()
-    task.Wait(TimeSpan.FromSeconds 2.0) |> ignore
-
-[<Fact>]
-let ``runLoop survives multiple consecutive reader-wins without crashing the PeriodicTimer`` () =
-    // Regression test for "Coalescer crashed: Operation is not
-    // valid due to the state of the object" surfaced during
-    // post-Stage-6 manual NVDA verification.
-    //
-    // Cause: PeriodicTimer.WaitForNextTickAsync throws
-    // InvalidOperationException ("Operation is not valid due to
-    // the state of the object") when called concurrently — i.e.
-    // a second call before the previous one has completed. The
-    // pre-fix runLoop called WaitForNextTickAsync at the top of
-    // every loop iteration; when the reader won Task.WhenAny,
-    // the timer's pending wait was abandoned but not cancelled,
-    // and the next iteration's WaitForNextTickAsync crashed.
-    //
-    // Repro: pump events through the reader channel faster than
-    // the 200ms timer would fire. Every iteration, the reader
-    // wins. The pre-fix code crashed on the second iteration.
-    let inCh, outCh = buildChannels ()
-    let screen = Screen(rows = 3, cols = 10)
-    // Apply enough content so each push produces a unique frame
-    // hash (avoiding the dedup short-circuit).
-    let parser = Terminal.Parser.Parser.create ()
-    let mutable applyCount = 0
-    let pushUniqueChunk () =
-        applyCount <- applyCount + 1
-        let chunk =
-            Encoding.ASCII.GetBytes(sprintf "x%d " applyCount)
-        let events = Terminal.Parser.Parser.feedArray parser chunk
-        for e in events do screen.Apply(e)
-    pushUniqueChunk ()
-    let cts = new CancellationTokenSource()
-    let timeProvider = FakeTimeProvider(epoch)
-    let task =
-        Coalescer.runLoop
-            inCh.Reader
-            outCh.Writer
-            screen
-            (timeProvider :> TimeProvider)
-            cts.Token
-    // Push 20 events as fast as we can; under the pre-fix code
-    // the loop crashes on iteration 2 with InvalidOperationException
-    // and the task transitions to Faulted.
-    for _ in 1 .. 20 do
-        pushUniqueChunk ()
-        Assert.True(inCh.Writer.TryWrite(RowsChanged []))
-    // Drain a few notifications to ensure the loop is making
-    // progress, NOT crashing.
-    let mutable got = 0
-    let drainCts = new CancellationTokenSource(TimeSpan.FromSeconds 3.0)
-    try
-        while got < 3 && not drainCts.IsCancellationRequested do
-            let readTask = outCh.Reader.ReadAsync(drainCts.Token).AsTask()
-            if readTask.Wait(500) then
-                got <- got + 1
-    with
-    | _ -> ()
-    Assert.True(
-        got >= 1,
-        sprintf "Expected runLoop to deliver at least one notification under reader-bursts; got %d. Task state: %A"
-            got task.Status)
-    Assert.NotEqual(TaskStatus.Faulted, task.Status)
-    cts.Cancel()
-    task.Wait(TimeSpan.FromSeconds 2.0) |> ignore

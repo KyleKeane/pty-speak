@@ -1,6 +1,9 @@
 namespace Terminal.Core
 
-/// Stage 8a — output framework dispatcher + registries.
+open System
+
+/// Stage 8a — output framework dispatcher + registries (extended
+/// in 8b with `dispatchTick` for time-driven flush).
 ///
 /// One file holds three submodules so the abstraction surface
 /// stays small. The shape mirrors the canonical extensibility
@@ -93,21 +96,49 @@ module OutputDispatcher =
                 profiles <- Map.empty
                 activeProfileSet <- [])
 
+    /// Route a `(effectiveEvent, decisions)` pair to its
+    /// channels. Each ChannelDecision is sent to the channel
+    /// resolved by `ChannelRegistry.lookup`; the channel's
+    /// `Send` receives the effectiveEvent for activity-ID /
+    /// notification-processing decisions, and the Render for
+    /// the actual emission. Decisions referencing an
+    /// unregistered channel are silently dropped.
+    let private routePair (effectiveEvent: OutputEvent) (decisions: ChannelDecision[]) : unit =
+        for decision in decisions do
+            match ChannelRegistry.lookup decision.Channel with
+            | Some channel -> channel.Send effectiveEvent decision.Render
+            | None -> ()
+
     /// Dispatch one `OutputEvent` through the active profile set
-    /// and into each profile-decided channel. Channels are
-    /// invoked sequentially in `ChannelDecision[]` order; each
-    /// channel's own `Send` is responsible for any internal
-    /// queueing or dispatcher-thread marshalling. Decisions
-    /// referencing an unregistered channel are silently dropped.
-    ///
-    /// 8a profile contract: the Stream profile returns one
-    /// decision per event (NVDA channel + `RenderText`). 8b/8c/8d
-    /// add fan-out; the dispatcher is unchanged.
+    /// and into each profile-decided channel. Each profile's
+    /// `Apply` returns an array of `(effectiveEvent, decisions)`
+    /// pairs (most profiles return one pair carrying the input
+    /// event verbatim; the Stream profile may return two pairs
+    /// when a mode-change forces a pending-stream flush). The
+    /// dispatcher routes each pair through `routePair`.
     let dispatch (event: OutputEvent) : unit =
         let profileSet = ProfileRegistry.getActiveProfileSet ()
         for profile in profileSet do
-            let decisions = profile.Apply event
-            for decision in decisions do
-                match ChannelRegistry.lookup decision.Channel with
-                | Some channel -> channel.Send event decision.Render
-                | None -> ()
+            let pairs = profile.Apply event
+            for (effectiveEvent, decisions) in pairs do
+                routePair effectiveEvent decisions
+
+    /// Dispatch a time-driven tick. Called by the composition
+    /// root's TickPump task on each `PeriodicTimer` tick. Each
+    /// active profile's `Tick` returns `(effectiveEvent,
+    /// decisions)` pairs the same way `Apply` does; profiles
+    /// that don't accumulate (Selection, Earcon, the future
+    /// Form / TUI / REPL profiles) supply
+    /// `Tick = fun _ -> [||]`, and `dispatchTick` then calls
+    /// `routePair` zero times for them.
+    ///
+    /// Stage 8b adds this. The Stream profile uses it to release
+    /// pending stream content when the debounce window elapses
+    /// with no new event arriving (the Stage-7 trailing-edge
+    /// flush).
+    let dispatchTick (now: DateTimeOffset) : unit =
+        let profileSet = ProfileRegistry.getActiveProfileSet ()
+        for profile in profileSet do
+            let pairs = profile.Tick now
+            for (effectiveEvent, decisions) in pairs do
+                routePair effectiveEvent decisions

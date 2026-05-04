@@ -833,25 +833,35 @@ module Program =
         window.TerminalSurface.SetCopyLogToClipboardHandler(
             Action(fun () -> runCopyLatestLog window))
 
-        // Stage 5 — two-channel pipeline:
+        // Stage 8b — single-channel pipeline:
         //
         //   parser thread → notificationChannel (256, DropOldest)
         //                       ↓
-        //                 Coalescer.runLoop (one Task)
+        //                 TranslatorPump (one Task)
         //                       ↓
-        //                 coalescedChannel (16, Wait)
+        //                 OutputEventBuilder.fromScreenNotification
         //                       ↓
-        //                 drain task → window.TerminalSurface.Announce(msg, activityId)
+        //                 OutputDispatcher.dispatch (raw event)
+        //                       ↓
+        //                 StreamProfile.Apply (coalesces internally)
+        //                       ↓
+        //                 ChannelDecision[] → NvdaChannel.Send
         //
-        // The DropOldest source channel means a flooding parser
-        // can't grow the backlog without bound; the coalescer
-        // applies debounce + hash dedup + spinner suppression
-        // and emits at most one CoalescedNotification per
-        // ~200ms window. The downstream channel is small +
-        // Wait because the drain marshals to the WPF
-        // dispatcher per item and we want backpressure on
-        // pathological emit rates rather than dropping
-        // already-coalesced notifications.
+        // + concurrent TickPump (one Task):
+        //   PeriodicTimer(50ms) → OutputDispatcher.dispatchTick(now)
+        //                       ↓
+        //                 StreamProfile.Tick (trailing-edge flush)
+        //                       ↓
+        //                 ChannelDecision[] → NvdaChannel.Send
+        //
+        // The Stage 7 `coalescedChannel + Coalescer.runLoop +
+        // drain task` triplet collapses to two pumps both reading
+        // from the unchanged `notificationChannel`. The
+        // DropOldest source channel still bounds the parser-side
+        // backlog. The Stream profile owns the per-instance
+        // debounce + spinner-suppress + 500-char cap, all per
+        // `StreamProfile.Parameters` (Stage 7 defaults preserved
+        // via `StreamProfile.defaultParameters`).
         let notificationChannel =
             let opts =
                 System.Threading.Channels.BoundedChannelOptions(256,
@@ -859,88 +869,47 @@ module Program =
                         System.Threading.Channels.BoundedChannelFullMode.DropOldest)
             System.Threading.Channels.Channel.CreateBounded<ScreenNotification>(opts)
 
-        let coalescedChannel =
-            let opts =
-                System.Threading.Channels.BoundedChannelOptions(16,
-                    FullMode =
-                        System.Threading.Channels.BoundedChannelFullMode.Wait)
-            System.Threading.Channels.Channel.CreateBounded<Coalescer.CoalescedNotification>(opts)
-
         // Bridge Screen.ModeChanged events into the parser-side
-        // channel so the coalescer can use them as flush
-        // barriers (alt-screen swap, etc.) and pass them
-        // through as ModeBarrier announcements. The screen
-        // fires this AFTER releasing its internal lock, so
-        // pushing to a Channel here is non-blocking and
-        // deadlock-free.
+        // channel so the Stream profile can use them as flush
+        // barriers (alt-screen swap, etc.). The screen fires
+        // this AFTER releasing its internal lock, so pushing to
+        // a Channel here is non-blocking and deadlock-free.
         screen.ModeChanged.Add(fun (flag, value) ->
             notificationChannel.Writer.TryWrite(ModeChanged (flag, value)) |> ignore)
 
-        // Start the coalescer with the SHARED cts.Token so
-        // shutdown cancels reader, coalescer, and drain in
-        // unison. Production passes TimeProvider.System;
-        // unit tests inject FakeTimeProvider directly into
-        // Coalescer.processRowsChanged / onTimerTick.
-        let _ =
-            Coalescer.runLoop
-                notificationChannel.Reader
-                coalescedChannel.Writer
-                screen
-                TimeProvider.System
-                cts.Token
-
-        // Stage 8a — output framework substrate.
+        // Stage 8b — output framework substrate composition.
         //
-        // Compose the dispatcher: register the NVDA channel
-        // (with its WPF-dispatcher-marshalled announce
-        // callback), register the Stream profile (a
-        // pass-through stub in 8a; 8b absorbs the Coalescer's
-        // debounce / spinner-suppress / max-chars logic), and
-        // set the active profile set so the drain's per-event
-        // dispatch finds it. The framework is behaviour-identical
-        // in 8a: every CoalescedNotification still produces the
-        // same (message, activityId) pair, the NVDA channel
-        // still calls `TerminalSurface.Announce(msg, activityId)`
-        // (the 2-arg overload that picks ImportantAll for
-        // streaming output and MostRecent for everything else
-        // per `src/Views/TerminalView.cs:292-298`), and the
-        // 500-char announce-length cap from PR-H stays where
-        // it is — until 8b lifts it into
-        // `StreamProfile.Parameters.MaxAnnounceChars`.
-        //
-        // See `spec/event-and-output-framework.md` Part D for
-        // the retrofit specifics.
         // The marshal callback uses synchronous `Dispatcher.Invoke`
-        // so the drain task blocks on each Announce until the WPF
+        // so the drain blocks on each Announce until the WPF
         // dispatch completes — same effective backpressure as
         // Stage 7's `let! _ = InvokeAsync(...).Task` await. The
-        // drain runs on a thread-pool worker (not the UI thread),
-        // so blocking is safe; UI thread never waits on the drain
-        // worker. Behaviour-identical to Stage 7 in throughput +
-        // ordering.
+        // pumps run on thread-pool workers (not the UI thread),
+        // so blocking is safe; UI thread never waits on a pump
+        // worker. Behaviour-identical to Stage 7 / Stage 8a in
+        // throughput + ordering.
         let nvdaChannel =
             NvdaChannel.create (fun (msg, activityId) ->
                 let action () =
                     window.TerminalSurface.Announce(msg, activityId)
                 window.Dispatcher.Invoke(Action(action)))
         OutputDispatcher.ChannelRegistry.register nvdaChannel
-        let streamProfile = StreamProfile.create ()
+        let streamProfile =
+            StreamProfile.create StreamProfile.defaultParameters screen
         OutputDispatcher.ProfileRegistry.register streamProfile
         OutputDispatcher.ProfileRegistry.setActiveProfileSet [ streamProfile ]
 
-        // Drain the coalesced channel into the framework
-        // dispatcher. The 500-char cap (PR-H, GitHub issue
-        // #139) stays here in 8a; 8b moves it into
-        // StreamProfile.Apply once the profile owns the
-        // `MaxAnnounceChars` parameter. The diagnostic Debug
-        // log line is preserved for streaming-silence triage
-        // continuity (`Ctrl+Shift+;` clipboard-copy + grep).
+        // TranslatorPump — read raw ScreenNotifications, build
+        // OutputEvents, dispatch through the active profile set.
+        // Replaces Stage 8a's drain task. The diagnostic Debug
+        // log line is preserved (in adjusted form) for
+        // streaming-silence triage continuity (`Ctrl+Shift+;`
+        // clipboard-copy + grep).
         let _ =
             Task.Run(fun () ->
                 task {
-                    let drainLog = Logger.get "Terminal.App.Program.drain"
+                    let pumpLog = Logger.get "Terminal.App.Program.translatorPump"
                     try
-                        let reader = coalescedChannel.Reader
+                        let reader = notificationChannel.Reader
                         let mutable keepGoing = true
                         while keepGoing && not cts.Token.IsCancellationRequested do
                             let! got = reader.WaitToReadAsync(cts.Token).AsTask()
@@ -948,74 +917,80 @@ module Program =
                                 keepGoing <- false
                             else
                                 let mutable peek =
-                                    Unchecked.defaultof<Coalescer.CoalescedNotification>
+                                    Unchecked.defaultof<ScreenNotification>
                                 while reader.TryRead(&peek) do
-                                    // 500-char cap stays in the drain in 8a per
-                                    // the PR-H stopgap rationale; OutputBatch is
-                                    // the only case affected. The capped text
-                                    // becomes the OutputEvent.Payload that flows
-                                    // through StreamProfile + NvdaChannel.
-                                    let capped =
-                                        match peek with
-                                        | Coalescer.OutputBatch text ->
-                                            let limit = 500
-                                            if text.Length <= limit then
-                                                Coalescer.OutputBatch text
-                                            else
-                                                let head = text.Substring(0, limit)
-                                                let extra = text.Length - limit
-                                                let footer =
-                                                    sprintf
-                                                        "%s ...announcement truncated; %d more characters available — press Ctrl+Shift+; to copy full log."
-                                                        head
-                                                        extra
-                                                Coalescer.OutputBatch footer
-                                        | other -> other
                                     let event =
-                                        OutputEventBuilder.fromCoalescedNotification capped
-                                    if event.Payload <> "" then
-                                        drainLog.LogDebug(
-                                            "Drain → Dispatch. Semantic={Semantic} Priority={Priority} PayloadLen={PayloadLen}",
-                                            event.Semantic, event.Priority, event.Payload.Length)
-                                    else
-                                        drainLog.LogDebug(
-                                            "Drain dispatched empty-payload event. Semantic={Semantic}",
-                                            event.Semantic)
+                                        OutputEventBuilder.fromScreenNotification peek
+                                    pumpLog.LogDebug(
+                                        "TranslatorPump → Dispatch. Semantic={Semantic} Priority={Priority}",
+                                        event.Semantic, event.Priority)
                                     OutputDispatcher.dispatch event
                     with
                     | :? OperationCanceledException -> ()
                     | ex ->
-                        // Post-Stage-6 diagnostic safety net.
-                        // Previously this was `| _ -> ()` — any
-                        // exception killed the drain task silently
-                        // and streaming announcements stopped
-                        // forever with no clue why. Surfacing the
-                        // exception via one final
-                        // `Announce(..., pty-speak.error)` lets a
-                        // user (or maintainer) hear that something
-                        // went wrong before the task exits.
-                        // Sanitise the message through SR-2's
+                        // Post-Stage-6 diagnostic safety net,
+                        // preserved across the 8b reorganisation.
+                        // Surface the exception via one last
+                        // direct `Announce(..., pty-speak.error)`
+                        // — direct call (not through the
+                        // dispatcher) because the framework
+                        // substrate may itself be the exception
+                        // source. Sanitise through SR-2's
                         // chokepoint so PTY-originated control
-                        // bytes can't reach NVDA verbatim. Direct
-                        // call to `Announce` here (not through the
-                        // dispatcher) — the framework substrate
-                        // may itself be the source of the
-                        // exception, so going through it for the
-                        // last-ditch announce would risk a
-                        // re-entrant crash.
+                        // bytes can't reach NVDA verbatim.
                         try
                             log.LogError(
                                 ex,
-                                "Drain task crashed; streaming announcements halted.")
+                                "TranslatorPump crashed; streaming announcements halted.")
                             let safe =
                                 AnnounceSanitiser.sanitise ex.Message
                             let action () =
                                 window.TerminalSurface.Announce(
                                     sprintf
-                                        "Drain task exception: %s"
+                                        "TranslatorPump exception: %s"
                                         safe,
                                     ActivityIds.error)
                             window.Dispatcher.Invoke(Action(action))
+                        with _ -> ()
+                } :> Task)
+
+        // TickPump — periodic timer for the Stream profile's
+        // trailing-edge flush. The 50ms cadence is the
+        // dispatcher-tick rate, NOT the debounce window (200ms).
+        // The Stream profile's Tick checks the elapsed-since-
+        // last-flush internally and emits zero or one
+        // ChannelDecision per call. Faster ticks = lower
+        // worst-case latency on trailing-edge flush; the cost
+        // is negligible (each Tick that returns [||] is a
+        // pure-function call).
+        let _ =
+            Task.Run(fun () ->
+                task {
+                    try
+                        use tickTimer =
+                            new System.Threading.PeriodicTimer(
+                                TimeSpan.FromMilliseconds 50.0)
+                        let mutable keepGoing = true
+                        while keepGoing && not cts.Token.IsCancellationRequested do
+                            let! tickFired = tickTimer.WaitForNextTickAsync(cts.Token).AsTask()
+                            if not tickFired then
+                                keepGoing <- false
+                            else
+                                OutputDispatcher.dispatchTick (DateTimeOffset.UtcNow)
+                    with
+                    | :? OperationCanceledException -> ()
+                    | ex ->
+                        try
+                            log.LogError(
+                                ex,
+                                "TickPump crashed; trailing-edge flushes halted.")
+                            // No user-facing announce here —
+                            // TickPump failure is silent
+                            // degradation (Apply still fires for
+                            // every event; only the trailing-edge
+                            // flush stops). The error is logged
+                            // for `Ctrl+Shift+;` post-hoc
+                            // diagnosis.
                         with _ -> ()
                 } :> Task)
 
@@ -1188,7 +1163,6 @@ module Program =
                     | Some s -> s.MinLevel.ToString()
                     | None -> "Unknown"
                 let notifDepth = notificationChannel.Reader.Count
-                let coalDepth = coalescedChannel.Reader.Count
                 // Verdict heuristic, in priority order:
                 //   1. Child PID dead → "Child shell process has
                 //      exited." (highest signal — explains every
@@ -1199,6 +1173,11 @@ module Program =
                 //      DropOldest means past-capacity is silent
                 //      data loss; warn before that.
                 //   4. Healthy.
+                //
+                // Stage 8b: the coalescedChannel was removed when
+                // the Coalescer absorbed into the Stream profile;
+                // queue-depth reporting now covers only the
+                // notification channel.
                 let verdict =
                     if pid > 0 && not alive then
                         sprintf
@@ -1217,7 +1196,7 @@ module Program =
                 let aliveStr = if alive then "alive" else "dead"
                 let summary =
                     sprintf
-                        "%s %s shell, PID %d (%s), log level %s. Reader last byte %.0f ms ago. Notification queue %d of 256. Coalesced queue %d of 16."
+                        "%s %s shell, PID %d (%s), log level %s. Reader last byte %.0f ms ago. Notification queue %d of 256."
                         verdict
                         currentShell.DisplayName
                         pid
@@ -1225,7 +1204,6 @@ module Program =
                         levelStr
                         staleness
                         notifDepth
-                        coalDepth
                 log.LogInformation("Health check requested. {Summary}", summary)
                 window.TerminalSurface.Announce(
                     summary,
@@ -1280,18 +1258,15 @@ module Program =
                     | Some s -> s.MinLevel
                     | None -> LogLevel.Information
                 let notifDepth = notificationChannel.Reader.Count
-                let coalDepth = coalescedChannel.Reader.Count
                 log.LogInformation(
-                    "Heartbeat. Shell={Shell} Pid={Pid} Alive={Alive} Level={Level} LastReadAgoMs={Staleness:F0} NotifQueue={Notif}/{NotifCap} CoalQueue={Coal}/{CoalCap}",
+                    "Heartbeat. Shell={Shell} Pid={Pid} Alive={Alive} Level={Level} LastReadAgoMs={Staleness:F0} NotifQueue={Notif}/{NotifCap}",
                     currentShell.DisplayName,
                     pid,
                     alive,
                     level,
                     staleness,
                     notifDepth,
-                    256,
-                    coalDepth,
-                    16)
+                    256)
             with ex ->
                 // Don't let heartbeat crashes propagate to the
                 // timer thread — log and continue.
@@ -1553,10 +1528,13 @@ module Program =
             // fire one last entry into a closed channel and log a
             // confusing exception.
             try heartbeatTimer.Dispose() with _ -> ()
-            // Complete both writers so the coalescer and drain
-            // tasks exit cleanly when their channels run dry.
+            // Complete the notification-channel writer so the
+            // TranslatorPump task exits cleanly when the channel
+            // runs dry. Stage 8b removed the coalescedChannel
+            // (the Coalescer absorbed into the Stream profile);
+            // the TickPump exits via its own
+            // `cts.Token.IsCancellationRequested` check.
             try notificationChannel.Writer.TryComplete() |> ignore with _ -> ()
-            try coalescedChannel.Writer.TryComplete() |> ignore with _ -> ()
             match hostHandle with
             | Some h -> (h :> IDisposable).Dispose()
             | None -> ()

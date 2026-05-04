@@ -124,71 +124,97 @@ let ``OutputEvent.create preserves Payload verbatim`` () =
             "hello world"
     Assert.Equal("hello world", event.Payload)
 
-// ---- Builder mapping per spec D.2 ------------------------------
+// ---- Builder mapping (Stage 8b: ScreenNotification → OutputEvent) ----
+//
+// Stage 8a's translator ran AFTER coalescing; the test inputs were
+// CoalescedNotifications carrying post-debounce text. Stage 8b's
+// translator runs BEFORE coalescing, so the test inputs are now raw
+// ScreenNotifications and the OutputEvent payloads are minimal — the
+// Stream profile produces post-coalesce text inside its Apply / Tick
+// closures (covered by StreamProfileTests.fs).
 
 [<Fact>]
-let ``fromCoalescedNotification maps OutputBatch to StreamChunk + Polite`` () =
+let ``fromScreenNotification maps RowsChanged to StreamChunk + Polite`` () =
     let event =
-        OutputEventBuilder.fromCoalescedNotification (
-            Coalescer.OutputBatch "ls -la output")
+        OutputEventBuilder.fromScreenNotification (RowsChanged [ 0; 1 ])
     Assert.Equal(SemanticCategory.StreamChunk, event.Semantic)
     Assert.Equal(Priority.Polite, event.Priority)
-    Assert.Equal("ls -la output", event.Payload)
 
 [<Fact>]
-let ``fromCoalescedNotification maps ErrorPassthrough to ParserError + Background`` () =
+let ``fromScreenNotification RowsChanged carries empty Payload`` () =
+    // The Stream profile reads the screen at Apply time; the
+    // OutputEvent itself doesn't ferry row content. Empty Payload
+    // is the contract.
     let event =
-        OutputEventBuilder.fromCoalescedNotification (
-            Coalescer.ErrorPassthrough "boom")
+        OutputEventBuilder.fromScreenNotification (RowsChanged [])
+    Assert.Equal("", event.Payload)
+
+[<Fact>]
+let ``fromScreenNotification maps ParserError to ParserError + Background`` () =
+    let event =
+        OutputEventBuilder.fromScreenNotification (ParserError "boom")
     Assert.Equal(SemanticCategory.ParserError, event.Semantic)
     Assert.Equal(Priority.Background, event.Priority)
 
 [<Fact>]
-let ``fromCoalescedNotification preserves the Stage 7 ErrorPassthrough wrapping`` () =
+let ``fromScreenNotification preserves the Stage 7 ErrorPassthrough wrapping`` () =
     // The Stage 7 drain produced "Terminal parser error: <msg>";
     // the framework retrofit must keep the same wrapping so the
     // NVDA reading is identical post-retrofit.
     let event =
-        OutputEventBuilder.fromCoalescedNotification (
-            Coalescer.ErrorPassthrough "decoder failed")
+        OutputEventBuilder.fromScreenNotification (ParserError "decoder failed")
     Assert.Equal("Terminal parser error: decoder failed", event.Payload)
 
 [<Fact>]
-let ``fromCoalescedNotification maps ModeBarrier AltScreen true to AltScreenEntered + Assertive`` () =
+let ``fromScreenNotification ParserError sanitises the message`` () =
+    // The translator sanitises through AnnounceSanitiser.sanitise
+    // before wrapping (the producer-responsibility chokepoint per
+    // spec B.2.4 step 5 + the PR-N entry-gate contract). The C0
+    // BEL (0x07) in the input must be stripped from the Payload.
     let event =
-        OutputEventBuilder.fromCoalescedNotification (
-            Coalescer.ModeBarrier (TerminalModeFlag.AltScreen, true))
+        OutputEventBuilder.fromScreenNotification (ParserError "boom\x07!")
+    Assert.Equal("Terminal parser error: boom!", event.Payload)
+
+[<Fact>]
+let ``fromScreenNotification maps ModeChanged AltScreen true to AltScreenEntered + Assertive`` () =
+    let event =
+        OutputEventBuilder.fromScreenNotification (
+            ModeChanged (TerminalModeFlag.AltScreen, true))
     Assert.Equal(SemanticCategory.AltScreenEntered, event.Semantic)
     Assert.Equal(Priority.Assertive, event.Priority)
 
 [<Fact>]
-let ``fromCoalescedNotification maps ModeBarrier AltScreen false to ModeBarrier + Assertive`` () =
+let ``fromScreenNotification maps ModeChanged AltScreen false to ModeBarrier + Assertive`` () =
     let event =
-        OutputEventBuilder.fromCoalescedNotification (
-            Coalescer.ModeBarrier (TerminalModeFlag.AltScreen, false))
+        OutputEventBuilder.fromScreenNotification (
+            ModeChanged (TerminalModeFlag.AltScreen, false))
     Assert.Equal(SemanticCategory.ModeBarrier, event.Semantic)
     Assert.Equal(Priority.Assertive, event.Priority)
 
 [<Fact>]
-let ``fromCoalescedNotification maps non-AltScreen ModeBarrier to ModeBarrier + Polite`` () =
+let ``fromScreenNotification maps non-AltScreen ModeChanged to ModeBarrier + Polite`` () =
     let event =
-        OutputEventBuilder.fromCoalescedNotification (
-            Coalescer.ModeBarrier (TerminalModeFlag.BracketedPaste, true))
+        OutputEventBuilder.fromScreenNotification (
+            ModeChanged (TerminalModeFlag.BracketedPaste, true))
     Assert.Equal(SemanticCategory.ModeBarrier, event.Semantic)
     Assert.Equal(Priority.Polite, event.Priority)
 
 [<Fact>]
-let ``fromCoalescedNotification ModeBarrier carries empty Payload`` () =
+let ``fromScreenNotification ModeChanged carries empty Payload`` () =
     // Stage 5 mode-barrier announcement is the empty string — see
     // ActivityIds.mode docstring at Types.fs:290-294.
     let event =
-        OutputEventBuilder.fromCoalescedNotification (
-            Coalescer.ModeBarrier (TerminalModeFlag.AltScreen, true))
+        OutputEventBuilder.fromScreenNotification (
+            ModeChanged (TerminalModeFlag.AltScreen, true))
     Assert.Equal("", event.Payload)
 
 [<Fact>]
-let ``fromCoalescedNotification stamps drain as the producer`` () =
+let ``fromScreenNotification stamps translator as the producer`` () =
+    // Stage 8a producer was "drain" (the post-coalesce drain task);
+    // Stage 8b producer is "translator" (pre-coalesce
+    // ScreenNotification → OutputEvent translation). The Stream
+    // profile's Apply re-stamps post-coalesce events with producer
+    // "stream" (covered in StreamProfileTests).
     let event =
-        OutputEventBuilder.fromCoalescedNotification (
-            Coalescer.OutputBatch "x")
-    Assert.Equal("drain", event.Source.Producer)
+        OutputEventBuilder.fromScreenNotification (RowsChanged [])
+    Assert.Equal("translator", event.Source.Producer)

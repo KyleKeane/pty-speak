@@ -1,5 +1,6 @@
 namespace Terminal.Core
 
+open System
 open System.Collections.Generic
 
 /// Stage 8a — output framework substrate types.
@@ -264,14 +265,51 @@ type Channel =
     { Id: ChannelId
       Send: OutputEvent -> RenderInstruction -> unit }
 
-/// A profile is a pure function `OutputEvent → ChannelDecision[]`
-/// with per-instance state. `Reset` is invoked when the active
-/// shell changes (8f) so the profile can clear any
-/// per-shell-session caches; 8a's pass-through Stream profile
-/// has no state to reset, but the contract is in place.
+/// A profile is a pure function with per-instance state. `Apply`
+/// is the per-event entry point; `Tick` is the time-driven flush
+/// for profiles that accumulate across a debounce / window cycle;
+/// `Reset` is invoked when the active shell changes (8f) so the
+/// profile can clear any per-shell-session caches.
+///
+/// Both `Apply` and `Tick` return
+/// `(OutputEvent * ChannelDecision[])[]` — an array of
+/// `(effectiveEvent, decisionsForThatEvent)` pairs:
+///
+/// - `effectiveEvent` is the OutputEvent the channel's `Send`
+///   receives. For pass-through profiles it equals the input
+///   event; for synthesised emits (Stream's debounce flush, or
+///   the flushed-pending-stream produced when a mode-change
+///   triggers a barrier) it's a synthesised event with the
+///   appropriate Semantic / Priority / Payload that drives the
+///   channel's per-event mapping (e.g. NvdaChannel's
+///   Semantic → ActivityId).
+/// - `decisionsForThatEvent` is the array of channel-render
+///   decisions for that event.
+///
+/// **Multi-pair Apply.** Most profiles return a single pair.
+/// The Stream profile may return two pairs when an incoming
+/// mode-change forces a flush: one pair for the flushed-pending
+/// stream content (Semantic = StreamChunk → ActivityIds.output)
+/// and one for the mode barrier itself (Semantic =
+/// AltScreenEntered or ModeBarrier → ActivityIds.mode). Each
+/// pair carries its own effectiveEvent so the channel's
+/// per-event activity mapping picks the right ActivityId.
+///
+/// **Tick contract.** Profiles that don't accumulate (Selection,
+/// Earcon, the future Form / TUI / REPL profiles) supply
+/// `Tick = fun _ -> [||]` — zero-cost no-op. The dispatcher's
+/// `OutputDispatcher.dispatchTick` is the caller; a `TickPump`
+/// task in the composition root runs a `PeriodicTimer(50ms)` and
+/// invokes `dispatchTick` on each tick.
+///
+/// See `spec/event-and-output-framework.md` Part B.3. The spec
+/// is silent on time-driven flush + multi-pair Apply; 8b adds
+/// these as substrate extensions; a focused doc-only PR will
+/// update the spec after maintainer approval.
 type Profile =
     { Id: ProfileId
-      Apply: OutputEvent -> ChannelDecision[]
+      Apply: OutputEvent -> (OutputEvent * ChannelDecision[])[]
+      Tick: DateTimeOffset -> (OutputEvent * ChannelDecision[])[]
       Reset: unit -> unit }
 
 /// 8a OutputEvent default — convenient constructor for the
