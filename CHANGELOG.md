@@ -15,6 +15,189 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Stage 8a — OutputEvent + Channel + NVDA-channel retrofit)
+
+The first concrete implementation work after the post-Stage-7
+substrate spec (PR #151) shipped — sub-stage 8a of the Output
+framework cycle, per
+[`spec/event-and-output-framework.md`](spec/event-and-output-framework.md)
+Part C.1. The substrate types + dispatcher + NVDA channel land
+behind the existing `ScreenNotification → Coalescer → drain →
+Announce` pipeline; the user-visible NVDA reading is identical
+to Stage 7. Subsequent sub-stages (8b absorbs the Coalescer as
+the Stream profile, 8c promotes FileLogger to a channel, 8d
+ships WASAPI Earcons, 8e the Selection profile, 8f per-shell
+profile mapping) layer on top of this substrate without
+re-doing the seam.
+
+- **`src/Terminal.Core/OutputEventTypes.fs` (new file).** v1
+  schema: `SemanticCategory` (14 closed cases + `Custom of string`
+  escape hatch), `Priority` (Interrupt / Assertive / Polite /
+  Background), `VerbosityRegister` (Approximate / Precise),
+  `SourceIdentity`, `SpatialHint` / `RegionHint` /
+  `StructuralRef` (reserved for v3 channels), `RenderInstruction`
+  (RenderText / RenderText2 / RenderEarcon / RenderRaw),
+  `ChannelDecision`, `OutputEvent` (with `Version: int` and
+  `Extensions: Map<string, obj>` for forward-compat per spec
+  B.2.3), `Channel`, `Profile`. The `OutputEvent.create`
+  companion-module function pre-fills the v1 defaults via the
+  `CompilationRepresentationFlags.ModuleSuffix` pattern F# Core
+  uses for `Option` / `List` / `Map`.
+- **`src/Terminal.Core/OutputEventBuilder.fs` (new file).**
+  Translates `Coalescer.CoalescedNotification` to `OutputEvent`
+  per spec D.2: `OutputBatch → StreamChunk + Polite`,
+  `ErrorPassthrough → ParserError + Background` (with the
+  Stage 7 wrapping `"Terminal parser error: %s"` preserved
+  verbatim), `ModeBarrier(AltScreen, true) → AltScreenEntered
+  + Assertive`, `ModeBarrier(AltScreen, false) → ModeBarrier +
+  Assertive`, `ModeBarrier(other, _) → ModeBarrier + Polite`.
+  The builder relies on the existing
+  `AnnounceSanitiser.sanitise` chokepoint (PR-N): every Payload
+  reaching the framework is already-sanitised by the upstream
+  `Coalescer.renderRows` / `Coalescer.onParserError` callers.
+- **`src/Terminal.Core/NvdaChannel.fs` (new file).** Channel
+  implementation that takes a marshalling callback `(string *
+  string) → unit` (the `(message, activityId)` pair the WPF
+  dispatcher hop binds to `TerminalView.Announce`). Maps
+  `SemanticCategory` to the `Types.fs:275-333` activity-ID
+  vocabulary: `StreamChunk → output`, `ParserError /
+  ErrorLine / WarningLine → error`, `AltScreenEntered /
+  ModeBarrier → mode`, others pre-claim to `output` so an
+  early producer landing before its NVDA-validation row still
+  announces on the streaming channel. Empty-payload skip
+  preserves the Stage-7 drain's `if msg <> "" then …`
+  contract; `RenderEarcon` and `RenderRaw` skip on this
+  channel (their consumers ship in 8d / 8e). **8a does NOT
+  consult `OutputEvent.Priority`** — the channel calls the
+  Stage-7 2-arg `Announce(msg, activityId)` overload, which
+  picks `ImportantAll` for streaming output and `MostRecent`
+  for everything else; a future sub-stage migrates to the
+  3-arg overload + reads Priority.
+- **`src/Terminal.Core/StreamProfile.fs` (new file).**
+  Pass-through Stream profile in 8a: every OutputEvent
+  produces exactly one `ChannelDecision` targeting the NVDA
+  channel with a `RenderText` of the event's Payload. No
+  debounce, no spinner-suppress, no max-announce-chars cap —
+  those still live in `Coalescer.runLoop` + the Program.fs
+  drain caller. 8b absorbs the Coalescer's per-instance state
+  + parameters into this module per the PR-N docstring
+  contract in `Coalescer.fs:82-114`.
+- **`src/Terminal.Core/OutputDispatcher.fs` (new file).**
+  Dispatcher + ChannelRegistry + ProfileRegistry inline. Mirrors
+  the canonical extensibility shape from `HotkeyRegistry.fs`
+  (PR-O) and `ShellRegistry.fs` (PR-B): module-level mutable
+  `Map<,>` + tiny lock around read-modify-write, reads via
+  `Map.tryFind` on the immutable Map reference. Renamed from
+  `Dispatcher` to avoid shadowing
+  `System.Windows.Threading.Dispatcher` (Program.fs:54 takes
+  it as a parameter type). Single-thread-init pattern: all
+  registration happens at composition time on the WPF main
+  thread before the drain task starts. Stage 9c (TOML config
+  load) converts to load-once-and-freeze.
+- **`src/Terminal.App/Program.fs` (modified).** The drain task
+  (lines ~891–1000) is rewritten: instead of building the
+  `(message, activityId)` tuple inline and calling
+  `TerminalView.Announce` via WPF dispatcher, it constructs
+  an `OutputEvent` via `OutputEventBuilder` and calls
+  `OutputDispatcher.dispatch event`. The 500-char announce-cap
+  stopgap (PR-H, GitHub issue #139) stays in the drain in 8a;
+  8b moves it into `StreamProfile.Parameters.MaxAnnounceChars`.
+  The diagnostic Debug log line (`Drain → Dispatch.
+  Semantic={Semantic} ...`) preserves streaming-silence triage
+  continuity (`Ctrl+Shift+;` clipboard-copy + grep). The
+  composition root registers the NVDA channel + the Stream
+  profile + sets the active profile set to `[ streamProfile ]`
+  before the drain task starts. The marshal callback uses
+  synchronous `Dispatcher.Invoke` so the drain blocks per
+  Announce — same effective throughput as Stage 7's
+  `let! _ = InvokeAsync(...).Task` await.
+- **`src/Terminal.Core/Terminal.Core.fsproj` (modified).** New
+  `<Compile Include>` entries (5) for the new files, ordered
+  after `Coalescer.fs` and before `KeyEncoding.fs`.
+
+### Tests (Stage 8a)
+
+- **`tests/Tests.Unit/OutputEventTests.fs` (new).** 17 tests.
+  Schema pins (`Version = 1`, `Extensions = Map.empty`,
+  optional fields default `None`, `Verbosity = Precise`,
+  `Source.Producer` wired through, `Source.Shell` / `Source.CorrelationId`
+  default `None`, `Payload` preserved verbatim). Builder
+  pins per spec D.2 (`OutputBatch → StreamChunk + Polite`,
+  `ErrorPassthrough → ParserError + Background` with the
+  Stage 7 wrapping preserved, `ModeBarrier(AltScreen, true) →
+  AltScreenEntered + Assertive`, `ModeBarrier(AltScreen, false)
+  → ModeBarrier + Assertive`, non-AltScreen `ModeBarrier →
+  Polite`, mode barrier carries empty Payload, `drain` is the
+  producer ID).
+- **`tests/Tests.Unit/NvdaChannelTests.fs` (new).** 14 tests.
+  `Semantic → ActivityId` mapping (StreamChunk → output;
+  ParserError / ErrorLine / WarningLine → error;
+  AltScreenEntered / ModeBarrier → mode; others → output as
+  pre-claim default; `Custom _` → output). Empty-payload skip
+  (RenderText empty / RenderText2 empty Precise both skip the
+  marshal callback). RenderEarcon and RenderRaw skip on this
+  channel. Channel ID identity (`NvdaChannel.id = "nvda"` and
+  `create`'s returned Channel.Id matches).
+- **`tests/Tests.Unit/OutputDispatcherTests.fs` (new).** 13
+  tests. ChannelRegistry register / lookup / idempotency.
+  ProfileRegistry register / lookup / setActiveProfileSet
+  round-trip. StreamProfile pass-through behaviour (one
+  ChannelDecision per event, RenderText carries Payload,
+  ParserError passes through without suppression, Reset is a
+  no-op). Dispatch end-to-end (StreamChunk → StreamProfile →
+  recording NVDA test channel; unregistered channels silently
+  drop; no active profile set is a no-op; multiple profiles
+  fan out).
+- **`tests/Tests.Unit/Tests.Unit.fsproj` (modified).** New
+  `<Compile Include>` entries (3) for the new test files,
+  ordered after `CoalescerTests.fs` and before
+  `KeyEncodingTests.fs`.
+
+### Behaviour preservation (the Stage 8a regression bar)
+
+All 52 load-bearing pre-existing tests stay green:
+
+- 26 Coalescer tests in `tests/Tests.Unit/CoalescerTests.fs`,
+  including the 4 PR-M (#145, Issue #117) load-bearing pins on
+  cross-row spinner gate + change-detection.
+- 10 AnnounceSanitiser tests in
+  `tests/Tests.Unit/AnnounceSanitiserTests.fs`.
+- 12 Screen tests in `tests/Tests.Unit/ScreenTests.fs`,
+  including the load-bearing `ModeChanged subscriber can call
+  SnapshotRows without deadlock`.
+- 4 UpdateMessages tests.
+
+NVDA-validation row (manual; maintainer): "Type fast in cmd;
+verify identical to pre-retrofit." Reading cadence, debounce,
+spinner suppression, alt-screen barriers, parser-error
+announcements all sound identical. The full Stage-5 streaming
+validation matrix re-runs green.
+
+### Open question (deferred from Stage 8a, surfaces at PR review or 8b)
+
+Spec D.2 maps `ParserError → Background`, where Background is
+"suppressed at profile layer; never emitted as UIA notification"
+per spec B.5.2. Stage 8a's Stream profile is a pass-through and
+does NOT honour Background-suppression (so behaviour is
+identical to Stage 7 — parser errors continue to reach NVDA).
+The Background contract activates in 8b/8c when profiles +
+channels start consulting `Priority`. Reconciliation options
+(maintainer picks at the relevant stage):
+
+- **(A)** Spec D.2 is correct; the Stage-7 behaviour was wrong;
+  parser errors should stop announcing via NVDA and route to
+  FileLogger only.
+- **(B)** Spec D.2 is wrong; ParserError should be Assertive;
+  spec gets a touch-up.
+- **(C)** Add a fifth `Diagnostic` priority case (FileLogger +
+  secondary channels but never NVDA by default); spec gets the
+  touch-up.
+
+Stage 8a position: deferred — neither 8a's Stream profile nor
+8a's NVDA channel reads Priority, so the spec D.2 mapping
+appears in OutputEventBuilder but doesn't drive observable
+behaviour.
+
 ### Documentation (Event-and-output framework spec)
 
 The post-Stage-7 substrate spec ships as a single doc-only PR.

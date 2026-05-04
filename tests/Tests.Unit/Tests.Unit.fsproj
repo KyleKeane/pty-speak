@@ -27,6 +27,9 @@
     <Compile Include="WordBoundaryTests.fs" />
     <Compile Include="AnnounceSanitiserTests.fs" />
     <Compile Include="CoalescerTests.fs" />
+    <Compile Include="OutputEventTests.fs" />
+    <Compile Include="NvdaChannelTests.fs" />
+    <Compile Include="OutputDispatcherTests.fs" />
     <Compile Include="KeyEncodingTests.fs" />
     <Compile Include="FileLoggerTests.fs" />
     <Compile Include="EnvBlockTests.fs" />
