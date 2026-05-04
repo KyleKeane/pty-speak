@@ -889,13 +889,52 @@ module Program =
                 TimeProvider.System
                 cts.Token
 
-        // Drain the coalesced channel onto the WPF dispatcher,
-        // calling `TerminalSurface.Announce(message, activityId)`
-        // per coalesced item. The activityId vocabulary is
-        // defined in `Terminal.Core.ActivityIds`; NVDA users
-        // can configure per-tag handling (e.g. quieter speech
-        // for `pty-speak.update` install events vs.
-        // `pty-speak.output` streaming text).
+        // Stage 8a — output framework substrate.
+        //
+        // Compose the dispatcher: register the NVDA channel
+        // (with its WPF-dispatcher-marshalled announce
+        // callback), register the Stream profile (a
+        // pass-through stub in 8a; 8b absorbs the Coalescer's
+        // debounce / spinner-suppress / max-chars logic), and
+        // set the active profile set so the drain's per-event
+        // dispatch finds it. The framework is behaviour-identical
+        // in 8a: every CoalescedNotification still produces the
+        // same (message, activityId) pair, the NVDA channel
+        // still calls `TerminalSurface.Announce(msg, activityId)`
+        // (the 2-arg overload that picks ImportantAll for
+        // streaming output and MostRecent for everything else
+        // per `src/Views/TerminalView.cs:292-298`), and the
+        // 500-char announce-length cap from PR-H stays where
+        // it is — until 8b lifts it into
+        // `StreamProfile.Parameters.MaxAnnounceChars`.
+        //
+        // See `spec/event-and-output-framework.md` Part D for
+        // the retrofit specifics.
+        // The marshal callback uses synchronous `Dispatcher.Invoke`
+        // so the drain task blocks on each Announce until the WPF
+        // dispatch completes — same effective backpressure as
+        // Stage 7's `let! _ = InvokeAsync(...).Task` await. The
+        // drain runs on a thread-pool worker (not the UI thread),
+        // so blocking is safe; UI thread never waits on the drain
+        // worker. Behaviour-identical to Stage 7 in throughput +
+        // ordering.
+        let nvdaChannel =
+            NvdaChannel.create (fun (msg, activityId) ->
+                let action () =
+                    window.TerminalSurface.Announce(msg, activityId)
+                window.Dispatcher.Invoke(Action(action)))
+        OutputDispatcher.ChannelRegistry.register nvdaChannel
+        let streamProfile = StreamProfile.create ()
+        OutputDispatcher.ProfileRegistry.register streamProfile
+        OutputDispatcher.ProfileRegistry.setActiveProfileSet [ streamProfile ]
+
+        // Drain the coalesced channel into the framework
+        // dispatcher. The 500-char cap (PR-H, GitHub issue
+        // #139) stays here in 8a; 8b moves it into
+        // StreamProfile.Apply once the profile owns the
+        // `MaxAnnounceChars` parameter. The diagnostic Debug
+        // log line is preserved for streaming-silence triage
+        // continuity (`Ctrl+Shift+;` clipboard-copy + grep).
         let _ =
             Task.Run(fun () ->
                 task {
@@ -911,77 +950,38 @@ module Program =
                                 let mutable peek =
                                     Unchecked.defaultof<Coalescer.CoalescedNotification>
                                 while reader.TryRead(&peek) do
-                                    let msg, activityId =
+                                    // 500-char cap stays in the drain in 8a per
+                                    // the PR-H stopgap rationale; OutputBatch is
+                                    // the only case affected. The capped text
+                                    // becomes the OutputEvent.Payload that flows
+                                    // through StreamProfile + NvdaChannel.
+                                    let capped =
                                         match peek with
                                         | Coalescer.OutputBatch text ->
-                                            // Stage 7-followup PR-H — announce-length
-                                            // stopgap. The 500-character cap below is
-                                            // ARBITRARY: empirical NVDA pass 2026-05-03
-                                            // showed `dir`/`set`-class output produced
-                                            // 1316/1347-character announces taking
-                                            // 30-45 seconds of NVDA speech each, making
-                                            // the terminal effectively unusable. 500
-                                            // chars is approximately 15-20 seconds —
-                                            // tolerable upper bound balanced against
-                                            // information loss at the cut. Tracked in
-                                            // GitHub issue #139 for revisiting the
-                                            // threshold once the next NVDA pass yields
-                                            // real-feel data, AND for surfacing this
-                                            // as a user-configurable setting (catalog
-                                            // entry in `docs/USER-SETTINGS.md`).
-                                            //
-                                            // The proper architectural fix is the
-                                            // Output framework cycle's Stream profile
-                                            // (`docs/PROJECT-PLAN-2026-05.md` Part 3.2)
-                                            // — suffix-diff append-only emission
-                                            // eliminates the verbose-readback at its
-                                            // source rather than capping the output.
-                                            // Delete this cap + the footer cue when
-                                            // the Stream profile ships.
                                             let limit = 500
-                                            let capped =
-                                                if text.Length <= limit then text
-                                                else
-                                                    let head = text.Substring(0, limit)
-                                                    let extra = text.Length - limit
+                                            if text.Length <= limit then
+                                                Coalescer.OutputBatch text
+                                            else
+                                                let head = text.Substring(0, limit)
+                                                let extra = text.Length - limit
+                                                let footer =
                                                     sprintf
                                                         "%s ...announcement truncated; %d more characters available — press Ctrl+Shift+; to copy full log."
                                                         head
                                                         extra
-                                            capped, ActivityIds.output
-                                        | Coalescer.ErrorPassthrough s ->
-                                            sprintf "Terminal parser error: %s" s,
-                                            ActivityIds.error
-                                        | Coalescer.ModeBarrier _ ->
-                                            // Stage 5 ships an empty string for
-                                            // mode barriers — Stage 6 may replace
-                                            // this with a verbosity-aware
-                                            // description ("entered alt-screen",
-                                            // "DECCKM application mode", etc.).
-                                            "", ActivityIds.mode
-                                    if msg <> "" then
-                                        // Streaming-path instrumentation
-                                        // at Debug — same rationale as
-                                        // the reader and coalescer
-                                        // entries: production stays
-                                        // silent, env override flips on
-                                        // for diagnosis. Metadata only
-                                        // (activityId + length); never
-                                        // the message text.
+                                                Coalescer.OutputBatch footer
+                                        | other -> other
+                                    let event =
+                                        OutputEventBuilder.fromCoalescedNotification capped
+                                    if event.Payload <> "" then
                                         drainLog.LogDebug(
-                                            "Drain → Announce. ActivityId={ActivityId} MsgLen={MsgLen}",
-                                            activityId, msg.Length)
-                                        let action () =
-                                            window.TerminalSurface.Announce(msg, activityId)
-                                        let! _ =
-                                            window.Dispatcher
-                                                .InvokeAsync(Action(action))
-                                                .Task
-                                        ()
+                                            "Drain → Dispatch. Semantic={Semantic} Priority={Priority} PayloadLen={PayloadLen}",
+                                            event.Semantic, event.Priority, event.Payload.Length)
                                     else
                                         drainLog.LogDebug(
-                                            "Drain skipped empty msg. ActivityId={ActivityId}",
-                                            activityId)
+                                            "Drain dispatched empty-payload event. Semantic={Semantic}",
+                                            event.Semantic)
+                                    OutputDispatcher.dispatch event
                     with
                     | :? OperationCanceledException -> ()
                     | ex ->
@@ -996,7 +996,13 @@ module Program =
                         // went wrong before the task exits.
                         // Sanitise the message through SR-2's
                         // chokepoint so PTY-originated control
-                        // bytes can't reach NVDA verbatim.
+                        // bytes can't reach NVDA verbatim. Direct
+                        // call to `Announce` here (not through the
+                        // dispatcher) — the framework substrate
+                        // may itself be the source of the
+                        // exception, so going through it for the
+                        // last-ditch announce would risk a
+                        // re-entrant crash.
                         try
                             log.LogError(
                                 ex,
