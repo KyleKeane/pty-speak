@@ -884,6 +884,14 @@ cycles' RFC scope.
 
 ## Stage 8 — Interactive list detection + UIA List provider
 
+> **Superseded by [`spec/event-and-output-framework.md`](event-and-output-framework.md).**
+> The detection heuristic from §8.1 carries forward as the producer
+> implementation; the UIA List provider lifts to the Selection profile +
+> NVDA channel. Original §8 content is preserved below as historical
+> reference. Active source for substrate decisions is the event-and-output
+> framework spec; active source for the user-facing Stage 8e validation
+> is that spec's Part C — Sub-stage breakdown.
+
 **Goal.** When Claude Code shows a selection list, NVDA announces it as a real listbox, arrow keys move through items, Enter confirms. The UI Automation tree exposes a List with ListItem children in parallel with the Document text view.
 
 ### 8.1 Detection heuristic
@@ -929,6 +937,13 @@ Enter / Invoke → `\r` (or `\x1b\r` if alt-mode) sent to PTY, then collapse the
 -----
 
 ## Stage 9 — Earcons (NAudio) and color announcement
+
+> **Superseded by [`spec/event-and-output-framework.md`](event-and-output-framework.md).**
+> The NAudio palette + frequency mapping from §9.3 carry forward; the
+> framework wraps them as the WASAPI Earcons channel + Earcon profile
+> (Stage 8d). Original §9 content is preserved below as historical
+> reference. Active source for substrate decisions is the event-and-output
+> framework spec.
 
 **Goal.** Red text plays an “alarm” earcon, green plays “confirm”, yellow plays “warn”. User can mute. No interference with NVDA speech.
 
@@ -991,6 +1006,17 @@ Tomlyn is the canonical .NET TOML library ([xoofx/Tomlyn](https://github.com/xoo
 -----
 
 ## Stage 10 — Review mode + structured navigation
+
+> **Reframed by [`spec/event-and-output-framework.md`](event-and-output-framework.md).**
+> Stage 10 stays a feature stage but becomes the first non-built-in
+> consumer of the framework taxonomy: the quick-nav letters
+> (`e`/`w`/`p`/`c`/`o`/`i`) become handlers registered against
+> Selection-profile OutputEvents, and the mode-toggle hotkey
+> (`Alt+Shift+R`) is an Intent in the new IntentRegistry. Color-based
+> detection from §10.3 stays as the v1 implementation; semantic-richer
+> detection is a natural Concern-3-spec extension. Original §10 content
+> is preserved below as the feature plan; the substrate it builds on is
+> the event-and-output framework spec.
 
 **Goal.** A “browse mode” similar to NVDA’s web browse mode, but at the terminal level: keys navigate the document instead of going to the PTY. Quick-nav letters jump to errors / warnings / commands / interactive elements.
 

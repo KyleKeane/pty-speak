@@ -290,6 +290,16 @@ enumerating paradigms in the abstract.
 
 ## Part 3 — Output-handling framework architecture cycle (kickoff brief)
 
+> **2026-05-04 update — substrate spec shipped:**
+> [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md)
+> consolidates the design phase outputs for Part 3 and Part 4 into one
+> spec answering MAY-4.md's consolidated questions with v1 commitments.
+> The research phase + RFC framing below is preserved as historical
+> reference for how the cycle was originally scoped; the active source
+> for substrate-shape decisions is now the event-and-output framework
+> spec, and the active sub-stage roadmap (8a-8f for output, 9a-9d for
+> input) lives there in Part C — Sub-stage breakdown.
+
 **Detailed planning happens after Part 1 + Part 2 land.** This section
 is the kickoff brief — what the cycle aims for and what its research
 phase produces. Stage 7's gaps inventory feeds directly into Part 3's
@@ -433,6 +443,18 @@ Each stage = its own multi-PR mini-cycle with NVDA validation gate.
   manual switches.
 
 ## Part 4 — Input-interpretation framework architecture cycle (kickoff brief)
+
+> **2026-05-04 update — substrate spec shipped:**
+> [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md)
+> consolidates Part 4's substrate concerns (universal event routing,
+> RawInput envelope, Intent layer, dispatcher, handler-registration
+> paths, kill switch) with Part 3's into one spec answering MAY-4.md's
+> consolidated questions with v1 commitments. The cycle phases below
+> describe higher-layer semantic interpretation (input paradigms /
+> tokeniser / suggestion engine / echo correlation / NL backend) that
+> sits ON TOP OF the substrate the spec defines, and remains
+> separately-scoped follow-on work after the substrate sub-stages
+> (9a-9d) ship.
 
 **Detailed planning happens after Part 1 + Part 2 land AND Part 3's
 research+RFC complete.** The two frameworks share infrastructure
