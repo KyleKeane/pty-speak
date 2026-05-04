@@ -15,6 +15,139 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Stage 8b — Coalescer absorbs as the Stream profile)
+
+The Stage-7 `Coalescer.runLoop` orchestrator and its module-level
+constants (debounceWindow / spinnerWindow / spinnerThreshold)
+move into the Stream profile, completing what the PR-N
+substrate-cleanup contract anticipated. The Coalescer's
+algorithms and `State` record are unchanged — they're now
+hosted in `src/Terminal.Core/StreamProfile.fs` rather than
+`Coalescer.fs`. The pipeline thread model is rewritten: the
+two-channel `notificationChannel + Coalescer.runLoop +
+coalescedChannel + drain` chain collapses to a one-channel
+`notificationChannel + TranslatorPump + OutputDispatcher.dispatch`
++ a concurrent `TickPump` that calls
+`OutputDispatcher.dispatchTick(now)` every 50ms.
+
+Behaviour is identical to the post-8a release build: same
+debounce / spinner-suppress / mode-barrier / parser-error /
+500-char-cap defaults, same NVDA reading. The 8b refactor moves
+constants to per-instance `StreamProfile.Parameters` fields
+without changing their values; the next sub-stage (8b.2) adds a
+TOML loader that overrides them per the `[profile.stream]`
+section.
+
+**Substrate API extensions** (deliberate, called out for spec
+follow-up):
+
+- **`Profile.Tick: DateTimeOffset → (OutputEvent *
+  ChannelDecision[])[]`** — new field for time-driven flush.
+  Profiles that don't accumulate (Selection, Earcon, the future
+  Form / TUI / REPL profiles) supply
+  `Tick = fun _ -> [||]` — zero-cost no-op. The Stream profile
+  uses Tick to release pending stream content when the debounce
+  window elapses with no new event arriving (the Stage-7
+  trailing-edge flush).
+- **`Profile.Apply: OutputEvent → (OutputEvent *
+  ChannelDecision[])[]`** — return type changed from
+  `ChannelDecision[]` to a multi-pair array. Each pair is
+  `(effectiveEvent, decisionsForThatEvent)`: the effectiveEvent
+  is what the channel's `Send` receives. Most profiles return a
+  single pair; the Stream profile may return two pairs when an
+  incoming mode-change forces a flush (one pair for the flushed
+  pending stream content, one for the mode barrier itself, each
+  with its own Semantic so NvdaChannel routes via the right
+  ActivityId).
+- **`OutputDispatcher.dispatchTick(now)`** — new dispatcher
+  entry point. The composition root's TickPump task runs a
+  `PeriodicTimer(50ms)` and calls dispatchTick on each tick.
+
+The spec (`spec/event-and-output-framework.md` Part B.3) is
+silent on time-driven flush + multi-pair Apply; 8b adds these
+as substrate extensions. A focused doc-only PR will update the
+spec after maintainer approval.
+
+**Files modified:**
+
+- `src/Terminal.Core/OutputEventTypes.fs` — Profile record gains
+  `Tick` field; Apply return type changes to multi-pair shape.
+- `src/Terminal.Core/StreamProfile.fs` — full rewrite. Adds
+  `Parameters` record, `defaultParameters`, internal `State`
+  record + algorithm functions (`processRowsChanged`,
+  `onTimerTick`, `onModeChanged`, `onParserError`,
+  `createState`), and `create` that captures parameters +
+  screen + state in the Profile's Apply / Tick / Reset
+  closures. The 500-char announce cap (PR-H, GitHub issue
+  #139) lifts from the Stage-7 drain into the Stream profile's
+  `capAnnounce` helper, parameterised by
+  `Parameters.MaxAnnounceChars`.
+- `src/Terminal.Core/Coalescer.fs` — gutted to ~140 lines. Keeps
+  the `CoalescedNotification` DU (algorithm intermediate type)
+  and the five pure helpers (`hashRowContent`, `hashRow`,
+  `hashAttrs`, `hashFrame`, `renderRows`). Re-anchors the PR-N
+  substrate-cleanup contract pointing at `StreamProfile.Parameters`.
+- `src/Terminal.Core/OutputDispatcher.fs` — adds `dispatchTick`
+  (mirrors `dispatch` for the Tick path); `dispatch` updated
+  for the new Apply pair shape.
+- `src/Terminal.Core/OutputEventBuilder.fs` — rewritten.
+  Translates raw `ScreenNotification → OutputEvent` (the 8a
+  `fromCoalescedNotification` is removed; the new
+  `fromScreenNotification` runs BEFORE the Stream profile's
+  Apply rather than AFTER coalescing). Producer ID changes from
+  `"drain"` to `"translator"` to match the new pipeline location.
+- `src/Terminal.App/Program.fs` — pipeline composition rewritten.
+  `coalescedChannel` removed. `Coalescer.runLoop` call removed.
+  Stage-8a drain task replaced by **TranslatorPump** (reads
+  ScreenNotification, calls `OutputEventBuilder.fromScreenNotification`,
+  calls `OutputDispatcher.dispatch`) and **TickPump** (50ms
+  PeriodicTimer, calls `OutputDispatcher.dispatchTick`). Both
+  pumps share the existing `cts.Token` for cancellation. The
+  diagnostic Debug log line + post-Stage-6 drain-crash safety
+  net are preserved (in adjusted form).
+
+**Tests changed:**
+
+- `tests/Tests.Unit/CoalescerTests.fs` → `StreamProfileTests.fs`.
+  Module rename + mechanical rename of `Coalescer.X state` to
+  `StreamProfile.X StreamProfile.defaultParameters state` for
+  the four algorithm functions + `Coalescer.createState ()` to
+  `StreamProfile.createState ()`. The 30 algorithm tests (incl.
+  the 4 PR-M #145 cross-row spinner gate pins on `:198`,
+  `:264`, `:316`, `:345`) preserve their assertions verbatim;
+  the algorithm logic is unchanged. Three `Coalescer.runLoop`
+  end-to-end tests are removed — the orchestrator is now in
+  Program.fs (composition root); composition-root logic isn't
+  unit-tested in this codebase. References to
+  `Coalescer.OutputBatch`, `Coalescer.ErrorPassthrough`,
+  `Coalescer.ModeBarrier`, and the pure helpers stay (those
+  types + helpers remain in `Coalescer.fs`).
+- `tests/Tests.Unit/OutputEventTests.fs` — builder tests
+  updated for the new `fromScreenNotification` shape.
+  ScreenNotification inputs replace CoalescedNotification
+  inputs. New test pins the producer ID change (`"drain"` →
+  `"translator"`) and the sanitisation of ParserError messages
+  before wrapping.
+- `tests/Tests.Unit/OutputDispatcherTests.fs` — replaces
+  StreamProfile.create() calls (which now require parameters +
+  screen) with a synthetic `passthroughProfile` test helper.
+  Adds new tests for `dispatchTick` (no-op when no profiles /
+  empty Tick / routes Tick decisions / fans out across
+  profiles) and for the multi-pair Apply path.
+- `tests/Tests.Unit/Tests.Unit.fsproj` — `<Compile Include>`
+  entry renamed `CoalescerTests.fs → StreamProfileTests.fs`.
+
+### Open question
+
+Spec D.2 maps `ParserError → Background`, where Background is
+"suppressed at profile layer" per B.5.2. The 8b Stream profile
+does NOT suppress Background events (preserves the post-8a
+release build's behaviour). Reconciliation deferred per the
+8a CHANGELOG entry below; the maintainer can pick (A) suppress
+in NVDA + log only, (B) reclassify ParserError as Assertive
+in spec D.2, (C) add a fifth Diagnostic priority. Captured in
+inline comments in `StreamProfile.fs` + `OutputEventBuilder.fs`.
+
 ### Added (Stage 8a — OutputEvent + Channel + NVDA-channel retrofit)
 
 The first concrete implementation work after the post-Stage-7

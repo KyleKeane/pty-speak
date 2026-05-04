@@ -26,7 +26,7 @@
     <Compile Include="UpdateMessagesTests.fs" />
     <Compile Include="WordBoundaryTests.fs" />
     <Compile Include="AnnounceSanitiserTests.fs" />
-    <Compile Include="CoalescerTests.fs" />
+    <Compile Include="StreamProfileTests.fs" />
     <Compile Include="OutputEventTests.fs" />
     <Compile Include="NvdaChannelTests.fs" />
     <Compile Include="OutputDispatcherTests.fs" />
