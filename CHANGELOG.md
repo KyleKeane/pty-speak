@@ -15,6 +15,77 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed (PR-M, Issue #117)
+
+- **Coalescer cross-row spinner detection redesigned + per-key
+  static-row false-positive fixed.** The Stage 5 coalescer's
+  per-`(rowIdx, hash)` spinner gate uses a row-index-folded
+  hash, which means a spinner whose content moves between rows
+  (scrolling progress bar, Ink reconciler reflow) produces a
+  different `(rowIdx, hash)` key each frame and the gate sees
+  count=1 for each — never fires. The original Stage 5 design
+  included a generic "any-hash-anywhere" gate to catch this,
+  but its count-of-total-entries threshold was incompatible
+  with the per-row scan (every event added one entry per row,
+  so a 30-row screen instantly exceeded the 20-entry threshold
+  and silenced the channel permanently); it was removed in the
+  post-#114 fix.
+
+  Two bugs fixed:
+
+  1. **Cross-row gate restored**, redesigned per Issue #117.
+     New `HashHistory` dictionary tracks recurrences of the
+     CONTENT-only hash (no rowIdx fold) regardless of which
+     row it lands at. Within-frame dedup ensures a single
+     frame with N rows of identical content (e.g. blank
+     padding above a prompt) only contributes one Add per
+     frame, not N — the gate counts "this content appeared
+     in N FRAMES", not "N rows of one frame". Catches moving
+     spinners that the per-key gate misses; doesn't false-
+     positive on padded screens.
+
+  2. **Per-key static-row false-positive fixed.** The pre-PR-M
+     per-key gate `Add(now)`'d on every observation, so a
+     screen with N static rows added N entries per event. At
+     5+ events/sec (typing cadence), static-row keys
+     accumulated to threshold within ~5 events and tripped
+     suppression even when no spinner existed (the typing-
+     cadence false-positive flagged in the issue's
+     "Note on per-key gate interaction with static rows"
+     section).
+
+  Both gates now use **change-detection**: a per-row hash is
+  only `Add(now)`'d if the row's hash CHANGED since the
+  previous frame. Static rows contribute zero observations.
+  New `LastRowHashes: uint64[] voption` state field tracks
+  the comparison baseline; `onModeChanged` resets it to None
+  alongside the existing state reset (`PerRowHistory.Clear()`
+  + new `HashHistory.Clear()`).
+
+  Refactor: split `hashRow` into `hashRow` (row-index-folded;
+  used for frame-hash + per-key gate + change-detection key)
+  and `hashRowContent` (no fold; used for cross-row gate).
+  `hashRow` is now defined as `hashRowContent cells ^^^
+  (uint64 rowIdx * rowSwapMix)` so the existing semantics are
+  preserved bit-exactly; only the new code path uses the
+  unfolded form.
+
+  Pinned by 4 new `CoalescerTests` fixtures: cross-row gate
+  accumulates content-hash recurrence as spinner moves;
+  static rows do not trip per-key gate at fast typing
+  cadence; cross-row HashHistory ignores static blank rows;
+  ModeChanged resets LastRowHashes and HashHistory.
+
+  NVDA validation: maintainer runs the standard "type fast
+  in cmd" pass after merge; pre-PR-M behaviour was
+  intermittent typed-character silencing that was hard to
+  reproduce reliably; post-PR-M behaviour should be steady
+  speech for every keystroke. The new cross-row gate's
+  effects only show up under genuinely-spammy spinner-
+  shaped output (Claude Code progress indicators, Ink
+  reflows) where the user wants suppression; routine
+  typing + cmd output is unaffected.
+
 ### Documentation (Stage 7 wrap-up PR-L)
 
 - **`docs/DOC-MAP.md` (new).** Canonical "which doc owns what" index

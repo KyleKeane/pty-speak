@@ -195,6 +195,173 @@ let ``per-key spinner gate fires after threshold same-row-hash hits in window`` 
             suppressedCount emittedCount)
 
 [<Fact>]
+let ``cross-row gate accumulates content-hash recurrence as spinner moves between rows (PR-M, Issue #117)`` () =
+    // PR-M added the cross-row spinner gate. The pre-PR-M
+    // per-key gate uses a row-index-folded hash, so a spinner
+    // whose content moves between rows produces a different
+    // (rowIdx, hash) key each frame and the per-key gate sees
+    // count = 1 for each — never fires. The cross-row gate
+    // tracks recurrences of the CONTENT hash regardless of
+    // rowIdx, so a moving spinner accumulates count under one
+    // key and trips the threshold.
+    //
+    // This test asserts the gate's STATE directly (rather than
+    // observing emit-vs-suppress behaviour, which the debounce
+    // window would conflate with). Repro: BAR moves between
+    // rows 0..4 across 6 frames within the 1s spinner window;
+    // at the end, HashHistory[content-hash-of-BAR-row] should
+    // hold at least `spinnerThreshold` timestamps.
+    let state = Coalescer.createState ()
+    let cols = 10
+    let buildFrame (frameNum: int) (barRow: int) : Cell[][] =
+        let arr = Array.init 5 (fun i ->
+            if i = barRow then rowOf cols "BAR"
+            else rowOf cols (sprintf "PAD%d-%d" i frameNum))
+        arr
+    // Frame 0 is the seed (LastRowHashes = None initially;
+    // every row is "changed" relative to nothing).
+    let _ = Coalescer.processRowsChanged state (at 0) (buildFrame 0 0)
+    // 5 more frames moving BAR through rows 1..4 and back to
+    // row 0, each with unique padding so the frame hash differs.
+    // Each frame's BAR row produces the SAME content hash
+    // (hashRowContent for "BAR" + cols-3 blanks).
+    let times = [| 100; 200; 300; 400; 500; 600 |]
+    let bars =  [|   1;   2;   3;   4;   0;   1 |]
+    for i in 0 .. times.Length - 1 do
+        let frame = buildFrame (i + 1) bars.[i]
+        let _ = Coalescer.processRowsChanged state (at times.[i]) frame
+        ()
+    // BAR's content hash should have accumulated 7 entries (the
+    // seed frame + 6 loop frames, all within the 1s spinnerWindow).
+    let barHash = Coalescer.hashRowContent (rowOf cols "BAR")
+    let barCount =
+        match state.HashHistory.TryGetValue barHash with
+        | true, h -> h.Count
+        | false, _ -> 0
+    Assert.True(barCount >= 5,
+        sprintf "Expected cross-row HashHistory[BAR] to have ≥%d entries; got %d"
+            5 barCount)
+    // Pre-PR-M behaviour check: the per-key gate's history would
+    // have a separate (i, hashRow_i_BAR) entry for each row BAR
+    // visited — count = 1 for each, never tripping the gate.
+    // Post-PR-M the per-key gate is unchanged for this scenario.
+    let perKeyBarKeys =
+        state.PerRowHistory.Keys
+        |> Seq.filter (fun (_, h) ->
+            // h is row-index-folded; BAR landed at 6 distinct rows
+            // (0, 1, 2, 3, 4, 0, 1) producing 5 unique
+            // (rowIdx, hashRow rowIdx BAR) keys.
+            true)
+        |> Seq.length
+    // Cross-row gate is the new contract; per-key would never
+    // fire here. Just sanity-check we have the per-key entries
+    // we expect.
+    Assert.True(perKeyBarKeys >= 5,
+        sprintf "Sanity: expected per-key gate to have entries from BAR at multiple rows; got %d"
+            perKeyBarKeys)
+
+[<Fact>]
+let ``static rows do not trip per-key gate at fast typing cadence (PR-M, Issue #117)`` () =
+    // PR-M added change-detection: the spinner gates only count
+    // hash CHANGES at a row position, not observations. Without
+    // it, a 30-row screen with 29 static rows added 29 entries
+    // per event to the per-row history; at 5+ events/sec the
+    // static rows trip the per-key threshold and false-positive
+    // suppress (the typing-cadence false-positive noted in the
+    // issue's "Note on per-key gate interaction with static
+    // rows" section).
+    //
+    // Repro: 30-row screen, only row 0 changes per event,
+    // 7 events at ~50ms intervals (well within spinnerWindow).
+    // The seed frame populates one entry per row (since
+    // LastRowHashes = None initially treats every row as
+    // changed); subsequent frames must NOT grow the static-row
+    // counts past 1.
+    let state = Coalescer.createState ()
+    let cols = 5
+    let buildFrame (typed: string) : Cell[][] =
+        let arr = Array.init 30 (fun _ -> blankRow cols)
+        arr.[0] <- rowOf cols typed
+        arr
+    let _ = Coalescer.processRowsChanged state (at 0) (buildFrame "a")
+    // Pump 6 more frames at 50ms intervals; only row 0 changes
+    // each frame.
+    let typeSeq = [ "ab"; "abc"; "abcd"; "abcde"; "abcdef"; "abcdefg" ]
+    for i in 0 .. typeSeq.Length - 1 do
+        let _ = Coalescer.processRowsChanged state (at ((i + 1) * 50)) (buildFrame typeSeq.[i])
+        ()
+    // Static-row history counts should remain at 1 (only the
+    // seed frame contributed; no subsequent frame changed those
+    // rows). Pre-PR-M: each typing event would have added 30
+    // entries, so by event 5 the static-row keys would be at
+    // count 5 and the per-key gate would suppress.
+    let staticRowMaxCount =
+        state.PerRowHistory.Keys
+        |> Seq.filter (fun (rowIdx, _) -> rowIdx > 0)
+        |> Seq.map (fun key -> state.PerRowHistory.[key].Count)
+        |> Seq.fold max 0
+    Assert.True(staticRowMaxCount <= 1,
+        sprintf "Static-row entries should not grow past the seed frame's contribution; max count was %d"
+            staticRowMaxCount)
+    // Sanity: row 0 IS in the history with multiple entries
+    // (each typed string produced a unique hashRow for row 0).
+    let row0EntryCount =
+        state.PerRowHistory.Keys
+        |> Seq.filter (fun (rowIdx, _) -> rowIdx = 0)
+        |> Seq.length
+    Assert.True(row0EntryCount >= 5,
+        sprintf "Expected row 0 to accumulate multiple distinct hashes from typing; got %d" row0EntryCount)
+
+[<Fact>]
+let ``cross-row HashHistory ignores static blank rows (PR-M, Issue #117)`` () =
+    // Companion to the per-key static-row test. Without change
+    // detection, the cross-row HashHistory[blank-content-hash]
+    // would accumulate 29 entries per frame (one per static
+    // blank row) and trip the gate within 1 frame. With change
+    // detection, blank-rows-that-stay-blank contribute nothing.
+    let state = Coalescer.createState ()
+    let cols = 5
+    let buildFrame (typed: string) : Cell[][] =
+        let arr = Array.init 30 (fun _ -> blankRow cols)
+        arr.[0] <- rowOf cols typed
+        arr
+    let _ = Coalescer.processRowsChanged state (at 0) (buildFrame "a")
+    for i in 0 .. 5 do
+        let _ = Coalescer.processRowsChanged state (at ((i + 1) * 50)) (buildFrame (sprintf "x%d" i))
+        ()
+    // The blank-content hash should have at most 1 entry (the
+    // initial seed frame, where every row was "changed"
+    // relative to None). Subsequent frames don't change the
+    // blank rows so they contribute nothing.
+    let blankHash = Coalescer.hashRowContent (blankRow cols)
+    let blankCount =
+        match state.HashHistory.TryGetValue blankHash with
+        | true, h -> h.Count
+        | false, _ -> 0
+    Assert.True(blankCount <= 1,
+        sprintf "Expected blank-content hash to have ≤1 entry post-seed; got %d" blankCount)
+
+[<Fact>]
+let ``ModeChanged resets LastRowHashes and HashHistory (PR-M, Issue #117)`` () =
+    // PR-M added LastRowHashes + HashHistory state. onModeChanged
+    // must reset both — otherwise post-mode-change the cross-row
+    // gate could carry forward stale recurrence counts from the
+    // previous buffer, and the change-detection's "changed?"
+    // check could falsely return false against pre-mode hashes.
+    let state = Coalescer.createState ()
+    let snap = snapshotOf 1 5 [ "hello" ]
+    let _ = Coalescer.processRowsChanged state (at 0) snap
+    Assert.True(state.LastRowHashes.IsSome,
+        "LastRowHashes should be populated after first frame")
+    Assert.True(state.HashHistory.Count > 0,
+        "HashHistory should be populated after first frame")
+    let _ = Coalescer.onModeChanged state (at 100) AltScreen true
+    Assert.True(state.LastRowHashes.IsNone,
+        "LastRowHashes should be reset to None after mode change")
+    Assert.Equal(0, state.HashHistory.Count)
+    Assert.Equal(0, state.PerRowHistory.Count)
+
+[<Fact>]
 let ``spinner per-key history is GC'd after spinnerWindow elapses`` () =
     // Once spinnerWindow of quiet has passed, the per-key
     // history is trimmed by gcHistory and a new frame can

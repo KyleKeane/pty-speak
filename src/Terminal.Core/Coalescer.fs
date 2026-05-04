@@ -38,19 +38,24 @@ open Microsoft.Extensions.Logging
 ///     Claude Ink's full-frame redraws — without this
 ///     layer, every row hash changes per redraw and
 ///     per-row dedup never fires).
-///   * **Spinner heuristic.** Sliding window keyed by
-///     `(rowIdx, hash)`. Suppresses repeated frames at high
-///     rate (e.g. spinners that overwrite the same row's
-///     content with cycling characters — `|/-\` etc.). The
-///     original Stage 5 design also included a generic
-///     "any-hash-anywhere" gate intended to catch cross-row
-///     spinners, but its count-of-total-entries threshold
-///     was fundamentally incompatible with the per-row scan
-///     (every event added one entry per row of the screen,
-///     and 30 rows instantly exceeded the 20-entry threshold,
-///     producing permanent silence). Removed in the post-#114
-///     fix; cross-row spinner detection is a future
-///     improvement tracked separately.
+///   * **Spinner heuristic — two gates.** Both gates use
+///     CHANGE-DETECTION (only count hash CHANGES at a row
+///     position, not observations) so a screen with N static
+///     rows doesn't trip suppression at high typing cadence.
+///     - **Per-`(rowIdx, hash)` gate.** Catches same-position
+///       cycling spinners (`|/-\`, `( *)`, etc.) — the same
+///       `(rowIdx, hash)` tuple recurs each cycle.
+///     - **Per-hash gate (any-hash-anywhere).** Catches moving
+///       spinners (scrolling progress bars, Ink reconciler
+///       reflows) where the same content lands at different
+///       rows each frame — the `(rowIdx, hash)` key is unique
+///       each frame so the per-key gate misses, but the bare
+///       hash recurs across rows. Issue #117 — the original
+///       Stage 5 design included this gate but its count-of-
+///       total-entries threshold was incompatible with the
+///       per-row scan; the redesigned gate counts unique-hash
+///       observations only on row-change.
+///     Either gate firing suppresses the whole frame.
 ///   * **Debounce.** Leading-edge + trailing-edge: first
 ///     event in an idle period (no flush in last 200ms)
 ///     emits immediately for fast single-event UX
@@ -94,9 +99,13 @@ module Coalescer =
     let private fnvPrime = 0x00000100000001B3UL
     let private rowSwapMix = 0x9E3779B97F4A7C15UL
 
-    /// FNV-1a 64-bit folded with the row index. See module
-    /// docstring §"Per-row hash".
-    let rec internal hashRow (rowIdx: int) (cells: Cell[]) : uint64 =
+    /// PR-M (Issue #117) — content-only FNV-1a 64-bit over the
+    /// cells, with NO row-index folding. Used by the cross-row
+    /// spinner gate, which needs to recognise the same content
+    /// landing at different rows across frames as the same hash.
+    /// `hashRow` (with row-index fold) is used everywhere else
+    /// for frame-hash computation + per-key spinner detection.
+    let rec internal hashRowContent (cells: Cell[]) : uint64 =
         let mutable h = fnvOffsetBasis
         for cell in cells do
             // Cell.Ch is a Rune (int code point).
@@ -115,7 +124,12 @@ module Coalescer =
             // h <- h * fnvPrime
             h <- h ^^^ hashAttrs cell.Attrs
             h <- h * fnvPrime
-        h ^^^ (uint64 rowIdx * rowSwapMix)
+        h
+
+    /// FNV-1a 64-bit folded with the row index. See module
+    /// docstring §"Per-row hash".
+    and internal hashRow (rowIdx: int) (cells: Cell[]) : uint64 =
+        hashRowContent cells ^^^ (uint64 rowIdx * rowSwapMix)
 
     /// Flatten SgrAttrs into a uint64 fingerprint. Stable
     /// across Cell instances with identical attrs.
@@ -206,45 +220,145 @@ module Coalescer =
           mutable LastFlushAt: DateTimeOffset voption
           mutable PendingFrame: Cell[][] voption
           mutable PendingHash: uint64 voption
-          PerRowHistory: Dictionary<SpinnerKey, ResizeArray<DateTimeOffset>> }
+          /// PR-M (Issue #117) — per-row hashes from the previous
+          /// frame, indexed by row. Feeds change-detection so the
+          /// two spinner gates only count hash CHANGES at a row
+          /// position, not observations. Without this, a screen
+          /// with N static rows added N entries per event to the
+          /// per-row history; at 5+ events/sec the static-row keys
+          /// tripped suppression even when no spinner existed.
+          /// `ValueNone` on first frame; `ValueSome` thereafter.
+          mutable LastRowHashes: uint64[] voption
+          PerRowHistory: Dictionary<SpinnerKey, ResizeArray<DateTimeOffset>>
+          /// PR-M (Issue #117) — per-hash recurrence history
+          /// independent of `rowIdx`. Catches CROSS-ROW spinners
+          /// that the per-`(rowIdx, hash)` gate misses: a moving
+          /// progress indicator scrolling vertically lands the
+          /// same content at a different row each frame, so each
+          /// `(rowIdx, hash)` key sees count = 1 and the per-key
+          /// gate never fires. The any-hash-anywhere gate sees
+          /// the recurring hash across rows and fires after
+          /// `spinnerThreshold` recurrences within `spinnerWindow`.
+          /// Like the per-key gate, only counts CHANGES (a row
+          /// transitioning TO this hash), so static content
+          /// doesn't accumulate.
+          HashHistory: Dictionary<uint64, ResizeArray<DateTimeOffset>> }
 
     let internal createState () : State =
         { LastFrameHash = ValueNone
           LastFlushAt = ValueNone
           PendingFrame = ValueNone
           PendingHash = ValueNone
-          PerRowHistory = Dictionary() }
+          LastRowHashes = ValueNone
+          PerRowHistory = Dictionary()
+          HashHistory = Dictionary() }
 
-    /// Trim history older than `spinnerWindow`. Mutates in
-    /// place. Called on every event arrival to keep histories
-    /// bounded.
+    /// Trim history older than `spinnerWindow` from BOTH
+    /// dictionaries. Mutates in place. Called on every event
+    /// arrival to keep histories bounded.
     let private gcHistory (state: State) (now: DateTimeOffset) =
         let cutoff = now - spinnerWindow
-        let staleKeys = ResizeArray()
+        let stalePerRow = ResizeArray()
         for kvp in state.PerRowHistory do
             kvp.Value.RemoveAll(fun ts -> ts < cutoff) |> ignore
-            if kvp.Value.Count = 0 then staleKeys.Add(kvp.Key)
-        for k in staleKeys do
+            if kvp.Value.Count = 0 then stalePerRow.Add(kvp.Key)
+        for k in stalePerRow do
             state.PerRowHistory.Remove(k) |> ignore
+        let staleHash = ResizeArray()
+        for kvp in state.HashHistory do
+            kvp.Value.RemoveAll(fun ts -> ts < cutoff) |> ignore
+            if kvp.Value.Count = 0 then staleHash.Add(kvp.Key)
+        for k in staleHash do
+            state.HashHistory.Remove(k) |> ignore
 
-    /// Test whether this frame should be suppressed by the
-    /// spinner heuristic. Records the timestamps even on
-    /// suppress so a long-running spinner stays suppressed.
+    /// PR-M (Issue #117) — walk all per-row hashes for the
+    /// current frame and decide whether either spinner gate
+    /// should suppress.
+    ///
+    /// **Change-detection.** For each row, only `Add(now)` an
+    /// observation to the gates if that row's hash CHANGED since
+    /// the previous frame. A static row contributes nothing to
+    /// either gate; a row that flips from blank to content
+    /// contributes once per transition. This protects high-
+    /// cadence typing scenarios (where many rows are static and
+    /// only the prompt-row changes per event) from tripping the
+    /// per-key gate via static-row recurrence.
+    ///
+    /// **Per-key gate** (existing): suppresses if the
+    /// `(rowIdx, hash)` tuple recurred ≥ `spinnerThreshold` times
+    /// in `spinnerWindow`. Catches same-position cycling
+    /// spinners (`|/-\`, `( *)( *)`).
+    ///
+    /// **Cross-row gate** (new): suppresses if any single hash
+    /// recurred ≥ `spinnerThreshold` times in `spinnerWindow`
+    /// REGARDLESS of which row it landed at. Catches moving
+    /// spinners (scrolling progress bars, Ink reconciler
+    /// reflows where the spinner content lands at different
+    /// rows each frame).
+    ///
+    /// Returns true if either gate fires. Caller is responsible
+    /// for updating `state.LastRowHashes` after this call so the
+    /// next frame's change-detection has the correct comparison
+    /// baseline.
     let private isSpinnerSuppressed
             (state: State)
             (now: DateTimeOffset)
-            (rowIdx: int)
-            (rowHash: uint64) : bool =
-        let key = (rowIdx, rowHash)
-        let history =
-            match state.PerRowHistory.TryGetValue key with
-            | true, h -> h
-            | false, _ ->
-                let h = ResizeArray()
-                state.PerRowHistory.[key] <- h
-                h
-        history.Add(now)
-        history.Count >= spinnerThreshold
+            (rowHashes: uint64[])
+            (contentHashes: uint64[]) : bool =
+        let mutable suppress = false
+        // PR-M: within-frame dedup for the cross-row gate. A
+        // screen with N rows of identical content (e.g. blank
+        // padding above the prompt) would otherwise contribute
+        // N Adds to HashHistory[content-hash] in a single frame,
+        // and a screen with ≥5 blank padding rows would trip
+        // the gate on the seed frame. The intent of the gate is
+        // "this content appeared in N FRAMES" (not "N rows of
+        // one frame"), so collapse within-frame duplicates.
+        let crossSeenThisFrame = HashSet<uint64>()
+        for i in 0 .. rowHashes.Length - 1 do
+            let rh = rowHashes.[i]
+            let changed =
+                match state.LastRowHashes with
+                | ValueNone -> true
+                | ValueSome arr when i >= arr.Length -> true
+                | ValueSome arr -> arr.[i] <> rh
+            if changed then
+                // Per-`(rowIdx, hash)` gate: uses the row-index-
+                // folded hash so the same content at different
+                // rows produces different keys. Catches cycling
+                // spinners that overwrite the same cell. No
+                // within-frame dedup needed: each (rowIdx, hash)
+                // tuple is naturally unique within a frame
+                // because rowIdx is unique.
+                let key = (i, rh)
+                let perRowHist =
+                    match state.PerRowHistory.TryGetValue key with
+                    | true, x -> x
+                    | false, _ ->
+                        let x = ResizeArray()
+                        state.PerRowHistory.[key] <- x
+                        x
+                perRowHist.Add(now)
+                if perRowHist.Count >= spinnerThreshold then
+                    suppress <- true
+                // Cross-row gate (within-frame deduped): uses
+                // the CONTENT-only hash so the same content
+                // moving between rows still maps to the same
+                // key. Catches scrolling progress bars and Ink
+                // reflows.
+                let ch = contentHashes.[i]
+                if crossSeenThisFrame.Add(ch) then
+                    let crossHist =
+                        match state.HashHistory.TryGetValue ch with
+                        | true, x -> x
+                        | false, _ ->
+                            let x = ResizeArray()
+                            state.HashHistory.[ch] <- x
+                            x
+                    crossHist.Add(now)
+                    if crossHist.Count >= spinnerThreshold then
+                        suppress <- true
+        suppress
 
     /// Decide what (if anything) to emit for an incoming
     /// `RowsChanged []` notification. Reads the current
@@ -270,7 +384,21 @@ module Coalescer =
         // produced enough log I/O at typing speed to lag the WPF
         // dispatcher visibly; demoted to Debug here.
         let logger = Logger.get "Terminal.Core.Coalescer.processRowsChanged"
-        let frameHash = hashFrame snapshot
+        // PR-M (Issue #117): compute per-row hashes ONCE and reuse
+        // for both frame-hash and spinner-gate checks. The
+        // pre-PR-M code walked snapshot twice (hashFrame + the
+        // suppress loop); the precompute is cheaper, and the
+        // change-detection logic in `isSpinnerSuppressed` needs
+        // the full array anyway.
+        let rowHashes =
+            Array.init snapshot.Length (fun i -> hashRow i snapshot.[i])
+        // PR-M: content-only hashes for the cross-row gate.
+        let contentHashes =
+            Array.init snapshot.Length (fun i -> hashRowContent snapshot.[i])
+        let frameHash =
+            let mutable h = 0UL
+            for rh in rowHashes do h <- h ^^^ rh
+            h
         // Frame-level dedup: identical content → suppress
         // entirely. This is the layer that composes with
         // Ink's full-frame redraws.
@@ -281,14 +409,18 @@ module Coalescer =
             []
         | _ ->
             gcHistory state now
-            // Spinner check: walk per-row hashes; if ANY row
-            // is in spinner-suppress and this is a fast
-            // repeat, suppress the whole frame.
-            let mutable suppress = false
-            for i in 0 .. snapshot.Length - 1 do
-                let rh = hashRow i snapshot.[i]
-                if isSpinnerSuppressed state now i rh then
-                    suppress <- true
+            // PR-M: spinner check now considers BOTH per-key
+            // (cycling-character spinners) AND cross-row (moving
+            // spinners) gates. Either gate firing suppresses the
+            // whole frame.
+            let suppress =
+                isSpinnerSuppressed state now rowHashes contentHashes
+            // PR-M: update LastRowHashes AFTER the suppress check
+            // (which read the previous values for change-detection)
+            // and BEFORE the early return so the next frame's
+            // change-detection has the correct baseline regardless
+            // of whether we emit.
+            state.LastRowHashes <- ValueSome rowHashes
             if suppress then
                 // Update LastFrameHash so we don't re-suppress
                 // when content actually changes again.
@@ -372,10 +504,16 @@ module Coalescer =
                 [ OutputBatch (renderRows snapshot) ]
             | ValueNone -> []
         // Reset coalescer state — the buffer just changed
-        // wholesale (alt-screen swap, etc.).
+        // wholesale (alt-screen swap, etc.). PR-M: also reset
+        // LastRowHashes (so post-mode-change first frame treats
+        // every row as changed and re-engages the gates) and
+        // HashHistory (the cross-row gate's accumulated counts
+        // are about a different screen).
         state.LastFrameHash <- ValueNone
         state.LastFlushAt <- ValueSome now
+        state.LastRowHashes <- ValueNone
         state.PerRowHistory.Clear()
+        state.HashHistory.Clear()
         flushed @ [ ModeBarrier (flag, value) ]
 
     /// Pass-through for parser errors. No coalescing — errors
