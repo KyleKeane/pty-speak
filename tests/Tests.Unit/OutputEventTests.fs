@@ -209,6 +209,24 @@ let ``fromScreenNotification ModeChanged carries empty Payload`` () =
     Assert.Equal("", event.Payload)
 
 [<Fact>]
+let ``fromScreenNotification maps Bell to BellRang + Assertive`` () =
+    // Stage 8d.1 — BEL (0x07) → BellRang. The Earcon profile
+    // claims BellRang and emits a RenderEarcon "bell-ping"
+    // ChannelDecision; the NvdaChannel sees the empty Payload
+    // and skips its announce (so no double-up between earcon
+    // + NVDA).
+    let event = OutputEventBuilder.fromScreenNotification ScreenNotification.Bell
+    Assert.Equal(SemanticCategory.BellRang, event.Semantic)
+    Assert.Equal(Priority.Assertive, event.Priority)
+
+[<Fact>]
+let ``fromScreenNotification Bell carries empty Payload`` () =
+    // BEL is a pure signal — no text to announce. The Earcon
+    // profile produces the user-perceived sound.
+    let event = OutputEventBuilder.fromScreenNotification ScreenNotification.Bell
+    Assert.Equal("", event.Payload)
+
+[<Fact>]
 let ``fromScreenNotification stamps translator as the producer`` () =
     // Stage 8a producer was "drain" (the post-coalesce drain task);
     // Stage 8b producer is "translator" (pre-coalesce

@@ -90,6 +90,8 @@ module HotkeyRegistry =
         | SwitchToPowerShell
         // Stage 7 PR-C / PR-J — switch spawned shell to claude.
         | SwitchToClaude
+        // Stage 8d.1 — toggle WASAPI Earcons mute on/off.
+        | MuteEarcons
 
     /// Stable string name for a command, used as the
     /// `RoutedCommand` name passed to WPF and as a TOML key
@@ -109,6 +111,7 @@ module HotkeyRegistry =
         | SwitchToCmd -> "SwitchToCmd"
         | SwitchToPowerShell -> "SwitchToPowerShell"
         | SwitchToClaude -> "SwitchToClaude"
+        | MuteEarcons -> "MuteEarcons"
 
     /// Default key binding for a command. Mirrors the
     /// `AppReservedHotkeys` table in
@@ -174,7 +177,11 @@ module HotkeyRegistry =
           { Command = SwitchToClaude
             Key = Digit 3
             Modifiers = ctrlShift
-            Description = "Switch to Claude shell" } ]
+            Description = "Switch to Claude shell" }
+          { Command = MuteEarcons
+            Key = Letter 'M'
+            Modifiers = ctrlShift
+            Description = "Mute / unmute WASAPI earcons (Stage 8d.1)" } ]
 
     /// Look up the default Hotkey for a command. Throws
     /// `KeyNotFoundException` if the registry is incomplete —
@@ -217,4 +224,5 @@ module HotkeyRegistry =
           IncidentMarker
           SwitchToCmd
           SwitchToPowerShell
-          SwitchToClaude ]
+          SwitchToClaude
+          MuteEarcons ]

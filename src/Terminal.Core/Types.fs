@@ -233,6 +233,20 @@ type ScreenNotification =
     /// `Screen.enterAltScreen` / `exitAltScreen` so the channel
     /// publish doesn't extend the gate's hold.
     | ModeChanged of flag: TerminalModeFlag * value: bool
+    /// Stage 8d.1 — BEL (0x07) byte received. The shell emitted
+    /// the bell character; the terminal frontend is expected to
+    /// produce an audible cue. Pure signal — no Cell-buffer
+    /// mutation. The Stage 8d Earcon profile (in
+    /// `src/Terminal.Core/EarconProfile.fs`) maps the resulting
+    /// `OutputEvent.BellRang` (built by
+    /// `OutputEventBuilder.fromScreenNotification`) to a
+    /// `RenderEarcon "bell-ping"` ChannelDecision; the Earcon
+    /// channel (in `src/Terminal.Core/EarconChannel.fs` +
+    /// `src/Terminal.Audio/EarconPlayer.fs`) plays the WASAPI
+    /// sine tone. Emitted **after** the Screen.Apply lock
+    /// release, same pattern as ModeChanged, so the channel
+    /// publish doesn't extend the gate's hold.
+    | Bell
 
 /// Discriminator for which `TerminalModes` bit just flipped.
 /// Mirrors the field names on the `TerminalModes` record so the

@@ -30,6 +30,8 @@
     <Compile Include="OutputEventTests.fs" />
     <Compile Include="NvdaChannelTests.fs" />
     <Compile Include="FileLoggerChannelTests.fs" />
+    <Compile Include="EarconChannelTests.fs" />
+    <Compile Include="EarconProfileTests.fs" />
     <Compile Include="OutputDispatcherTests.fs" />
     <Compile Include="KeyEncodingTests.fs" />
     <Compile Include="FileLoggerTests.fs" />

@@ -7,11 +7,23 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Placeholder.fs" />
+    <Compile Include="EarconWaveform.fs" />
+    <Compile Include="EarconPalette.fs" />
+    <Compile Include="EarconPlayer.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="FSharp.Core" />
+    <!--
+      Stage 8d.1 — NAudio for the WASAPI Earcons channel.
+      Replaces tech-plan §9's earcon stage. The `NAudio` umbrella
+      package pulls NAudio.Wasapi (WasapiOut + MMDeviceEnumerator)
+      and NAudio.Core (SignalGenerator + ISampleProvider) — all
+      that's needed for sine-tone earcon synthesis + WASAPI
+      playback. Pinned centrally to 2.2.1 in
+      `Directory.Packages.props`.
+    -->
+    <PackageReference Include="NAudio" />
     <ProjectReference Include="..\Terminal.Core\Terminal.Core.fsproj" />
   </ItemGroup>
 
