@@ -15,6 +15,89 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Documentation (Event-and-output framework spec)
+
+The post-Stage-7 substrate spec ships as a single doc-only PR.
+After the maintainer-authored prior-art seed
+(`docs/research/MAY-4.md`, 2026-05-04) surfaced consolidated
+questions across three architectural concerns and the maintainer
+authorised proceeding without per-question input ("let's move
+forward the best [we can] with what we have"), this change
+authors the technical specification that converts the research
+into commitable engineering decisions. The spec covers two of
+MAY-4.md's three concerns — universal event routing (Concern 1)
+and the output framework (Concern 2) — in one document since
+they are deeply connected (Concern 1's dispatcher is Concern
+2's emission substrate). Concern 3 (navigable streaming
+response queue) gets its own spec when Stage 10 starts and the
+framework substrate is in place.
+
+- **`spec/event-and-output-framework.md` (new file).** ~1500
+  lines. Authored as the substrate spec for the post-Stage-7
+  framework cycles. Structure: preamble + status block;
+  "What this spec is, what it isn't"; Anchors and
+  cross-references; Design principles (the cross-cutting rubric:
+  failure modes / discoverability / documentation / performance
+  budget / backward compat / forward compat / alignment /
+  literal-language / linguistic-design rubric); Part A —
+  Universal event routing (Concern 1: architecture overview /
+  RawInput envelope / Intent layer / Dispatcher / Handler
+  registration paths / Kill switch / Forward-looking input
+  sources); Part B — Output framework (Concern 2: architecture
+  overview / OutputEvent schema / Profile abstraction / Channel
+  surface / Threading + priority taxonomy / Profile detection /
+  Verbosity registers); Part C — Sub-stage breakdown (8a-8f for
+  the output cycle, 9a-9d for the input cycle, Stage 10 reframe);
+  Part D — Retrofit specifics (how the existing pipeline becomes
+  the Stream profile + ScreenNotification → OutputEvent mapping
+  table + HotkeyRegistry → IntentRegistry rename plan + Coalescer
+  ratification); Part E — Out of scope, verification, open
+  questions, closing.
+- **`spec/tech-plan.md` §8 / §9 / §10 — supersession / reframe
+  headers added in-place.** §8 (Interactive list detection +
+  UIA List provider) and §9 (Earcons via NAudio) get
+  "**Superseded by `spec/event-and-output-framework.md`**"
+  one-paragraph headers; original content preserved below as
+  historical reference. §10 (Review mode + structured
+  navigation) gets a "**Reframed as the first non-built-in
+  framework consumer**" header pointing at the new spec for the
+  substrate it builds on; original §10 content stays as the
+  feature plan. The May-2026 plan + chat-2026-05-03 retroactive
+  ADR + the maintainer's "let's move forward" authorisation are
+  the ADR-style precedent for these supersession headers.
+- **`docs/PROJECT-PLAN-2026-05.md` Part 3 + Part 4
+  cross-references.** Both kickoff briefs gain a 2026-05-04
+  "substrate spec shipped" callout pointing at the new spec.
+  Part 3's research-phase / RFC framing is preserved as
+  historical reference for how the cycle was originally scoped.
+  Part 4 explicitly notes that the higher-layer semantic
+  interpretation work (input paradigms, tokeniser, suggestion
+  engine, echo correlation, NL backend) sits ON TOP OF the
+  substrate the spec defines and remains separately-scoped
+  follow-on work after the substrate sub-stages (9a-9d) ship.
+- **`docs/SESSION-HANDOFF.md` "Where we left off" updated.**
+  In-flight branch row reflects this PR. Next-stage row points
+  at sub-stage 8a (OutputEvent + Channel + NVDA-channel
+  retrofit) per the new spec's Part C — Sub-stage breakdown,
+  with the eleven-sub-stage roadmap listed.
+- **`docs/DOC-MAP.md` audience table — new row added for the
+  new spec.** Slots between the existing
+  `spec/overview.md + spec/tech-plan.md` row and the
+  `docs/PROJECT-PLAN-YYYY-MM.md` row. The "I'm Claude Code,
+  starting a new session" entry-point list adds a step for the
+  new spec when the active stage is in the framework cycles.
+  The "I'm planning the next cycle" list adds a step pointing
+  at the new spec as the active source for sub-stage sequencing.
+
+This is a doc-only change. CI runs `dotnet test` on
+Windows-latest (no-op), the Markdown link checker (verifies
+internal links resolve), and the workflow lint. The new spec
+provides the substrate that sub-stages 8a-8f and 9a-9d each
+implement in their own multi-PR mini-cycle with NVDA validation.
+The maintainer reviews, approves what's committed (or asks for
+revisions), and the next session picks up sub-stage 8a as the
+first concrete implementation work.
+
 ### Documentation (README + docs reorganisation)
 
 The README had grown to 443 lines after PR #149 added the

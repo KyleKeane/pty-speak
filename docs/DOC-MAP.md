@@ -26,6 +26,7 @@ navigation anchor.
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Human contributors opening PRs | When opening a PR | Canonical home for: PR shape, branch naming, fixup-commit rhythm, F# / .NET 9 gotchas, accessibility non-negotiables, P/Invoke conventions. |
 | [`docs/SESSION-HANDOFF.md`](SESSION-HANDOFF.md) | Next Claude Code session | Session-to-session continuity | Mutable state: "Where we left off", in-flight branches, pre-digested implementation sketches for the next stage. |
 | [`spec/overview.md`](../spec/overview.md), [`spec/tech-plan.md`](../spec/tech-plan.md) | Architecture review | When changing design | Immutable spec: external research and stage-by-stage plan. ADR-style authorisation required for edits. |
+| [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md) | Architecture review (post-Stage-7 substrate) | When implementing sub-stages 8a-8f / 9a-9d, or when reasoning about event routing / output channels / profiles / the InputSource and OutputEvent schemas | Substrate spec for the post-Stage-7 framework cycles. Supersedes `spec/tech-plan.md` §8 / §9 in-place; reframes §10 as the first non-built-in framework consumer. Answers MAY-4.md's consolidated questions with v1 commitments (rationale + tradeoffs) on RawInput envelope, Intent layer, dispatcher, OutputEvent + Profile + Channel, threading + priority taxonomy, TOML schema. |
 | [`docs/PROJECT-PLAN-YYYY-MM.md`](PROJECT-PLAN-2026-05.md) | Strategic planning | When planning a cycle | Dated cycle plans (e.g. May-2026 cleanup → Stage 7 → framework cycles). Status-as-of-date when stale. |
 | [`docs/HISTORICAL-CONTEXT-*.md`](.) | Debugging archived patterns | Backup reference only | NOT primary handoff. Historical decisions retained for archaeology. |
 | [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) | First-time code navigator | Code orientation | Module-by-module map of the codebase. |
@@ -52,7 +53,9 @@ navigation anchor.
 3. [`docs/SESSION-HANDOFF.md`](SESSION-HANDOFF.md) — "Where we left off"
 4. [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md) — cycle plan
 5. [`spec/tech-plan.md`](../spec/tech-plan.md) §N for the active stage
-6. [`CONTRIBUTING.md`](../CONTRIBUTING.md) for canonical PR + F# rules
+6. [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md)
+   when the active stage is in the framework cycles (sub-stages 8a-8f or 9a-9d) or Stage 10
+7. [`CONTRIBUTING.md`](../CONTRIBUTING.md) for canonical PR + F# rules
 
 ### "I'm a human contributor opening a PR"
 
@@ -95,7 +98,11 @@ navigation anchor.
    rubric. Not prescriptive; the consolidated questions list at
    the bottom is the natural starting point for proposal-phase
    conversation
-5. Open issues in GitHub — feature backlog
+5. [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md)
+   — substrate spec answering MAY-4.md's consolidated questions
+   with v1 commitments. The active source for sub-stage 8a-8f /
+   9a-9d sequencing
+6. Open issues in GitHub — feature backlog
 
 ## Maintenance discipline
 
