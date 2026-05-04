@@ -15,6 +15,84 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Documentation (README + docs reorganisation)
+
+The README had grown to 443 lines after PR #149 added the
+"Access, dignity, and full participation" section near the top
+and the long-standing "The complexities of trying to work with
+technology as a blind developer" personal narrative remained
+near the bottom. Reading it as a fresh-contact document showed
+two competing rhythms: a tight technical orientation and an
+extended philosophical / personal narrative interleaved through
+it. This change separates those rhythms cleanly so the README
+can serve as a clean orientation document for Claude Code
+sessions and human contributors, with the wider context one
+hop away in dedicated docs.
+
+- **`docs/PROJECT-CONTEXT.md` (new file).** Receives the moved
+  philosophical + author-narrative content from the README.
+  Three sections: a short author bio (Dr. Kyle Keane, current
+  affiliation: School of Computer Science, University of
+  Bristol; previously ~10 years at MIT; full bio at
+  www.kylekeane.com); the long-standing "complexities of trying
+  to work with technology as a blind developer" personal
+  narrative (the iOS Claude Code workaround case study + the
+  literal-language convention + the Anthropic-facing report
+  request) moved verbatim from the README; the
+  "Access, dignity, and full participation" WHO ICF values
+  frame moved verbatim from the README. Framed as a
+  human-reader companion to `CLAUDE.md`'s Claude-runtime layer.
+- **`docs/INSTALL.md` (new file).** End-user install path —
+  centralises what was previously scattered across the README's
+  120-line `## Install` section, `scripts/install-latest-preview.ps1`,
+  and `scripts/README.md`. Sections: SmartScreen status warning;
+  download from Releases; install + first-launch + Ctrl+Shift+U
+  update flow; PowerShell-helper alternative; what to do next
+  pointers; build-from-source pointer to `docs/BUILD.md`.
+- **`README.md` restructured.** 443 → 246 lines. New top-level
+  heading sequence:
+  - `## What pty-speak is and does` (folds the previous
+    "Why this exists" + "What you can do with it (when shipped)"
+    into one tighter section)
+  - `## Who built this and why` (NEW one-paragraph pointer to
+    `docs/PROJECT-CONTEXT.md`)
+  - `## Get started` (NEW short section pointing at
+    `docs/INSTALL.md` for the full install steps + at
+    `docs/BUILD.md` for build-from-source)
+  - `## Project layout` (existing, unchanged)
+  - `## Quick links` (existing per-audience structure;
+    "If you're orienting on the project" extended with
+    PROJECT-CONTEXT.md and INSTALL.md at the top of the list)
+  - `## System requirements` (existing, unchanged)
+  - `## Contributing` (existing, unchanged)
+  - `## License, attribution, and citation` (existing from
+    PR #149, unchanged)
+  Removed and moved to PROJECT-CONTEXT.md:
+  `## Access, dignity, and full participation` (~30 lines) +
+  `## The complexities of trying to work with technology as a
+  blind developer` (~85 lines).
+  Removed and moved to docs/INSTALL.md:
+  `## Install` (~120 lines including the SmartScreen warning,
+  the GA flow, and the full app-reserved-hotkeys catalog).
+- **`docs/DOC-MAP.md` updated.** Three new rows added to the
+  audience table: `docs/PROJECT-CONTEXT.md`, `docs/INSTALL.md`,
+  and `docs/ACCESSIBILITY-INTERACTION-MODEL.md`. The last is a
+  bonus orphan close — the file (a 1146-line maintainer-
+  requested skeleton mapping the design space for blind-developer
+  terminal interaction; technical depth, not philosophical) was
+  added during post-Stage-6 work but never registered in
+  DOC-MAP. README entry updated to note the slimmed scope
+  (defers author bio + values frame to PROJECT-CONTEXT.md and
+  end-user install steps to INSTALL.md).
+
+The README's role as the orientation document Claude Code
+sessions read at session start is preserved and tightened. The
+philosophical content remains discoverable for human readers
+following the README's "Who built this and why" pointer or the
+"If you're orienting on the project" Quick Links list. Future
+Claude Code sessions get a tighter orientation; the human
+context they may want is one click away in PROJECT-CONTEXT.md.
+
 ### Added (License attribution + citation + values frame)
 
 - **`LICENSE` expanded.** Copyright line now identifies the author
