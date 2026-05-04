@@ -15,6 +15,111 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Stage 8c — FileLogger as first-class channel)
+
+The third sub-stage of the Output framework cycle. Promotes
+`Terminal.Core.FileLogger` to a first-class `Channel` so the
+rolling log captures every `OutputEvent` the Stream profile
+emits, structurally. The `Ctrl+Shift+;` clipboard-copy flow
+(PR-F) now carries the full event trail for post-hoc diagnosis
+— each entry includes Semantic / Priority / Verbosity / Producer
+/ Shell / PayloadLen / Payload as structured-template fields.
+
+Behaviour-identical to the post-8b release build for the
+user-perceived NVDA reading: the Stream profile's emit decisions
+now route to BOTH NvdaChannel and the new FileLoggerChannel, but
+NVDA's behaviour (reading + activity-ID mapping + empty-payload
+skip) is unchanged. The new addition is purely diagnostic
+infrastructure.
+
+**`src/Terminal.Core/FileLoggerChannel.fs` (new file).** Module
+mirrors the NvdaChannel shape: `[<Literal>] id: ChannelId =
+"filelogger"` + `create (logger: ILogger) : Channel`. The
+channel's Send extracts a payload string from the
+RenderInstruction (`RenderText` → text; `RenderText2` → Precise
+register; `RenderEarcon` → `[earcon=<id>]` placeholder;
+`RenderRaw` → `[raw payload]` placeholder) and writes a
+structured `LogInformation` call with the OutputEvent's
+metadata. **Empty-payload contract — CONTRARY to NvdaChannel:**
+mode barriers + future Background-suppressed events land in the
+log even if NVDA didn't read them.
+
+**`src/Terminal.Core/StreamProfile.fs` updates.** Added a
+`fileLoggerTextDecision` helper alongside `nvdaTextDecision` and
+a `textDecisions` helper that returns
+`[| nvdaTextDecision text; fileLoggerTextDecision text |]`. The
+`coalescedToPair` helper + the inline Apply branches (ParserError,
+catch-all) + the Tick closure all now use `textDecisions` instead
+of single-decision `[| nvdaTextDecision ... |]` arrays. The
+multi-pair `(OutputEvent * ChannelDecision[])[]` shape is
+preserved; only the inner decision-array length changes from 1
+to 2.
+
+**`src/Terminal.App/Program.fs` composition root.** Three-line
+addition after the NvdaChannel registration: create + register
+the FileLoggerChannel passing
+`Logger.get "Terminal.Core.FileLoggerChannel"` (which routes
+through the configured factory at line 788 to the production
+`FileLoggerSink`).
+
+**`src/Terminal.Core/Terminal.Core.fsproj`** — new
+`<Compile Include>` entry for `FileLoggerChannel.fs`, ordered
+between `NvdaChannel.fs` and `StreamProfile.fs` (StreamProfile
+references both channel IDs).
+
+### Tests (Stage 8c)
+
+- **`tests/Tests.Unit/FileLoggerChannelTests.fs` (new).** 14
+  tests pinning the channel's structured-log behaviour. Uses a
+  `RecordingLogger` ILogger fake that captures every Log call's
+  formatted message string. Tests cover: identity (`id =
+  "filelogger"`); RenderText / RenderText2 / RenderEarcon /
+  RenderRaw payload extraction; the empty-payload-still-logged
+  contract; ParserError events log the wrapped error message
+  (anchor for the future Background-suppression PR);
+  structured-template field substitution (Semantic / Priority /
+  Verbosity / Producer / Shell); Source.Shell None vs Some "cmd"
+  rendering; LogLevel.Information.
+- **`tests/Tests.Unit/Tests.Unit.fsproj`** — new
+  `<Compile Include>` entry for `FileLoggerChannelTests.fs`,
+  ordered between `NvdaChannelTests.fs` and
+  `OutputDispatcherTests.fs`.
+
+### Behaviour preservation (the regression bar)
+
+All ~144 pre-existing load-bearing tests stay green:
+
+- 30 algorithm tests in `StreamProfileTests.fs` (incl. the 4
+  PR-M #145 cross-row spinner gate pins) — untouched
+- 14 tests in `NvdaChannelTests.fs` — untouched
+- 17 tests in `OutputDispatcherTests.fs` — untouched (the
+  synthetic `passthroughProfile` helper produces 1 decision per
+  event regardless of the StreamProfile's 8c shape change)
+- 17 tests in `OutputEventTests.fs` — untouched
+- 15 tests in `FileLoggerTests.fs` (existing FileLogger sink
+  tests) — untouched (the 8c channel uses the existing sink via
+  the standard ILogger pipeline; no contract changes)
+- 10 tests in `AnnounceSanitiserTests.fs` — untouched
+- 12 tests in `ScreenTests.fs` — untouched
+- 4 tests in `UpdateMessagesTests.fs` — untouched
+
+NVDA-validation row (manual; maintainer): "Reproduce a session;
+verify log captures match announcements." Type a few commands
+in cmd, trigger an alt-screen toggle, `Ctrl+Shift+;` to copy the
+log, verify the log contains `OutputEvent. Semantic=...` lines
+for every announcement NVDA spoke. Verify NVDA reading is
+unchanged from the post-8b release build.
+
+### Open question carried forward
+
+Spec D.2 maps `ParserError → Background`, where Background is
+"suppressed at profile layer" per spec B.5.2. After 8c the
+FileLogger channel receives every ParserError event regardless
+of whether NVDA reads it; this enables the future suppression
+PR's diagnostic story ("NVDA stayed silent; the parser error is
+in the log via `Ctrl+Shift+;`"). Reconciliation deferred to a
+focused follow-up PR.
+
 ### Changed (Stage 8b — Coalescer absorbs as the Stream profile)
 
 The Stage-7 `Coalescer.runLoop` orchestrator and its module-level

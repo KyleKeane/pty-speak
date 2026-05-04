@@ -338,6 +338,29 @@ module StreamProfile =
         { Channel = NvdaChannel.id
           Render = RenderText text }
 
+    /// Build a FileLogger-channel decision rendering the supplied
+    /// text. Stage 8c — every Stream-profile emission now produces
+    /// decisions for both NVDA and FileLogger so the rolling log
+    /// captures everything the user heard, structurally, alongside
+    /// the live NVDA reading. The dispatcher silently drops a
+    /// FileLogger decision if the channel isn't registered (e.g.,
+    /// in tests that only register NvdaChannel), preserving 8b
+    /// behaviour for those test paths.
+    let private fileLoggerTextDecision (text: string) : ChannelDecision =
+        { Channel = FileLoggerChannel.id
+          Render = RenderText text }
+
+    /// Build the channel-decision array for a text payload —
+    /// targets both NVDA and FileLogger. The empty-payload case
+    /// is handled per-channel: NvdaChannel skips empty payloads
+    /// (preserves Stage-7 behaviour); FileLoggerChannel logs
+    /// every event regardless (capture-everything contract).
+    let private textDecisions (text: string) : ChannelDecision[] =
+        [|
+            nvdaTextDecision text
+            fileLoggerTextDecision text
+        |]
+
     /// Translate a `CoalescedNotification` into an
     /// `(effectiveEvent, ChannelDecision[])` pair the dispatcher
     /// can route. The effectiveEvent is the synthesised
@@ -350,18 +373,19 @@ module StreamProfile =
         match coalesced with
         | Coalescer.OutputBatch text ->
             let event = streamOutputEvent text
-            event, [| nvdaTextDecision text |]
+            event, textDecisions text
         | Coalescer.ErrorPassthrough s ->
             let event = parserErrorEvent s
-            event, [| nvdaTextDecision event.Payload |]
+            event, textDecisions event.Payload
         | Coalescer.ModeBarrier _ ->
             // The mode barrier reuses the input event's Semantic
             // / Priority (AltScreenEntered / ModeBarrier with the
             // appropriate Priority) so NvdaChannel routes via
             // `ActivityIds.mode`. Stage 5's barrier announcement
             // is the empty string per `Types.fs:290-294`; the
-            // empty payload survives behaviour-identically.
-            inputEvent, [| nvdaTextDecision "" |]
+            // empty payload survives behaviour-identically for
+            // NVDA (skipped) and is captured by FileLogger.
+            inputEvent, textDecisions ""
 
     /// Construct a Stream profile instance. `screen` is captured
     /// in the closure so `Apply` can call `screen.SnapshotRows`
@@ -396,10 +420,11 @@ module StreamProfile =
                     // (the producer in Program.fs's TranslatorPump
                     // sanitises before building the OutputEvent).
                     // Apply produces the error decision directly
-                    // — no internal coalescing.
+                    // — no internal coalescing. Stage 8c routes to
+                    // both NVDA + FileLogger via textDecisions.
                     [|
                         event,
-                        [| nvdaTextDecision event.Payload |]
+                        textDecisions event.Payload
                     |]
                 | SemanticCategory.AltScreenEntered
                 | SemanticCategory.ModeBarrier ->
@@ -429,9 +454,11 @@ module StreamProfile =
                     // (8d Earcon, 8e Selection) will produce these
                     // and the Stream profile will return [||] for
                     // them (so they don't double-up on NVDA).
+                    // Stage 8c routes to both NVDA + FileLogger via
+                    // textDecisions.
                     [|
                         event,
-                        [| nvdaTextDecision event.Payload |]
+                        textDecisions event.Payload
                     |]
           Tick =
             fun now ->
@@ -443,11 +470,12 @@ module StreamProfile =
                     // pattern-match defensively. The synthesised
                     // event for OutputBatch carries Semantic =
                     // StreamChunk so NvdaChannel routes via
-                    // ActivityIds.output.
+                    // ActivityIds.output. Stage 8c routes to both
+                    // NVDA + FileLogger via textDecisions.
                     match c with
                     | Coalescer.OutputBatch text ->
                         let event = streamOutputEvent text
-                        event, [| nvdaTextDecision text |]
+                        event, textDecisions text
                     | Coalescer.ErrorPassthrough _
                     | Coalescer.ModeBarrier _ ->
                         // Tick never produces these; defensive

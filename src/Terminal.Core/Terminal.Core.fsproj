@@ -16,6 +16,7 @@
     <Compile Include="OutputEventTypes.fs" />
     <Compile Include="OutputEventBuilder.fs" />
     <Compile Include="NvdaChannel.fs" />
+    <Compile Include="FileLoggerChannel.fs" />
     <Compile Include="StreamProfile.fs" />
     <Compile Include="OutputDispatcher.fs" />
     <Compile Include="KeyEncoding.fs" />

@@ -893,6 +893,15 @@ module Program =
                     window.TerminalSurface.Announce(msg, activityId)
                 window.Dispatcher.Invoke(Action(action)))
         OutputDispatcher.ChannelRegistry.register nvdaChannel
+        // Stage 8c — FileLogger as a first-class channel. Every
+        // event the Stream profile emits now lands in the rolling
+        // log structurally, alongside the live NVDA reading. The
+        // `Ctrl+Shift+;` clipboard-copy flow (PR-F) carries the
+        // full event trail for post-hoc diagnosis.
+        let fileLoggerChannel =
+            FileLoggerChannel.create
+                (Logger.get "Terminal.Core.FileLoggerChannel")
+        OutputDispatcher.ChannelRegistry.register fileLoggerChannel
         let streamProfile =
             StreamProfile.create StreamProfile.defaultParameters screen
         OutputDispatcher.ProfileRegistry.register streamProfile
