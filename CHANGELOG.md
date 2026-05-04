@@ -15,6 +15,159 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Stage 8d.1 — WASAPI Earcons channel + Earcon profile + Bell)
+
+The fourth sub-stage of the Output framework cycle. Adds WASAPI
+audio playback infrastructure + a first-class Earcon channel +
+an Earcon profile that maps `OutputEvent.Semantic` to earcon
+sounds. v1 (8d.1) ships the substrate + the BEL → "bell-ping"
+mapping; 8d.2 will add color-detection + ErrorLine /
+WarningLine earcons (the full spec C.1 NVDA-validation row
+mentions "Run colour-emitting commands; hear earcons"; that's
+8d.2's payload).
+
+**`Ctrl+Shift+M` mute hotkey** lands as part of 8d.1, claiming
+the long-standing reservation in `CLAUDE.md`'s "Reserved (not
+yet bound)" list. Each press flips the process-wide mute state
+and announces "Earcons muted." / "Earcons unmuted." via NVDA
+through `ActivityIds.logToggle` (same family as Ctrl+Shift+G's
+debug-log toggle).
+
+#### NAudio dependency
+
+- `Directory.Packages.props` already pinned `NAudio` 2.2.1 — the
+  umbrella package pulls NAudio.Wasapi (WasapiOut +
+  MMDeviceEnumerator) and NAudio.Core (SignalGenerator +
+  ISampleProvider) transitively. 8d.1 adds the
+  `<PackageReference Include="NAudio" />` to
+  `src/Terminal.Audio/Terminal.Audio.fsproj`.
+
+#### Audio infrastructure (`src/Terminal.Audio/`)
+
+The 8a placeholder shell is replaced with three new files:
+
+- **`EarconWaveform.fs`** — pure-F# sine + envelope synthesis.
+  `synthSineEnvelope` returns an `ISampleProvider` chain
+  (`SignalGenerator → OffsetSampleProvider →
+  FadeInOutSampleProvider`) that NAudio's `WasapiOut` consumes.
+  v1 applies fade-in only (NAudio's `BeginFadeOut` triggers
+  immediately rather than scheduled); a small click at the end
+  of a 100ms tone is acceptable for v1; a future PR can add a
+  custom per-sample-envelope `ISampleProvider` if needed.
+- **`EarconPalette.fs`** — `EarconId = string` +
+  `Map<EarconId, EarconWaveform.Parameters>`. Default palette
+  ships `"bell-ping"` only (800Hz × 100ms × 10ms attack). 8d.2
+  adds `"error-tone"` + `"warning-tone"`; Phase 2 makes the
+  palette user-customisable via TOML.
+- **`EarconPlayer.fs`** — WASAPI playback glue. Lazy-init
+  singleton `WasapiOut` + thread-safe init under a lock. The
+  `play` function is non-blocking: it stops any in-flight
+  earcon, builds a fresh sample-provider chain via
+  `EarconWaveform.synthSineEnvelope`, calls `WasapiOut.Init` +
+  `Play`, returns. NAudio's audio thread feeds samples on its
+  own schedule. **Errors are swallowed + logged at Information
+  level** — earcon failures (no audio device, headless CI,
+  driver permission errors) become "no sound" rather than
+  crashing the dispatcher.
+
+#### Channel + profile (`src/Terminal.Core/`)
+
+- **`EarconChannel.fs` (new file).** Mirrors NvdaChannel /
+  FileLoggerChannel: `[<Literal>] id: ChannelId = "earcon"` +
+  `create (play: string -> unit) : Channel`. Send pattern-
+  matches on RenderInstruction; only `RenderEarcon earconId`
+  invokes `play` — the other cases (RenderText / RenderText2 /
+  RenderRaw) are skipped because they target NVDA / FileLogger,
+  not earcons. Process-wide mute state via `toggle ()` /
+  `isMuted ()` / `clearForTests ()` (single-thread-init pattern
+  matching the registries).
+- **`EarconProfile.fs` (new file).** Mirrors StreamProfile:
+  `[<Literal>] id: ProfileId = "earcon"` + `create () : Profile`.
+  Apply maps `BellRang → RenderEarcon "bell-ping"`; all other
+  Semantic categories return `[||]` (the profile is an
+  additive observer, not a router for everything). Tick + Reset
+  are no-ops in 8d.1.
+
+#### BEL producer (`src/Terminal.Core/`)
+
+- **`Types.fs`** — extends `ScreenNotification` DU with `| Bell`
+  case (no payload — pure signal).
+- **`Screen.fs`** — adds `bellEvent: Event<unit>` +
+  `pendingBell: bool` mutable + `[<CLIEvent>] member _.Bell`
+  property. `executeC0 0x07uy` sets `pendingBell`; Apply
+  drains the flag after lock release and triggers `bellEvent`,
+  same buffered-then-fire pattern as ModeChanged.
+- **`OutputEventBuilder.fs`** — extends `fromScreenNotification`
+  to map `Bell → SemanticCategory.BellRang`, `Priority =
+  Assertive`, `Payload = ""`.
+- **`src/Terminal.App/Program.fs`** — bridges `screen.Bell.Add`
+  into the notification channel via
+  `notificationChannel.Writer.TryWrite(ScreenNotification.Bell)`,
+  same pattern as the existing `screen.ModeChanged.Add` bridge.
+
+#### Mute hotkey (Ctrl+Shift+M)
+
+- **`HotkeyRegistry.fs`** — extends `AppCommand` DU with
+  `| MuteEarcons` case + matching `nameOf`, `builtIns`, and
+  `allCommands` updates.
+- **`Program.fs`** — `runMuteEarcons` handler calls
+  `EarconChannel.toggle ()` and announces the new state via
+  `ActivityIds.logToggle`. `bindHotkey` wires it.
+- **`Views/TerminalView.cs`** — extends `AppReservedHotkeys`
+  table with the `(Key.M, Ctrl|Shift, "Mute earcons")` entry;
+  removes the matching commented-out reservation.
+
+#### Composition root (`Program.fs`)
+
+The active profile set grows from `[ streamProfile ]` (post-8c)
+to `[ streamProfile; earconProfile ]`. For BellRang events:
+StreamProfile's catch-all branch produces NVDA + FileLogger
+decisions for the empty payload (NvdaChannel skips empty;
+FileLogger logs the event). EarconProfile produces the earcon
+decision. Total: bell ping plays + log entry; NVDA stays silent
+(no double-up because empty payload).
+
+### Tests (Stage 8d.1)
+
+- **`tests/Tests.Unit/EarconChannelTests.fs` (new).** 13 tests:
+  identity (`id = "earcon"`); RenderEarcon dispatch + multiple
+  ids; RenderText / RenderText2 / RenderRaw skip; mute toggle
+  state machine (initial false → toggle → true → toggle →
+  false); RenderEarcon skipped when muted; play resumes after
+  un-mute; clearForTests resets state.
+- **`tests/Tests.Unit/EarconProfileTests.fs` (new).** 14 tests:
+  identity; BellRang Apply emits one pair / one decision /
+  targets EarconChannel / RenderEarcon "bell-ping" /
+  effectiveEvent is the input event; empty pair array for
+  StreamChunk / ParserError / ModeBarrier / AltScreenEntered /
+  ErrorLine (8d.2 anchor) / Custom; Tick + Reset.
+- **`tests/Tests.Unit/OutputEventTests.fs`** — 2 new tests for
+  the `Bell → BellRang + Assertive` mapping.
+- **`tests/Tests.Unit/HotkeyRegistryTests.fs`** — adds
+  `MuteEarcons` to the `expected` Set in
+  `allCommands contains exactly the documented commands`.
+
+### Behaviour preservation (the regression bar)
+
+All ~158 pre-existing load-bearing tests stay green. Earcon
+infrastructure is purely additive: StreamProfile is unchanged;
+NvdaChannel + FileLoggerChannel are unchanged; OutputDispatcher
+is unchanged. The only behavioural change is the new BEL
+audible cue (which Stage 7 silently swallowed; 8d.1 surfaces
+it).
+
+NVDA-validation row (manual; maintainer): "Trigger a bell
+(`printf '\\a'` in cmd, or `tput bel`); hear bell ping; press
+Ctrl+Shift+M; verify mute toggles + announces; verify ping
+doesn't play when muted."
+
+### Open question carried forward
+
+Same as 8a/8b/8c: spec D.2 ParserError → Background
+suppression. The Earcon profile + FileLogger channel substrate
+now in place is the prerequisite for the future suppression PR
+(parser errors go to FileLogger only, NVDA stays silent on them).
+
 ### Added (Stage 8c — FileLogger as first-class channel)
 
 The third sub-stage of the Output framework cycle. Promotes

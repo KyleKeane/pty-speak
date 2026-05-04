@@ -10,6 +10,7 @@ open Microsoft.Extensions.Logging
 open Velopack
 open Velopack.Sources
 open Terminal.Core
+open Terminal.Audio
 open Terminal.Parser
 open Terminal.Pty
 open PtySpeak.Views
@@ -770,6 +771,23 @@ module Program =
                 | _ -> "Debug logging off."
             window.TerminalSurface.Announce(cue, ActivityIds.logToggle)
 
+    /// Stage 8d.1 — Ctrl+Shift+M handler. Toggles the
+    /// process-wide earcon mute state via `EarconChannel.toggle`
+    /// and announces the new state via NVDA. Reuses
+    /// `ActivityIds.logToggle` for the announcement (same
+    /// semantic family — toggling a diagnostic-config setting,
+    /// like Ctrl+Shift+G's debug-logging toggle).
+    let private runMuteEarcons (window: MainWindow) : unit =
+        let log = Logger.get "Terminal.App.Program.runMuteEarcons"
+        let nowMuted = EarconChannel.toggle ()
+        log.LogInformation(
+            "Ctrl+Shift+M pressed; earcons toggled. NowMuted={NowMuted}",
+            nowMuted)
+        let cue =
+            if nowMuted then "Earcons muted."
+            else "Earcons unmuted."
+        window.TerminalSurface.Announce(cue, ActivityIds.logToggle)
+
     /// Composition seam — Stage 4+ plugs Elmish.WPF and the UIA peer
     /// in here. For Stage 3b we just hold references to the long-lived
     /// pieces and ensure they're disposed on Application.Exit.
@@ -820,6 +838,7 @@ module Program =
         bindHotkey window HotkeyRegistry.OpenLogsFolder (fun () -> runOpenLogs window)
         bindHotkey window HotkeyRegistry.CopyLatestLog (fun () -> runCopyLatestLog window)
         bindHotkey window HotkeyRegistry.ToggleDebugLog (fun () -> runToggleDebugLog window)
+        bindHotkey window HotkeyRegistry.MuteEarcons (fun () -> runMuteEarcons window)
 
         // Direct dispatch via TerminalView.OnPreviewKeyDown is
         // kept as a defence-in-depth path because Window-level
@@ -876,6 +895,11 @@ module Program =
         // a Channel here is non-blocking and deadlock-free.
         screen.ModeChanged.Add(fun (flag, value) ->
             notificationChannel.Writer.TryWrite(ModeChanged (flag, value)) |> ignore)
+        // Stage 8d.1 — bridge screen.Bell events into the
+        // notification channel so the TranslatorPump produces
+        // OutputEvent.BellRang for the Earcon profile.
+        screen.Bell.Add(fun () ->
+            notificationChannel.Writer.TryWrite(ScreenNotification.Bell) |> ignore)
 
         // Stage 8b — output framework substrate composition.
         //
@@ -902,10 +926,24 @@ module Program =
             FileLoggerChannel.create
                 (Logger.get "Terminal.Core.FileLoggerChannel")
         OutputDispatcher.ChannelRegistry.register fileLoggerChannel
+        // Stage 8d.1 — WASAPI Earcons channel. Plays a sine-tone
+        // ping when the Earcon profile claims a Semantic
+        // category (today: BellRang only). The marshal callback
+        // binds to `Terminal.Audio.EarconPlayer.play` which feeds
+        // NAudio's WasapiOut. The Ctrl+Shift+M hotkey toggles
+        // mute via `EarconChannel.toggle ()` (the channel's Send
+        // checks `isMuted` before invoking play).
+        let earconChannel =
+            EarconChannel.create
+                (EarconPlayer.play EarconPalette.defaultPalette)
+        OutputDispatcher.ChannelRegistry.register earconChannel
         let streamProfile =
             StreamProfile.create StreamProfile.defaultParameters screen
         OutputDispatcher.ProfileRegistry.register streamProfile
-        OutputDispatcher.ProfileRegistry.setActiveProfileSet [ streamProfile ]
+        let earconProfile = EarconProfile.create ()
+        OutputDispatcher.ProfileRegistry.register earconProfile
+        OutputDispatcher.ProfileRegistry.setActiveProfileSet
+            [ streamProfile; earconProfile ]
 
         // TranslatorPump — read raw ScreenNotifications, build
         // OutputEvents, dispatch through the active profile set.

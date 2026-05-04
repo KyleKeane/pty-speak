@@ -77,3 +77,16 @@ module OutputEventBuilder =
                 | _ ->
                     SemanticCategory.ModeBarrier, Priority.Polite
             OutputEvent.create semantic priority producerId ""
+        | Bell ->
+            // Stage 8d.1 — BEL (0x07) → BellRang. Empty Payload
+            // (BEL is a pure signal). Priority = Assertive
+            // because BEL is a purposeful user-attention event
+            // that the shell deliberately emitted; the Earcon
+            // profile maps to a bell-ping; the NvdaChannel
+            // sees the empty payload and skips its announce
+            // (so no double-up between earcon and NVDA).
+            OutputEvent.create
+                SemanticCategory.BellRang
+                Priority.Assertive
+                producerId
+                ""

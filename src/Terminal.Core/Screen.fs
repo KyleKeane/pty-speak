@@ -116,6 +116,16 @@ type Screen(rows: int, cols: int) =
     let modeChangedEvent = Event<TerminalModeFlag * bool>()
     let pendingModeChanges = ResizeArray<TerminalModeFlag * bool>()
 
+    // Stage 8d.1 — bell event, same buffered-then-fire pattern
+    // as ModeChanged. `executeC0` sets `pendingBell` when it
+    // sees `0x07uy`; Apply drains the flag after lock release
+    // and fires `bellEvent`. Subscribers (e.g., Program.fs's
+    // bridge into the notification channel) push a
+    // `ScreenNotification.Bell` for the framework dispatcher
+    // to route to the Earcon profile.
+    let bellEvent = Event<unit>()
+    let mutable pendingBell : bool = false
+
     // Mutation gate. Apply takes this lock; SnapshotRows takes it to
     // capture (sequence, rows) atomically. Stage 3b feeds Apply on the
     // WPF dispatcher; Stage 4's UIA peer reads snapshots from the UIA
@@ -154,6 +164,12 @@ type Screen(rows: int, cols: int) =
 
     let executeC0 (b: byte) =
         match b with
+        | 0x07uy ->
+            // BEL — bell. Stage 8d.1 surfaces this as a
+            // `ScreenNotification.Bell` for the Earcon profile.
+            // No Cell-buffer mutation; just queue the signal.
+            // The flag is drained in Apply after lock release.
+            pendingBell <- true
         | 0x08uy ->
             // BS — backspace
             cursor.Col <- max 0 (cursor.Col - 1)
@@ -523,6 +539,16 @@ type Screen(rows: int, cols: int) =
     [<CLIEvent>]
     member _.ModeChanged = modeChangedEvent.Publish
 
+    /// Stage 8d.1 — fires when `executeC0` sees a BEL byte
+    /// (0x07) inside Apply. Same buffered-then-fire pattern as
+    /// `ModeChanged`: the flag is set under the gate; the event
+    /// fires after the gate releases. Subscribers (e.g.,
+    /// Program.fs's bridge into the notification channel) push
+    /// a `ScreenNotification.Bell` for the framework dispatcher
+    /// to route to the Earcon profile.
+    [<CLIEvent>]
+    member _.Bell = bellEvent.Publish
+
     /// Apply a single VT event to the buffer. Stage 3a covers the
     /// minimum needed to render cmd.exe-style output; unsupported
     /// sequences are silently no-ops so the parser can continue
@@ -533,7 +559,9 @@ type Screen(rows: int, cols: int) =
         // so subscribers (e.g. Stage 5's coalescer pushing to
         // a Channel) can't deadlock with concurrent SnapshotRows
         // calls or extend the gate's hold.
+        // Stage 8d.1: same pattern for the Bell signal.
         let toEmit = ResizeArray<TerminalModeFlag * bool>()
+        let mutable bellFired = false
         lock gate (fun () ->
             sequenceNumber <- sequenceNumber + 1L
             match event with
@@ -590,7 +618,11 @@ type Screen(rows: int, cols: int) =
             // the buffer for the next Apply.
             if pendingModeChanges.Count > 0 then
                 toEmit.AddRange(pendingModeChanges)
-                pendingModeChanges.Clear())
+                pendingModeChanges.Clear()
+            // Stage 8d.1: drain the bell flag the same way.
+            if pendingBell then
+                bellFired <- true
+                pendingBell <- false)
         // Post-lock: fire each event. Subscribers run on the
         // calling thread; if a subscriber throws, the exception
         // propagates back to the parser-loop's `with | ex -> ...`
@@ -598,3 +630,5 @@ type Screen(rows: int, cols: int) =
         // audit-cycle SR-2.
         for pair in toEmit do
             modeChangedEvent.Trigger(pair)
+        if bellFired then
+            bellEvent.Trigger(())

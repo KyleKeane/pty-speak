@@ -479,10 +479,16 @@ public class TerminalView : FrameworkElement
             (Key.H, ModifierKeys.Control | ModifierKeys.Shift, "Health check"),
             (Key.B, ModifierKeys.Control | ModifierKeys.Shift, "Incident marker"),
 
+            // Stage 8d.1 — toggle WASAPI earcons mute on/off.
+            // Each press flips the process-wide mute state and
+            // announces "Earcons muted." / "Earcons unmuted."
+            // via NVDA. The reservation has been on this slot
+            // since Stage 6 (per CLAUDE.md "Reserved (not yet
+            // bound)" list); 8d.1 is the first claim.
+            (Key.M, ModifierKeys.Control | ModifierKeys.Shift, "Mute earcons"),
+
             // Future entries (NOT yet bound; commented for
             // forward-planning):
-            //   (Key.M, ModifierKeys.Control | ModifierKeys.Shift,
-            //    "Stage 9 earcon mute"),
             //   (Key.R, ModifierKeys.Alt | ModifierKeys.Shift,
             //    "Stage 10 review-mode toggle"),
             //   Higher Ctrl+Shift+digit slots (4, 5, 6, ...) reserved

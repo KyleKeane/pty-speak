@@ -18,6 +18,8 @@
     <Compile Include="NvdaChannel.fs" />
     <Compile Include="FileLoggerChannel.fs" />
     <Compile Include="StreamProfile.fs" />
+    <Compile Include="EarconChannel.fs" />
+    <Compile Include="EarconProfile.fs" />
     <Compile Include="OutputDispatcher.fs" />
     <Compile Include="KeyEncoding.fs" />
     <Compile Include="HotkeyRegistry.fs" />
