@@ -137,6 +137,7 @@ shortcuts for the four most common audiences.
 - [`docs/CONPTY-NOTES.md`](docs/CONPTY-NOTES.md) — Win32 ConPTY quirks
 - [`docs/USER-SETTINGS.md`](docs/USER-SETTINGS.md) — current and planned settings
 - [`docs/UPDATE-FAILURES.md`](docs/UPDATE-FAILURES.md) — Stage 11 update-failure NVDA reference
+- [`docs/research/MAY-4.md`](docs/research/MAY-4.md) — prior-art seed for the Output / Input framework cycles (universal event routing + output framework + navigable streaming response queue + linguistic-design rubric)
 - [`docs/HISTORICAL-CONTEXT-2026-05.md`](docs/HISTORICAL-CONTEXT-2026-05.md) — May-2026 cleanup cycle archaeology (supplementary reference, not primary handoff)
 - [`scripts/install-latest-preview.ps1`](scripts/install-latest-preview.ps1) — install latest preview (PowerShell helper); see [`scripts/README.md`](scripts/README.md)
 

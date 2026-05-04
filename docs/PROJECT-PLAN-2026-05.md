@@ -295,6 +295,42 @@ is the kickoff brief — what the cycle aims for and what its research
 phase produces. Stage 7's gaps inventory feeds directly into Part 3's
 profile design.
 
+### Research-phase reading list (2026-05-04 update)
+
+Stage 7 + the pre-framework-cycle substrate-cleanup bundle (PRs N
+/ O / P) landed; the Output framework cycle's research phase now
+has two anchor documents:
+
+1. [`docs/research/MAY-4.md`](research/MAY-4.md) — maintainer-authored
+   prior-art seed (2026-05-04). Three architectural concerns:
+   universal event routing, output framework, navigable streaming
+   response queue. Plus a linguistic-design + interaction-lifecycle
+   rubric drawn from the Diagram Center 2014 framework. Not
+   prescriptive — gathers prior art (Emacspeak, Aural CSS,
+   ARIA live regions, Windows Terminal UIA, AsTeR), articulates
+   tradeoffs, and surfaces consolidated questions at the bottom.
+   The Output framework cycle is Concern 2 in MAY-4.md's framing;
+   the relevant prior-art section, channel-design surface
+   (NVDA / JAWS / Narrator / Piper / WASAPI earcons /
+   spatial-audio engine / multi-line refreshable braille /
+   FileLogger / network fan-out / plain stdout), and threading +
+   priority taxonomy (Interrupt / Assertive / Polite / Background)
+   are all in §"Concern 2 — Output framework".
+2. [`docs/STAGE-7-ISSUES.md`](STAGE-7-ISSUES.md) — empirically-confirmed
+   findings from the 2026-05-03 NVDA pass. Most `[output-*]`
+   entries are direct manifestations of Concern 2 in MAY-4.md's
+   framing; the framework's profile-and-channel design must
+   address them at the right architectural layer.
+
+The research-phase deliverable was originally framed as
+`docs/research/OUTPUT-FRAMEWORK-PRIOR-ART.md` (singular,
+Claude-authored). With MAY-4.md providing the prior-art coverage,
+the research-phase deliverable shifts to a synthesis-and-proposal
+document that takes MAY-4.md's consolidated questions, the
+maintainer's answers, and STAGE-7-ISSUES.md's empirical anchors,
+and produces an architecture proposal for the Output framework's
+profile and channel surfaces.
+
 ### Why profile-based
 
 Different content paradigms need different presentation strategies:

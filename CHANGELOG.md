@@ -15,6 +15,59 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Documentation (Output framework cycle research seed)
+
+- **`docs/research/MAY-4.md` added** (maintainer-authored,
+  2026-05-04, ~430 lines). Prior-art seed for the post-Stage-7
+  cycles. Three architectural concerns covered: (1) universal
+  event routing — whether and how to route every event through
+  one named dispatch path with pre/post stages, including
+  forward-looking awareness of alternate input sources (HID, OSC,
+  MIDI, serial) framed through an intent-mapping layer; (2)
+  output framework — typed semantic stream + switchable
+  verbosity profiles, with a channel-design surface that
+  includes spatial-audio engines and multi-line refreshable
+  braille displays as forward-compatibility stress tests for
+  the OutputEvent metadata schema; (3) navigable streaming
+  response queue — typed segment forest vs. enhanced
+  review-cursor for orienting inside Claude Code's streamed
+  responses. Plus a section on linguistic-design properties
+  (accurate / equivalent / objective / essential / contextual /
+  common / appropriate / consistent / unambiguous / clear /
+  concise / understandable / apt / synchronous / controllable)
+  and a Discovery / Navigation / Selection / On-demand
+  interaction lifecycle, both drawn from the Diagram Center
+  2014 framework. Cross-cutting considerations cover failure
+  modes, discoverability, documentation, performance budget,
+  backward + forward compatibility, alignment with existing
+  conventions, and the literal-language constraint. Consolidated
+  questions list at the bottom is the natural starting point
+  for proposal-phase conversation. Not prescriptive; framed as
+  research for the cycle's research phase, not the proposal
+  itself.
+- **Cross-references added** so the seed surfaces from every
+  navigation anchor:
+  - `docs/DOC-MAP.md` — new `docs/research/` row in the
+    audience-table; `docs/research/MAY-4.md` added to the
+    "I'm planning the next cycle" entry-point list.
+  - `docs/SESSION-HANDOFF.md` "Where we left off" — "In-flight
+    branch" cell updated to reflect PR-N / PR-O / PR-P merged;
+    "Next stage" cell now anchors the research-phase reading
+    list to MAY-4.md (Concern 2 framing) + STAGE-7-ISSUES.md
+    (empirical anchors).
+  - `docs/STAGE-7-ISSUES.md` status block — research-phase
+    inputs section maps `[output-*]` taxonomy entries to
+    Concern 2 in MAY-4.md, and `[review-mode]` / `[input-*]`
+    entries to Concern 3 + the Input framework cycle Part 4.
+  - `docs/PROJECT-PLAN-2026-05.md` Part 3 kickoff brief — new
+    "Research-phase reading list" subsection. Note that the
+    research-phase deliverable, originally framed as
+    `OUTPUT-FRAMEWORK-PRIOR-ART.md` (Claude-authored prior art),
+    shifts to a synthesis-and-proposal document since MAY-4.md
+    now provides the prior-art coverage.
+  - `README.md` "If you're orienting on the project" Quick links
+    section — MAY-4.md added.
+
 ### Changed (Pre-framework-cycle PR-P)
 
 - **WPF adapter round-trip pinned by unit-test fixtures.** The
