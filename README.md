@@ -34,81 +34,89 @@ target workload.
 > [Releases](../../releases) for new builds; once installed,
 > `Ctrl+Shift+U` updates in place.
 
-## Access, dignity, and full participation
+## What pty-speak is and does
 
-`pty-speak` is built on a stronger claim than "this should also work
-for blind users." The claim is that access to computers — and to the
-developer tools that compound human capability — is a modern
-necessity of human dignity. To work with a computer is to participate
-in contemporary society, contemporary culture, and contemporary work.
-Any environment that denies that participation to a class of people
-is a barrier, not a property of the person.
+`pty-speak` is a Windows terminal emulator that exposes its content
+to screen readers as structured semantics rather than diffed visible
+text. The target workload is Anthropic's Claude Code (and other
+Ink/React TUIs), which existing Windows terminals — conhost, Windows
+Terminal, VS Code's integrated terminal, Alacritty, WezTerm — all
+present poorly to NVDA, JAWS, and Narrator because they render ANSI
+visually and expose almost nothing to UI Automation beyond a cell
+grid.
 
-This is the framing the World Health Organization established in the
-[International Classification of Functioning, Disability and
-Health (ICF)](https://www.who.int/standards/classifications/international-classification-of-functioning-disability-and-health):
-disability emerges from the interaction between a person and their
-environment, not from the person alone. A blind developer using a
-screen reader is not less informed; the developer-tool environment
-that fails to support that access is the source of the disability,
-and the cost is borne entirely on the developer rather than on the
-tool. The ICF reframes the work: the right object to repair is the
-environment, and the right metric is whether full participation in
-the relevant life activity becomes possible.
+The screen-reader fallback of diffing the visible text produces
+three failure modes every blind user of Claude Code has felt:
 
-`pty-speak`'s answer is concrete. Build the environment correctly. A
-terminal that exposes its content through a real
-`ITextRangeProvider` and a real semantic event stream is not
-"accessible additionally"; it is accessible by construction. The
-technical decisions in this repository — the ANSI parser, the
-typed-event substrate, the UIA Document + Text-pattern surface, the
-verbosity-profile design queued for the Output framework cycle — all
-follow from that values position. They are how the values are made
-operational rather than rhetorical.
+1. **Spinner storms.** Ink redraws the "Thinking…" line ~10 Hz; the
+   screen reader announces every diff and freezes.
+2. **Selection lists read as flat text.** "Edit / Yes / Always / No"
+   arrives as a paragraph instead of a listbox, so arrow-key
+   navigation breaks.
+3. **ANSI styling is invisible.** Bold, italic, color, and OSC 8
+   hyperlinks never reach the screen reader, so braille routing and
+   "report font attributes" do nothing.
 
-## Why this exists
+`pty-speak` fixes this at the architectural layer rather than by
+post-hoc filtering. It parses ANSI into a typed event stream, derives
+semantic events (prompts, selection lists, errors, spinners) from
+those, and exposes them through a real UIA `ITextRangeProvider` plus
+`UiaRaiseNotificationEvent` calls — the same surface Windows
+Terminal uses, with the attribute identifiers
+(`UIA_ForegroundColorAttributeId`, `UIA_FontWeightAttributeId`, …)
+actually populated.
 
-Existing Windows terminals — conhost, Windows Terminal, VS Code's integrated
-terminal, Alacritty, WezTerm — all render ANSI visually and expose almost
-nothing to UI Automation beyond a cell grid. NVDA falls back to diffing the
-visible text, which produces three failure modes that every blind user of
-Claude Code has felt:
+When fully shipped, this means a blind developer can:
 
-1. **Spinner storms.** Ink redraws the "Thinking…" line ~10 Hz; the screen
-   reader announces every diff and freezes.
-2. **Selection lists read as flat text.** "Edit / Yes / Always / No" arrives
-   as a paragraph instead of a listbox, so arrow-key navigation breaks.
-3. **ANSI styling is invisible.** Bold, italic, color, and OSC 8 hyperlinks
-   never reach the screen reader, so braille routing and "report font
-   attributes" do nothing.
-
-`pty-speak` fixes this at the architectural layer rather than by post-hoc
-filtering: it parses ANSI into a typed event stream, derives semantic
-events (prompts, selection lists, errors, spinners) from those, and exposes
-them through a real UIA `ITextRangeProvider` plus `UiaRaiseNotificationEvent`
-calls — the same surface Windows Terminal uses, with the attribute
-identifiers (`UIA_ForegroundColorAttributeId`,
-`UIA_FontWeightAttributeId`, …) actually populated.
+- Run Claude Code, PowerShell, cmd.exe, or any other Windows console
+  program and hear all output via NVDA at conversational pace.
+- Navigate the scrollback as a structured document with NVDA's
+  review cursor (line, word, character) and quick-nav letters
+  (`e` next error, `w` next warning, `c` next command,
+  `o` next output block).
+- Interact with Claude Code's selection prompts as a real listbox:
+  arrow keys move, NVDA announces "Yes, 2 of 4," Enter confirms.
+- Hear earcons for ANSI color and style transitions on a separate
+  WASAPI shared session that does not duck NVDA.
+- Auto-update from GitHub Releases via Velopack with no UAC prompt
+  and audible progress announcements.
 
 For the full design rationale, prior-art survey, and architectural
 tradeoffs, see [`spec/overview.md`](spec/overview.md). For the
 stage-by-stage implementation plan (ConPTY → parser → buffer → UIA →
-streaming → input → Claude Code → list provider → earcons → review mode →
-Velopack), see [`spec/tech-plan.md`](spec/tech-plan.md).
+streaming → input → Claude Code → list provider → earcons → review
+mode → Velopack), see [`spec/tech-plan.md`](spec/tech-plan.md).
 
-## What you can do with it (when shipped)
+## Who built this and why
 
-- Run Claude Code, PowerShell, cmd.exe, or any other Windows console
-  program and hear all output via NVDA at conversational pace.
-- Navigate the scrollback as a structured document with NVDA's review
-  cursor (line, word, character) and quick-nav letters (`e` next error,
-  `w` next warning, `c` next command, `o` next output block).
-- Interact with Claude Code's selection prompts as a real listbox: arrow
-  keys move, NVDA announces "Yes, 2 of 4," Enter confirms.
-- Hear earcons for ANSI color and style transitions on a separate WASAPI
-  shared session that does not duck NVDA.
-- Auto-update from GitHub Releases via Velopack with no UAC prompt and
-  audible progress announcements.
+`pty-speak` is built and maintained by **Dr. Kyle Keane** (School of
+Computer Science, University of Bristol; previously ~10 years at
+MIT; [www.kylekeane.com](https://www.kylekeane.com)).
+
+Kyle is a blind developer. The project is one blind developer's
+attempt to build the developer-tool environment that ought to exist
+— from the position of someone who needs it to work in order to do
+the rest of their work. The wider context — author bio, the
+workarounds Kyle uses to make this work in practice, and the values
+frame (the WHO ICF position that disability is a property of the
+interaction between a person and their environment, not of the
+person) that drives the technical decisions in this repository —
+lives in [`docs/PROJECT-CONTEXT.md`](docs/PROJECT-CONTEXT.md).
+
+## Get started
+
+`pty-speak` is pre-alpha. Latest preview installer is on the
+[Releases](../../releases) page as `pty-speak-Setup.exe`. Step-by-step
+install (with the SmartScreen workaround for unsigned previews) plus
+the post-install hotkey reference is in
+[`docs/INSTALL.md`](docs/INSTALL.md).
+
+If you prefer scripted install, the repository ships
+[`scripts/install-latest-preview.ps1`](scripts/install-latest-preview.ps1)
+as a PowerShell helper.
+
+To build and develop pty-speak from source instead of running a
+pre-built preview, see [`docs/BUILD.md`](docs/BUILD.md).
 
 ## Project layout
 
@@ -163,6 +171,8 @@ shortcuts for the four most common audiences.
 - [`CHANGELOG.md`](CHANGELOG.md) — promote `[Unreleased]` to the new version
 
 **If you're orienting on the project:**
+- [`docs/PROJECT-CONTEXT.md`](docs/PROJECT-CONTEXT.md) — author bio, the workarounds Kyle uses to make this work in practice, and the WHO ICF values frame that drives the technical decisions
+- [`docs/INSTALL.md`](docs/INSTALL.md) — end-user install path with SmartScreen workaround for unsigned previews
 - [`spec/overview.md`](spec/overview.md) — design and rationale
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — high-level stage list
 - [`SECURITY.md`](SECURITY.md) — threat model + mitigation status
@@ -172,128 +182,6 @@ shortcuts for the four most common audiences.
 - [`docs/research/MAY-4.md`](docs/research/MAY-4.md) — prior-art seed for the Output / Input framework cycles (universal event routing + output framework + navigable streaming response queue + linguistic-design rubric)
 - [`docs/HISTORICAL-CONTEXT-2026-05.md`](docs/HISTORICAL-CONTEXT-2026-05.md) — May-2026 cleanup cycle archaeology (supplementary reference, not primary handoff)
 - [`scripts/install-latest-preview.ps1`](scripts/install-latest-preview.ps1) — install latest preview (PowerShell helper); see [`scripts/README.md`](scripts/README.md)
-
-## Install
-
-> [!WARNING]
-> **Preview builds are unsigned.** `v0.0.x-preview.N` releases carry
-> no Authenticode signature and no Ed25519 manifest signature.
-> SmartScreen will warn on first install. Do not install preview
-> builds on machines that handle sensitive data. Authenticode + Ed25519
-> signing return before `v0.1.0` — see [`SECURITY.md`](SECURITY.md).
-
-Once Stage 11 (Velopack auto-update) lands, the GA flow is:
-
-1. Download `pty-speak-Setup.exe` from the latest release.
-2. Run it. Velopack installs to `%LocalAppData%\pty-speak\current\` and
-   creates a Start menu entry. No admin / UAC prompt.
-3. Launch from Start. NVDA should announce the window and a help line on
-   first run; press `Alt+F1` for keyboard help at any time.
-4. Self-update from inside the app with `Ctrl+Shift+U` (this checks GitHub
-   Releases and applies the delta in ~2 seconds).
-
-### App-reserved hotkeys (currently shipped)
-
-These are captured by pty-speak at the window level before any future
-Stage-6 keyboard layer routes input to the child shell. Stage 6 will
-preserve this list per the app-reserved-hotkey contract in
-[`spec/tech-plan.md`](spec/tech-plan.md) §6.
-
-- **`Ctrl+Shift+U`** — self-update via Velopack (Stage 11). Checks
-  GitHub Releases and applies the delta in ~2 seconds.
-- **`Ctrl+Shift+D`** — first announces an inline shell-process
-  snapshot via NVDA ("Diagnostic snapshot: 1 cmd, 0 powershell,
-  0 pwsh, 1 claude, 1 Terminal.App. Launching cleanup test.")
-  so a one-keystroke "what's currently running?" answer
-  doesn't require running the full close-and-recheck flow.
-  Then launches the bundled `test-process-cleanup.ps1` in a
-  separate PowerShell window for the close-and-recheck flow,
-  which verifies that closing pty-speak via Alt+F4 or the X
-  button leaves no orphan `Terminal.App.exe` / ConPTY child
-  processes. Output is plain text NVDA reads aloud naturally.
-  PR-J added the inline snapshot.
-- **`Ctrl+Shift+R`** — open the GitHub "draft a new release" form in
-  your default browser. Maintainer shortcut — the normal release flow
-  is to publish a release in the Releases UI (which creates the tag
-  and triggers the Velopack workflow), and this hotkey skips the
-  navigation step.
-- **`Ctrl+Shift+L`** — open the logs folder
-  (`%LOCALAPPDATA%\PtySpeak\logs\`) in File Explorer. Useful for
-  grabbing a previous session's log when reporting a bug.
-- **`Ctrl+Shift+;`** — copy the active session's log file content
-  to the clipboard. The semicolon / colon key sits right next
-  to `L` on a US-layout keyboard, so it pairs by physical
-  proximity with the `Ctrl+Shift+L` open-folder primary. NVDA
-  announces the byte count; switch to the chat / email / issue
-  and paste. The fastest way to send a session log to a
-  maintainer. See [`docs/LOGGING.md`](docs/LOGGING.md) for what
-  is and isn't logged.
-- **`Ctrl+Shift+1`** — switch the spawned shell to `cmd.exe`
-  mid-session. Tears down the running ConPTY child (kernel
-  `KILL_ON_JOB_CLOSE` cascade kills any grandchildren) and
-  spawns cmd in its place. NVDA announces "Switching to
-  Command Prompt." → ~700ms pause → "Switched to Command
-  Prompt." (Stage 7 PR-C).
-- **`Ctrl+Shift+2`** — switch the spawned shell to
-  `powershell.exe` (Windows PowerShell, always available on
-  Windows 10+). Same teardown + respawn as `Ctrl+Shift+1`. NVDA
-  announces "Switching to PowerShell." → "Switched to
-  PowerShell." PowerShell sits in slot 2 deliberately as the
-  diagnostic control shell — always installed, no auth, no
-  terminal-capability detection — so isolating shell-switch
-  infrastructure bugs from claude-specific behaviour is one
-  keystroke from cmd (Stage 7-followup PR-J).
-- **`Ctrl+Shift+3`** — switch the spawned shell to `claude.exe`
-  (resolved via `where.exe claude` per spec §7.1). Same teardown
-  + respawn as `Ctrl+Shift+1`. NVDA announces "Switching to
-  Claude Code." → "Switched to Claude Code." If Claude Code
-  isn't on `PATH`, NVDA announces "Cannot switch to Claude
-  Code: not found on PATH." and the existing shell keeps
-  running. Was `Ctrl+Shift+2` in PR-C; moved to slot 3 by PR-J
-  when PowerShell took slot 2.
-- **`Ctrl+Shift+G`** — toggle `FileLogger` min-level between
-  `Information` (default) and `Debug` at runtime. Each press
-  flips the level and NVDA announces the new state ("Debug
-  logging on." / "Debug logging off."). Lets the maintainer
-  enable verbose debug logging from inside pty-speak without
-  the previous env-var-and-relaunch workflow. Mnemonic: G for
-  "loGging" (Stage 7-followup PR-E).
-- **`Ctrl+Shift+H`** — health check. Announces a one-line state
-  snapshot via NVDA: verdict ("Pty-speak healthy." / "Child
-  shell process N has exited." / "Reader appears wedged." /
-  "Notification queue near capacity.") + shell name + PID +
-  alive flag + log level + reader last-byte staleness +
-  channel queue depths. PR-J added the liveness probe (a
-  `Process.GetProcessById(pid)` call that throws if the kernel
-  no longer knows the PID) so the announce distinguishes
-  "child exited" from "child running but quiet" — a
-  distinction that previously required reading the log file.
-  Lets a screen-reader user determine in one keystroke whether
-  pty-speak is functioning. Mnemonic: H for "Health" (Stage
-  7-followup PR-F + PR-J).
-- **`Ctrl+Shift+B`** — incident marker. Logs a clear
-  `=== INCIDENT MARKER {timestamp} ===` boundary line into the
-  active log file and announces "Incident marker logged.
-  Reproduce your issue, then press Ctrl+Shift+; to copy the
-  log." Pair with `Ctrl+Shift+G` (debug logging on) and
-  `Ctrl+Shift+;` (copy log to clipboard) for a complete
-  three-keystroke debug-capture workflow that doesn't require
-  any env-var manipulation. Mnemonic: B for "Bug" (Stage
-  7-followup PR-F).
-
-Reserved but not yet implemented: `Ctrl+Shift+M` (Stage 9 mute
-toggle), `Alt+Shift+R` (Stage 10 review-mode toggle).
-Higher digit slots (`Ctrl+Shift+4`, `Ctrl+Shift+5`, ...) are
-reserved for future shells (WSL, Python REPL, bash) per the
-shell-registry extensibility model in
-[`spec/tech-plan.md`](spec/tech-plan.md) §7.5. Slots 1–3 are
-already taken (cmd / PowerShell / Claude per PR-J).
-
-The historical Stage 0 preview installer opens an empty window. Once
-the next preview is cut from the current `main`, the installer launches
-`cmd.exe` under ConPTY and renders its output in the window — input
-to the PTY arrives in Stage 6. Until Stage 11 (auto-update) ships,
-follow [`docs/BUILD.md`](docs/BUILD.md) to build locally.
 
 ## System requirements
 
@@ -318,91 +206,6 @@ If you are reporting a screen-reader regression, please use the
 [Accessibility issue](.github/ISSUE_TEMPLATE/accessibility_issue.yml)
 template and include screen-reader name + version, NVDA Event Tracker
 log if possible, and the exact steps.
-
-## The complexities of trying to work with technology as a blind developer
-
-This project exists because mainstream developer tools — including
-the ones built by AI labs whose mission statements include making
-their products useful to everyone — keep shipping interfaces that
-cannot be operated by a person using a screen reader. `pty-speak`
-is one blind developer's attempt to build a usable surface around
-one of those tools (Anthropic's Claude Code) so that the
-capabilities it offers everyone else are actually reachable from
-an assistive-technology stack.
-
-The path to writing this code is itself a small case study in why
-this work is needed.
-
-The Claude Code desktop application is not screen-reader-accessible.
-There is no usable alternative on a workstation. The iOS app is
-the only viable channel, and the iOS app has its own gap: the
-"Add feedback" input field — the field a user types into to send
-the next message to Claude — is not activatable from VoiceOver.
-The standard touch-explore gesture finds the field, but the
-double-tap-to-activate gesture does not focus it for input. The
-workaround, which I have used for every message in this session,
-is:
-
-1. Disable VoiceOver entirely.
-2. Place a finger on the screen at the remembered pixel location
-   of the input field.
-3. Activate the field by sighted-touch contract.
-4. Re-enable VoiceOver to hear Claude's response.
-5. Repeat for the next message.
-
-That cycle runs hundreds of times across a working session.
-Disabling the screen reader temporarily strips off the access
-infrastructure that makes the rest of the device navigable, on a
-touchscreen designed under the assumption that sight is available
-for any unrecovered fall-back. It is a workaround in the strict
-sense: it gets the work done, but the cost is borne entirely on
-one side.
-
-While using this workaround to build a terminal that exposes
-Claude Code to NVDA, Claude itself produced an idiom in this
-session that is worth recording, because it reveals how deep the
-problem runs.
-
-The idiom was the phrase "blindly iterating" — used by the model
-to mean "iterating without information," "guessing without
-evidence," or "speculative iteration." That is not what the words
-literally say. The words equate "blind" with "ignorant," and they
-do so casually, in a position where the speaker (the model) had
-many specific, accurate words available and chose the metaphor
-anyway. The accurate words are concrete:
-
-- *uninformed iteration*
-- *iterating without diagnostic data*
-- *speculative iteration*
-- *guessing without evidence*
-
-Each describes the behaviour. None requires a sight-based metaphor.
-The reason "blindly" is offensive is straightforward: it embeds
-the assumption that the absence of sight is the canonical example
-of the absence of information. Blind people are not less informed
-than sighted people; we use different channels. A sighted person
-who runs CI three times without reading the build log is operating
-without information. A blind developer reading that log via a
-screen reader is operating with full information. The metaphor
-inverts the actual relationship between sight and knowledge, and
-it does so in casual technical writing where it costs the writer
-nothing to say what they actually mean.
-
-This is not a request to police every word. It is a request to
-prefer the literal phrasing when the literal phrasing is
-available, because the literal phrasing communicates more
-precisely *and* it does not casually demean the people whose
-working conditions this project is being built to improve.
-
-If you are reading this from inside Anthropic and would like a
-report from a customer using your product through the iOS
-workaround above to ship accessibility infrastructure: please
-fix the iOS "Add feedback" field's VoiceOver activation, ship a
-screen-reader-accessible desktop application, and review training
-data for sight-based idioms used as synonyms for cognitive
-deficit. The work that goes into that review is the same work
-that produces a more precise model output for everyone — there is
-no trade-off to mitigate.
 
 ## License, attribution, and citation
 

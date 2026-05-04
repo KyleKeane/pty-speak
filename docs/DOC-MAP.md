@@ -19,7 +19,9 @@ navigation anchor.
 
 | Doc | Audience | When to read | One-line purpose |
 |---|---|---|---|
-| [`README.md`](../README.md) | Anyone hitting the GitHub repo | First contact | Project pitch + status + per-audience routing into the rest of the docs. |
+| [`README.md`](../README.md) | Anyone hitting the GitHub repo | First contact | Project pitch + status + per-audience routing into the rest of the docs. Defers author bio + values frame to `docs/PROJECT-CONTEXT.md` and end-user install steps to `docs/INSTALL.md` so the README stays a tight orientation. |
+| [`docs/PROJECT-CONTEXT.md`](PROJECT-CONTEXT.md) | Human reader wanting wider context | After README, when curious about author + values | Author bio (Dr. Kyle Keane, Bristol, MIT history) + the workarounds Kyle uses to make this work in practice + WHO ICF values frame; the human-context companion to `CLAUDE.md`'s Claude-runtime layer. |
+| [`docs/INSTALL.md`](INSTALL.md) | End user wanting to install the latest preview | Before first run | Step-by-step download + install + update flow with the SmartScreen workaround for unsigned previews. References `scripts/install-latest-preview.ps1` for the scripted alternative and `docs/BUILD.md` for build-from-source. |
 | [`CLAUDE.md`](../CLAUDE.md) | Claude Code agents | Every session start (auto-loaded) | Claude-runtime-specific rules (sandbox quirks, MCP behaviour, ask-for-CI-logs, webhook auto-subscribe); indexes the canonical rules in `CONTRIBUTING.md`. |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Human contributors opening PRs | When opening a PR | Canonical home for: PR shape, branch naming, fixup-commit rhythm, F# / .NET 9 gotchas, accessibility non-negotiables, P/Invoke conventions. |
 | [`docs/SESSION-HANDOFF.md`](SESSION-HANDOFF.md) | Next Claude Code session | Session-to-session continuity | Mutable state: "Where we left off", in-flight branches, pre-digested implementation sketches for the next stage. |
@@ -33,6 +35,7 @@ navigation anchor.
 | [`docs/USER-SETTINGS.md`](USER-SETTINGS.md) | Contributor adding a hardcoded constant | When introducing config-shaped values | Catalog of values that should eventually be user-configurable. |
 | [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md) | Maintainer cutting a release | Manual NVDA pass | Stage-by-stage NVDA validation matrix. |
 | [`docs/STAGE-N-ISSUES.md`](STAGE-7-ISSUES.md) | Framework-cycle research phases | Design input for the cycle | Inventory of gaps surfaced during a stage's NVDA validation; framework-taxonomy categorised. |
+| [`docs/ACCESSIBILITY-INTERACTION-MODEL.md`](ACCESSIBILITY-INTERACTION-MODEL.md) | Contributor reasoning about caret / focus / UIA tension | When designing review-mode or input-encoding work | Maintainer-requested skeleton mapping the design space for blind-developer terminal interaction (caret tension, modal-dialog seam, NVDA-notification round-trips). Technical depth, not philosophical; the maintainer flesh-outs specifics over time. |
 | [`docs/research/`](research/) | Framework-cycle research authors | Pre-cycle prior-art + tradeoff seeds | Maintainer-authored or Claude-authored research that informs cycle architecture proposals. NOT prescriptive — gathers prior art, articulates tradeoffs, surfaces questions. The `docs/research/MAY-4.md` seed (2026-05-04) is the first inhabitant. |
 | [`docs/LOGGING.md`](LOGGING.md) | Anyone reasoning about the file logger | When tuning logs / triaging | What is and isn't logged; FileLogger architecture; log-rotation policy. |
 | [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md) | Maintainer cutting a release | Release time | Velopack release workflow + GitHub Releases UI sequence. |
