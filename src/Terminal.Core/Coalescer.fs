@@ -79,20 +79,38 @@ open Microsoft.Extensions.Logging
 /// no UI thread requirement).
 module Coalescer =
 
-    /// Hardcoded for Stage 5. Phase 2's TOML config will
-    /// expose this per the USER-SETTINGS.md "Verbosity /
-    /// NVDA narration" candidate.
-    // TODO Phase 2: user-configurable via TOML
+    // PR-N substrate-cleanup contract (2026-05-04). The three
+    // constants below — `debounceWindow`, `spinnerWindow`,
+    // `spinnerThreshold` — are **Stream-profile defaults**, not
+    // universal terminal-output tuning knobs. The Output framework
+    // cycle (Part 3 of `docs/PROJECT-PLAN-2026-05.md`) introduces
+    // per-profile presentation strategies (Stream / Form /
+    // Selection / TUI / REPL / Earcon); each profile is expected
+    // to construct its own `Coalescer.State` instance with
+    // caller-supplied thresholds rather than reading these module
+    // globals. Today's Coalescer IS the Stream profile — the
+    // current values reflect that role's defaults. When the
+    // framework lands, these values stay as Stream-profile
+    // fallbacks; new profiles override via their own
+    // construction parameters and pass their own thresholds
+    // through the gate functions. Phase 2's TOML config will
+    // expose these per the USER-SETTINGS.md "Verbosity / NVDA
+    // narration" candidate; the framework refactor is the
+    // intermediate seam, not the user-config surface.
+
+    /// Stream-profile default; Phase 2 TOML candidate. See
+    /// PR-N substrate-cleanup contract above.
     let internal debounceWindow = TimeSpan.FromMilliseconds 200.0
 
-    /// Spinner-detection sliding-window length.
-    // TODO Phase 2: user-configurable via TOML
+    /// Stream-profile default; Phase 2 TOML candidate. See
+    /// PR-N substrate-cleanup contract above.
     let internal spinnerWindow = TimeSpan.FromMilliseconds 1000.0
 
-    /// Suppress an `(rowIdx, hash)` if it appeared this
-    /// many times within `spinnerWindow`. Five flips per
-    /// second (e.g. `|/-\` cycle) is the textbook spinner.
-    // TODO Phase 2: user-configurable
+    /// Stream-profile default. Suppress an `(rowIdx, hash)` if
+    /// it appeared this many times within `spinnerWindow`. Five
+    /// flips per second (e.g. `|/-\` cycle) is the textbook
+    /// spinner. Phase 2 TOML candidate. See PR-N substrate-
+    /// cleanup contract above.
     let internal spinnerThreshold = 5
 
     let private fnvOffsetBasis = 0xcbf29ce484222325UL
@@ -491,6 +509,21 @@ module Coalescer =
     /// frame), reset frame-hash + spinner state, then
     /// pass through the ModeChanged signal so the drain
     /// can announce the transition.
+    ///
+    /// **Framework-cycle contract (PR-N).** Profile-detection
+    /// logic (Output framework cycle, Part 3 of
+    /// `docs/PROJECT-PLAN-2026-05.md`) MUST NOT assume screen
+    /// content is stable across a mode change. ModeChanged
+    /// signals that the semantic context has shifted (alt-screen
+    /// toggle, cursor-key mode change, etc.); the screen buffer
+    /// behind the next read may be the alternate-buffer's
+    /// pre-existing state, blank, or the previous primary
+    /// buffer — none of which are reliable indicators of the
+    /// new profile. Profiles must wait for the first
+    /// post-`ModeBarrier` `RowsChanged` to inspect content; a
+    /// profile-classifier reading the snapshot at the
+    /// `ModeBarrier` itself will see stale visual state and
+    /// mis-classify.
     let onModeChanged
             (state: State)
             (now: DateTimeOffset)

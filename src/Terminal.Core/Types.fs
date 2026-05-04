@@ -253,6 +253,25 @@ and TerminalModeFlag =
 /// Each tag is namespaced with `pty-speak.` so user-visible
 /// NVDA configuration screens distinguish our notifications
 /// from any other application's.
+///
+/// **Pairing contract (PR-N).** `ActivityIds` and
+/// `AnnounceSanitiser` (in `src/Terminal.Core/AnnounceSanitiser.fs`)
+/// are paired: every UIA Notification this app raises MUST be
+/// (1) sanitised through `AnnounceSanitiser.sanitise` first to
+/// strip C0 / DEL / C1 / BiDi / Trojan-Source codepoints, and
+/// (2) tagged with a stable `ActivityIds.*` value so per-tag
+/// NVDA verbosity configuration works. New notification sources
+/// added in future stages (Output framework cycle Part 3
+/// per-profile alerts; Input framework cycle Part 4 echo /
+/// suggestion announces; Stage 10 review-mode quick-nav cues)
+/// MUST follow this two-step pattern. Skipping sanitisation
+/// surfaces PTY-originated control bytes to NVDA which verbalises
+/// them ("escape bracket one A"); skipping the activityId tag
+/// breaks per-class user configuration. The drain task in
+/// `Program.fs compose ()` enforces this for the Coalescer's
+/// `OutputBatch` / `ErrorPassthrough` / `ModeBarrier` channels;
+/// future channels added at the same seam inherit the
+/// enforcement automatically.
 module ActivityIds =
     /// Streaming PTY output (Stage 5 coalescer's primary channel).
     let output = "pty-speak.output"
