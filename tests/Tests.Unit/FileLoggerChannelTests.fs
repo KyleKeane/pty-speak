@@ -39,21 +39,26 @@ type private RecordingLogger() =
     let calls = ResizeArray<LogLevel * string>()
     member _.Calls = calls
     interface ILogger with
-        // F# 9 + .NET 9 require the `'TState : not null` constraint
-        // here to match the C# `where TState : notnull` on
-        // `ILogger.BeginScope<TState>` and
-        // `ILogger.Log<TState>`. Without the constraint the F#
-        // compiler emits `FS0193: A type parameter is missing a
-        // constraint 'when 'TState: not null'`.
+        // F# 9 + .NET 9 nullness signatures (per the `FS0193` and
+        // `FS0017` errors during 8c CI):
+        //
+        //   - `BeginScope<TState>` has `where TState : notnull` in
+        //     the C# interface; F# requires `when 'TState : not null`.
+        //   - `Log<TState>` does NOT carry the constraint in F#'s
+        //     reading of the metadata; the compiler reports the
+        //     interface signature as `Log<'TState>` plain.
+        //   - The `exception` parameter is `Exception?` (nullable) in
+        //     the C# signature; F# 9 requires `exn | null` here AND
+        //     in the formatter `Func<'TState, exn | null, string>`.
         member _.BeginScope<'TState when 'TState : not null>(_state: 'TState) : System.IDisposable =
             (new NoopScope()) :> System.IDisposable
         member _.IsEnabled(_: LogLevel) : bool = true
-        member _.Log<'TState when 'TState : not null>
+        member _.Log<'TState>
                 (level: LogLevel,
                  _eventId: EventId,
                  state: 'TState,
-                 ex: exn,
-                 formatter: System.Func<'TState, exn, string>) : unit =
+                 ex: exn | null,
+                 formatter: System.Func<'TState, exn | null, string>) : unit =
             let message = formatter.Invoke(state, ex)
             calls.Add((level, message))
 
