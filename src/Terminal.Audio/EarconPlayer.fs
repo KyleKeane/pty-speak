@@ -104,7 +104,7 @@ module EarconPlayer =
             =
         match Map.tryFind earconId palette with
         | None ->
-            logger.LogInformation(
+            (getLogger ()).LogInformation(
                 "No earcon registered for id; skipping. EarconId={EarconId}",
                 earconId)
         | Some parameters ->
