@@ -1,0 +1,43 @@
+cff-version: 1.2.0
+message: >
+  If you use pty-speak in research, products, services, or accessibility
+  work, please cite it as below. The author also welcomes — but does
+  not require — a brief written acknowledgment when requested, to help
+  demonstrate the impact and adoption of accessibility-first developer
+  tooling. See the LICENSE file for the legal MIT terms and the
+  separate non-binding acknowledgment request.
+title: pty-speak
+abstract: >
+  A screen-reader-native Windows terminal, built in F# / .NET 9 / WPF,
+  designed from the ground up for blind developers using NVDA, JAWS,
+  or Narrator — with Anthropic's Claude Code (and other Ink/React
+  TUIs) as the primary target workload. Parses ANSI into a typed
+  event stream, derives semantic events from those, and exposes them
+  through a real UI Automation Document role + Text pattern + UIA
+  notification surface, so that what reaches a screen reader is
+  structured semantics rather than diffed visible text.
+authors:
+  - family-names: Keane
+    given-names: Kyle
+    name-suffix: Dr.
+    affiliation: >
+      School of Computer Science, University of Bristol, United Kingdom
+    website: https://www.kylekeane.com
+license: MIT
+repository-code: https://github.com/KyleKeane/pty-speak
+url: https://github.com/KyleKeane/pty-speak
+keywords:
+  - accessibility
+  - screen-reader
+  - assistive-technology
+  - NVDA
+  - JAWS
+  - Narrator
+  - terminal
+  - ConPTY
+  - F-sharp
+  - WPF
+  - Windows
+  - blind-developer-tools
+  - Claude-Code
+type: software

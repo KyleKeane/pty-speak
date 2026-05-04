@@ -56,8 +56,19 @@ the corresponding cycle's RFC must address.
 >
 > **Don't fix anything from the inventory in Stage 7; that's
 > framework-cycle work.** The Output framework cycle (Part 3)
-> consumes this inventory as design input for its research phase
-> (`docs/research/OUTPUT-FRAMEWORK-PRIOR-ART.md`).
+> consumes this inventory as design input for its research phase,
+> alongside the maintainer-authored prior-art seed at
+> [`docs/research/MAY-4.md`](research/MAY-4.md) (2026-05-04). The
+> research seed groups these inventory entries under three
+> concerns: most `[output-stream]` / `[output-form]` /
+> `[output-selection]` / `[output-earcon]` / `[output-tui]` /
+> `[output-repl]` entries are manifestations of Concern 2 (output
+> framework) — verbose readback, list semantics, ANSI-styling
+> earcon mapping; `[review-mode]` + `[input-buffer]` /
+> `[input-suggest]` entries map to Concern 3 (navigable streaming
+> response queue) and Input framework cycle Part 4. The
+> consolidated questions list at the bottom of MAY-4.md is the
+> natural starting point for proposal-phase conversation.
 
 ## How to use this file
 

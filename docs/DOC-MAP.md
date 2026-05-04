@@ -33,6 +33,7 @@ navigation anchor.
 | [`docs/USER-SETTINGS.md`](USER-SETTINGS.md) | Contributor adding a hardcoded constant | When introducing config-shaped values | Catalog of values that should eventually be user-configurable. |
 | [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md) | Maintainer cutting a release | Manual NVDA pass | Stage-by-stage NVDA validation matrix. |
 | [`docs/STAGE-N-ISSUES.md`](STAGE-7-ISSUES.md) | Framework-cycle research phases | Design input for the cycle | Inventory of gaps surfaced during a stage's NVDA validation; framework-taxonomy categorised. |
+| [`docs/research/`](research/) | Framework-cycle research authors | Pre-cycle prior-art + tradeoff seeds | Maintainer-authored or Claude-authored research that informs cycle architecture proposals. NOT prescriptive — gathers prior art, articulates tradeoffs, surfaces questions. The `docs/research/MAY-4.md` seed (2026-05-04) is the first inhabitant. |
 | [`docs/LOGGING.md`](LOGGING.md) | Anyone reasoning about the file logger | When tuning logs / triaging | What is and isn't logged; FileLogger architecture; log-rotation policy. |
 | [`docs/RELEASE-PROCESS.md`](RELEASE-PROCESS.md) | Maintainer cutting a release | Release time | Velopack release workflow + GitHub Releases UI sequence. |
 | [`docs/BUILD.md`](BUILD.md) | Local-build first-timer | Setting up a dev environment | `dotnet build` / `dotnet test` recipe. |
@@ -84,7 +85,14 @@ navigation anchor.
 2. [`docs/ROADMAP.md`](ROADMAP.md) — high-level stage list
 3. [`docs/STAGE-7-ISSUES.md`](STAGE-7-ISSUES.md) — design input for
    Output / Input framework cycles
-4. Open issues in GitHub — feature backlog
+4. [`docs/research/MAY-4.md`](research/MAY-4.md) — maintainer-authored
+   prior-art and tradeoff seed for the three Output / Input
+   framework concerns (universal event routing, output framework,
+   navigable streaming response queue) plus a linguistic-design
+   rubric. Not prescriptive; the consolidated questions list at
+   the bottom is the natural starting point for proposal-phase
+   conversation
+5. Open issues in GitHub — feature backlog
 
 ## Maintenance discipline
 

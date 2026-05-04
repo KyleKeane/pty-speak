@@ -15,6 +15,101 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (License attribution + citation + values frame)
+
+- **`LICENSE` expanded.** Copyright line now identifies the author
+  in full: `Copyright (c) 2026 Dr. Kyle Keane, School of Computer
+  Science, University of Bristol, United Kingdom,
+  https://www.kylekeane.com`. The MIT legal terms are unchanged.
+  A new "Acknowledgment request (NOT a condition of the license
+  above)" section is appended, clearly demarcated from the legal
+  text by a separator and explicit "not legally enforceable
+  through this license" framing. Two non-binding courtesy
+  requests: cite the project in research / products / services
+  that build on it, and send a brief written acknowledgment when
+  the author asks — to help demonstrate the impact and adoption
+  of accessibility-first developer tooling to funders, employers,
+  and the broader software community. The MIT license remains
+  fully OSI-compliant; the courtesy requests live alongside it
+  rather than modifying it.
+- **`CITATION.cff` (new file)** at the repo root, in Citation
+  File Format 1.2.0. GitHub auto-renders this as a "Cite this
+  repository" button on the repository page, giving downstream
+  users a one-click path to the canonical citation. Includes
+  full author attribution (Dr. Kyle Keane, University of Bristol
+  School of Computer Science, www.kylekeane.com), abstract, MIT
+  license declaration, repository URL, and accessibility-focused
+  keyword set.
+- **`README.md` "Access, dignity, and full participation"** — new
+  section near the top of the README articulating the values
+  position behind the project: access to computers as a modern
+  necessity of human dignity; the WHO ICF framing of disability
+  as a property of the interaction between a person and their
+  environment, not of the person alone; and the operational
+  consequence — that the right object to repair is the
+  environment (the developer-tool surface), not the person. The
+  technical sections that follow ("Why this exists", "What you
+  can do", etc.) are the operational expression of those values.
+- **`README.md` "License, attribution, and citation"** —
+  License section retitled and rewritten to reference the
+  expanded `LICENSE` file, the new `CITATION.cff`, and to
+  surface the two non-binding courtesy requests at README level
+  alongside the legal terms. Direct-dependency license summary
+  preserved verbatim.
+
+### Documentation (Output framework cycle research seed)
+
+- **`docs/research/MAY-4.md` added** (maintainer-authored,
+  2026-05-04, ~430 lines). Prior-art seed for the post-Stage-7
+  cycles. Three architectural concerns covered: (1) universal
+  event routing — whether and how to route every event through
+  one named dispatch path with pre/post stages, including
+  forward-looking awareness of alternate input sources (HID, OSC,
+  MIDI, serial) framed through an intent-mapping layer; (2)
+  output framework — typed semantic stream + switchable
+  verbosity profiles, with a channel-design surface that
+  includes spatial-audio engines and multi-line refreshable
+  braille displays as forward-compatibility stress tests for
+  the OutputEvent metadata schema; (3) navigable streaming
+  response queue — typed segment forest vs. enhanced
+  review-cursor for orienting inside Claude Code's streamed
+  responses. Plus a section on linguistic-design properties
+  (accurate / equivalent / objective / essential / contextual /
+  common / appropriate / consistent / unambiguous / clear /
+  concise / understandable / apt / synchronous / controllable)
+  and a Discovery / Navigation / Selection / On-demand
+  interaction lifecycle, both drawn from the Diagram Center
+  2014 framework. Cross-cutting considerations cover failure
+  modes, discoverability, documentation, performance budget,
+  backward + forward compatibility, alignment with existing
+  conventions, and the literal-language constraint. Consolidated
+  questions list at the bottom is the natural starting point
+  for proposal-phase conversation. Not prescriptive; framed as
+  research for the cycle's research phase, not the proposal
+  itself.
+- **Cross-references added** so the seed surfaces from every
+  navigation anchor:
+  - `docs/DOC-MAP.md` — new `docs/research/` row in the
+    audience-table; `docs/research/MAY-4.md` added to the
+    "I'm planning the next cycle" entry-point list.
+  - `docs/SESSION-HANDOFF.md` "Where we left off" — "In-flight
+    branch" cell updated to reflect PR-N / PR-O / PR-P merged;
+    "Next stage" cell now anchors the research-phase reading
+    list to MAY-4.md (Concern 2 framing) + STAGE-7-ISSUES.md
+    (empirical anchors).
+  - `docs/STAGE-7-ISSUES.md` status block — research-phase
+    inputs section maps `[output-*]` taxonomy entries to
+    Concern 2 in MAY-4.md, and `[review-mode]` / `[input-*]`
+    entries to Concern 3 + the Input framework cycle Part 4.
+  - `docs/PROJECT-PLAN-2026-05.md` Part 3 kickoff brief — new
+    "Research-phase reading list" subsection. Note that the
+    research-phase deliverable, originally framed as
+    `OUTPUT-FRAMEWORK-PRIOR-ART.md` (Claude-authored prior art),
+    shifts to a synthesis-and-proposal document since MAY-4.md
+    now provides the prior-art coverage.
+  - `README.md` "If you're orienting on the project" Quick links
+    section — MAY-4.md added.
+
 ### Changed (Pre-framework-cycle PR-P)
 
 - **WPF adapter round-trip pinned by unit-test fixtures.** The
