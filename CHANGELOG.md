@@ -15,6 +15,48 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (License attribution + citation + values frame)
+
+- **`LICENSE` expanded.** Copyright line now identifies the author
+  in full: `Copyright (c) 2026 Dr. Kyle Keane, School of Computer
+  Science, University of Bristol, United Kingdom,
+  https://www.kylekeane.com`. The MIT legal terms are unchanged.
+  A new "Acknowledgment request (NOT a condition of the license
+  above)" section is appended, clearly demarcated from the legal
+  text by a separator and explicit "not legally enforceable
+  through this license" framing. Two non-binding courtesy
+  requests: cite the project in research / products / services
+  that build on it, and send a brief written acknowledgment when
+  the author asks — to help demonstrate the impact and adoption
+  of accessibility-first developer tooling to funders, employers,
+  and the broader software community. The MIT license remains
+  fully OSI-compliant; the courtesy requests live alongside it
+  rather than modifying it.
+- **`CITATION.cff` (new file)** at the repo root, in Citation
+  File Format 1.2.0. GitHub auto-renders this as a "Cite this
+  repository" button on the repository page, giving downstream
+  users a one-click path to the canonical citation. Includes
+  full author attribution (Dr. Kyle Keane, University of Bristol
+  School of Computer Science, www.kylekeane.com), abstract, MIT
+  license declaration, repository URL, and accessibility-focused
+  keyword set.
+- **`README.md` "Access, dignity, and full participation"** — new
+  section near the top of the README articulating the values
+  position behind the project: access to computers as a modern
+  necessity of human dignity; the WHO ICF framing of disability
+  as a property of the interaction between a person and their
+  environment, not of the person alone; and the operational
+  consequence — that the right object to repair is the
+  environment (the developer-tool surface), not the person. The
+  technical sections that follow ("Why this exists", "What you
+  can do", etc.) are the operational expression of those values.
+- **`README.md` "License, attribution, and citation"** —
+  License section retitled and rewritten to reference the
+  expanded `LICENSE` file, the new `CITATION.cff`, and to
+  surface the two non-binding courtesy requests at README level
+  alongside the legal terms. Direct-dependency license summary
+  preserved verbatim.
+
 ### Documentation (Output framework cycle research seed)
 
 - **`docs/research/MAY-4.md` added** (maintainer-authored,

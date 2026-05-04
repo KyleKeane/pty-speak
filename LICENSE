@@ -1,6 +1,8 @@
 MIT License
 
-Copyright (c) 2026 Kyle Keane
+Copyright (c) 2026 Dr. Kyle Keane
+School of Computer Science, University of Bristol, United Kingdom
+https://www.kylekeane.com
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +21,36 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+================================================================================
+
+Acknowledgment request (NOT a condition of the license above)
+
+The MIT License above is the legal license under which this software is
+released. It permits use, modification, and redistribution provided the
+copyright notice and this permission notice are preserved. The legal terms
+stand on their own; the requests below do not modify, restrict, or extend
+them in any way.
+
+Separately, and as a non-binding courtesy request, the author would
+appreciate the following from anyone who finds this work useful:
+
+  1. CITATION. If you incorporate this software into research, products,
+     services, or accessibility work, please consider citing it. A
+     CITATION.cff file is provided at the repository root and is
+     surfaced by GitHub as a "Cite this repository" link.
+
+  2. WRITTEN ACKNOWLEDGMENT ON REQUEST. If the author contacts you in
+     writing to ask for a brief acknowledgment of how you have used,
+     adapted, or built on this software, please consider sending one.
+     The aim is to demonstrate the impact and adoption of
+     accessibility-first developer tooling — currently underrepresented
+     in the developer-tools field — to funders, employers, and the
+     broader software community.
+
+These requests reflect the author's preference. They are not legally
+enforceable through this license, and a downstream user is fully within
+their rights under the MIT terms above to ignore them. The author offers
+this work as software that anyone can use, modify, and redistribute under
+those terms; the courtesy requests are a separate channel for collegial
+exchange when impact reporting matters.

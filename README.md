@@ -34,6 +34,38 @@ target workload.
 > [Releases](../../releases) for new builds; once installed,
 > `Ctrl+Shift+U` updates in place.
 
+## Access, dignity, and full participation
+
+`pty-speak` is built on a stronger claim than "this should also work
+for blind users." The claim is that access to computers — and to the
+developer tools that compound human capability — is a modern
+necessity of human dignity. To work with a computer is to participate
+in contemporary society, contemporary culture, and contemporary work.
+Any environment that denies that participation to a class of people
+is a barrier, not a property of the person.
+
+This is the framing the World Health Organization established in the
+[International Classification of Functioning, Disability and
+Health (ICF)](https://www.who.int/standards/classifications/international-classification-of-functioning-disability-and-health):
+disability emerges from the interaction between a person and their
+environment, not from the person alone. A blind developer using a
+screen reader is not less informed; the developer-tool environment
+that fails to support that access is the source of the disability,
+and the cost is borne entirely on the developer rather than on the
+tool. The ICF reframes the work: the right object to repair is the
+environment, and the right metric is whether full participation in
+the relevant life activity becomes possible.
+
+`pty-speak`'s answer is concrete. Build the environment correctly. A
+terminal that exposes its content through a real
+`ITextRangeProvider` and a real semantic event stream is not
+"accessible additionally"; it is accessible by construction. The
+technical decisions in this repository — the ANSI parser, the
+typed-event substrate, the UIA Document + Text-pattern surface, the
+verbosity-profile design queued for the Output framework cycle — all
+follow from that values position. They are how the values are made
+operational rather than rhetorical.
+
 ## Why this exists
 
 Existing Windows terminals — conhost, Windows Terminal, VS Code's integrated
@@ -372,11 +404,37 @@ deficit. The work that goes into that review is the same work
 that produces a more precise model output for everyone — there is
 no trade-off to mitigate.
 
-## License
+## License, attribution, and citation
 
-MIT — see [`LICENSE`](LICENSE).
+`pty-speak` is released under the **MIT License** — see
+[`LICENSE`](LICENSE) for the full legal terms. In short: anyone may
+use, modify, and redistribute the software provided the copyright
+notice is preserved.
 
-Current direct dependencies: Velopack (MIT) and FSharp.Core (MIT).
+**Copyright** (c) 2026 Dr. Kyle Keane, School of Computer Science,
+University of Bristol, United Kingdom (https://www.kylekeane.com).
+
+Beyond the legal MIT floor, the author makes two non-binding
+courtesy requests, separately documented in [`LICENSE`](LICENSE) and
+[`CITATION.cff`](CITATION.cff):
+
+1. **Citation.** If you incorporate this software into research,
+   products, services, or accessibility work, please consider
+   citing it. The CITATION.cff file is GitHub-recognised and is
+   surfaced as a "Cite this repository" link on the repo page.
+2. **Written acknowledgment when requested.** If the author
+   contacts you in writing to ask for a brief acknowledgment of how
+   you have used or adapted this software, please consider sending
+   one. The aim is to demonstrate the impact and adoption of
+   accessibility-first developer tooling — currently
+   underrepresented in the developer-tools field — to funders,
+   employers, and the broader software community.
+
+These are courtesy requests, not license conditions. The legal MIT
+terms stand on their own; a downstream user is fully within their
+rights under the MIT license to ignore the courtesy requests.
+
+**Direct dependency licenses.** Velopack (MIT) and FSharp.Core (MIT).
 Test dependencies: xUnit (Apache-2), FsCheck.Xunit (BSD-3), and
 Microsoft.NET.Test.Sdk (MIT). Future stages add: NAudio (MIT) for
 earcons (Stage 9), FlaUI (MIT) for UIA integration tests (Stage 4),
