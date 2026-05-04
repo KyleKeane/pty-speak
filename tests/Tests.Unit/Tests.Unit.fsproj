@@ -32,6 +32,7 @@
     <Compile Include="EnvBlockTests.fs" />
     <Compile Include="ShellRegistryTests.fs" />
     <Compile Include="ShellSwitchTests.fs" />
+    <Compile Include="HotkeyRegistryTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

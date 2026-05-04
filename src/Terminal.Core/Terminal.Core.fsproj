@@ -14,6 +14,7 @@
     <Compile Include="FileLogger.fs" />
     <Compile Include="Coalescer.fs" />
     <Compile Include="KeyEncoding.fs" />
+    <Compile Include="HotkeyRegistry.fs" />
   </ItemGroup>
 
   <ItemGroup>

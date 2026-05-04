@@ -228,21 +228,95 @@ module Program =
                 }
             task |> ignore
 
-    /// Wire `Ctrl+Shift+U` to trigger `runUpdateFlow`. The
-    /// `KeyBinding` lives in the Window's `InputBindings`
-    /// collection so the gesture is captured BEFORE any future
+    /// Pre-framework-cycle PR-O — translate
+    /// `HotkeyRegistry.HotkeyKey` to WPF `Key`. Lives at the
+    /// app-level boundary because Terminal.Core deliberately
+    /// keeps WPF dependencies out per `KeyEncoding`'s pattern.
+    /// Failure modes throw rather than degrade — a HotkeyKey
+    /// that doesn't translate is a registry / translator
+    /// inconsistency that should be caught at startup, not
+    /// silently dropped.
+    let private translateHotkeyKey
+            (k: HotkeyRegistry.HotkeyKey)
+            : Key =
+        match k with
+        | HotkeyRegistry.Letter c ->
+            match System.Char.ToUpperInvariant(c) with
+            | 'A' -> Key.A | 'B' -> Key.B | 'C' -> Key.C | 'D' -> Key.D
+            | 'E' -> Key.E | 'F' -> Key.F | 'G' -> Key.G | 'H' -> Key.H
+            | 'I' -> Key.I | 'J' -> Key.J | 'K' -> Key.K | 'L' -> Key.L
+            | 'M' -> Key.M | 'N' -> Key.N | 'O' -> Key.O | 'P' -> Key.P
+            | 'Q' -> Key.Q | 'R' -> Key.R | 'S' -> Key.S | 'T' -> Key.T
+            | 'U' -> Key.U | 'V' -> Key.V | 'W' -> Key.W | 'X' -> Key.X
+            | 'Y' -> Key.Y | 'Z' -> Key.Z
+            | other ->
+                failwithf
+                    "HotkeyRegistry.Letter %c not mapped to WPF Key — \
+                     update Program.fs translateHotkeyKey"
+                    other
+        | HotkeyRegistry.Digit 1 -> Key.D1
+        | HotkeyRegistry.Digit 2 -> Key.D2
+        | HotkeyRegistry.Digit 3 -> Key.D3
+        | HotkeyRegistry.Digit 4 -> Key.D4
+        | HotkeyRegistry.Digit 5 -> Key.D5
+        | HotkeyRegistry.Digit 6 -> Key.D6
+        | HotkeyRegistry.Digit 7 -> Key.D7
+        | HotkeyRegistry.Digit 8 -> Key.D8
+        | HotkeyRegistry.Digit 9 -> Key.D9
+        | HotkeyRegistry.Digit n ->
+            failwithf
+                "HotkeyRegistry.Digit %d out of supported range 1-9 \
+                 (number-row digits only; numpad reserved for NVDA \
+                 review-cursor commands)"
+                n
+        | HotkeyRegistry.Semicolon -> Key.OemSemicolon
+
+    /// Pre-framework-cycle PR-O — translate
+    /// `HotkeyRegistry.Modifier` set to WPF `ModifierKeys` flags.
+    let private translateHotkeyModifiers
+            (mods: Set<HotkeyRegistry.Modifier>)
+            : ModifierKeys =
+        let mutable result = ModifierKeys.None
+        if mods.Contains HotkeyRegistry.Ctrl then
+            result <- result ||| ModifierKeys.Control
+        if mods.Contains HotkeyRegistry.Shift then
+            result <- result ||| ModifierKeys.Shift
+        if mods.Contains HotkeyRegistry.Alt then
+            result <- result ||| ModifierKeys.Alt
+        result
+
+    /// Pre-framework-cycle PR-O — wire a registered
+    /// `AppCommand` through WPF's RoutedCommand + KeyBinding +
+    /// CommandBinding triple. Replaces the 8 individual
+    /// `setupXyzKeybinding` functions and the local `bind`
+    /// helper that PR-J extracted in `setupShellSwitchKeybindings`.
+    /// The `KeyBinding` lives in the Window's `InputBindings`
+    /// collection so the gesture is captured BEFORE Stage 6's
     /// PTY-input keyboard handler routes the keys to the child
-    /// shell — Stage 6 (keyboard input to PTY) will need to
-    /// honour the same priority order so app-level shortcuts
-    /// keep working.
-    let private setupAutoUpdateKeybinding (window: MainWindow) : unit =
-        let cmd = RoutedCommand("CheckForUpdates", typeof<MainWindow>)
-        let gesture = KeyGesture(Key.U, ModifierKeys.Control ||| ModifierKeys.Shift)
-        window.InputBindings.Add(KeyBinding(cmd, gesture)) |> ignore
+    /// shell (`OnPreviewKeyDown` filter ordering, pinned by
+    /// xUnit + behavioural tests; see
+    /// `src/Views/TerminalView.cs AppReservedHotkeys` and the
+    /// load-bearing filter chain there).
+    ///
+    /// Phase 2 user-settings will inject overridden Hotkey
+    /// records (different Key / Modifiers per command) before
+    /// this call; the dispatch path stays unchanged.
+    let private bindHotkey
+            (window: MainWindow)
+            (cmd: HotkeyRegistry.AppCommand)
+            (handler: unit -> unit)
+            : unit =
+        let hk = HotkeyRegistry.hotkeyOf cmd
+        let routed = RoutedCommand(HotkeyRegistry.nameOf cmd, typeof<MainWindow>)
+        let gesture =
+            KeyGesture(
+                translateHotkeyKey hk.Key,
+                translateHotkeyModifiers hk.Modifiers)
+        window.InputBindings.Add(KeyBinding(routed, gesture)) |> ignore
         window.CommandBindings.Add(
             CommandBinding(
-                cmd,
-                ExecutedRoutedEventHandler(fun _ _ -> runUpdateFlow window)))
+                routed,
+                ExecutedRoutedEventHandler(fun _ _ -> handler ())))
         |> ignore
 
     /// Launch the bundled process-cleanup diagnostic script in a
@@ -382,24 +456,6 @@ module Program =
                 }
             ()
 
-    /// Wire `Ctrl+Shift+D` to trigger `runDiagnostic`. Same
-    /// pattern as `setupAutoUpdateKeybinding` above. Per the
-    /// app-reserved-hotkey contract, this gesture is in the
-    /// reserved list (Ctrl+Shift+U for update, Ctrl+Shift+D
-    /// for diagnostic, Ctrl+Shift+R for new-release form,
-    /// Ctrl+Shift+M for Stage 9 mute, Alt+Shift+R for Stage 10
-    /// review mode) and Stage 6's keyboard layer must continue
-    /// to honour the priority order.
-    let private setupDiagnosticKeybinding (window: MainWindow) : unit =
-        let cmd = RoutedCommand("RunDiagnostic", typeof<MainWindow>)
-        let gesture = KeyGesture(Key.D, ModifierKeys.Control ||| ModifierKeys.Shift)
-        window.InputBindings.Add(KeyBinding(cmd, gesture)) |> ignore
-        window.CommandBindings.Add(
-            CommandBinding(
-                cmd,
-                ExecutedRoutedEventHandler(fun _ _ -> runDiagnostic window)))
-        |> ignore
-
     /// Open the GitHub "draft a new release" form for this
     /// repository in the user's default web browser. Triggered
     /// by `Ctrl+Shift+R` (mnemonic: **R**elease).
@@ -453,18 +509,6 @@ module Program =
                 ()
             }
         ()
-
-    /// Wire `Ctrl+Shift+R` to trigger `runOpenNewRelease`. Same
-    /// pattern as the other reserved hotkeys above.
-    let private setupNewReleaseKeybinding (window: MainWindow) : unit =
-        let cmd = RoutedCommand("OpenNewRelease", typeof<MainWindow>)
-        let gesture = KeyGesture(Key.R, ModifierKeys.Control ||| ModifierKeys.Shift)
-        window.InputBindings.Add(KeyBinding(cmd, gesture)) |> ignore
-        window.CommandBindings.Add(
-            CommandBinding(
-                cmd,
-                ExecutedRoutedEventHandler(fun _ _ -> runOpenNewRelease window)))
-        |> ignore
 
     /// Mutable handle to the active `FileLoggerSink`. Set by
     /// `compose ()` at startup; consulted by `runOpenLogs` to
@@ -686,29 +730,6 @@ module Program =
                 }
             ()
 
-    /// Wire `Ctrl+Shift+;` to trigger `runCopyLatestLog`.
-    let private setupCopyLatestLogKeybinding (window: MainWindow) : unit =
-        let cmd = RoutedCommand("CopyLatestLog", typeof<MainWindow>)
-        let gesture = KeyGesture(Key.OemSemicolon, ModifierKeys.Control ||| ModifierKeys.Shift)
-        window.InputBindings.Add(KeyBinding(cmd, gesture)) |> ignore
-        window.CommandBindings.Add(
-            CommandBinding(
-                cmd,
-                ExecutedRoutedEventHandler(fun _ _ -> runCopyLatestLog window)))
-        |> ignore
-
-    /// Wire `Ctrl+Shift+L` to trigger `runOpenLogs`. Same
-    /// pattern as the other reserved hotkeys above.
-    let private setupOpenLogsKeybinding (window: MainWindow) : unit =
-        let cmd = RoutedCommand("OpenLogs", typeof<MainWindow>)
-        let gesture = KeyGesture(Key.L, ModifierKeys.Control ||| ModifierKeys.Shift)
-        window.InputBindings.Add(KeyBinding(cmd, gesture)) |> ignore
-        window.CommandBindings.Add(
-                CommandBinding(
-                    cmd,
-                    ExecutedRoutedEventHandler(fun _ _ -> runOpenLogs window)))
-        |> ignore
-
     /// Stage 7-followup PR-E — toggle the active `FileLoggerSink`'s
     /// min-level between Information (default) and Debug, and
     /// announce the new state via NVDA. Lets the maintainer enable
@@ -749,61 +770,6 @@ module Program =
                 | _ -> "Debug logging off."
             window.TerminalSurface.Announce(cue, ActivityIds.logToggle)
 
-    /// Wire `Ctrl+Shift+G` to trigger `runToggleDebugLog`. Same
-    /// pattern as the other reserved hotkeys above. The gesture
-    /// is reserved in `TerminalView.AppReservedHotkeys` so Stage 6's
-    /// `OnPreviewKeyDown` filter doesn't mark it `Handled = true`
-    /// before WPF's `InputBindings` machinery can fire.
-    let private setupToggleDebugLogKeybinding (window: MainWindow) : unit =
-        let cmd = RoutedCommand("ToggleDebugLog", typeof<MainWindow>)
-        let gesture = KeyGesture(Key.G, ModifierKeys.Control ||| ModifierKeys.Shift)
-        window.InputBindings.Add(KeyBinding(cmd, gesture)) |> ignore
-        window.CommandBindings.Add(
-            CommandBinding(
-                cmd,
-                ExecutedRoutedEventHandler(fun _ _ -> runToggleDebugLog window)))
-        |> ignore
-
-    /// Stage 7-followup PR-F — wire `Ctrl+Shift+H` to a caller-
-    /// supplied health-check callback. The callback is a closure
-    /// constructed inside `compose ()` that reads compose-local
-    /// state (host, channel queue depths, last-byte timestamp,
-    /// log level) and announces a one-line summary via NVDA.
-    /// Same closure-passing pattern as
-    /// `setupShellSwitchKeybindings` (which takes
-    /// `ShellId -> unit`); keeps this setup function pure
-    /// boilerplate.
-    let private setupHealthCheckKeybinding
-            (window: MainWindow)
-            (run: unit -> unit) : unit =
-        let cmd = RoutedCommand("HealthCheck", typeof<MainWindow>)
-        let gesture = KeyGesture(Key.H, ModifierKeys.Control ||| ModifierKeys.Shift)
-        window.InputBindings.Add(KeyBinding(cmd, gesture)) |> ignore
-        window.CommandBindings.Add(
-            CommandBinding(
-                cmd,
-                ExecutedRoutedEventHandler(fun _ _ -> run ())))
-        |> ignore
-
-    /// Stage 7-followup PR-F — wire `Ctrl+Shift+B` to a caller-
-    /// supplied incident-marker callback. The callback writes a
-    /// clear "=== INCIDENT MARKER {timestamp} ===" line into the
-    /// active log + announces. Replaces the env-var-and-relaunch
-    /// debug-capture workflow with three keystrokes
-    /// (`Ctrl+Shift+G`, `Ctrl+Shift+B`, `Ctrl+Shift+;`) entirely
-    /// inside pty-speak.
-    let private setupIncidentMarkerKeybinding
-            (window: MainWindow)
-            (run: unit -> unit) : unit =
-        let cmd = RoutedCommand("IncidentMarker", typeof<MainWindow>)
-        let gesture = KeyGesture(Key.B, ModifierKeys.Control ||| ModifierKeys.Shift)
-        window.InputBindings.Add(KeyBinding(cmd, gesture)) |> ignore
-        window.CommandBindings.Add(
-            CommandBinding(
-                cmd,
-                ExecutedRoutedEventHandler(fun _ _ -> run ())))
-        |> ignore
-
     /// Composition seam — Stage 4+ plugs Elmish.WPF and the UIA peer
     /// in here. For Stage 3b we just hold references to the long-lived
     /// pieces and ensure they're disposed on Application.Exit.
@@ -833,36 +799,27 @@ module Program =
         let parser = Parser.create ()
         window.TerminalSurface.SetScreen(screen)
 
-        // Stage 11 — wire Ctrl+Shift+U to the Velopack auto-
-        // update flow. Order doesn't matter relative to the
-        // ConPTY spawn below, but we install it before the
-        // window is loaded so the keybinding is live for the
-        // user's first keypress.
-        setupAutoUpdateKeybinding window
-
-        // Wire Ctrl+Shift+D to launch the bundled process-cleanup
-        // diagnostic script in a separate PowerShell window.
-        // Same install-before-window-load reasoning as above.
-        setupDiagnosticKeybinding window
-
-        // Wire Ctrl+Shift+R to open the GitHub "draft a new
-        // release" form in the user's default browser.
-        setupNewReleaseKeybinding window
-
-        // Wire Ctrl+Shift+L to open the logs folder in File Explorer.
-        setupOpenLogsKeybinding window
-
-        // Wire Ctrl+Shift+; to copy the active session's log file
-        // contents to the clipboard. Useful for sending the log
-        // to a maintainer without navigating Explorer.
-        setupCopyLatestLogKeybinding window
-
-        // Stage 7-followup PR-E — wire Ctrl+Shift+G to toggle the
-        // FileLogger min-level (Information ↔ Debug) at runtime,
-        // with an audible NVDA announcement of the new state. Lets
-        // the maintainer enable verbose debug logging without the
-        // env-var-and-relaunch dance.
-        setupToggleDebugLogKeybinding window
+        // Pre-framework-cycle PR-O — wire each app-reserved
+        // hotkey through the unified `bindHotkey` helper which
+        // looks up the default Hotkey for the AppCommand from
+        // `HotkeyRegistry.builtIns` and installs the WPF
+        // RoutedCommand + KeyBinding + CommandBinding triple.
+        // Replaces the 8 stand-alone `setupXyzKeybinding`
+        // functions (setupAutoUpdate, setupDiagnostic,
+        // setupNewRelease, setupOpenLogs, setupCopyLatestLog,
+        // setupToggleDebugLog, setupHealthCheck,
+        // setupIncidentMarker) plus the local `bind` helper
+        // inside `setupShellSwitchKeybindings` that
+        // duplicated the same boilerplate.
+        // Order doesn't matter relative to the ConPTY spawn
+        // below; we install before the window is loaded so the
+        // keybindings are live for the user's first keypress.
+        bindHotkey window HotkeyRegistry.CheckForUpdates (fun () -> runUpdateFlow window)
+        bindHotkey window HotkeyRegistry.RunDiagnostic (fun () -> runDiagnostic window)
+        bindHotkey window HotkeyRegistry.DraftNewRelease (fun () -> runOpenNewRelease window)
+        bindHotkey window HotkeyRegistry.OpenLogsFolder (fun () -> runOpenLogs window)
+        bindHotkey window HotkeyRegistry.CopyLatestLog (fun () -> runCopyLatestLog window)
+        bindHotkey window HotkeyRegistry.ToggleDebugLog (fun () -> runToggleDebugLog window)
 
         // Direct dispatch via TerminalView.OnPreviewKeyDown is
         // kept as a defence-in-depth path because Window-level
@@ -1275,13 +1232,13 @@ module Program =
                     ActivityIds.error)
 
         // Stage 7-followup PR-F — wire Ctrl+Shift+H and Ctrl+Shift+B
-        // through the standard reserved-hotkey machinery. Both
+        // through the unified `bindHotkey` helper (PR-O). Both
         // closures capture compose-local state (lastReadUtc,
-        // hostHandle, channels, chosenShell) so they're built
+        // hostHandle, channels, currentShell) so they're built
         // here rather than as module-level handlers like the
         // Ctrl+Shift+G toggle (which only needs loggerSink).
-        setupHealthCheckKeybinding window runHealthCheck
-        setupIncidentMarkerKeybinding window runIncidentMarker
+        bindHotkey window HotkeyRegistry.HealthCheck runHealthCheck
+        bindHotkey window HotkeyRegistry.IncidentMarker runIncidentMarker
 
         // Stage 7-followup PR-F — background heartbeat. Every 5
         // seconds, log a single Information-level "Heartbeat" line
@@ -1570,29 +1527,17 @@ module Program =
         // added PowerShell as the diagnostic control shell (always
         // installed, no auth, fast prompt) so isolating shell-switch
         // infrastructure bugs from claude-specific issues is one
-        // keypress away.
+        // keypress away. PR-O (this PR) refactored the wiring
+        // through the unified `bindHotkey` helper; the previous
+        // local `bind` helper inside `setupShellSwitchKeybindings`
+        // is now superseded by the module-level helper.
         //
-        // Pattern matches `setupAutoUpdateKeybinding` etc.; same
-        // window-level KeyBinding + RoutedCommand + CommandBinding
-        // triple. The keys are listed in
-        // `TerminalView.AppReservedHotkeys` so OnPreviewKeyDown
-        // doesn't mark them Handled before InputBindings can fire.
-        let setupShellSwitchKeybindings (window: MainWindow)
-                                        (switchTo: ShellRegistry.ShellId -> unit) : unit =
-            let bind (name: string) (key: Key) (target: ShellRegistry.ShellId) : unit =
-                let routed = RoutedCommand(name, typeof<MainWindow>)
-                let gesture = KeyGesture(key, ModifierKeys.Control ||| ModifierKeys.Shift)
-                window.InputBindings.Add(KeyBinding(routed, gesture)) |> ignore
-                window.CommandBindings.Add(
-                    CommandBinding(
-                        routed,
-                        ExecutedRoutedEventHandler(fun _ _ -> switchTo target)))
-                |> ignore
-            bind "SwitchToCmdShell" Key.D1 ShellRegistry.Cmd
-            bind "SwitchToPowerShellShell" Key.D2 ShellRegistry.PowerShell
-            bind "SwitchToClaudeShell" Key.D3 ShellRegistry.Claude
-
-        setupShellSwitchKeybindings window switchToShell
+        // The keys are listed in `TerminalView.AppReservedHotkeys`
+        // so `OnPreviewKeyDown` doesn't mark them Handled before
+        // `InputBindings` can fire.
+        bindHotkey window HotkeyRegistry.SwitchToCmd (fun () -> switchToShell ShellRegistry.Cmd)
+        bindHotkey window HotkeyRegistry.SwitchToPowerShell (fun () -> switchToShell ShellRegistry.PowerShell)
+        bindHotkey window HotkeyRegistry.SwitchToClaude (fun () -> switchToShell ShellRegistry.Claude)
 
         app.Exit.Add(fun _ ->
             try log.LogInformation("pty-speak exiting.") with _ -> ()
