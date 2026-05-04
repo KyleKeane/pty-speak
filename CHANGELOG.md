@@ -15,6 +15,57 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Documentation (Pre-framework-cycle PR-N)
+
+- **Substrate-invariant docstring contracts.** A pre-framework-
+  cycle audit (plan at `/root/.claude/plans/hello-i-lost-my-velvet-deer.md`)
+  identified four implicit substrate invariants the framework
+  cycles (Output Part 3, Input Part 4, Stage 10) will need to
+  respect. Made them explicit so framework implementers can't
+  accidentally violate:
+  - **`src/Terminal.Core/Coalescer.fs` — `debounceWindow` /
+    `spinnerWindow` / `spinnerThreshold`** are now documented as
+    Stream-profile defaults, not universal terminal-output
+    tuning knobs. The Output framework's per-profile
+    presentation strategies will construct their own
+    `Coalescer.State` instances with caller-supplied thresholds
+    rather than reading these module globals; the Coalescer
+    today IS the Stream profile.
+  - **`Coalescer.onModeChanged`** docstring now warns
+    profile-detection logic MUST NOT assume screen content is
+    stable across mode changes; profiles must wait for the
+    first post-`ModeBarrier` `RowsChanged` to inspect content.
+  - **`src/Terminal.Core/Types.fs ActivityIds` module** docstring
+    now documents the pairing contract with `AnnounceSanitiser`:
+    every UIA Notification MUST be sanitised through
+    `AnnounceSanitiser.sanitise` first AND tagged with a stable
+    `ActivityIds.*` value. Skipping either breaks PTY-control-
+    byte verbalisation suppression or per-class NVDA verbosity
+    configuration. The drain task in `Program.fs` enforces this
+    for current channels; future channels at the same seam
+    inherit enforcement.
+  - **`src/Terminal.App/Program.fs switchToShell`** comment now
+    tags the three known-caveats (screen state not reset, parser
+    state not reset, UIA peer ranges not invalidated) as
+    framework-territory: the Output framework will introduce an
+    `OnShellSwitched` lifecycle signal as the right seam for
+    profile state-reset; pre-framework drive-by fixes here
+    would create precedent the framework either has to adopt or
+    break.
+- **`docs/SESSION-HANDOFF.md` "Where we left off" updated.**
+  "In-flight branch" cell now reflects PR-M (#145) merged at
+  `b09db6e` on 2026-05-04, and identifies the pre-framework-
+  cycle substrate-cleanup bundle (PR-N / PR-O / PR-P) as the
+  active work. "Last merged stages" cell extended to include
+  PR-L (#144) and PR-M (#145) in the Stage 7 PR list.
+- **`docs/USER-SETTINGS.md` `diagnostic.heartbeatIntervalMs`
+  added.** New "Diagnostic surfaces" section catalogues the
+  hardcoded 5-second heartbeat interval (`runHeartbeat` timer)
+  as a Phase 2 candidate setting, with rationale (CPU + log
+  file size for long sessions), three plausible
+  configurability levels (TOML entry / env-var override /
+  runtime hotkey cycle), and implementation notes.
+
 ### Fixed (PR-M, Issue #117)
 
 - **Coalescer cross-row spinner detection redesigned + per-key

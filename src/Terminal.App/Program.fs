@@ -1457,9 +1457,21 @@ module Program =
         //     output triggers a fresh Notification event.
         //
         // Each is acceptable for v1; the validation matrix in
-        // PR-D will document any that surface as user-visible
+        // PR-D documents any that surface as user-visible
         // problems and the framework cycles will own the
         // architectural fixes.
+        //
+        // **Framework-territory tag (PR-N).** Do not patch the
+        // three caveats above incrementally. They're owned by
+        // the Output framework cycle (Part 3 of
+        // `docs/PROJECT-PLAN-2026-05.md`): the framework will
+        // introduce an `OnShellSwitched` lifecycle signal that
+        // each profile uses to reset its detection + semantic-
+        // annotation state, which is the right seam for
+        // screen-buffer reset, parser-state reset, and UIA peer
+        // invalidation. Pre-framework drive-by fixes here would
+        // create a precedent the framework either has to adopt
+        // or break — both of which are worse than waiting.
         let switchToShell (target: ShellRegistry.ShellId) : unit =
             match ShellRegistry.tryFind target with
             | None ->

@@ -649,6 +649,73 @@ redundant — the new emission strategy doesn't produce
 1000+-character announces in the first place. Issue #139
 also tracks the deletion of this cap at that ship boundary.
 
+## Diagnostic surfaces
+
+### `diagnostic.heartbeatIntervalMs` (currently 5000ms)
+
+#### Current state
+
+`src/Terminal.App/Program.fs`'s `runHeartbeat` closure is
+invoked by a `System.Threading.Timer` every **5000 ms** (5
+seconds) and writes a single `Information`-level log line
+capturing shell name + PID + alive/dead flag (PR-J liveness
+probe) + log level + reader last-byte staleness + queue
+depths. Heartbeats stopping appear as a clean wedge timestamp
+in the log when troubleshooting later (per `runHealthCheck`'s
+contract — `Ctrl+Shift+H` reads the same fields on demand).
+
+The 5-second cadence was chosen as a balance between
+diagnostic visibility (granular enough that a wedge timestamp
+narrows the suspect window to <5 seconds) and log volume (a
+24-hour session at 5 seconds = 17,280 lines from the heartbeat
+alone, well under FileLogger's per-session-file capacity at
+default Information level).
+
+#### Why hardcoded now
+
+PR-F (Stage 7-followup) introduced the heartbeat to make
+post-Stage-6 wedge diagnosis tractable for a screen-reader
+user; the value was set to "the first plausible default." No
+maintainer or external user has reported wanting a different
+cadence. The Phase 2 TOML user-settings substrate doesn't exist
+yet, so promoting this constant prematurely would create the
+same one-off settings file tech debt the rest of this catalogue
+warns against.
+
+#### What configurability would look like
+
+Three plausible levels of configurability, increasing in cost:
+
+1. **Single TOML entry** (`diagnostic.heartbeatIntervalMs = 5000`)
+   in the Phase 2 user-settings file. Read once at startup;
+   change requires app restart. Trivial to implement.
+2. **Per-session override via env var** (`PTYSPEAK_HEARTBEAT_MS`)
+   for ad-hoc debugging without persisting state. Cheap;
+   matches the `PTYSPEAK_SHELL` precedent.
+3. **Runtime hotkey to cycle presets** (1s / 5s / 30s / off).
+   Useful for live-debugging a wedge that's mid-occurrence;
+   high implementation cost (state machine for cycle).
+
+Recommended Phase 2 surface: option 1 only. Power users who
+need 1-second granularity can use the env var (option 2) as a
+lightweight escape hatch; option 3 is overkill given the
+expected use pattern.
+
+#### Implementation notes
+
+- The constant is the `dueTime` + `period` argument to the
+  `System.Threading.Timer` constructor in `compose ()`. Reading
+  from a settings record at compose time, then passing through
+  to the Timer, is the natural integration point.
+- Setting the cadence to 0 or a negative value should be
+  treated as "heartbeat off"; the timer is created with
+  `Timeout.Infinite` to disable. Useful for noise-sensitive
+  users but defeats the wedge-timestamp diagnostic — surface a
+  log warning at startup if disabled.
+- The `runHealthCheck` (`Ctrl+Shift+H`) fields are independent
+  of the heartbeat cadence; only the periodic background log
+  emit is affected.
+
 ## Process for adding a new setting
 
 When the project moves from "hardcoded" to "user-configurable"
