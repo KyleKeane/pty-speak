@@ -65,6 +65,19 @@
       declaration PR-C added to Terminal.Accessibility.
     -->
     <ProjectReference Include="..\..\src\Terminal.Accessibility\Terminal.Accessibility.fsproj" />
+    <!--
+      Pre-framework-cycle PR-P added PtySpeak.Views so
+      KeyEncodingTests can reach `TerminalView.TranslateKey` and
+      `TerminalView.TranslateModifiers` (both bumped from
+      private to internal in PR-P) via the
+      `<InternalsVisibleTo Include="PtySpeak.Tests.Unit" />`
+      declaration in `src/Views/Views.csproj`. The Input
+      framework cycle's echo-correlation logic depends on the
+      WPF Key → KeyCode → encoded-bytes round-trip being
+      precise; pinning the adapter at unit-test level catches
+      silent regressions before NVDA validation.
+    -->
+    <ProjectReference Include="..\..\src\Views\Views.csproj" />
   </ItemGroup>
 
 </Project>

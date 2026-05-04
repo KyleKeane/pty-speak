@@ -314,3 +314,190 @@ let ``encodeOrNull returns bytes for handled keys`` () =
 let ``encodeOrNull returns null for Unhandled`` () =
     let result = KeyEncoding.encodeOrNull KeyCode.Unhandled KeyModifiers.None (modesNoneSet ())
     Assert.Null(result)
+
+// ---------------------------------------------------------------------
+// Pre-framework-cycle PR-P — WPF adapter round-trip fixtures
+// ---------------------------------------------------------------------
+//
+// `TerminalView.TranslateKey` (C#, in `src/Views/TerminalView.cs`)
+// adapts `System.Windows.Input.Key` to `KeyCode`; PR-P bumped it
+// (and `TranslateModifiers`) from `private` to `internal` and
+// added `<InternalsVisibleTo Include="PtySpeak.Tests.Unit" />` to
+// `src/Views/Views.csproj` so these fixtures can pin the adapter
+// directly without spinning up a WPF dispatcher.
+//
+// Why pin: the Input framework cycle's echo-correlation logic
+// depends on the WPF Key → KeyCode → encoded-bytes round-trip
+// being precise. A silent regression in the adapter (e.g. a case
+// dropped during refactor) would silently break echo dedup and
+// would NOT be caught by any existing test. These fixtures catch
+// the silent regression at unit-test level before it reaches NVDA
+// validation.
+//
+// Coverage strategy: parametric over the WPF `Key` set
+// `TranslateKey` claims to handle. Each case asserts both
+// (1) `TranslateKey` produces the expected `KeyCode`, and
+// (2) the resulting `KeyCode` encodes to non-empty bytes via
+// `encodeOrNull` (i.e. the encoder accepts the translation).
+
+open System.Windows.Input
+open PtySpeak.Views
+
+/// Helper: translate a WPF `Key`, then encode through the
+/// production path, asserting non-empty bytes. The WPF dispatcher
+/// is NOT required because `TranslateKey` and `encode` are both
+/// pure static functions.
+let private assertWpfKeyEncodes (wpfKey: Key) =
+    let kc = TerminalView.TranslateKey wpfKey
+    let bytes = KeyEncoding.encodeOrNull kc KeyModifiers.None (modesNoneSet ())
+    Assert.NotNull(bytes)
+    // Encoded bytes for any handled key are at least one byte
+    // (cursor keys = 3 bytes ESC [ X; F-keys = 3-5 bytes;
+    // letters = 1 byte; etc.).
+    Assert.True(
+        (nonNull bytes).Length > 0,
+        sprintf "Expected non-empty encoding for WPF Key.%A; got 0 bytes" wpfKey)
+
+[<Fact>]
+let ``TranslateKey: cursor keys round-trip through encode`` () =
+    assertWpfKeyEncodes Key.Up
+    assertWpfKeyEncodes Key.Down
+    assertWpfKeyEncodes Key.Left
+    assertWpfKeyEncodes Key.Right
+
+[<Fact>]
+let ``TranslateKey: editing-keypad keys round-trip through encode`` () =
+    assertWpfKeyEncodes Key.Delete
+    assertWpfKeyEncodes Key.Home
+    assertWpfKeyEncodes Key.End
+    assertWpfKeyEncodes Key.PageUp
+    assertWpfKeyEncodes Key.PageDown
+    // Note: Key.Insert is filtered upstream as a screen-reader
+    // candidate so the production OnPreviewKeyDown filter never
+    // calls TranslateKey for it. The adapter still maps Insert
+    // for completeness if the upstream filter is ever loosened;
+    // pin the adapter mapping here.
+    assertWpfKeyEncodes Key.Insert
+
+[<Fact>]
+let ``TranslateKey: whitespace + control keys round-trip through encode`` () =
+    assertWpfKeyEncodes Key.Tab
+    assertWpfKeyEncodes Key.Enter
+    assertWpfKeyEncodes Key.Escape
+    assertWpfKeyEncodes Key.Back
+
+[<Fact>]
+let ``TranslateKey: function keys F1-F12 round-trip through encode`` () =
+    assertWpfKeyEncodes Key.F1
+    assertWpfKeyEncodes Key.F2
+    assertWpfKeyEncodes Key.F3
+    assertWpfKeyEncodes Key.F4
+    assertWpfKeyEncodes Key.F5
+    assertWpfKeyEncodes Key.F6
+    assertWpfKeyEncodes Key.F7
+    assertWpfKeyEncodes Key.F8
+    assertWpfKeyEncodes Key.F9
+    assertWpfKeyEncodes Key.F10
+    assertWpfKeyEncodes Key.F11
+    assertWpfKeyEncodes Key.F12
+
+[<Fact>]
+let ``TranslateKey: letters A-Z round-trip through encode`` () =
+    let allLetters =
+        [ Key.A; Key.B; Key.C; Key.D; Key.E; Key.F; Key.G; Key.H
+          Key.I; Key.J; Key.K; Key.L; Key.M; Key.N; Key.O; Key.P
+          Key.Q; Key.R; Key.S; Key.T; Key.U; Key.V; Key.W; Key.X
+          Key.Y; Key.Z ]
+    for k in allLetters do
+        assertWpfKeyEncodes k
+
+[<Fact>]
+let ``TranslateKey: digits D0-D9 round-trip through encode`` () =
+    let allDigits =
+        [ Key.D0; Key.D1; Key.D2; Key.D3; Key.D4
+          Key.D5; Key.D6; Key.D7; Key.D8; Key.D9 ]
+    for k in allDigits do
+        assertWpfKeyEncodes k
+
+[<Fact>]
+let ``TranslateKey: numpad digits NumPad0-NumPad9 round-trip through encode`` () =
+    let allNumPad =
+        [ Key.NumPad0; Key.NumPad1; Key.NumPad2; Key.NumPad3; Key.NumPad4
+          Key.NumPad5; Key.NumPad6; Key.NumPad7; Key.NumPad8; Key.NumPad9 ]
+    for k in allNumPad do
+        assertWpfKeyEncodes k
+
+[<Fact>]
+let ``TranslateKey: Space round-trips through encode`` () =
+    assertWpfKeyEncodes Key.Space
+
+[<Fact>]
+let ``TranslateKey: cursor keys produce the expected KeyCode`` () =
+    Assert.Equal(KeyCode.Up, TerminalView.TranslateKey Key.Up)
+    Assert.Equal(KeyCode.Down, TerminalView.TranslateKey Key.Down)
+    Assert.Equal(KeyCode.Left, TerminalView.TranslateKey Key.Left)
+    Assert.Equal(KeyCode.Right, TerminalView.TranslateKey Key.Right)
+
+[<Fact>]
+let ``TranslateKey: editing-keypad produces the expected KeyCode`` () =
+    Assert.Equal(KeyCode.Delete, TerminalView.TranslateKey Key.Delete)
+    Assert.Equal(KeyCode.Home, TerminalView.TranslateKey Key.Home)
+    Assert.Equal(KeyCode.End, TerminalView.TranslateKey Key.End)
+    Assert.Equal(KeyCode.PageUp, TerminalView.TranslateKey Key.PageUp)
+    Assert.Equal(KeyCode.PageDown, TerminalView.TranslateKey Key.PageDown)
+    Assert.Equal(KeyCode.Insert, TerminalView.TranslateKey Key.Insert)
+
+[<Fact>]
+let ``TranslateKey: whitespace + control produce the expected KeyCode`` () =
+    Assert.Equal(KeyCode.Tab, TerminalView.TranslateKey Key.Tab)
+    Assert.Equal(KeyCode.Enter, TerminalView.TranslateKey Key.Enter)
+    Assert.Equal(KeyCode.Escape, TerminalView.TranslateKey Key.Escape)
+    Assert.Equal(KeyCode.Backspace, TerminalView.TranslateKey Key.Back)
+
+[<Fact>]
+let ``TranslateKey: function keys produce the expected KeyCode`` () =
+    Assert.Equal(KeyCode.F1, TerminalView.TranslateKey Key.F1)
+    Assert.Equal(KeyCode.F12, TerminalView.TranslateKey Key.F12)
+
+[<Fact>]
+let ``TranslateKey: lowercase Char for letter keys`` () =
+    // Adapter folds to lowercase; the encoder folds Shift back
+    // when assembling Ctrl-letter byte values upstream.
+    Assert.Equal(KeyCode.Char 'a', TerminalView.TranslateKey Key.A)
+    Assert.Equal(KeyCode.Char 'z', TerminalView.TranslateKey Key.Z)
+
+[<Fact>]
+let ``TranslateKey: digit Char for D0-D9 and NumPad0-NumPad9`` () =
+    Assert.Equal(KeyCode.Char '0', TerminalView.TranslateKey Key.D0)
+    Assert.Equal(KeyCode.Char '9', TerminalView.TranslateKey Key.D9)
+    Assert.Equal(KeyCode.Char '0', TerminalView.TranslateKey Key.NumPad0)
+    Assert.Equal(KeyCode.Char '9', TerminalView.TranslateKey Key.NumPad9)
+
+[<Fact>]
+let ``TranslateKey: unhandled keys produce KeyCode.Unhandled`` () =
+    // Punctuation / OEM / media keys flow through TextInput in
+    // production; the adapter returns Unhandled for them so the
+    // encoder bails out gracefully. Pin a few representative
+    // unhandled cases.
+    Assert.Equal(KeyCode.Unhandled, TerminalView.TranslateKey Key.OemSemicolon)
+    Assert.Equal(KeyCode.Unhandled, TerminalView.TranslateKey Key.OemPlus)
+    Assert.Equal(KeyCode.Unhandled, TerminalView.TranslateKey Key.OemMinus)
+
+[<Fact>]
+let ``TranslateModifiers: maps WPF flags to KeyModifiers flags`` () =
+    Assert.Equal(KeyModifiers.None, TerminalView.TranslateModifiers ModifierKeys.None)
+    Assert.Equal(KeyModifiers.Shift, TerminalView.TranslateModifiers ModifierKeys.Shift)
+    Assert.Equal(KeyModifiers.Alt, TerminalView.TranslateModifiers ModifierKeys.Alt)
+    Assert.Equal(KeyModifiers.Control, TerminalView.TranslateModifiers ModifierKeys.Control)
+    let all = ModifierKeys.Shift ||| ModifierKeys.Alt ||| ModifierKeys.Control
+    let expected = KeyModifiers.Shift ||| KeyModifiers.Alt ||| KeyModifiers.Control
+    Assert.Equal(expected, TerminalView.TranslateModifiers all)
+
+[<Fact>]
+let ``TranslateModifiers: silently drops the Windows key`` () =
+    // Win+letter is OS-shell territory; pty-speak doesn't forward it.
+    // Pin the silent-drop contract.
+    Assert.Equal(KeyModifiers.None, TerminalView.TranslateModifiers ModifierKeys.Windows)
+    Assert.Equal(
+        KeyModifiers.Control,
+        TerminalView.TranslateModifiers (ModifierKeys.Windows ||| ModifierKeys.Control))
