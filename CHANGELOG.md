@@ -15,6 +15,65 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Pre-framework-cycle PR-P)
+
+- **WPF adapter round-trip pinned by unit-test fixtures.** The
+  C# adapter `TerminalView.TranslateKey` (WPF `Key` →
+  `KeyCode`) plus its companion `TranslateModifiers` had no
+  test coverage; a silent regression in either (e.g. a
+  cursor-key case dropped during a refactor) would NOT have
+  been caught by any existing test and would silently break
+  the future Input framework cycle's echo-correlation logic
+  (which depends on the WPF Key → encoded-bytes round-trip
+  being precise per `docs/STAGE-7-ISSUES.md` `[input-buffer]`
+  scope).
+
+  Pre-framework-cycle PR-P closes the test gap:
+
+  - **`TerminalView.TranslateKey` + `TerminalView.TranslateModifiers`
+    bumped from `private` to `internal`** so unit tests can
+    call them directly. `<InternalsVisibleTo
+    Include="PtySpeak.Tests.Unit" />` added to
+    `src/Views/Views.csproj` (modern SDK-style replacement
+    for an `AssemblyInfo.cs` attribute). Tests.Unit gains a
+    `ProjectReference` to PtySpeak.Views; the existing
+    `<UseWPF>true</UseWPF>` declaration on Tests.Unit
+    (originally added for Terminal.Accessibility's
+    word-boundary tests) covers the WPF reference set.
+  - **15 new fixtures in `tests/Tests.Unit/KeyEncodingTests.fs`**
+    (under "Pre-framework-cycle PR-P — WPF adapter
+    round-trip fixtures") cover the full WPF `Key` set
+    `TranslateKey` claims to handle:
+    * Round-trip pins: cursor keys (Up/Down/Left/Right),
+      editing keypad (Delete/Home/End/PageUp/PageDown/Insert),
+      whitespace + control (Tab/Enter/Escape/Back), function
+      keys F1-F12, all letters A-Z, all digits D0-D9, all
+      numpad digits NumPad0-NumPad9, Space. Each fixture
+      verifies `TranslateKey` produces a non-`Unhandled`
+      `KeyCode` and `KeyEncoding.encodeOrNull` produces a
+      non-empty byte sequence.
+    * KeyCode-output pins: specific `Key.X →
+      KeyCode.Y` mappings for cursor keys, editing keypad,
+      whitespace, function keys, letter / digit / numpad
+      `Char` cases (including the lowercase-folding
+      contract), and `KeyCode.Unhandled` for representative
+      OEM keys.
+    * `TranslateModifiers` pins: WPF flag → `KeyModifiers`
+      flag mappings for Ctrl / Shift / Alt and combinations,
+      plus the Windows-key silent-drop contract (Win+letter
+      is OS-shell territory; pty-speak doesn't forward it).
+  - The fixtures invoke the static `TranslateKey` /
+    `TranslateModifiers` methods directly. No WPF
+    dispatcher is required (both are pure static functions);
+    the test runs at the same speed as the existing
+    F#-side `KeyEncoding.encode` fixtures.
+
+  Net change: ~5 lines of `private` → `internal` + docstring
+  updates in `TerminalView.cs`; ~10 lines of `<InternalsVisibleTo>`
+  + `ProjectReference` config in the two .csproj/.fsproj files;
+  ~190 lines of new test fixtures + helper. Zero behavioural
+  change to production code; CI gates the round-trip pinning.
+
 ### Changed (Pre-framework-cycle PR-O)
 
 - **Hotkey handling unified through `HotkeyRegistry`.** The

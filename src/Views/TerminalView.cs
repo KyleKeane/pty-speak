@@ -840,7 +840,15 @@ public class TerminalView : FrameworkElement
     /// dropped — pty-speak doesn't forward it; Win+letter is OS-shell
     /// territory.
     /// </summary>
-    private static KeyModifiers TranslateModifiers(ModifierKeys m)
+    /// <remarks>
+    /// Pre-framework-cycle PR-P bumped this from <c>private</c> to
+    /// <c>internal</c> so
+    /// <c>tests/Tests.Unit/KeyEncodingTests.fs</c> can pin the WPF
+    /// adapter directly without a live dispatcher. The Input
+    /// framework cycle's echo-correlation logic depends on this
+    /// translation being precise.
+    /// </remarks>
+    internal static KeyModifiers TranslateModifiers(ModifierKeys m)
     {
         var result = KeyModifiers.None;
         if ((m & ModifierKeys.Shift) != 0) result |= KeyModifiers.Shift;
@@ -856,7 +864,19 @@ public class TerminalView : FrameworkElement
     /// the keystroke is dropped silently rather than crashing.
     /// New WPF Key values can ship without breaking us.
     /// </summary>
-    private static KeyCode TranslateKey(Key key)
+    /// <remarks>
+    /// Pre-framework-cycle PR-P bumped this from <c>private</c> to
+    /// <c>internal</c> so
+    /// <c>tests/Tests.Unit/KeyEncodingTests.fs</c> can pin the WPF
+    /// adapter directly without a live dispatcher. The Input
+    /// framework cycle's echo-correlation logic depends on the
+    /// WPF Key → <see cref="KeyCode"/> → encoded-bytes round-trip
+    /// being precise; a silent regression in this map would
+    /// silently break echo dedup. See the
+    /// "WPF adapter round-trip fixtures" section of that file
+    /// for the parametric coverage.
+    /// </remarks>
+    internal static KeyCode TranslateKey(Key key)
     {
         // Cursor keys.
         if (key == Key.Up) return KeyCode.Up;

@@ -18,4 +18,17 @@
     <ProjectReference Include="..\Terminal.Accessibility\Terminal.Accessibility.fsproj" />
   </ItemGroup>
 
+  <!--
+    Pre-framework-cycle PR-P — exposes the `internal` static
+    `TranslateKey` and `TranslateModifiers` adapters in
+    `TerminalView.cs` to `tests/Tests.Unit/KeyEncodingTests.fs` so
+    the WPF Key → KeyCode → encoded-bytes round-trip is pinned by
+    fixtures without needing a live WPF dispatcher. See
+    `tests/Tests.Unit/KeyEncodingTests.fs` "WPF adapter round-trip
+    fixtures" section.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="PtySpeak.Tests.Unit" />
+  </ItemGroup>
+
 </Project>
