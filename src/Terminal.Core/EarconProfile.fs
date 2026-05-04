@@ -55,6 +55,21 @@ module EarconProfile =
         { Channel = EarconChannel.id
           Render = RenderEarcon earconId }
 
+    /// Stage 8d.2 — read the StreamProfile's colour-detection
+    /// metadata from `OutputEvent.Extensions["dominantColor"]`.
+    /// Returns the colour string ("red" / "yellow") if present
+    /// and well-typed; `None` otherwise. Defensive against
+    /// non-string Extensions values (which a future producer
+    /// might emit) — bad-typed entries fall through to None
+    /// rather than crashing the dispatcher.
+    let private readDominantColor (event: OutputEvent) : string option =
+        match Map.tryFind "dominantColor" event.Extensions with
+        | Some boxed ->
+            match boxed with
+            | :? string as s -> Some s
+            | _ -> None
+        | None -> None
+
     /// Construct the Earcon profile. No parameters in 8d.1 (no
     /// per-instance state); 8d.2 / Phase 2 may add a
     /// `Parameters` record for things like a per-shell mute
@@ -69,10 +84,32 @@ module EarconProfile =
                         event,
                         [| earconDecision "bell-ping" |]
                     |]
+                | SemanticCategory.StreamChunk ->
+                    // Stage 8d.2 — colour-detected streaming
+                    // output. The StreamProfile stamps
+                    // `Extensions["dominantColor"] = "red" |
+                    // "yellow"` on its synthesised StreamChunk
+                    // events when SGR-coloured rows dominate the
+                    // post-coalesce snapshot. The Earcon profile
+                    // maps red → 400Hz error-tone (lower pitch
+                    // for higher urgency) and yellow → 600Hz
+                    // warning-tone. Plain streaming (no colour
+                    // metadata) emits nothing — earcons are
+                    // supplementary, not per-event.
+                    match readDominantColor event with
+                    | Some "red" ->
+                        [|
+                            event,
+                            [| earconDecision "error-tone" |]
+                        |]
+                    | Some "yellow" ->
+                        [|
+                            event,
+                            [| earconDecision "warning-tone" |]
+                        |]
+                    | _ -> [||]
                 | _ ->
-                    // No earcon for other Semantic categories
-                    // in 8d.1. 8d.2 adds ErrorLine /
-                    // WarningLine cases.
+                    // No earcon for other Semantic categories.
                     [||]
           Tick =
             fun _ ->

@@ -183,6 +183,72 @@ module StreamProfile =
                 head
                 extra
 
+    /// Stage 8d.2 — color-detection helpers. The Stream profile
+    /// scans the post-coalesce snapshot for SGR-coloured rows
+    /// and stamps the result on `OutputEvent.Extensions`; the
+    /// Earcon profile reads the metadata to decide whether to
+    /// emit `RenderEarcon "error-tone"` / `"warning-tone"`. v1
+    /// only matches the standard 16-colour ANSI palette
+    /// (`Indexed 1` / `Indexed 9` for red, `Indexed 3` /
+    /// `Indexed 11` for yellow); 256-colour cube reds and
+    /// truecolor (`Rgb`) values are deferred per the 8d.2 plan.
+    let internal isRedFg (fg: ColorSpec) : bool =
+        match fg with
+        | Indexed 1uy -> true
+        | Indexed 9uy -> true
+        | _ -> false
+
+    let internal isYellowFg (fg: ColorSpec) : bool =
+        match fg with
+        | Indexed 3uy -> true
+        | Indexed 11uy -> true
+        | _ -> false
+
+    /// Per-row classification: walk the non-blank cells and
+    /// count those whose foreground is red / yellow. If >50% of
+    /// non-blank cells are red, the row is red. Else if >50%
+    /// are yellow, the row is yellow. Else None. Blank cells
+    /// (Cell.Ch = space rune) are excluded from the count
+    /// because end-of-line padding shouldn't dilute the
+    /// classification.
+    let internal rowDominantColor (row: Cell[]) : string option =
+        let mutable nonBlank = 0
+        let mutable red = 0
+        let mutable yellow = 0
+        for cell in row do
+            if cell.Ch.Value <> int ' ' then
+                nonBlank <- nonBlank + 1
+                if isRedFg cell.Attrs.Fg then
+                    red <- red + 1
+                elif isYellowFg cell.Attrs.Fg then
+                    yellow <- yellow + 1
+        if nonBlank = 0 then
+            None
+        elif red * 2 > nonBlank then
+            Some "red"
+        elif yellow * 2 > nonBlank then
+            Some "yellow"
+        else
+            None
+
+    /// Per-snapshot (per-batch) classification: walk every row
+    /// and apply `rowDominantColor`; if any row is red, the
+    /// batch is "red". Else if any row is yellow, "yellow".
+    /// Else None. Red wins over yellow because it's the higher-
+    /// urgency tone; the Earcon profile maps "red" to the
+    /// 400Hz error-tone (lower frequency = more urgent).
+    let internal snapshotDominantColor (snapshot: Cell[][]) : string option =
+        let mutable hasRed = false
+        let mutable hasYellow = false
+        for row in snapshot do
+            match rowDominantColor row with
+            | Some "red" -> hasRed <- true
+            | Some "yellow" -> hasYellow <- true
+            | _ -> ()
+        if hasRed then Some "red"
+        elif hasYellow then Some "yellow"
+        else None
+
     /// Decide what (if anything) to emit for an incoming
     /// `RowsChanged` snapshot. Computes hashes, applies dedup +
     /// spinner + debounce, returns 0 or 1 `CoalescedNotification`.
@@ -317,13 +383,31 @@ module StreamProfile =
     /// `ActivityIds.output` regardless of which input event
     /// triggered the flush (a normal RowsChanged, a mode change
     /// flushing pending content, or a Tick-driven trailing-edge
-    /// flush).
-    let private streamOutputEvent (text: string) : OutputEvent =
-        OutputEvent.create
-            SemanticCategory.StreamChunk
-            Priority.Polite
-            id
-            text
+    /// flush). Stage 8d.2 — when `dominantColor` is `Some`, the
+    /// returned event carries `Extensions["dominantColor"] = box
+    /// color`; the EarconProfile reads this metadata to decide
+    /// whether to emit `RenderEarcon "error-tone"` /
+    /// `"warning-tone"`.
+    let private streamOutputEvent
+            (text: string)
+            (dominantColor: string option)
+            : OutputEvent
+            =
+        let baseEvent =
+            OutputEvent.create
+                SemanticCategory.StreamChunk
+                Priority.Polite
+                id
+                text
+        match dominantColor with
+        | None -> baseEvent
+        | Some color ->
+            // Stage 8d.2 — `:> obj` upcast preserves non-null
+            // for `Map<string, obj>`; F# 9's `box` returns
+            // `obj | null` and would trip FS3261 (same lesson
+            // as PR #152's 8a CI failure).
+            { baseEvent with
+                Extensions = Map.ofList [ "dominantColor", (color :> obj) ] }
 
     /// Build a parser-error OutputEvent.
     let private parserErrorEvent (sanitised: string) : OutputEvent =
@@ -366,13 +450,21 @@ module StreamProfile =
     /// can route. The effectiveEvent is the synthesised
     /// OutputEvent that NvdaChannel reads `Semantic` from for
     /// activity-ID mapping.
+    ///
+    /// Stage 8d.2 — `dominantColor` is threaded through so the
+    /// `OutputBatch` case can stamp the colour on the
+    /// `streamOutputEvent`'s Extensions. Other branches
+    /// (ParserError, ModeBarrier) ignore the colour parameter
+    /// because their Semantic categories don't carry colour
+    /// metadata.
     let private coalescedToPair
             (inputEvent: OutputEvent)
+            (dominantColor: string option)
             (coalesced: Coalescer.CoalescedNotification)
             : OutputEvent * ChannelDecision[] =
         match coalesced with
         | Coalescer.OutputBatch text ->
-            let event = streamOutputEvent text
+            let event = streamOutputEvent text dominantColor
             event, textDecisions text
         | Coalescer.ErrorPassthrough s ->
             let event = parserErrorEvent s
@@ -410,10 +502,15 @@ module StreamProfile =
                         [||]
                     else
                         lastSnapshotSeq.Value <- seq
+                        // Stage 8d.2 — scan the snapshot for SGR-
+                        // coloured rows; the EarconProfile uses
+                        // the resulting dominantColor metadata to
+                        // emit error-tone / warning-tone earcons.
+                        let dominantColor = snapshotDominantColor snapshot
                         let coalesced =
                             processRowsChanged parameters state now snapshot
                         coalesced
-                        |> List.map (coalescedToPair event)
+                        |> List.map (coalescedToPair event dominantColor)
                         |> List.toArray
                 | SemanticCategory.ParserError ->
                     // Parser errors come through pre-sanitised
@@ -422,6 +519,9 @@ module StreamProfile =
                     // Apply produces the error decision directly
                     // — no internal coalescing. Stage 8c routes to
                     // both NVDA + FileLogger via textDecisions.
+                    // Stage 8d.2 — no colour metadata for parser
+                    // errors (a parser-level ErrorLine producer is
+                    // a future stage's concern).
                     [|
                         event,
                         textDecisions event.Payload
@@ -438,12 +538,23 @@ module StreamProfile =
                     // value works; we use (AltScreen, true) for
                     // AltScreenEntered and (AltScreen, false)
                     // for ModeBarrier.
+                    //
+                    // Stage 8d.2 — peek the pending-frame colour
+                    // BEFORE onModeChanged consumes
+                    // state.PendingFrame; the flushed-pending
+                    // OutputBatch in the resulting list carries
+                    // the colour metadata, the ModeBarrier item
+                    // ignores it (no colour for mode events).
+                    let pendingColor =
+                        match state.PendingFrame with
+                        | ValueSome snapshot -> snapshotDominantColor snapshot
+                        | ValueNone -> None
                     let flag = TerminalModeFlag.AltScreen
                     let value = event.Semantic = SemanticCategory.AltScreenEntered
                     let coalesced =
                         onModeChanged parameters state now flag value
                     coalesced
-                    |> List.map (coalescedToPair event)
+                    |> List.map (coalescedToPair event pendingColor)
                     |> List.toArray
                 | _ ->
                     // Other semantic categories (SelectionShown /
@@ -462,6 +573,17 @@ module StreamProfile =
                     |]
           Tick =
             fun now ->
+                // Stage 8d.2 — peek the pending-frame colour BEFORE
+                // onTimerTick consumes state.PendingFrame on flush.
+                // If onTimerTick returns [] (within debounce window
+                // and no flush), `pendingColor` is unused — no harm.
+                // If it returns OutputBatch, the closure attaches the
+                // colour to the synthesised StreamChunk event so the
+                // EarconProfile sees the metadata.
+                let pendingColor =
+                    match state.PendingFrame with
+                    | ValueSome snapshot -> snapshotDominantColor snapshot
+                    | ValueNone -> None
                 let coalesced = onTimerTick parameters state now
                 coalesced
                 |> List.map (fun c ->
@@ -474,13 +596,13 @@ module StreamProfile =
                     // NVDA + FileLogger via textDecisions.
                     match c with
                     | Coalescer.OutputBatch text ->
-                        let event = streamOutputEvent text
+                        let event = streamOutputEvent text pendingColor
                         event, textDecisions text
                     | Coalescer.ErrorPassthrough _
                     | Coalescer.ModeBarrier _ ->
                         // Tick never produces these; defensive
                         // fall-through.
-                        let event = streamOutputEvent ""
+                        let event = streamOutputEvent "" None
                         event, [||])
                 |> List.toArray
           Reset =
