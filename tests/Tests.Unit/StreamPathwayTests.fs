@@ -406,7 +406,7 @@ let ``Reset clears state so next Consume re-emits in full`` () =
     Assert.True(state.LastRowHashes.IsSome)
     pathway.Reset ()
     Assert.True(state.LastRowHashes.IsNone)
-    Assert.Equal([||], state.LastEmittedRowHashes)
+    Assert.Equal<uint64[]>([||], state.LastEmittedRowHashes)
     let result = pathway.Consume (CanonicalState.create snap 1L)
     Assert.Equal(1, result.Length)
     Assert.Contains("hello", result.[0].Payload)
