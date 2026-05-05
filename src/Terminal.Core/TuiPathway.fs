@@ -87,4 +87,10 @@ module TuiPathway =
           Reset =
             fun () ->
                 // No state to reset.
+                ()
+          SetBaseline =
+            fun _canonical ->
+                // No baseline to seed — TuiPathway is stateless
+                // and its `Consume` always returns `[||]`
+                // regardless of the canonical state.
                 () }

@@ -86,6 +86,19 @@ let ``pathway Id is "tui"`` () =
     Assert.Equal("tui", pathway.Id)
 
 [<Fact>]
+let ``SetBaseline is a no-op (no exception, no state change)`` () =
+    // TuiPathway has no baseline to seed — it's stateless and
+    // never tracks row hashes. SetBaseline must be a safe
+    // no-op so the hot-switch path can call it uniformly
+    // across pathway types.
+    let pathway = TuiPathway.create ()
+    let canonical = CanonicalState.create (snapshotOf 3 10 [ "vim"; "buffer" ]) 0L
+    pathway.SetBaseline canonical
+    // Subsequent Consume still emits nothing.
+    let result = pathway.Consume (CanonicalState.create (snapshotOf 3 10 [ "vim"; "different" ]) 1L)
+    Assert.Equal(0, result.Length)
+
+[<Fact>]
 let ``OnModeBarrier returns Polite priority`` () =
     // The TuiPathway can't reliably distinguish AltScreen
     // toggles from other mode flips through the v1 pathway

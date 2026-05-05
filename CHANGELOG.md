@@ -15,6 +15,62 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed (Phase A.1 — hot-switch baseline-seed)
+
+The maintainer's NVDA validation pass on Phase A surfaced a
+regression on shell hot-switch (`Ctrl+Shift+1/2/3`): after
+switching from Claude Code to cmd, NVDA kept reading the
+previous shell's screen content for the first emit of the new
+shell, instead of just the new shell's first paint.
+
+Cause: `activePathway.Reset ()` clears the pathway's
+`LastEmittedRowHashes` baseline to `[||]`, which makes the
+next `Consume` call treat every row as "new" and emit the
+entire screen verbatim. The screen buffer itself isn't cleared
+on shell-switch (existing framework-cycle deferral; see the
+`switchToShell` comment block at `Program.fs`), so the entire
+screen at the moment of the first emit still contains the
+previous shell's content overlaid by however much the new
+shell has painted so far.
+
+Pre-Phase-A this didn't bite because every emit shipped the
+full screen anyway (verbose-readback). Post-Phase-A the diff-
+only contract makes the shell-switch first-emit conspicuous.
+
+Fix: add `SetBaseline: Canonical -> unit` to `DisplayPathway.T`.
+`switchToShell` calls it immediately after the new pathway is
+constructed and BEFORE `wirePostSpawn` starts the new reader
+loop, seeding the baseline with the screen's snapshot at the
+moment of switch. The next `Consume` then emits only the rows
+the new shell actually painted (typically just the new
+prompt), not the residual content from the previous shell.
+
+`StreamPathway.SetBaseline` writes
+`canonical.RowHashes` into both `LastEmittedRowHashes` (the
+diff baseline) and `LastRowHashes` (the spinner-suppress
+"previous frame hashes" — without seeding this too, the first
+post-switch Consume would mark every row as "changed" against
+`ValueNone` and over-count spinner-history entries for the
+seeded frame's content).
+
+`TuiPathway.SetBaseline` is a no-op — TuiPathway is stateless
+and never tracks baselines.
+
+Files:
+- `src/Terminal.Core/DisplayPathway.fs` — `T` record gains
+  `SetBaseline: Canonical -> unit`.
+- `src/Terminal.Core/StreamPathway.fs` — internal `seedBaseline`
+  helper + wires through `create` + `createWithExposedState`.
+- `src/Terminal.Core/TuiPathway.fs` — no-op `SetBaseline`.
+- `src/Terminal.App/Program.fs` — `switchToShell` snapshots the
+  screen, builds `Canonical`, calls
+  `activePathway.SetBaseline canonical` before
+  `wirePostSpawn newHost`.
+- `tests/Tests.Unit/StreamPathwayTests.fs` — 4 new tests
+  pinning the baseline-seed behaviour.
+- `tests/Tests.Unit/TuiPathwayTests.fs` — 1 new test pinning
+  the no-op contract.
+
 ### Changed (Phase A — display-pathway substrate)
 
 Resolves the verbose-readback regression

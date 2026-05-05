@@ -1725,6 +1725,35 @@ module Program =
                                         try activePathway.Reset () with _ -> ()
                                         activePathway <-
                                             selectPathwayForShell shell.Id
+                                        // Phase A.1 — seed the new
+                                        // pathway's diff baseline
+                                        // with the screen's current
+                                        // snapshot so the next
+                                        // Consume emits only the
+                                        // new shell's paint, not the
+                                        // residual content the old
+                                        // shell left on the screen.
+                                        // The screen buffer is NOT
+                                        // cleared on shell-switch
+                                        // (separate framework-cycle
+                                        // concern, see the comment
+                                        // block above), so without
+                                        // this seed the user hears
+                                        // the previous shell's
+                                        // content re-announced when
+                                        // the new shell's first
+                                        // RowsChanged arrives. Must
+                                        // happen BEFORE wirePostSpawn
+                                        // starts the reader loop so
+                                        // there's no race with the
+                                        // new shell's first paint.
+                                        try
+                                            let seq, snapshot =
+                                                screen.SnapshotRows(0, screen.Rows)
+                                            let canonical =
+                                                CanonicalState.create snapshot seq
+                                            activePathway.SetBaseline canonical
+                                        with _ -> ()
                                         wirePostSpawn newHost
                                         window.TerminalSurface.Announce(
                                             sprintf "Switched to %s." shell.DisplayName,
