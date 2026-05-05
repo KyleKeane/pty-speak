@@ -416,6 +416,82 @@ let ``pathway Id is "stream"`` () =
     let pathway = StreamPathway.create StreamPathway.defaultParameters
     Assert.Equal("stream", pathway.Id)
 
+// ---- SetBaseline (hot-switch baseline-seed) ------------------------
+
+[<Fact>]
+let ``SetBaseline seeds LastEmittedRowHashes from the supplied canonical state`` () =
+    // Use createWithExposedState so the test can inspect the
+    // mutable State directly — SetBaseline writes through the
+    // closure, not through any observable return value.
+    let pathway, state = StreamPathway.createWithExposedState StreamPathway.defaultParameters
+    let snap = snapshotOf 3 10 [ "claude prompt"; "row two"; "row three" ]
+    let canonical = CanonicalState.create snap 0L
+    pathway.SetBaseline canonical
+    Assert.Equal<uint64[]>(canonical.RowHashes, state.LastEmittedRowHashes)
+    Assert.True(state.LastRowHashes.IsSome)
+    Assert.Equal<uint64[]>(canonical.RowHashes, state.LastRowHashes.Value)
+
+[<Fact>]
+let ``SetBaseline emits no events`` () =
+    // SetBaseline updates internal state ONLY — no OutputEvents.
+    // The signature returns `unit`; this test pins that the
+    // state mutation doesn't piggy-back on Consume's emission
+    // path.
+    let pathway = StreamPathway.create StreamPathway.defaultParameters
+    let snap = snapshotOf 2 10 [ "stale claude content" ]
+    let canonical = CanonicalState.create snap 0L
+    pathway.SetBaseline canonical  // returns unit; no events to inspect
+    // A subsequent Consume of the SAME snapshot should now
+    // return zero events because the baseline matches.
+    let result = pathway.Consume canonical
+    Assert.Equal(0, result.Length)
+
+[<Fact>]
+let ``SetBaseline + Consume of changed frame emits diff-only`` () =
+    // The headline hot-switch fix: after SetBaseline against
+    // the pre-switch screen, the next Consume emits only the
+    // rows the new shell painted, not the entire stale screen.
+    let pathway = StreamPathway.create StreamPathway.defaultParameters
+    // Pre-switch screen — claude content.
+    let preSwitch =
+        snapshotOf 5 20
+            [ "claude code chat"
+              "context: working on..."
+              "blah blah blah"
+              ""
+              "" ]
+    pathway.SetBaseline (CanonicalState.create preSwitch 100L)
+    // New cmd shell paints its prompt at row 4 (assume cmd
+    // overwrites only that row); rows 0-3 still hold claude
+    // content because the screen buffer isn't cleared.
+    let postSwitch =
+        snapshotOf 5 20
+            [ "claude code chat"
+              "context: working on..."
+              "blah blah blah"
+              ""
+              "C:\\>" ]
+    let result = pathway.Consume (CanonicalState.create postSwitch 101L)
+    Assert.Equal(1, result.Length)
+    // The user should hear "C:\>" — NOT the claude content.
+    Assert.Contains("C:\\>", result.[0].Payload)
+    Assert.DoesNotContain("claude", result.[0].Payload)
+    Assert.DoesNotContain("blah", result.[0].Payload)
+
+[<Fact>]
+let ``SetBaseline overrides a prior baseline`` () =
+    // If the user hot-switches twice in quick succession,
+    // SetBaseline must always take the latest canonical's
+    // hashes (not mix with prior state).
+    let pathway, state = StreamPathway.createWithExposedState StreamPathway.defaultParameters
+    let snap1 = snapshotOf 1 5 [ "first" ]
+    let snap2 = snapshotOf 1 5 [ "second" ]
+    let canonical1 = CanonicalState.create snap1 0L
+    let canonical2 = CanonicalState.create snap2 1L
+    pathway.SetBaseline canonical1
+    pathway.SetBaseline canonical2
+    Assert.Equal<uint64[]>(canonical2.RowHashes, state.LastEmittedRowHashes)
+
 // ---- ActivityIds vocabulary pinning (preserved from StreamProfileTests) -----
 
 [<Fact>]

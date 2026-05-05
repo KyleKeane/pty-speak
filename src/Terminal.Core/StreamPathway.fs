@@ -345,6 +345,23 @@ module StreamPathway =
         state.PerRowHistory.Clear()
         state.HashHistory.Clear()
 
+    /// Internal — seed the pathway's diff baseline + spinner-
+    /// gate "previous hashes" with the supplied canonical
+    /// state's hashes. Used by `SetBaseline` (hot-switch). No
+    /// emission; this is purely state-setting. The next
+    /// `Consume` will compute its diff against this seeded
+    /// baseline rather than against `[||]`.
+    let internal seedBaseline (state: State) (canonical: CanonicalState.Canonical) : unit =
+        state.LastEmittedRowHashes <- canonical.RowHashes
+        // Also prime LastRowHashes so the spinner-suppress
+        // "this row changed?" check on the next Consume sees
+        // the seeded frame as "no rows changed yet". Without
+        // this, the first Consume after Reset+SetBaseline
+        // would still mark every row as "changed" against
+        // ValueNone and accumulate spinner-history entries
+        // for the seeded frame's content.
+        state.LastRowHashes <- ValueSome canonical.RowHashes
+
     /// Construct a StreamPathway. The pathway captures
     /// `parameters` in its closure; v1 ships a single
     /// pathway-instance per shell session, recycled via
@@ -363,7 +380,9 @@ module StreamPathway =
             fun now ->
                 onModeBarrier state now
           Reset =
-            fun () -> resetState state }
+            fun () -> resetState state
+          SetBaseline =
+            fun canonical -> seedBaseline state canonical }
 
     /// Test-only — expose the state for direct manipulation in
     /// the test harness. Production code never calls this.
@@ -394,5 +413,7 @@ module StreamPathway =
                 fun now ->
                     onModeBarrier state now
               Reset =
-                fun () -> resetState state }
+                fun () -> resetState state
+              SetBaseline =
+                fun canonical -> seedBaseline state canonical }
         pathway, state

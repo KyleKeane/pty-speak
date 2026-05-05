@@ -71,4 +71,23 @@ module DisplayPathway =
           /// resets its internal state so the new shell's
           /// session starts with a clean baseline (no leaked
           /// row hashes, no pending debounce, etc.).
-          Reset: unit -> unit }
+          Reset: unit -> unit
+          /// Called immediately after `Reset` on a shell-switch
+          /// — seeds the pathway's diff baseline with the
+          /// supplied canonical state. Without this seed, the
+          /// next `Consume` after a `Reset` treats every row as
+          /// "new" and emits the entire screen verbatim — which
+          /// surfaces as NVDA reading the previous shell's
+          /// stale screen content after `Ctrl+Shift+1/2/3`
+          /// hot-switch (the screen buffer isn't cleared on
+          /// switch; only the new shell's paint progressively
+          /// overwrites the old content). Seeding the baseline
+          /// against the screen's snapshot at the moment of
+          /// switch makes subsequent `Consume` emits diff-only
+          /// against the post-switch frame.
+          ///
+          /// **No emission.** `SetBaseline` MUST NOT emit
+          /// OutputEvents — it only updates internal hash state.
+          /// Pathways without baseline state (TuiPathway) treat
+          /// it as a no-op.
+          SetBaseline: CanonicalState.Canonical -> unit }
