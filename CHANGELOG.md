@@ -15,6 +15,49 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed (EarconPlayer — fresh WasapiOut per play)
+
+The post-PR-#157 release-build logs showed the second + third
+earcons in the Ctrl+Shift+D diagnostic failing with
+`AUDCLNT_E_ALREADY_INITIALIZED` (HRESULT `0x88890002`):
+
+```
+[INF] WasapiOut initialised. Device=Speakers (Realtek(R) Audio)
+[DBG] Earcon play started. EarconId=bell-ping ...
+[INF] Earcon play failed; suppressing. EarconId=error-tone Reason=0x88890002
+      System.Runtime.InteropServices.COMException (0x88890002):
+        at NAudio.CoreAudioApi.AudioClient.Initialize(...)
+        at NAudio.Wave.WasapiOut.Init(...)
+[INF] Earcon play failed; suppressing. EarconId=warning-tone Reason=0x88890002
+```
+
+Root cause: NAudio's `WasapiOut.Init` cannot be called twice
+on the same `WasapiOut` instance — the underlying
+`AudioClient.Initialize` throws `AUDCLNT_E_ALREADY_INITIALIZED`
+on second call. The 8d.1 release shipped with a lazy-singleton
+`WasapiOut` that played the first earcon successfully then
+failed silently on every subsequent play. The bug went
+unnoticed because the original 8d.1 NVDA-validation row
+exercised only the bell-ping path (single play); PR #157's
+new diagnostic plays three earcons in sequence and exposed
+the regression.
+
+Fix: drop the singleton; construct a fresh `WasapiOut` per
+play. `MMDeviceEnumerator` is still cached (cheap to share).
+Each play registers a `PlaybackStopped` handler that disposes
+the `WasapiOut` when the bounded sample provider exhausts;
+init/play exceptions trigger explicit disposal too. The
+construct-per-play overhead is acceptable for our use case
+(BEL + diagnostic + future colour detection trigger plays well
+under once-per-150ms).
+
+`src/Terminal.Audio/EarconPlayer.fs` — re-architected:
+- Removed `wasapiOut: WasapiOut option` cached field
+- Added `MMDeviceEnumerator`-only caching via `ensureEnumerator`
+- `play` now creates `new WasapiOut(...)` each call
+- `PlaybackStopped` event handler disposes the instance
+- Inner try/with disposes on init/play failure + rethrows
+
 ### Reverted (Stage 8d.2 — colour detection + ErrorLine/WarningLine earcons)
 
 The maintainer cut a release build with PR #156 (Stage 8d.2)
