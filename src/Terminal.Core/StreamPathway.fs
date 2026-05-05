@@ -60,13 +60,25 @@ module StreamPathway =
         { DebounceWindowMs: int
           SpinnerWindowMs: int
           SpinnerThreshold: int
-          MaxAnnounceChars: int }
+          MaxAnnounceChars: int
+          /// Phase A.2 — toggle SGR colour-detection emission.
+          /// When `true` (default), red-dominant frames emit a
+          /// supplementary `ErrorLine` OutputEvent (claimed by
+          /// EarconProfile → 400Hz error-tone) alongside the
+          /// normal `StreamChunk`; yellow-dominant frames emit
+          /// a `WarningLine` (600Hz warning-tone). When `false`,
+          /// the helpers don't run + only `StreamChunk` events
+          /// emit, identical to the post-revert behaviour. The
+          /// TOML config schema exposes this as
+          /// `[pathway.stream] color_detection`.
+          ColorDetection: bool }
 
     let defaultParameters: Parameters =
         { DebounceWindowMs = 200
           SpinnerWindowMs = 1000
           SpinnerThreshold = 5
-          MaxAnnounceChars = 500 }
+          MaxAnnounceChars = 500
+          ColorDetection = true }
 
     type private SpinnerKey = int * uint64
 
@@ -78,12 +90,20 @@ module StreamPathway =
     /// - The Stage 8b StreamProfile.State fields, preserved
     ///   verbatim so the existing dedup + spinner + debounce
     ///   algorithms work unchanged.
+    /// - `PendingColor`: Phase A.2 — captures the dominant
+    ///   colour computed at accumulate-time (within debounce
+    ///   window) so the trailing-edge `onTimerTick` flush can
+    ///   emit the supplementary `ErrorLine`/`WarningLine`
+    ///   OutputEvent alongside the flushed `StreamChunk`.
+    ///   Cleared in `resetState`, `onModeBarrier`, and on every
+    ///   leading-edge or trailing-edge emit.
     type State =
         { mutable LastEmittedRowHashes: uint64[]
           mutable LastFrameHash: uint64 voption
           mutable LastFlushAt: DateTimeOffset voption
           mutable PendingDiff: CanonicalState.CanonicalDiff voption
           mutable PendingFrameHash: uint64 voption
+          mutable PendingColor: string voption
           mutable LastRowHashes: uint64[] voption
           PerRowHistory: Dictionary<SpinnerKey, ResizeArray<DateTimeOffset>>
           HashHistory: Dictionary<uint64, ResizeArray<DateTimeOffset>> }
@@ -94,6 +114,7 @@ module StreamPathway =
           LastFlushAt = ValueNone
           PendingDiff = ValueNone
           PendingFrameHash = ValueNone
+          PendingColor = ValueNone
           LastRowHashes = ValueNone
           PerRowHistory = Dictionary()
           HashHistory = Dictionary() }
@@ -172,6 +193,77 @@ module StreamPathway =
                 head
                 extra
 
+    /// Phase A.2 — SGR colour-detection helpers. Red-dominant
+    /// rows produce an `ErrorLine` supplementary OutputEvent
+    /// (EarconProfile claims → 400Hz error-tone); yellow ditto
+    /// `WarningLine` → 600Hz warning-tone. v1 only matches the
+    /// standard 16-colour ANSI palette (`Indexed 1`/`Indexed 9`
+    /// for red, `Indexed 3`/`Indexed 11` for yellow); 256-cube
+    /// reds (`Indexed 196` etc.) and Truecolor RGB-distance
+    /// matching are deferred per the original 8d.2 plan.
+    ///
+    /// **Re-introduction context.** PR #156 (8d.2) shipped this
+    /// via `Extensions["dominantColor"]` stamping on the
+    /// StreamProfile-synthesized event; the EarconProfile snoop
+    /// path was structurally broken (it only saw the RAW
+    /// translator event, not the synthesized one). The Phase A
+    /// substrate makes event-splitting trivial: emit two events
+    /// per coloured frame, EarconProfile claims via Semantic
+    /// rather than Extensions. NvdaChannel skips the empty
+    /// `ErrorLine`/`WarningLine` payload (NvdaChannel.fs:87) so
+    /// no double-announce.
+    let internal isRedFg (fg: ColorSpec) : bool =
+        match fg with
+        | Indexed 1uy -> true
+        | Indexed 9uy -> true
+        | _ -> false
+
+    let internal isYellowFg (fg: ColorSpec) : bool =
+        match fg with
+        | Indexed 3uy -> true
+        | Indexed 11uy -> true
+        | _ -> false
+
+    /// Per-row classification: walk non-blank cells and count
+    /// red/yellow foregrounds. >50% of non-blank cells red →
+    /// "red"; else >50% yellow → "yellow"; else None. Blank
+    /// cells (space rune) are excluded from the count so
+    /// end-of-line padding doesn't dilute the classification.
+    let internal rowDominantColor (row: Cell[]) : string option =
+        let mutable nonBlank = 0
+        let mutable red = 0
+        let mutable yellow = 0
+        for cell in row do
+            if cell.Ch.Value <> int ' ' then
+                nonBlank <- nonBlank + 1
+                if isRedFg cell.Attrs.Fg then
+                    red <- red + 1
+                elif isYellowFg cell.Attrs.Fg then
+                    yellow <- yellow + 1
+        if nonBlank = 0 then
+            None
+        elif red * 2 > nonBlank then
+            Some "red"
+        elif yellow * 2 > nonBlank then
+            Some "yellow"
+        else
+            None
+
+    /// Per-snapshot classification: any-red wins; else any-
+    /// yellow; else None. Red wins over yellow because it's
+    /// the higher-urgency tone (400Hz lower-pitched earcon).
+    let internal snapshotDominantColor (snapshot: Cell[][]) : string option =
+        let mutable hasRed = false
+        let mutable hasYellow = false
+        for row in snapshot do
+            match rowDominantColor row with
+            | Some "red" -> hasRed <- true
+            | Some "yellow" -> hasYellow <- true
+            | _ -> ()
+        if hasRed then Some "red"
+        elif hasYellow then Some "yellow"
+        else None
+
     /// Build the StreamChunk OutputEvent for a flushed diff.
     /// Producer-stamp is "stream" (the StreamPathway origin).
     let private streamOutputEvent (text: string) : OutputEvent =
@@ -180,6 +272,32 @@ module StreamPathway =
             Priority.Polite
             id
             text
+
+    /// Phase A.2 — build the supplementary colour-event for a
+    /// flushed diff. Returns `None` for plain frames (caller
+    /// emits only the StreamChunk); `Some ErrorLine` for red,
+    /// `Some WarningLine` for yellow. Empty payload — NVDA
+    /// skips its announce (NvdaChannel.fs:87 RenderText "" →
+    /// no marshalAnnounce); EarconProfile claims via Semantic
+    /// and emits the earcon decision; FileLogger records the
+    /// event for the audit trail. `Priority.Assertive` matches
+    /// the urgency intent (bell-class), mirroring `Bell`'s
+    /// priority in `OutputEventBuilder.fromScreenNotification`.
+    let private colorOutputEvent (color: string) : OutputEvent option =
+        match color with
+        | "red" ->
+            Some (OutputEvent.create
+                    SemanticCategory.ErrorLine
+                    Priority.Assertive
+                    id
+                    "")
+        | "yellow" ->
+            Some (OutputEvent.create
+                    SemanticCategory.WarningLine
+                    Priority.Assertive
+                    id
+                    "")
+        | _ -> None
 
     /// Decide what (if anything) to emit for an incoming
     /// canonical state. Mirrors the Stage 8b
@@ -202,6 +320,15 @@ module StreamPathway =
             let mutable h = 0UL
             for rh in rowHashes do h <- h ^^^ rh
             h
+        // Phase A.2 — compute the dominant colour eagerly
+        // (only if config-enabled). Used both at leading-edge
+        // (emits supplementary event) and at debounce-accumulate
+        // (stashed in state.PendingColor for trailing-edge flush).
+        let dominantColor =
+            if parameters.ColorDetection then
+                snapshotDominantColor canonical.Snapshot
+            else
+                None
         match state.LastFrameHash with
         | ValueSome prev when prev = frameHash ->
             logger.LogDebug(
@@ -239,6 +366,7 @@ module StreamPathway =
                         state.LastFlushAt <- ValueSome now
                         state.PendingDiff <- ValueNone
                         state.PendingFrameHash <- ValueNone
+                        state.PendingColor <- ValueNone
                         logger.LogDebug(
                             "Suppressed (empty-diff). FrameHash=0x{Hash:X16}", frameHash)
                         [||]
@@ -247,20 +375,38 @@ module StreamPathway =
                         state.LastFlushAt <- ValueSome now
                         state.PendingDiff <- ValueNone
                         state.PendingFrameHash <- ValueNone
+                        state.PendingColor <- ValueNone
                         state.LastEmittedRowHashes <- rowHashes
                         let capped = capAnnounce parameters diff.ChangedText
                         logger.LogInformation(
-                            "Emit StreamChunk (leading-edge). FrameHash=0x{Hash:X16} ChangedRows={Rows} TextLen={Len}",
-                            frameHash, diff.ChangedRows.Length, capped.Length)
-                        [| streamOutputEvent capped |]
+                            "Emit StreamChunk (leading-edge). FrameHash=0x{Hash:X16} ChangedRows={Rows} TextLen={Len} Color={Color}",
+                            frameHash, diff.ChangedRows.Length, capped.Length,
+                            (match dominantColor with Some c -> c | None -> "none"))
+                        // Phase A.2 — emit a supplementary
+                        // ErrorLine/WarningLine event when the
+                        // frame is colour-dominant. EarconProfile
+                        // claims it semantically; NvdaChannel skips
+                        // the empty payload so no double-announce.
+                        match dominantColor |> Option.bind colorOutputEvent with
+                        | Some colorEvt -> [| streamOutputEvent capped; colorEvt |]
+                        | None -> [| streamOutputEvent capped |]
                 else
                     // Within debounce: accumulate the diff;
-                    // trailing edge will flush.
+                    // trailing edge will flush. Stash the dominant
+                    // colour alongside so the trailing-edge tick
+                    // emits both events together. Overwrite any
+                    // previous PendingColor — latest pending frame
+                    // wins, matching PendingDiff semantics.
                     state.PendingDiff <- ValueSome (canonical.computeDiff state.LastEmittedRowHashes)
                     state.PendingFrameHash <- ValueSome frameHash
+                    state.PendingColor <-
+                        match dominantColor with
+                        | Some c -> ValueSome c
+                        | None -> ValueNone
                     logger.LogDebug(
-                        "Accumulated (within debounce window). FrameHash=0x{Hash:X16}",
-                        frameHash)
+                        "Accumulated (within debounce window). FrameHash=0x{Hash:X16} Color={Color}",
+                        frameHash,
+                        (match dominantColor with Some c -> c | None -> "none"))
                     [||]
 
     /// Trailing-edge timer tick. If a debounced diff is pending
@@ -283,10 +429,15 @@ module StreamPathway =
                 | ValueNone -> debounceWindow
                 | ValueSome t -> now - t
             if elapsed >= debounceWindow then
+                // Phase A.2 — capture the pending colour BEFORE
+                // resetting state so it survives the same
+                // condition-block that promotes the diff.
+                let pendingColor = state.PendingColor
                 state.LastFrameHash <- ValueSome hash
                 state.LastFlushAt <- ValueSome now
                 state.PendingDiff <- ValueNone
                 state.PendingFrameHash <- ValueNone
+                state.PendingColor <- ValueNone
                 if diff.ChangedRows.Length = 0 then
                     [||]
                 else
@@ -298,10 +449,17 @@ module StreamPathway =
                     | ValueSome rh -> state.LastEmittedRowHashes <- rh
                     | ValueNone -> ()
                     let capped = capAnnounce parameters diff.ChangedText
+                    let colorEvt =
+                        match pendingColor with
+                        | ValueSome c -> colorOutputEvent c
+                        | ValueNone -> None
                     logger.LogInformation(
-                        "Emit StreamChunk (trailing-edge). FrameHash=0x{Hash:X16} ChangedRows={Rows} TextLen={Len}",
-                        hash, diff.ChangedRows.Length, capped.Length)
-                    [| streamOutputEvent capped |]
+                        "Emit StreamChunk (trailing-edge). FrameHash=0x{Hash:X16} ChangedRows={Rows} TextLen={Len} Color={Color}",
+                        hash, diff.ChangedRows.Length, capped.Length,
+                        (match pendingColor with ValueSome c -> c | ValueNone -> "none"))
+                    match colorEvt with
+                    | Some evt -> [| streamOutputEvent capped; evt |]
+                    | None -> [| streamOutputEvent capped |]
             else
                 [||]
         | _ -> [||]
@@ -322,8 +480,17 @@ module StreamPathway =
             | ValueSome diff when diff.ChangedRows.Length > 0 ->
                 [| streamOutputEvent diff.ChangedText |]
             | _ -> [||]
+        // Phase A.2 — clear PendingColor WITHOUT emitting the
+        // supplementary ErrorLine/WarningLine. Mode barriers are
+        // themselves discontinuities (alt-screen toggle, vim
+        // exiting); emitting an error-tone for the flushed
+        // pre-barrier diff would be misleading because the user
+        // already heard the live coloured output. The barrier
+        // itself dispatches separately via OutputEventBuilder
+        // → PathwayPump.handleModeChanged.
         state.PendingDiff <- ValueNone
         state.PendingFrameHash <- ValueNone
+        state.PendingColor <- ValueNone
         state.LastFrameHash <- ValueNone
         state.LastFlushAt <- ValueSome now
         state.LastRowHashes <- ValueNone
@@ -341,6 +508,7 @@ module StreamPathway =
         state.LastFlushAt <- ValueNone
         state.PendingDiff <- ValueNone
         state.PendingFrameHash <- ValueNone
+        state.PendingColor <- ValueNone
         state.LastRowHashes <- ValueNone
         state.PerRowHistory.Clear()
         state.HashHistory.Clear()

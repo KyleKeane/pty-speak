@@ -86,7 +86,13 @@ module Config =
         { DebounceWindowMs: int option
           SpinnerWindowMs: int option
           SpinnerThreshold: int option
-          MaxAnnounceChars: int option }
+          MaxAnnounceChars: int option
+          /// Phase A.2 — toggle SGR colour-detection emission.
+          /// `None` falls back to the default (`true`); `Some
+          /// false` disables the supplementary
+          /// ErrorLine/WarningLine OutputEvents and the
+          /// associated error-tone/warning-tone earcons.
+          ColorDetection: bool option }
 
     /// The top-level config record. `ShellOverrides` is keyed
     /// by lowercase shell-id strings (`"cmd"`, `"claude"`,
@@ -112,7 +118,8 @@ module Config =
             { DebounceWindowMs = None
               SpinnerWindowMs = None
               SpinnerThreshold = None
-              MaxAnnounceChars = None } }
+              MaxAnnounceChars = None
+              ColorDetection = None } }
 
     /// The default config file path —
     /// `%LOCALAPPDATA%\PtySpeak\config.toml`. Mirrors the
@@ -159,6 +166,17 @@ module Config =
         | true, (:? TomlTable as t) -> Some t
         | _ -> None
 
+    /// Internal — try to read a `bool` value from a TomlTable
+    /// by key. Returns `None` if absent or non-bool. Tomlyn
+    /// boxes booleans as native `bool`. Same tuple-deconstruct
+    /// pattern as `tryGetInt` to avoid the F# 9 nullness
+    /// `byref<obj | null>` mismatch with Tomlyn's `out object`
+    /// signature.
+    let private tryGetBool (table: TomlTable) (key: string) : bool option =
+        match table.TryGetValue(key) with
+        | true, (:? bool as b) -> Some b
+        | _ -> None
+
     /// Internal — known parameter keys for `[pathway.stream]`.
     /// Used to detect typos and log Warnings for unknown keys.
     let private knownStreamKeys : Set<string> =
@@ -166,7 +184,8 @@ module Config =
             [ "debounce_window_ms"
               "spinner_window_ms"
               "spinner_threshold"
-              "max_announce_chars" ]
+              "max_announce_chars"
+              "color_detection" ]
 
     /// Internal — known shell-id keys for `[shell.<id>]`.
     /// Mirrors `ShellRegistry.parseEnvVar`'s lowercase
@@ -235,10 +254,22 @@ module Config =
                         key)
                 None
             | Some raw -> parsePositiveInt logger "[pathway.stream]" key raw
+        let readBool (key: string) : bool option =
+            match tryGetBool table key with
+            | None ->
+                // Same key-present-but-wrong-type Warning
+                // pattern as readField above.
+                if table.ContainsKey(key) then
+                    logger.LogWarning(
+                        "Config: [pathway.stream] {Key} is non-boolean; ignored.",
+                        key)
+                None
+            | Some b -> Some b
         { DebounceWindowMs = readField "debounce_window_ms"
           SpinnerWindowMs = readField "spinner_window_ms"
           SpinnerThreshold = readField "spinner_threshold"
-          MaxAnnounceChars = readField "max_announce_chars" }
+          MaxAnnounceChars = readField "max_announce_chars"
+          ColorDetection = readBool "color_detection" }
 
     /// Internal — parse the `[shell.X]` family into
     /// `Map<string, ShellPathwayConfig>`. Unknown shell keys
@@ -423,4 +454,6 @@ module Config =
           SpinnerThreshold =
             Option.defaultValue defaults.SpinnerThreshold ov.SpinnerThreshold
           MaxAnnounceChars =
-            Option.defaultValue defaults.MaxAnnounceChars ov.MaxAnnounceChars }
+            Option.defaultValue defaults.MaxAnnounceChars ov.MaxAnnounceChars
+          ColorDetection =
+            Option.defaultValue defaults.ColorDetection ov.ColorDetection }

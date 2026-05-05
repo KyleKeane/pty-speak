@@ -15,6 +15,130 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Phase A.2 — colour-detection earcons re-introduced)
+
+Re-introduces the SGR colour-detection feature originally
+shipped in Stage 8d.2 (PR #156) and reverted in PR #157 due
+to an unknown release-build regression. The new design avoids
+the original's structural flaw + likely cause by using
+**event-splitting** on the Phase A pathway substrate rather
+than `Extensions["dominantColor"]` stamping on synthesized
+events.
+
+**User-visible behaviour.** When red-foreground text dominates
+the streaming output (>50% of non-blank cells in any row of
+the canonical snapshot), pty-speak plays a brief 400Hz tone
+(`error-tone` earcon, ~150ms) alongside NVDA reading the
+content. Yellow-foreground dominant text plays 600Hz
+(`warning-tone`, ~120ms). Both are supplementary to NVDA — no
+double-announce, no replacement of the spoken content. v1
+matches the standard 16-colour ANSI palette
+(`Indexed 1` / `Indexed 9` for red, `Indexed 3` / `Indexed 11`
+for yellow); 256-cube reds and Truecolor RGB-distance matching
+are deferred per the original 8d.2 plan.
+
+**Configurability.** Per the C2 principle ("transparent + user
+configurable + sensible defaults"), the feature is on by
+default but disable-able via TOML:
+
+```toml
+# %LOCALAPPDATA%\PtySpeak\config.toml
+[pathway.stream]
+color_detection = false
+```
+
+`true`/`false` recognised; non-bool values log a Warning and
+fall back to `true`. Schema documented in `docs/USER-SETTINGS.md`.
+
+**What changed structurally vs original 8d.2.** The original
+stamped `Extensions["dominantColor"]` on the StreamProfile-
+synthesized `StreamChunk` event; EarconProfile read
+`event.Extensions` to decide whether to emit an earcon. That
+design had a latent bug: the dispatcher fans the SAME raw
+input event to all profiles in parallel; EarconProfile only
+saw the RAW translator event (with empty Extensions), not the
+StreamProfile-synthesized event with the colour metadata. The
+unit tests passed because they fed EarconProfile pre-populated
+synthetic events with Extensions, bypassing the dispatcher. The
+release-build regression where NVDA stopped reading is also
+suspected (though never confirmed at runtime) to involve the
+non-empty Extensions interaction with the synthesized event
+flow.
+
+The new design splits the colour signal into a SECOND
+`OutputEvent` with a dedicated semantic category (`ErrorLine`
+for red, `WarningLine` for yellow) and an EMPTY payload.
+EarconProfile claims ErrorLine/WarningLine semantically (no
+Extensions snoop). NvdaChannel skips the empty payload
+(NvdaChannel.fs:87 `RenderText "" -> ()`) — no double-announce.
+FileLogger records both events for the audit trail. The
+dispatcher's existing per-profile fan-out works correctly: the
+ErrorLine event is the ACTUAL OutputEvent dispatched, and
+EarconProfile sees it directly.
+
+**State management for trailing-edge flush.** Within the
+StreamPathway's debounce window, the colour is captured
+alongside the pending diff in a new `State.PendingColor:
+string voption`. The trailing-edge `onTimerTick` flushes both
+events together. `OnModeBarrier` clears the pending colour
+WITHOUT emitting the supplementary event — mode barriers are
+themselves discontinuities (alt-screen toggle, vim exiting),
+and emitting an error-tone for the flushed pre-barrier diff
+would be misleading.
+
+**Library + palette.** No new packages or palette entries
+needed. `EarconPalette.defaultPalette` retained `error-tone`
+(400Hz × 150ms × 10ms) + `warning-tone` (600Hz × 120ms × 10ms)
+across the 8d.2 revert. NvdaChannel's `semanticToActivityId`
+already maps ErrorLine + WarningLine to `ActivityIds.error`.
+
+Files:
+- `src/Terminal.Core/StreamPathway.fs` — colour-detection
+  helpers (`isRedFg`, `isYellowFg`, `rowDominantColor`,
+  `snapshotDominantColor`); `colorOutputEvent` builder;
+  `Parameters.ColorDetection: bool`; `State.PendingColor`;
+  `processCanonicalState` + `onTimerTick` + `onModeBarrier`
+  + `resetState` updates.
+- `src/Terminal.Core/EarconProfile.fs` — `Apply` gains
+  `ErrorLine -> error-tone` and `WarningLine -> warning-tone`
+  cases.
+- `src/Terminal.Core/Config.fs` — `tryGetBool` helper;
+  `StreamParameterOverrides.ColorDetection: bool option`;
+  `parseStreamOverrides` + `resolveStreamParameters` +
+  `knownStreamKeys` updates.
+- `tests/Tests.Unit/StreamPathwayTests.fs` — 14 new tests:
+  helpers (red/yellow/threshold/blank), snapshot-level
+  precedence, double-emit (red, yellow, plain),
+  ColorDetection=false, trailing-edge flush, mode-barrier
+  pending-colour handling.
+- `tests/Tests.Unit/EarconProfileTests.fs` — replaces the
+  "8d.2 will claim" pin with two new tests:
+  `ErrorLine -> error-tone` and `WarningLine -> warning-tone`.
+- `tests/Tests.Unit/ConfigTests.fs` — 4 new tests:
+  default-true invariant, `color_detection = false` parses,
+  `color_detection = true` round-trip, non-bool warning.
+- `docs/USER-SETTINGS.md` — schema example + defaults table
+  row for `color_detection`.
+
+**Out of scope** (carried forward):
+
+- 256-colour cube reds (`Indexed 196` etc.)
+- Truecolor RGB-distance matching (`Rgb` ColorSpec)
+- Background-colour reds (`Bg` field)
+- `ParserError -> error-tone` routing — would need cross-
+  profile suppression substrate (NvdaChannel announces
+  ParserError on the error activityId; doubling up earcon +
+  announce would be noisy)
+- Per-shell colour-detection toggles
+  (`[shell.cmd] color_detection = false`) — uniform pathway-
+  level config is enough for v1
+- TuiPathway colour detection — TuiPathway emits no
+  StreamChunks; separate concern
+- Earcon palette frequency/duration overrides via TOML
+- Earcon dedup for sustained red errors (multiple emits across
+  rapid frames produce multiple earcons; matches original
+  8d.2 behaviour; refine if NVDA validation flags noisy)
+
 ### Added (Phase B subset — TOML config for pathway selection + parameters)
 
 Closes the Phase B "TOML config" item the Phase A plan deferred

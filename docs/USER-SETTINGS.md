@@ -408,6 +408,7 @@ can override the hardcoded mapping without rebuilding pty-speak.
   spinner_window_ms = 1000
   spinner_threshold = 5
   max_announce_chars = 500
+  color_detection = true
 
   [pathway.tui]
   # reserved; no parameters today
@@ -424,6 +425,7 @@ can override the hardcoded mapping without rebuilding pty-speak.
   | `[pathway.stream] spinner_window_ms` | `1000` | History window for spinner-suppress detection |
   | `[pathway.stream] spinner_threshold` | `5` | Row/content-hash change count to trigger suppression |
   | `[pathway.stream] max_announce_chars` | `500` | Text truncation cap for NVDA announcements |
+  | `[pathway.stream] color_detection` | `true` | Emit error-tone (red text) and warning-tone (yellow text) earcons alongside NVDA reading. `false` disables both earcons. |
 
 - Available pathway IDs: `"stream"`, `"tui"`. Future Phase 2
   IDs (`"claude-code"`, `"repl"`, `"form"`) will be added
