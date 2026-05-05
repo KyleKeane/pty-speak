@@ -17,9 +17,13 @@
     <Compile Include="OutputEventBuilder.fs" />
     <Compile Include="NvdaChannel.fs" />
     <Compile Include="FileLoggerChannel.fs" />
-    <Compile Include="StreamProfile.fs" />
+    <Compile Include="CanonicalState.fs" />
+    <Compile Include="DisplayPathway.fs" />
+    <Compile Include="StreamPathway.fs" />
+    <Compile Include="TuiPathway.fs" />
     <Compile Include="EarconChannel.fs" />
     <Compile Include="EarconProfile.fs" />
+    <Compile Include="PassThroughProfile.fs" />
     <Compile Include="OutputDispatcher.fs" />
     <Compile Include="KeyEncoding.fs" />
     <Compile Include="HotkeyRegistry.fs" />
