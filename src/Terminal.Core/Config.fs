@@ -132,43 +132,32 @@ module Config =
     /// Internal — try to read an `int64` value from a
     /// TomlTable by key. Returns `None` if absent or
     /// non-integer. Tomlyn boxes integers as `int64` (TOML's
-    /// only integer width), so we cast to `int64` and
+    /// only integer width), so we match `:? int64` and
     /// downcast to `int` at the consumer site (parameter
-    /// values fit comfortably in 32 bits).
+    /// values fit comfortably in 32 bits). Uses F#'s
+    /// tuple-deconstruction syntax for `out` parameters so
+    /// the F# 9 nullness checker doesn't fire on a
+    /// `byref<obj | null>` mismatch with Tomlyn's
+    /// `out object` parameter signature.
     let private tryGetInt (table: TomlTable) (key: string) : int64 option =
-        let mutable value : obj | null = null
-        if table.TryGetValue(key, &value) then
-            match value with
-            | null -> None
-            | :? int64 as i -> Some i
-            | _ -> None
-        else
-            None
+        match table.TryGetValue(key) with
+        | true, (:? int64 as i) -> Some i
+        | _ -> None
 
     /// Internal — try to read a `string` value from a
     /// TomlTable by key. Returns `None` if absent or
     /// non-string.
     let private tryGetString (table: TomlTable) (key: string) : string option =
-        let mutable value : obj | null = null
-        if table.TryGetValue(key, &value) then
-            match value with
-            | null -> None
-            | :? string as s -> Some s
-            | _ -> None
-        else
-            None
+        match table.TryGetValue(key) with
+        | true, (:? string as s) -> Some s
+        | _ -> None
 
     /// Internal — try to read a sub-table by key. Returns
     /// `None` if absent or non-table.
     let private tryGetTable (table: TomlTable) (key: string) : TomlTable option =
-        let mutable value : obj | null = null
-        if table.TryGetValue(key, &value) then
-            match value with
-            | null -> None
-            | :? TomlTable as t -> Some t
-            | _ -> None
-        else
-            None
+        match table.TryGetValue(key) with
+        | true, (:? TomlTable as t) -> Some t
+        | _ -> None
 
     /// Internal — known parameter keys for `[pathway.stream]`.
     /// Used to detect typos and log Warnings for unknown keys.
@@ -235,8 +224,12 @@ module Config =
         let readField (key: string) : int option =
             match tryGetInt table key with
             | None ->
-                let mutable value : obj | null = null
-                if table.TryGetValue(key, &value) then
+                // `tryGetInt` returns None both for "key absent"
+                // and "key present but non-int". Distinguish via
+                // `ContainsKey` so the user gets a typo Warning
+                // for the latter (a silently-dropped non-int
+                // value would hide schema mistakes).
+                if table.ContainsKey(key) then
                     logger.LogWarning(
                         "Config: [pathway.stream] {Key} is non-integer; ignored.",
                         key)
@@ -298,8 +291,7 @@ module Config =
         | None ->
             // Distinguish "key absent" from "key present but
             // non-integer" so the user can spot type errors.
-            let mutable value : obj | null = null
-            if root.TryGetValue("schema_version", &value) then
+            if root.ContainsKey("schema_version") then
                 logger.LogWarning(
                     "Config: schema_version is non-integer; treating as {Default}.",
                     CurrentSchemaVersion)
