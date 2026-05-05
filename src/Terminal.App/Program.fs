@@ -409,33 +409,41 @@ module Program =
                 "Diagnostic snapshot: %s. Testing earcons."
                 snapshot,
             ActivityIds.diagnostic)
+        // Helper: announce a label, wait for NVDA to read it,
+        // play the earcon, wait for the tone to finish. Defined
+        // outside the outer `task { ... }` block to keep the
+        // outer state machine statically compilable (the F# 9
+        // task CE flags `for tuple in list do { do! ... }`
+        // patterns as `FS3511`; an explicit unroll with three
+        // `do!` calls compiles cleanly).
+        let announceAndPlay (label: string) (earconId: string) : Task =
+            task {
+                let action () =
+                    window.TerminalSurface.Announce(
+                        label,
+                        ActivityIds.diagnostic)
+                do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                // Wait for NVDA to finish reading the label
+                // before the tone plays — otherwise the tone
+                // overlaps the speech.
+                do! Task.Delay(400)
+                EarconPlayer.play
+                    EarconPalette.defaultPalette
+                    earconId
+                // Wait for the tone to finish (max 150ms) so
+                // the next label announce doesn't fire while
+                // the tone is still audible.
+                do! Task.Delay(500)
+            }
         let _ =
             task {
                 // Brief settle so the snapshot announce reaches
                 // NVDA's speech queue before the first per-earcon
                 // announce queues up behind it.
                 do! Task.Delay(800)
-                let earconLineup =
-                    [ "Bell ping.", "bell-ping"
-                      "Error tone.", "error-tone"
-                      "Warning tone.", "warning-tone" ]
-                for label, earconId in earconLineup do
-                    let action () =
-                        window.TerminalSurface.Announce(
-                            label,
-                            ActivityIds.diagnostic)
-                    do! window.Dispatcher.InvokeAsync(Action(action)).Task
-                    // Wait for NVDA to finish reading the label
-                    // before the tone plays — otherwise the tone
-                    // overlaps the speech.
-                    do! Task.Delay(400)
-                    EarconPlayer.play
-                        EarconPalette.defaultPalette
-                        earconId
-                    // Wait for the tone to finish (max 150ms) so
-                    // the next label announce doesn't fire while
-                    // the tone is still audible.
-                    do! Task.Delay(500)
+                do! announceAndPlay "Bell ping." "bell-ping"
+                do! announceAndPlay "Error tone." "error-tone"
+                do! announceAndPlay "Warning tone." "warning-tone"
                 let final () =
                     window.TerminalSurface.Announce(
                         "Earcon test complete.",
