@@ -565,3 +565,179 @@ let ``renderRows trims trailing blank cells per row`` () =
     let snap = snapshotOf 1 10 [ "ab" ]
     let text = Coalescer.renderRows snap
     Assert.Equal("ab", text)
+
+// ---- Phase A.2 — colour detection ----------------------------------
+
+let private cellWithFg (ch: char) (fg: ColorSpec) : Cell =
+    { Ch = System.Text.Rune ch
+      Attrs = { SgrAttrs.defaults with Fg = fg } }
+
+let private rowOfFg (cols: int) (fg: ColorSpec) (s: string) : Cell[] =
+    let row = blankRow cols
+    for i in 0 .. min (s.Length - 1) (cols - 1) do
+        row.[i] <- cellWithFg s.[i] fg
+    row
+
+let private redSnapshotOf (rows: int) (cols: int) (lines: string list) : Cell[][] =
+    let arr = Array.init rows (fun _ -> blankRow cols)
+    lines
+    |> List.iteri (fun i line ->
+        if i < rows then arr.[i] <- rowOfFg cols (Indexed 1uy) line)
+    arr
+
+let private yellowSnapshotOf (rows: int) (cols: int) (lines: string list) : Cell[][] =
+    let arr = Array.init rows (fun _ -> blankRow cols)
+    lines
+    |> List.iteri (fun i line ->
+        if i < rows then arr.[i] <- rowOfFg cols (Indexed 3uy) line)
+    arr
+
+[<Fact>]
+let ``isRedFg true for Indexed 1 and 9, false otherwise`` () =
+    Assert.True(StreamPathway.isRedFg (Indexed 1uy))
+    Assert.True(StreamPathway.isRedFg (Indexed 9uy))
+    Assert.False(StreamPathway.isRedFg (Indexed 2uy))
+    Assert.False(StreamPathway.isRedFg Default)
+    Assert.False(StreamPathway.isRedFg (Rgb (255uy, 0uy, 0uy)))
+
+[<Fact>]
+let ``isYellowFg true for Indexed 3 and 11, false otherwise`` () =
+    Assert.True(StreamPathway.isYellowFg (Indexed 3uy))
+    Assert.True(StreamPathway.isYellowFg (Indexed 11uy))
+    Assert.False(StreamPathway.isYellowFg (Indexed 4uy))
+    Assert.False(StreamPathway.isYellowFg Default)
+
+[<Fact>]
+let ``rowDominantColor red majority returns red`` () =
+    // 5 non-blank red cells → 100% red → "red".
+    let row = rowOfFg 10 (Indexed 1uy) "Error"
+    Assert.Equal(Some "red", StreamPathway.rowDominantColor row)
+
+[<Fact>]
+let ``rowDominantColor below 50 percent threshold returns None`` () =
+    // 2 red cells out of 4 non-blank → exactly 50% — NOT > 50%.
+    let row = blankRow 10
+    row.[0] <- cellWithFg 'E' (Indexed 1uy)
+    row.[1] <- cellWithFg 'R' (Indexed 1uy)
+    row.[2] <- cellOf 'O'
+    row.[3] <- cellOf 'K'
+    Assert.Equal(None, StreamPathway.rowDominantColor row)
+
+[<Fact>]
+let ``rowDominantColor blank row returns None`` () =
+    let row = blankRow 10
+    Assert.Equal(None, StreamPathway.rowDominantColor row)
+
+[<Fact>]
+let ``snapshotDominantColor — red wins over yellow`` () =
+    let snap =
+        Array.init 3 (fun i ->
+            if i = 0 then rowOfFg 5 (Indexed 1uy) "red"
+            elif i = 1 then rowOfFg 5 (Indexed 3uy) "yel"
+            else blankRow 5)
+    Assert.Equal(Some "red", StreamPathway.snapshotDominantColor snap)
+
+[<Fact>]
+let ``snapshotDominantColor — yellow wins when no red`` () =
+    let snap =
+        [| rowOfFg 5 (Indexed 3uy) "warn"; blankRow 5 |]
+    Assert.Equal(Some "yellow", StreamPathway.snapshotDominantColor snap)
+
+[<Fact>]
+let ``snapshotDominantColor — plain returns None`` () =
+    let snap = snapshotOf 2 5 [ "abc"; "def" ]
+    Assert.Equal(None, StreamPathway.snapshotDominantColor snap)
+
+[<Fact>]
+let ``red snapshot leading-edge emit returns 2 events with ErrorLine`` () =
+    let state = StreamPathway.createState ()
+    let snap = redSnapshotOf 1 10 [ "Error" ]
+    let result =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0)
+            (canonicalAt snap 0L)
+    Assert.Equal(2, result.Length)
+    Assert.Equal(SemanticCategory.StreamChunk, result.[0].Semantic)
+    Assert.Contains("Error", result.[0].Payload)
+    Assert.Equal(SemanticCategory.ErrorLine, result.[1].Semantic)
+    Assert.Equal("", result.[1].Payload)
+    Assert.Equal(Priority.Assertive, result.[1].Priority)
+
+[<Fact>]
+let ``yellow snapshot leading-edge emit returns 2 events with WarningLine`` () =
+    let state = StreamPathway.createState ()
+    let snap = yellowSnapshotOf 1 10 [ "Warn" ]
+    let result =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0)
+            (canonicalAt snap 0L)
+    Assert.Equal(2, result.Length)
+    Assert.Equal(SemanticCategory.WarningLine, result.[1].Semantic)
+    Assert.Equal("", result.[1].Payload)
+
+[<Fact>]
+let ``plain snapshot leading-edge emit returns 1 event (regression guard)`` () =
+    let state = StreamPathway.createState ()
+    let snap = snapshotOf 1 10 [ "hello" ]
+    let result =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0)
+            (canonicalAt snap 0L)
+    Assert.Equal(1, result.Length)
+    Assert.Equal(SemanticCategory.StreamChunk, result.[0].Semantic)
+
+[<Fact>]
+let ``ColorDetection = false suppresses second event on red snapshot`` () =
+    let state = StreamPathway.createState ()
+    let snap = redSnapshotOf 1 10 [ "Error" ]
+    let parameters =
+        { StreamPathway.defaultParameters with ColorDetection = false }
+    let result =
+        StreamPathway.processCanonicalState
+            parameters state (at 0) (canonicalAt snap 0L)
+    Assert.Equal(1, result.Length)
+    Assert.Equal(SemanticCategory.StreamChunk, result.[0].Semantic)
+
+[<Fact>]
+let ``red snapshot accumulated within debounce → onTimerTick emits both events`` () =
+    let state = StreamPathway.createState ()
+    let snap1 = redSnapshotOf 1 10 [ "E" ]
+    let snap2 = redSnapshotOf 1 10 [ "Err" ]
+    // Leading-edge at t=0 — emits 2 events for snap1.
+    let r1 =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0) (canonicalAt snap1 0L)
+    Assert.Equal(2, r1.Length)
+    // Within debounce — accumulates snap2, no immediate emit.
+    let r2 =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 50) (canonicalAt snap2 1L)
+    Assert.Equal(0, r2.Length)
+    // Trailing-edge at t=300 — flushes pending diff + colour.
+    let tick =
+        StreamPathway.onTimerTick StreamPathway.defaultParameters state (at 300)
+    Assert.Equal(2, tick.Length)
+    Assert.Equal(SemanticCategory.StreamChunk, tick.[0].Semantic)
+    Assert.Equal(SemanticCategory.ErrorLine, tick.[1].Semantic)
+    // PendingColor cleared after the flush.
+    Assert.Equal(ValueNone, state.PendingColor)
+
+[<Fact>]
+let ``onModeBarrier with PendingColor clears it without emitting colour event`` () =
+    let state = StreamPathway.createState ()
+    let snap1 = redSnapshotOf 1 10 [ "E" ]
+    let snap2 = redSnapshotOf 1 10 [ "Err" ]
+    // Leading-edge emit (resets PendingColor inside).
+    let _ =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0) (canonicalAt snap1 0L)
+    // Within debounce — accumulates with PendingColor = ValueSome "red".
+    let _ =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 50) (canonicalAt snap2 1L)
+    Assert.Equal(ValueSome "red", state.PendingColor)
+    // Mode barrier flushes the pending diff but NOT the colour event.
+    let result = StreamPathway.onModeBarrier state (at 100)
+    Assert.Equal(1, result.Length)
+    Assert.Equal(SemanticCategory.StreamChunk, result.[0].Semantic)
+    Assert.Equal(ValueNone, state.PendingColor)

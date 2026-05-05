@@ -99,14 +99,35 @@ let ``AltScreenEntered Apply returns empty pair array`` () =
     Assert.Equal(0, pairs.Length)
 
 [<Fact>]
-let ``ErrorLine Apply returns empty pair array (8d.2 will claim)`` () =
-    // 8d.1 doesn't claim ErrorLine; 8d.2's color-detection
-    // producer + earcon-palette extension will. Pinning the
-    // 8d.1 behaviour so 8d.2's diff is reviewable.
+let ``ErrorLine Apply emits one pair with error-tone ChannelDecision`` () =
+    // Phase A.2 — re-introduces 8d.2's red → 400Hz error-tone.
+    // StreamPathway emits an empty-payload ErrorLine
+    // OutputEvent alongside the StreamChunk when the frame is
+    // red-dominant; EarconProfile claims it semantically.
     let profile = EarconProfile.create ()
     let event = buildEvent SemanticCategory.ErrorLine
     let pairs = profile.Apply event
-    Assert.Equal(0, pairs.Length)
+    Assert.Equal(1, pairs.Length)
+    let _, decisions = pairs.[0]
+    Assert.Equal(1, decisions.Length)
+    Assert.Equal(EarconChannel.id, decisions.[0].Channel)
+    match decisions.[0].Render with
+    | RenderEarcon earconId ->
+        Assert.Equal("error-tone", earconId)
+    | other -> Assert.Fail(sprintf "Expected RenderEarcon; got %A" other)
+
+[<Fact>]
+let ``WarningLine Apply emits one pair with warning-tone ChannelDecision`` () =
+    let profile = EarconProfile.create ()
+    let event = buildEvent SemanticCategory.WarningLine
+    let pairs = profile.Apply event
+    Assert.Equal(1, pairs.Length)
+    let _, decisions = pairs.[0]
+    Assert.Equal(1, decisions.Length)
+    match decisions.[0].Render with
+    | RenderEarcon earconId ->
+        Assert.Equal("warning-tone", earconId)
+    | other -> Assert.Fail(sprintf "Expected RenderEarcon; got %A" other)
 
 [<Fact>]
 let ``Custom Semantic Apply returns empty pair array`` () =

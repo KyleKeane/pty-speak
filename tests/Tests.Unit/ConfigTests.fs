@@ -293,3 +293,43 @@ let ``TOML containing [[bindings]] (future input-binding spec section) parses cl
 let ``defaultConfigFilePath ends with PtySpeak\config.toml`` () =
     let path = Config.defaultConfigFilePath ()
     Assert.EndsWith(@"PtySpeak\config.toml", path)
+
+// ---- Phase A.2 — color_detection knob -----------------------------
+
+[<Fact>]
+let ``defaultConfig resolveStreamParameters has ColorDetection = true`` () =
+    // Sensible-defaults invariant: byte-equivalent to the
+    // hardcoded behaviour. Phase A.2 enables colour detection
+    // by default.
+    let resolved = Config.resolveStreamParameters Config.defaultConfig
+    Assert.True(resolved.ColorDetection)
+
+[<Fact>]
+let ``[pathway.stream] color_detection = false flows through resolveStreamParameters`` () =
+    let toml =
+        "schema_version = 1\n[pathway.stream]\ncolor_detection = false\n"
+    let config, _ = loadFromText toml
+    let resolved = Config.resolveStreamParameters config
+    Assert.False(resolved.ColorDetection)
+    // Other fields fall back to defaults.
+    Assert.Equal(StreamPathway.defaultParameters.DebounceWindowMs, resolved.DebounceWindowMs)
+
+[<Fact>]
+let ``[pathway.stream] color_detection = true is parsed as override (still true)`` () =
+    // Even when matching the default, the override is recorded
+    // — semantically a no-op, but the user-set flag survives
+    // round-trip.
+    let toml =
+        "schema_version = 1\n[pathway.stream]\ncolor_detection = true\n"
+    let config, _ = loadFromText toml
+    Assert.Equal(Some true, config.StreamOverrides.ColorDetection)
+    Assert.True((Config.resolveStreamParameters config).ColorDetection)
+
+[<Fact>]
+let ``non-bool color_detection logs Warning and falls back to default`` () =
+    let toml =
+        "schema_version = 1\n[pathway.stream]\ncolor_detection = 42\n"
+    let config, logger = loadFromText toml
+    let resolved = Config.resolveStreamParameters config
+    Assert.True(resolved.ColorDetection)
+    Assert.True(logger.HasLevel(LogLevel.Warning))

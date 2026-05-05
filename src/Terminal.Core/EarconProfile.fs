@@ -69,10 +69,30 @@ module EarconProfile =
                         event,
                         [| earconDecision "bell-ping" |]
                     |]
+                | SemanticCategory.ErrorLine ->
+                    // Phase A.2 — re-introduces 8d.2's red →
+                    // 400Hz error-tone earcon. StreamPathway
+                    // emits an empty-payload `ErrorLine`
+                    // OutputEvent alongside the StreamChunk
+                    // when the frame is red-dominant.
+                    // NvdaChannel skips the empty payload
+                    // (NvdaChannel.fs:87 RenderText "" → no
+                    // marshalAnnounce); EarconChannel plays the
+                    // tone via the palette's "error-tone"
+                    // entry. No double-announce.
+                    [|
+                        event,
+                        [| earconDecision "error-tone" |]
+                    |]
+                | SemanticCategory.WarningLine ->
+                    // Phase A.2 — yellow → 600Hz warning-tone.
+                    // Same event-splitting design as ErrorLine.
+                    [|
+                        event,
+                        [| earconDecision "warning-tone" |]
+                    |]
                 | _ ->
-                    // No earcon for other Semantic categories
-                    // in 8d.1. 8d.2 adds ErrorLine /
-                    // WarningLine cases.
+                    // No earcon for other Semantic categories.
                     [||]
           Tick =
             fun _ ->
