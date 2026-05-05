@@ -18,6 +18,14 @@
       assume present on any user machine running pty-speak.
     -->
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+    <!--
+      Phase B — TOML config substrate. Tomlyn (xoofx, BSD 2-Clause)
+      parses `%LOCALAPPDATA%\PtySpeak\config.toml` for per-shell
+      pathway selection + per-pathway parameter overrides. Spec
+      A.5 (event-and-output-framework.md:501) names Tomlyn as
+      the chosen library; this is its first appearance.
+    -->
+    <PackageVersion Include="Tomlyn" Version="0.18.0" />
 
     <!-- Test -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />

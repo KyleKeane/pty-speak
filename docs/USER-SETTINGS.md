@@ -16,21 +16,39 @@ section so the catalog stays current as the project grows.
 
 ## Current state of configuration
 
-`pty-speak` does **not yet have** a configuration surface
-beyond compile-time constants. The infrastructure for
-user-configurable settings is reserved as a Phase 2 stage in
-[`spec/tech-plan.md`](../spec/tech-plan.md) (TOML config via
-[Tomlyn](https://github.com/xoofx/Tomlyn) — referenced at the
-end of the plan's reference code map). Until that lands, every
-setting in this document is a "candidate" — known and tracked,
-not yet exposed.
+`pty-speak` ships a **minimal TOML config substrate** introduced
+in the Phase B "C2" sub-stage. The config file lives at
+`%LOCALAPPDATA%\PtySpeak\config.toml` (alongside the rolling
+log directory) and is parsed via
+[Tomlyn](https://github.com/xoofx/Tomlyn). v1 of the schema
+exposes:
 
-Why no config yet: the project ships through Stage 4 + 11 with
-flat hardcoded defaults. Adding a config substrate before we
-know which settings users actually want to change would build a
-half-finished setting system around the wrong choices. Tracking
-the candidates here lets the choices accumulate without paying
-the substrate cost prematurely.
+- **Per-shell pathway override** — which display pathway runs
+  for `cmd` / `claude` / `powershell` (see "Pathway selection"
+  below).
+- **Per-pathway parameter override** — debounce window,
+  spinner-window, spinner threshold, and max-announce-chars for
+  `StreamPathway`.
+
+Everything else in this catalog remains a "candidate" — known
+and tracked, not yet exposed. The Phase B sub-stages will keep
+adding to the schema (`[[bindings]]` / `[[handlers]]` for
+input-binding overrides per `spec/event-and-output-framework.md`
+A.5; per-content-type triggers for Phase 2/3 semantic +
+AI-interpretation pathways).
+
+Sensible-defaults principle: the absence of `config.toml` (or
+any TOML key within it) is **byte-equivalent** to the
+hardcoded behaviour. A user can delete the file at any time
+to revert to defaults; this catalog continues to document the
+defaults so deviations are intentional.
+
+Why incremental: adding the full configuration surface for
+every candidate setting before validating which ones users
+actually want to change would build a half-finished system
+around the wrong choices. C2 ships only the substrate the
+display-pathway architecture needs today; later sub-stages
+extend the schema as user-facing demand accumulates.
 
 ## How this document is organised
 
@@ -357,6 +375,106 @@ Three plausible levels of configurability, increasing in cost:
 - Persistence: `PTYSPEAK_SHELL` is per-process; the user sets it in
   their shell environment or via a launcher wrapper. Future TOML
   config persists across launches.
+
+## Pathway selection (shipped — Phase B subset, C2)
+
+The display-pathway substrate (Phase A, PR #159) introduced the
+abstraction "for each shell, which pathway translates canonical
+screen state into NVDA-bound events". The substrate ships
+`StreamPathway` (per-frame diff) and `TuiPathway` (alt-screen-
+aware suppression). C2 makes the choice config-driven so users
+can override the hardcoded mapping without rebuilding pty-speak.
+
+### Current state
+
+- Config file: `%LOCALAPPDATA%\PtySpeak\config.toml` (optional;
+  absent → hardcoded defaults).
+- Schema:
+
+  ```toml
+  schema_version = 1
+
+  [shell.cmd]
+  pathway = "stream"
+
+  [shell.powershell]
+  pathway = "stream"
+
+  [shell.claude]
+  pathway = "stream"
+
+  [pathway.stream]
+  debounce_window_ms = 200
+  spinner_window_ms = 1000
+  spinner_threshold = 5
+  max_announce_chars = 500
+
+  [pathway.tui]
+  # reserved; no parameters today
+  ```
+
+- Defaults table:
+
+  | Setting | Default | What it controls |
+  |---|---|---|
+  | `[shell.cmd] pathway` | `"stream"` | Pathway used by `cmd.exe` |
+  | `[shell.powershell] pathway` | `"stream"` | Pathway used by `powershell.exe` (and `pwsh.exe` alias) |
+  | `[shell.claude] pathway` | `"stream"` | Pathway used by `claude.exe` |
+  | `[pathway.stream] debounce_window_ms` | `200` | Trailing-edge flush window for diff accumulation |
+  | `[pathway.stream] spinner_window_ms` | `1000` | History window for spinner-suppress detection |
+  | `[pathway.stream] spinner_threshold` | `5` | Row/content-hash change count to trigger suppression |
+  | `[pathway.stream] max_announce_chars` | `500` | Text truncation cap for NVDA announcements |
+
+- Available pathway IDs: `"stream"`, `"tui"`. Future Phase 2
+  IDs (`"claude-code"`, `"repl"`, `"form"`) will be added
+  without schema migration.
+- Loader: `src/Terminal.Core/Config.fs` parses + resolves;
+  `src/Terminal.App/Program.fs`'s `selectPathwayForShell`
+  consults the loaded `Config` for both pathway selection and
+  parameter overrides on startup, hot-switch
+  (`Ctrl+Shift+1/2/3`), and alt-screen exit.
+
+### Error semantics
+
+The loader **never** crashes pty-speak. Every failure mode logs
+via `ILogger` (which routes to FileLogger; readable via
+`Ctrl+Shift+;`) and falls back to defaults. The maintainer is a
+screen-reader user; GUI dialogs are explicitly out of scope.
+
+| Condition | Log level | Effect |
+|---|---|---|
+| File does not exist | Information | Use all defaults |
+| Malformed TOML | Error (with parse detail) | Use all defaults |
+| `schema_version` missing | Warning | Treat as 1 |
+| `schema_version` newer than supported | Error | Use all defaults |
+| `schema_version` older | Warning | Best-effort parse |
+| Unknown `[shell.<key>]` | Warning | Skip that section |
+| Unknown pathway name (e.g. `"stram"`) | Warning | That shell falls to default |
+| Unknown parameter key | Warning | Drop the value |
+| Negative or zero parameter value | Warning ("clamped to default") | Use default for that field |
+
+A single `Information` line on startup summarises the resolved
+config (e.g. `"Config loaded: cmd→stream, claude→stream,
+powershell→stream; stream debounce=200ms"`) so post-hoc
+diagnosis via log capture is trivial.
+
+### Out of scope (deferred to later sub-stages)
+
+- Hot-reload — changes require a restart.
+- Runtime config write-back from a hotkey or palette
+  ("save current settings as my config"). Phase 2/3.
+- Kill-switch substrate (per spec A.6). Phase B input-bindings
+  owns this.
+- Per-content-type triggers (regex / colour / semantic-parser /
+  LLM dispatchers). Phase 2/3 territory; needs actual pathways
+  that consume the triggers.
+- ClaudeCodePathway / ReplPathway / FormPathway selection —
+  those pathways don't exist yet (Phase 2).
+- Schema additions for input-binding overrides
+  (`[[bindings]]`). Separate Phase B sub-stage; coexists
+  cleanly with the current schema (the loader silently
+  ignores those sections).
+- Config validator binary or CLI.
 
 ## Keybindings
 
@@ -722,9 +840,12 @@ When the project moves from "hardcoded" to "user-configurable"
 for a given setting, the following pattern keeps the change
 focused:
 
-1. **Land the substrate first.** Phase 2 introduces TOML
-   config via Tomlyn. Don't add a one-off settings file
-   ahead of that — it'll need to be migrated.
+1. **Substrate is shipped (Phase B C2).** TOML config via
+   Tomlyn lives at `%LOCALAPPDATA%\PtySpeak\config.toml` with
+   a versioned schema (`schema_version = 1`). New settings
+   extend the schema in a backwards-compat way; settings that
+   need a new section (e.g. `[[bindings]]` for input-binding
+   overrides) inherit the same loader.
 2. **Per-setting PR.** Each setting becomes its own PR rather
    than a "add 12 settings" mega-PR. Easier to review,
    easier to revert if the chosen default doesn't survive
@@ -732,10 +853,16 @@ focused:
 3. **Default = current behaviour.** The first version of any
    setting MUST default to whatever the code does today. No
    silent behaviour change for users who don't set the
-   value.
-4. **Validate the input.** Bad config files should produce a
-   clear error announcement at startup, not a silent revert
-   to defaults — silent reverts hide misspelled keys.
+   value. The C2 `Config.defaultConfig` is the authoritative
+   source of truth; new fields default to `None` and the
+   resolver merges with the existing hardcoded baseline.
+4. **Validate the input.** Bad config files should log clearly
+   via `ILogger` (which routes to FileLogger; readable via
+   `Ctrl+Shift+;`) and fall back to defaults — never crash.
+   The maintainer is a screen-reader user; GUI dialogs are
+   off limits. Mis-typed keys log a Warning and continue;
+   structurally-broken TOML logs an Error and uses defaults
+   wholesale.
 5. **Document in this file.** The candidate section here gets
    moved to a "Shipped settings" section (or a separate
    `docs/SETTINGS-REFERENCE.md` once the catalog grows large

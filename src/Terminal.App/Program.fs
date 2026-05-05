@@ -1013,40 +1013,61 @@ module Program =
         OutputDispatcher.ProfileRegistry.setActiveProfileSet
             [ passThroughProfile; earconProfile ]
 
-        // Phase A — per-shell pathway selection. v1 hardcoded
-        // mapping; Phase B replaces with TOML config. The
-        // pathway is recreated on every shell switch so its
-        // internal state is fresh — even StreamPathway → cmd
-        // → StreamPathway → PowerShell discards the cmd-session
-        // baseline so PowerShell's first paint emits in full.
+        // Phase B (subset, "C2") — load the user's TOML config
+        // once at startup. `Config.tryLoad` never throws; on
+        // any failure mode (file absent, malformed TOML, schema
+        // mismatch, unknown keys) it logs via `log` and falls
+        // back to defaults, so absence-of-config is byte-
+        // equivalent to pre-C2 behaviour. The loaded `config`
+        // is captured by `selectPathwayForShell`'s closure +
+        // consulted on every pathway construction (startup,
+        // Ctrl+Shift+1/2/3 hot-switch, alt-screen swap).
+        let config =
+            Config.tryLoad log (Config.defaultConfigFilePath ())
+
+        // Phase B (subset, "C2") — per-shell pathway selection.
+        // Reads the loaded `config` for both pathway choice and
+        // pathway parameters. Three v1 built-in shells (cmd /
+        // powershell / claude) all default to "stream"; users
+        // override per-shell via `[shell.<id>] pathway = "..."`
+        // and per-pathway parameters via `[pathway.stream]`.
+        // Unknown pathway names log a Warning and fall back to
+        // StreamPathway with resolved parameters (so the user
+        // still gets per-pathway parameter benefits even when
+        // the name is misspelled).
+        let shellIdToConfigKey (shellId: ShellRegistry.ShellId) : string =
+            match shellId with
+            | ShellRegistry.Cmd -> "cmd"
+            | ShellRegistry.PowerShell -> "powershell"
+            | ShellRegistry.Claude -> "claude"
         let selectPathwayForShell
                 (shellId: ShellRegistry.ShellId)
                 : DisplayPathway.T =
-            match shellId with
-            | ShellRegistry.Cmd ->
-                StreamPathway.create StreamPathway.defaultParameters
-            | ShellRegistry.PowerShell ->
-                StreamPathway.create StreamPathway.defaultParameters
-            | ShellRegistry.Claude ->
-                // Phase 2 will swap Claude to a ClaudeCodePathway
-                // that interprets the alt-screen UI. Phase A
-                // ships the streaming pathway so the verbose-
-                // readback regression is fixed for all three
-                // built-in shells.
-                StreamPathway.create StreamPathway.defaultParameters
+            let shellKey = shellIdToConfigKey shellId
+            let pathwayId = Config.resolveShellPathway config shellKey
+            let streamParams = Config.resolveStreamParameters config
+            match pathwayId with
+            | "stream" -> StreamPathway.create streamParams
+            | "tui" -> TuiPathway.create ()
+            | unknown ->
+                log.LogWarning(
+                    "Config: unknown pathway '{Pathway}' for shell {Shell}; falling back to stream.",
+                    unknown, shellKey)
+                StreamPathway.create streamParams
 
-        // Initial pathway — StreamPathway covers all three v1
-        // built-in shells (cmd / powershell / claude). The
-        // mutable is reassigned by `switchToShell` below when
-        // the user hot-switches; for the startup shell, the
-        // initial value matches whatever shell `chosenShell`
-        // resolves to (all three map to StreamPathway today).
-        // When a future Phase 2 maps a shell to a different
-        // pathway (e.g. ClaudeCodePathway), the startup-resolve
-        // path will need to reselect after `chosenShell` is
-        // determined.
+        // Initial pathway — StreamPathway with the resolved
+        // parameters from `config` (or defaults if no config
+        // is present). The mutable is reassigned by
+        // `switchToShell` below when the user hot-switches
+        // and by the startup-shell alignment block once
+        // `chosenShell` resolves; for the brief window
+        // between this initialisation and the alignment
+        // swap, no ScreenNotifications can arrive (the
+        // ConPty isn't spawned yet) so the StreamPathway
+        // placeholder is safe regardless of `config`'s
+        // shell-pathway override.
         let mutable activePathway : DisplayPathway.T =
-            StreamPathway.create StreamPathway.defaultParameters
+            StreamPathway.create (Config.resolveStreamParameters config)
 
         // Phase B (subset) — alt-screen → TuiPathway auto-detect
         // bookkeeping. The PathwayPump's `handleModeChanged`
