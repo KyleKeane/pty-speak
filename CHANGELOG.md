@@ -15,6 +15,97 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Phase A — display-pathway substrate)
+
+Resolves the verbose-readback regression
+(GitHub #115/#139): NVDA reads "h" then "i" when typing
+`echo hi`, instead of the cmd banner re-announced each
+keystroke. The streaming-output emission becomes a per-frame
+diff rather than a full-screen render.
+
+The change introduces a 4-layer architecture between the raw
+screen and the existing OutputEvent/Profile/Channel substrate
+(Stages 8a-8d), so future shells can plug in differentiated
+pathways (claude-code, alt-screen TUIs, REPLs, semantic-
+segmentation pathways, AI-interpretation pathways) without
+rewiring the dispatcher.
+
+**Layer 2 — canonical-state substrate.** `CanonicalState.create`
+wraps a screen snapshot + per-row hashes (`Coalescer.hashRow`
+position-aware + `Coalescer.hashRowContent` content-only) +
+a pure `computeDiff: previousRowHashes -> CanonicalDiff`. The
+substrate is mostly stateless; the pathway carries the previous
+row hashes as a single `uint64[]`.
+
+**Layer 3 — display pathways.** `DisplayPathway.T` is the
+pathway interface (`Consume` / `Tick` / `OnModeBarrier` /
+`Reset`). Two pathways ship in Phase A:
+- **StreamPathway.** Replaces the old StreamProfile compute
+  loop. Preserves the four StreamProfile algorithms verbatim
+  (frame-hash dedup, per-key + cross-row spinner gates,
+  leading + trailing-edge debounce, mode-barrier reset). The
+  EMISSION layer changes: emits StreamChunk OutputEvents with
+  diff text, not full-snapshot text.
+- **TuiPathway.** Stateless alt-screen-aware pathway. Suppresses
+  streaming output (NVDA review-cursor / browse-mode is the
+  navigation primary for full-screen TUIs); emits a ModeBarrier
+  OutputEvent on `OnModeBarrier`. Selectable but not yet
+  auto-detected from alt-screen state — Phase B will introduce
+  alt-screen auto-detection alongside the TOML config.
+
+**Layer 4 — preserved.** EarconChannel, FileLoggerChannel,
+NvdaChannel, EarconProfile, OutputDispatcher are unchanged. A
+new **PassThroughProfile** carries the StreamProfile catch-all
+fan-out (every event → NVDA + FileLogger as RenderText
+decisions); the active profile set becomes
+`[ passThroughProfile; earconProfile ]`.
+
+**Per-shell pathway selection.** Hardcoded in `Program.fs`
+(`selectPathwayForShell`) for Phase A: cmd / powershell /
+claude → StreamPathway. Phase B will replace the hardcoded
+mapping with TOML config (`[shell.X] pathway = "..."`).
+Hot-switch (`Ctrl+Shift+1` / `+2` / `+3`) calls
+`activePathway.Reset ()` then reassigns from the helper.
+
+**PathwayPump replaces TranslatorPump.** Reads
+ScreenNotifications and routes by case: RowsChanged builds
+canonical state + dispatches `activePathway.Consume`'s output;
+ModeChanged calls `activePathway.OnModeBarrier` (flushes
+pending pathway state) then dispatches the barrier OutputEvent;
+Bell + ParserError go through OutputEventBuilder unchanged. A
+companion **PathwayTickPump** (50ms `PeriodicTimer`) drives
+trailing-edge flush via `activePathway.Tick`.
+
+`StreamProfile.fs` is deleted; its algorithm helpers live
+verbatim inside `StreamPathway.fs`. Its catch-all fan-out lives
+in `PassThroughProfile.fs`.
+
+Files:
+- `src/Terminal.Core/CanonicalState.fs` — new (Layer 2).
+- `src/Terminal.Core/DisplayPathway.fs` — new (Layer 3
+  interface).
+- `src/Terminal.Core/StreamPathway.fs` — new (StreamProfile
+  algorithm + diff-only emission).
+- `src/Terminal.Core/TuiPathway.fs` — new (alt-screen-aware
+  pathway).
+- `src/Terminal.Core/PassThroughProfile.fs` — new
+  (StreamProfile catch-all replacement).
+- `src/Terminal.Core/StreamProfile.fs` — DELETED.
+- `src/Terminal.App/Program.fs` — TranslatorPump+TickPump
+  replaced by PathwayPump+PathwayTickPump; per-shell pathway
+  selection wired into composition root and shell hot-switch.
+- `tests/Tests.Unit/CanonicalStateTests.fs` — new
+  (`computeDiff` + `create` algorithm pins).
+- `tests/Tests.Unit/StreamPathwayTests.fs` — new (algorithm
+  pins migrated verbatim from StreamProfileTests + Consume /
+  Reset / OnModeBarrier wiring tests).
+- `tests/Tests.Unit/TuiPathwayTests.fs` — new (suppress-on-
+  Consume + ModeBarrier emit pins).
+- `tests/Tests.Unit/StreamProfileTests.fs` — DELETED (algorithm
+  tests migrated to StreamPathwayTests + CanonicalStateTests;
+  profile-record-shape tests removed since StreamProfile is
+  gone).
+
 ### Fixed (EarconPlayer — fresh WasapiOut per play)
 
 The post-PR-#157 release-build logs showed the second + third

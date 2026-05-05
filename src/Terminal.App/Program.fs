@@ -885,35 +885,49 @@ module Program =
         window.TerminalSurface.SetCopyLogToClipboardHandler(
             Action(fun () -> runCopyLatestLog window))
 
-        // Stage 8b — single-channel pipeline:
+        // Phase A — display-pathway pipeline:
         //
         //   parser thread → notificationChannel (256, DropOldest)
         //                       ↓
-        //                 TranslatorPump (one Task)
+        //                 PathwayPump (one Task)
         //                       ↓
-        //                 OutputEventBuilder.fromScreenNotification
-        //                       ↓
-        //                 OutputDispatcher.dispatch (raw event)
-        //                       ↓
-        //                 StreamProfile.Apply (coalesces internally)
-        //                       ↓
-        //                 ChannelDecision[] → NvdaChannel.Send
+        //              ┌────────┴────────────────────────┐
+        //              ↓                                  ↓
+        //   RowsChanged: build Canonical →     Bell / ParserError:
+        //   activePathway.Consume →            OutputEventBuilder.fromScreenNotification →
+        //   OutputDispatcher.dispatch          OutputDispatcher.dispatch
+        //              ↓                                  ↓
+        //   ModeChanged: activePathway.OnModeBarrier (flushed events) →
+        //   OutputDispatcher.dispatch (each), then build the barrier
+        //   OutputEvent + dispatch.
+        //              ↓
+        //              EarconProfile.Apply (claims BellRang) +
+        //              FileLoggerChannel + NvdaChannel render.
         //
-        // + concurrent TickPump (one Task):
-        //   PeriodicTimer(50ms) → OutputDispatcher.dispatchTick(now)
-        //                       ↓
-        //                 StreamProfile.Tick (trailing-edge flush)
-        //                       ↓
-        //                 ChannelDecision[] → NvdaChannel.Send
+        // + concurrent PathwayTickPump (one Task):
+        //   PeriodicTimer(50ms) → activePathway.Tick(now) →
+        //   OutputDispatcher.dispatch (trailing-edge flush of
+        //   any pending diff in the StreamPathway debounce
+        //   accumulator).
         //
-        // The Stage 7 `coalescedChannel + Coalescer.runLoop +
-        // drain task` triplet collapses to two pumps both reading
-        // from the unchanged `notificationChannel`. The
-        // DropOldest source channel still bounds the parser-side
-        // backlog. The Stream profile owns the per-instance
-        // debounce + spinner-suppress + 500-char cap, all per
-        // `StreamProfile.Parameters` (Stage 7 defaults preserved
-        // via `StreamProfile.defaultParameters`).
+        // **Why the pathway sits BEFORE the dispatcher** rather
+        // than as a profile inside it. Profiles map OutputEvent
+        // → ChannelDecision[]; pathways map canonical screen
+        // state → OutputEvent[]. Different abstraction. The
+        // pathway's role is to decide *what to say*; the
+        // profile's role is to decide *which channel says it*.
+        // Phase A introduces the pathway layer above the
+        // existing profile layer; Layer 4 (profiles, channels,
+        // dispatcher) is unchanged.
+        //
+        // **Per-shell pathway selection** is hardcoded in
+        // `selectPathwayForShell` below — Phase B will replace
+        // the hardcoded mapping with TOML config per-shell.
+        // v1: cmd / powershell / claude → StreamPathway. vim /
+        // less can be tested by setting `PTYSPEAK_SHELL` to a
+        // shell wired to TuiPathway (no built-in mapping ships
+        // for vim/less yet — TuiPathway is wired but only
+        // selectable when a future shell entry uses it).
         let notificationChannel =
             let opts =
                 System.Threading.Channels.BoundedChannelOptions(256,
@@ -929,7 +943,7 @@ module Program =
         screen.ModeChanged.Add(fun (flag, value) ->
             notificationChannel.Writer.TryWrite(ModeChanged (flag, value)) |> ignore)
         // Stage 8d.1 — bridge screen.Bell events into the
-        // notification channel so the TranslatorPump produces
+        // notification channel so the PathwayPump produces
         // OutputEvent.BellRang for the Earcon profile.
         screen.Bell.Add(fun () ->
             notificationChannel.Writer.TryWrite(ScreenNotification.Bell) |> ignore)
@@ -970,24 +984,131 @@ module Program =
             EarconChannel.create
                 (EarconPlayer.play EarconPalette.defaultPalette)
         OutputDispatcher.ChannelRegistry.register earconChannel
-        let streamProfile =
-            StreamProfile.create StreamProfile.defaultParameters screen
-        OutputDispatcher.ProfileRegistry.register streamProfile
+        // Phase A — split the StreamProfile work into Layer 3
+        // (StreamPathway) for SEMANTIC decisions + Layer 4
+        // (PassThroughProfile) for RENDERING decisions:
+        //   - Layer 2 (CanonicalState) — pure substrate, no
+        //     profile registration needed.
+        //   - Layer 3 (StreamPathway) — emits OutputEvents the
+        //     dispatcher routes through Layer 4 profiles.
+        //   - Layer 4 (PassThroughProfile + EarconProfile) — the
+        //     PassThroughProfile fans every event to NVDA +
+        //     FileLogger as RenderText decisions; EarconProfile
+        //     additionally claims BellRang and emits a RenderEarcon
+        //     decision for the EarconChannel. Behaviour-identical
+        //     to the old StreamProfile catch-all + EarconProfile
+        //     pair (the old StreamProfile's catch-all branch
+        //     became PassThroughProfile verbatim).
+        let passThroughProfile = PassThroughProfile.create ()
+        OutputDispatcher.ProfileRegistry.register passThroughProfile
         let earconProfile = EarconProfile.create ()
         OutputDispatcher.ProfileRegistry.register earconProfile
+        // Phase A — active set: [ passThroughProfile;
+        // earconProfile ]. The pass-through fans every event
+        // to NVDA + FileLogger; EarconProfile additionally
+        // claims BellRang for the bell-ping earcon. NvdaChannel
+        // skips empty payloads (so BellRang's empty Payload
+        // doesn't double-announce); FileLogger records every
+        // event regardless (audit trail).
         OutputDispatcher.ProfileRegistry.setActiveProfileSet
-            [ streamProfile; earconProfile ]
+            [ passThroughProfile; earconProfile ]
 
-        // TranslatorPump — read raw ScreenNotifications, build
-        // OutputEvents, dispatch through the active profile set.
-        // Replaces Stage 8a's drain task. The diagnostic Debug
-        // log line is preserved (in adjusted form) for
-        // streaming-silence triage continuity (`Ctrl+Shift+;`
-        // clipboard-copy + grep).
+        // Phase A — per-shell pathway selection. v1 hardcoded
+        // mapping; Phase B replaces with TOML config. The
+        // pathway is recreated on every shell switch so its
+        // internal state is fresh — even StreamPathway → cmd
+        // → StreamPathway → PowerShell discards the cmd-session
+        // baseline so PowerShell's first paint emits in full.
+        let selectPathwayForShell
+                (shellId: ShellRegistry.ShellId)
+                : DisplayPathway.T =
+            match shellId with
+            | ShellRegistry.Cmd ->
+                StreamPathway.create StreamPathway.defaultParameters
+            | ShellRegistry.PowerShell ->
+                StreamPathway.create StreamPathway.defaultParameters
+            | ShellRegistry.Claude ->
+                // Phase 2 will swap Claude to a ClaudeCodePathway
+                // that interprets the alt-screen UI. Phase A
+                // ships the streaming pathway so the verbose-
+                // readback regression is fixed for all three
+                // built-in shells.
+                StreamPathway.create StreamPathway.defaultParameters
+
+        // Initial pathway — StreamPathway covers all three v1
+        // built-in shells (cmd / powershell / claude). The
+        // mutable is reassigned by `switchToShell` below when
+        // the user hot-switches; for the startup shell, the
+        // initial value matches whatever shell `chosenShell`
+        // resolves to (all three map to StreamPathway today).
+        // When a future Phase 2 maps a shell to a different
+        // pathway (e.g. ClaudeCodePathway), the startup-resolve
+        // path will need to reselect after `chosenShell` is
+        // determined.
+        let mutable activePathway : DisplayPathway.T =
+            StreamPathway.create StreamPathway.defaultParameters
+
+        // PathwayPump — Phase A replacement for TranslatorPump.
+        // Reads raw ScreenNotifications and routes by case:
+        //   - RowsChanged: snapshot the screen → build a
+        //     CanonicalState.Canonical → call
+        //     `activePathway.Consume canonical` → dispatch each
+        //     emitted OutputEvent through the dispatcher (which
+        //     runs the EarconProfile + sends to NvdaChannel +
+        //     FileLoggerChannel for non-Earcon-claimed events).
+        //   - Bell / ParserError: build an OutputEvent via the
+        //     existing OutputEventBuilder.fromScreenNotification
+        //     (the pathway doesn't see these — they're parser-
+        //     side signals, not screen-state changes).
+        //   - ModeChanged: invoke `activePathway.OnModeBarrier
+        //     now` to flush any pending pathway state, dispatch
+        //     each flushed event, then build the barrier
+        //     OutputEvent via OutputEventBuilder and dispatch.
+        //
+        // The pathway's `LastEmittedRowHashes` baseline + debounce
+        // accumulator + spinner-history all live inside the
+        // pathway closure; the pump just hands canonical state
+        // in and dispatches the OutputEvents that come out.
+        let dispatchPathwayEvents (events: OutputEvent[]) : unit =
+            for ev in events do
+                OutputDispatcher.dispatch ev
+
+        // Per-case handlers extracted from the match block. F# 9
+        // under TreatWarningsAsErrors=true can be brittle about
+        // sequence-in-match-arm shapes (see CONTRIBUTING.md
+        // 'F# 9 gotchas' + bit PR #132); pulling each arm to a
+        // named helper keeps the match body single-expression.
+        let pumpLog = Logger.get "Terminal.App.Program.pathwayPump"
+        let handleRowsChanged () : unit =
+            let seq, snapshot = screen.SnapshotRows(0, screen.Rows)
+            let canonical = CanonicalState.create snapshot seq
+            let emitted = activePathway.Consume canonical
+            pumpLog.LogDebug(
+                "PathwayPump RowsChanged → {Pathway}.Consume → {Count} events.",
+                activePathway.Id,
+                emitted.Length)
+            dispatchPathwayEvents emitted
+        let handleModeChanged (notification: ScreenNotification) : unit =
+            let now = DateTimeOffset.UtcNow
+            let flushed = activePathway.OnModeBarrier now
+            pumpLog.LogDebug(
+                "PathwayPump ModeChanged → {Pathway}.OnModeBarrier → {Count} flushed events.",
+                activePathway.Id,
+                flushed.Length)
+            dispatchPathwayEvents flushed
+            let barrier =
+                OutputEventBuilder.fromScreenNotification notification
+            OutputDispatcher.dispatch barrier
+        let handleSimpleNotification (notification: ScreenNotification) : unit =
+            let event = OutputEventBuilder.fromScreenNotification notification
+            pumpLog.LogDebug(
+                "PathwayPump → Dispatch. Semantic={Semantic} Priority={Priority}",
+                event.Semantic, event.Priority)
+            OutputDispatcher.dispatch event
+
         let _ =
             Task.Run(fun () ->
                 task {
-                    let pumpLog = Logger.get "Terminal.App.Program.translatorPump"
                     try
                         let reader = notificationChannel.Reader
                         let mutable keepGoing = true
@@ -999,17 +1120,16 @@ module Program =
                                 let mutable peek =
                                     Unchecked.defaultof<ScreenNotification>
                                 while reader.TryRead(&peek) do
-                                    let event =
-                                        OutputEventBuilder.fromScreenNotification peek
-                                    pumpLog.LogDebug(
-                                        "TranslatorPump → Dispatch. Semantic={Semantic} Priority={Priority}",
-                                        event.Semantic, event.Priority)
-                                    OutputDispatcher.dispatch event
+                                    match peek with
+                                    | RowsChanged _ -> handleRowsChanged ()
+                                    | ModeChanged _ -> handleModeChanged peek
+                                    | ParserError _
+                                    | Bell -> handleSimpleNotification peek
                     with
                     | :? OperationCanceledException -> ()
                     | ex ->
                         // Post-Stage-6 diagnostic safety net,
-                        // preserved across the 8b reorganisation.
+                        // preserved across the Phase A reorganisation.
                         // Surface the exception via one last
                         // direct `Announce(..., pty-speak.error)`
                         // — direct call (not through the
@@ -1021,28 +1141,28 @@ module Program =
                         try
                             log.LogError(
                                 ex,
-                                "TranslatorPump crashed; streaming announcements halted.")
+                                "PathwayPump crashed; streaming announcements halted.")
                             let safe =
                                 AnnounceSanitiser.sanitise ex.Message
                             let action () =
                                 window.TerminalSurface.Announce(
                                     sprintf
-                                        "TranslatorPump exception: %s"
+                                        "PathwayPump exception: %s"
                                         safe,
                                     ActivityIds.error)
                             window.Dispatcher.Invoke(Action(action))
                         with _ -> ()
                 } :> Task)
 
-        // TickPump — periodic timer for the Stream profile's
-        // trailing-edge flush. The 50ms cadence is the
-        // dispatcher-tick rate, NOT the debounce window (200ms).
-        // The Stream profile's Tick checks the elapsed-since-
-        // last-flush internally and emits zero or one
-        // ChannelDecision per call. Faster ticks = lower
-        // worst-case latency on trailing-edge flush; the cost
-        // is negligible (each Tick that returns [||] is a
-        // pure-function call).
+        // PathwayTickPump — periodic timer for the active
+        // pathway's trailing-edge flush. Replaces Stage 8b's
+        // TickPump (which drove `OutputDispatcher.dispatchTick`
+        // for the StreamProfile.Tick trailing-edge flush). The
+        // 50ms cadence is the timer rate, NOT the debounce
+        // window (200ms inside StreamPathway). Faster ticks =
+        // lower worst-case latency on trailing-edge flush; the
+        // cost is negligible (each Tick that returns [||] is
+        // a pure-function call).
         let _ =
             Task.Run(fun () ->
                 task {
@@ -1056,20 +1176,29 @@ module Program =
                             if not tickFired then
                                 keepGoing <- false
                             else
-                                OutputDispatcher.dispatchTick (DateTimeOffset.UtcNow)
+                                let now = DateTimeOffset.UtcNow
+                                let emitted = activePathway.Tick now
+                                if emitted.Length > 0 then
+                                    dispatchPathwayEvents emitted
+                                // Layer 4 also still receives Tick
+                                // for any profile that uses it (no
+                                // v1 profile does today, but the
+                                // contract is preserved for forward-
+                                // compat).
+                                OutputDispatcher.dispatchTick now
                     with
                     | :? OperationCanceledException -> ()
                     | ex ->
                         try
                             log.LogError(
                                 ex,
-                                "TickPump crashed; trailing-edge flushes halted.")
+                                "PathwayTickPump crashed; trailing-edge flushes halted.")
                             // No user-facing announce here —
-                            // TickPump failure is silent
-                            // degradation (Apply still fires for
-                            // every event; only the trailing-edge
-                            // flush stops). The error is logged
-                            // for `Ctrl+Shift+;` post-hoc
+                            // PathwayTickPump failure is silent
+                            // degradation (Consume still fires
+                            // for every event; only the trailing-
+                            // edge flush stops). The error is
+                            // logged for `Ctrl+Shift+;` post-hoc
                             // diagnosis.
                         with _ -> ()
                 } :> Task)
@@ -1139,6 +1268,16 @@ module Program =
             "Startup shell: {Shell} (command line: {CommandLine}).",
             chosenShell.DisplayName,
             commandLine)
+
+        // Phase A — align the active pathway with the resolved
+        // startup shell. v1 maps cmd / powershell / claude all
+        // to StreamPathway, so this swap is a no-op today (the
+        // mutable was already initialised to StreamPathway).
+        // Phase 2 will map Claude to a ClaudeCodePathway; this
+        // swap ensures the right pathway is active when the
+        // PathwayPump processes the first ScreenNotification.
+        try activePathway.Reset () with _ -> ()
+        activePathway <- selectPathwayForShell chosenShell.Id
 
         // Stage 7-followup PR-I — `chosenShell` is the value chosen
         // at startup and never changes. Hot-switching shells
@@ -1565,6 +1704,27 @@ module Program =
                                         // (cosmetic but confusing for
                                         // log analysis).
                                         currentShell <- shell
+                                        // Phase A — swap the active
+                                        // pathway for the new shell.
+                                        // `Reset` clears any pending
+                                        // diff + last-emitted row
+                                        // hash baseline on the
+                                        // outgoing pathway so its
+                                        // state can't leak into the
+                                        // new shell's session;
+                                        // `selectPathwayForShell`
+                                        // picks the right pathway
+                                        // shape for the new shell
+                                        // (today all three
+                                        // built-in shells map to
+                                        // StreamPathway, but Phase 2
+                                        // will swap Claude to a
+                                        // ClaudeCodePathway and the
+                                        // hot-switch path will
+                                        // start to differentiate).
+                                        try activePathway.Reset () with _ -> ()
+                                        activePathway <-
+                                            selectPathwayForShell shell.Id
                                         wirePostSpawn newHost
                                         window.TerminalSurface.Announce(
                                             sprintf "Switched to %s." shell.DisplayName,
@@ -1609,11 +1769,13 @@ module Program =
             // confusing exception.
             try heartbeatTimer.Dispose() with _ -> ()
             // Complete the notification-channel writer so the
-            // TranslatorPump task exits cleanly when the channel
-            // runs dry. Stage 8b removed the coalescedChannel
-            // (the Coalescer absorbed into the Stream profile);
-            // the TickPump exits via its own
-            // `cts.Token.IsCancellationRequested` check.
+            // PathwayPump task exits cleanly when the channel
+            // runs dry. Phase A replaced the Stage 8b
+            // TranslatorPump+TickPump pair with the
+            // PathwayPump+PathwayTickPump pair; both observe
+            // `cts.Token.IsCancellationRequested` for shutdown
+            // and the channel completion is the additional
+            // backstop for the read-loop.
             try notificationChannel.Writer.TryComplete() |> ignore with _ -> ()
             match hostHandle with
             | Some h -> (h :> IDisposable).Dispose()
