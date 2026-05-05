@@ -68,10 +68,7 @@ let ``BellRang Apply effectiveEvent is the input event`` () =
 // ---- Non-claimed cases return empty array ----------------------
 
 [<Fact>]
-let ``StreamChunk Apply with no Extensions returns empty pair array`` () =
-    // Plain streaming output (no SGR colour) — no earcon. 8d.2's
-    // colour-detection only fires when the StreamProfile stamps
-    // `Extensions["dominantColor"]` on the event.
+let ``StreamChunk Apply returns empty pair array`` () =
     let profile = EarconProfile.create ()
     let event = buildEvent SemanticCategory.StreamChunk
     let pairs = profile.Apply event
@@ -102,14 +99,10 @@ let ``AltScreenEntered Apply returns empty pair array`` () =
     Assert.Equal(0, pairs.Length)
 
 [<Fact>]
-let ``ErrorLine Apply returns empty pair array`` () =
-    // 8d.2 chose to emit colour earcons via StreamChunk +
-    // Extensions["dominantColor"] metadata rather than via a
-    // separate ErrorLine Semantic. ErrorLine remains a reserved
-    // category in OutputEventTypes.fs; no producer emits it in
-    // 8d.2; the EarconProfile correspondingly returns empty.
-    // A future PR may adopt the spec D.2 ErrorLine contract;
-    // this assertion will need updating then.
+let ``ErrorLine Apply returns empty pair array (8d.2 will claim)`` () =
+    // 8d.1 doesn't claim ErrorLine; 8d.2's color-detection
+    // producer + earcon-palette extension will. Pinning the
+    // 8d.1 behaviour so 8d.2's diff is reviewable.
     let profile = EarconProfile.create ()
     let event = buildEvent SemanticCategory.ErrorLine
     let pairs = profile.Apply event
@@ -138,108 +131,3 @@ let ``Reset is a no-op`` () =
     // contract — Reset doesn't throw and there's no per-shell-
     // session state to verify in 8d.1.
     Assert.True(true)
-
-// ---- Stage 8d.2 — colour-detected StreamChunk → earcon ---------
-
-let private buildStreamChunkWithColor (color: string) : OutputEvent =
-    // The StreamProfile stamps `Extensions["dominantColor"]` on
-    // its synthesised StreamChunk events when SGR-coloured rows
-    // dominate the post-coalesce snapshot. Tests build the same
-    // shape directly to exercise the EarconProfile's reading.
-    // `:> obj` upcast preserves non-null for `Map<string, obj>`;
-    // F# 9 `box` returns `obj | null` (FS3261 regression risk).
-    let baseEvent = buildEvent SemanticCategory.StreamChunk
-    { baseEvent with
-        Extensions = Map.ofList [ "dominantColor", (color :> obj) ] }
-
-let private buildStreamChunkWithNonStringExtensionValue () : OutputEvent =
-    // Tests the defensive `:? string` pattern in
-    // `EarconProfile.readDominantColor`: a non-string value
-    // should fall through to None rather than crash. Use a
-    // bare `obj()` instance (non-null reference type) — avoids
-    // F# 9's `box` returning `obj | null` (FS3261 risk).
-    let baseEvent = buildEvent SemanticCategory.StreamChunk
-    let nonStringValue : obj = obj ()
-    { baseEvent with
-        Extensions = Map.ofList [ "dominantColor", nonStringValue ] }
-
-[<Fact>]
-let ``StreamChunk with dominantColor=red emits one decision targeting EarconChannel`` () =
-    let profile = EarconProfile.create ()
-    let event = buildStreamChunkWithColor "red"
-    let pairs = profile.Apply event
-    Assert.Equal(1, pairs.Length)
-    let _, decisions = pairs.[0]
-    Assert.Equal(1, decisions.Length)
-    Assert.Equal(EarconChannel.id, decisions.[0].Channel)
-
-[<Fact>]
-let ``StreamChunk with dominantColor=red emits RenderEarcon error-tone`` () =
-    let profile = EarconProfile.create ()
-    let event = buildStreamChunkWithColor "red"
-    let pairs = profile.Apply event
-    let _, decisions = pairs.[0]
-    match decisions.[0].Render with
-    | RenderEarcon earconId -> Assert.Equal("error-tone", earconId)
-    | other -> Assert.Fail(sprintf "expected RenderEarcon, got %A" other)
-
-[<Fact>]
-let ``StreamChunk with dominantColor=yellow emits RenderEarcon warning-tone`` () =
-    let profile = EarconProfile.create ()
-    let event = buildStreamChunkWithColor "yellow"
-    let pairs = profile.Apply event
-    let _, decisions = pairs.[0]
-    match decisions.[0].Render with
-    | RenderEarcon earconId -> Assert.Equal("warning-tone", earconId)
-    | other -> Assert.Fail(sprintf "expected RenderEarcon, got %A" other)
-
-[<Fact>]
-let ``StreamChunk with dominantColor=green returns empty pair array`` () =
-    // Only red + yellow trigger earcons. Other colour values
-    // are silently ignored — a future palette could add
-    // success-tone for green, but 8d.2 doesn't.
-    let profile = EarconProfile.create ()
-    let event = buildStreamChunkWithColor "green"
-    let pairs = profile.Apply event
-    Assert.Equal(0, pairs.Length)
-
-[<Fact>]
-let ``StreamChunk with non-string dominantColor returns empty (defensive)`` () =
-    // A future producer might mistakenly box the wrong type
-    // into Extensions. The EarconProfile's `readDominantColor`
-    // pattern-matches on `:? string`; non-string values fall
-    // through to None, and the profile emits no decisions —
-    // never crashes the dispatcher.
-    let profile = EarconProfile.create ()
-    let event = buildStreamChunkWithNonStringExtensionValue ()
-    let pairs = profile.Apply event
-    Assert.Equal(0, pairs.Length)
-
-[<Fact>]
-let ``StreamChunk with empty Extensions returns empty pair array`` () =
-    // Already covered by the ``StreamChunk Apply with no
-    // Extensions returns empty pair array`` test above; this
-    // case is the explicit complement to the colour-bearing
-    // tests above. Pinning the symmetry.
-    let profile = EarconProfile.create ()
-    let event = buildEvent SemanticCategory.StreamChunk
-    Assert.Equal(0, event.Extensions.Count)
-    let pairs = profile.Apply event
-    Assert.Equal(0, pairs.Length)
-
-[<Fact>]
-let ``BellRang Apply continues to emit bell-ping (8d.1 behaviour preserved)`` () =
-    // Regression pin: 8d.2's StreamChunk colour mapping doesn't
-    // accidentally swallow the BellRang case. The BellRang
-    // mapping comes first in the match expression; this test
-    // re-asserts what `BellRang Apply RenderEarcon carries the
-    // "bell-ping" earconId` already covers, framed as a
-    // 8d.2-stage regression check.
-    let profile = EarconProfile.create ()
-    let event = buildEvent SemanticCategory.BellRang
-    let pairs = profile.Apply event
-    Assert.Equal(1, pairs.Length)
-    let _, decisions = pairs.[0]
-    match decisions.[0].Render with
-    | RenderEarcon earconId -> Assert.Equal("bell-ping", earconId)
-    | other -> Assert.Fail(sprintf "expected RenderEarcon, got %A" other)

@@ -15,135 +15,70 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
-### Added (Stage 8d.2 — Color detection + ErrorLine/WarningLine earcons)
+### Reverted (Stage 8d.2 — colour detection + ErrorLine/WarningLine earcons)
 
-Closes the spec C.1 8d row by adding the colour-detection
-producer + earcon palette extensions. With 8d.1's substrate in
-place (PR #155), 8d.2 makes red-on-screen output produce a
-400Hz error-tone and yellow-on-screen output produce a 600Hz
-warning-tone, alongside NVDA reading the row text. The earcons
-supplement (don't replace) NVDA — no double-up because the row
-text doesn't redundantly state the colour.
+The maintainer cut a release build with PR #156 (Stage 8d.2)
+merged and reported that NVDA stopped reading streaming output
+entirely after install. Exact cause is not yet known — most
+likely candidates are an exception path in
+`StreamProfile.snapshotDominantColor` that crashes the
+TranslatorPump task, or an interaction between the new
+`Extensions["dominantColor"]` stamping and the post-8c
+FileLogger / NvdaChannel dispatch. The CI test suite passes,
+so the failure is something only surfaced in the live
+release-build pipeline.
 
-The full spec validation row is now reachable: *"Run
-colour-emitting commands; hear earcons; verify Ctrl+Shift+M
-mute hotkey works; verify earcon-claimed events suppress
-NVDA-channel double-up."* The first two clauses are validated
-end-to-end post-8d.2; the third (suppression) was determined
-unnecessary for the colour-detection use case (see
-"Suppression deliberately deferred" in the 8d.2 plan).
+8d.2's commit is reverted to restore the user-visible
+post-8d.1 behaviour (NVDA reads streaming output; bell-ping
+plays on BEL; Ctrl+Shift+M mute hotkey works). The 8d.2 work
+will land again in a fresh PR after the regression's root
+cause is diagnosed, ideally with the new Ctrl+Shift+D
+diagnostic (below) used to verify each step of the earcon
+audio path independently.
 
-#### Design: Extensions metadata, no event-splitting
+### Changed (Ctrl+Shift+D diagnostic — earcon audio test)
 
-The StreamProfile annotates each StreamChunk OutputEvent with
-`Extensions["dominantColor"] = box "red" | box "yellow"` when
-SGR-coloured rows dominate the post-coalesce snapshot. The
-EarconProfile reads the metadata (defensive against non-string
-boxed values) and emits the earcon decision when present. No
-new Semantic categories, no new ChannelDecisions targeting
-NVDA, no cross-profile suppression machinery. This is the
-first PR that USES the OutputEvent.Extensions forward-compat
-contract spec B.2.3 introduced.
+The diagnostic ritual triggered by `Ctrl+Shift+D` is
+restructured for the 8d sub-stage cycle:
 
-#### Color detection heuristic (v1)
+- **PowerShell-script launch commented out.** The original
+  ritual (`scripts/test-process-cleanup.ps1` running in a
+  separate PowerShell window) had been consistently passing
+  in NVDA validation but required closing pty-speak to
+  complete its close-and-recheck flow. The commented block in
+  `Program.fs runDiagnostic` preserves the code for future
+  reactivation; the PS1 file still ships in the installer.
+- **Earcon audio test added.** Pressing `Ctrl+Shift+D` now
+  announces the shell-process snapshot (unchanged) followed
+  by an earcon test that plays each earcon in sequence with
+  an announce between:
+  ```
+  Diagnostic snapshot: 1 cmd, 0 powershell, 0 pwsh, 1 claude,
+                       1 Terminal.App. Testing earcons.
+  Bell ping. [bell-ping plays]
+  Error tone. [error-tone plays]
+  Warning tone. [warning-tone plays]
+  Earcon test complete.
+  ```
+  The earcons play via direct `EarconPlayer.play` (bypassing
+  the `EarconChannel` mute state) so the test verifies the
+  WASAPI audio output path even when the user has earcons
+  muted via `Ctrl+Shift+M` for normal use.
 
-Per-row classification: walk the non-blank cells; if >50% have
-SGR `Indexed 1` / `Indexed 9` (red), the row is red. Else if
->50% have `Indexed 3` / `Indexed 11` (yellow), yellow. Else
-plain. Per-snapshot: any-red → "red"; any-yellow (no red) →
-"yellow"; else None. Red wins because it's the higher-urgency
-tone. Deferred to a future PR: 256-colour cube reds, truecolor
-RGB-distance heuristic, background-colour reds.
+### Added (palette: error-tone + warning-tone)
 
-#### Files modified
+`src/Terminal.Audio/EarconPalette.fs`'s `defaultPalette` gains
+two new entries (forward-ported from the reverted 8d.2):
 
-- `src/Terminal.Core/StreamProfile.fs` — adds 4 internal
-  colour-detection helpers (`isRedFg`, `isYellowFg`,
-  `rowDominantColor`, `snapshotDominantColor`); extends
-  `streamOutputEvent` to take a `dominantColor: string option`
-  parameter and stamp `Extensions["dominantColor"]` when
-  `Some`; extends `coalescedToPair` to thread the colour;
-  Apply / Tick / mode-change branches compute the colour from
-  the appropriate snapshot (current snapshot for StreamChunk;
-  pending snapshot for AltScreen/ModeBarrier flush; pending
-  snapshot for Tick trailing-edge flush).
-- `src/Terminal.Core/EarconProfile.fs` — adds
-  `readDominantColor` helper (defensive type-safe Map.tryFind +
-  `:? string` pattern); extends Apply with a `StreamChunk` case
-  matching on the colour metadata to emit `RenderEarcon
-  "error-tone"` / `"warning-tone"`. Plain StreamChunk events
-  (no metadata) continue to return `[||]`.
-- `src/Terminal.Audio/EarconPalette.fs` — adds two entries to
-  `defaultPalette`: `"error-tone"` (400Hz × 150ms × 10ms attack)
-  and `"warning-tone"` (600Hz × 120ms × 10ms attack). Frequency
-  / duration choices follow the spec §9.3 palette intent
-  (alarm low / confirm high / warn middle); all earcons stay
-  shorter than the StreamProfile's 200ms debounce window so
-  consecutive earcons don't overlap.
-- `tests/Tests.Unit/StreamProfileTests.fs` — 18 new tests for
-  the colour-detection helpers (isRedFg / isYellowFg /
-  rowDominantColor / snapshotDominantColor). Tests cover ANSI
-  red / bright red / yellow / bright yellow recognition, plain
-  cells returning None, blank-row handling, single-red-cell
-  majority (the "ignore blanks in count" rule), minority-red
-  rejection, snapshot any-red wins, snapshot red-over-yellow
-  precedence.
-- `tests/Tests.Unit/EarconProfileTests.fs` — 6 new tests for
-  the StreamChunk + Extensions["dominantColor"] mapping. Tests
-  cover red → error-tone, yellow → warning-tone, green → empty
-  (only red + yellow trigger), non-string boxed values fall
-  through to empty (defensive), the regression pin that
-  BellRang continues to emit bell-ping, and the empty-Extensions
-  case symmetry. The pre-existing
-  `StreamChunk Apply returns empty pair array` test was renamed
-  to `StreamChunk Apply with no Extensions returns empty pair
-  array` for clarity. The pre-existing
-  `ErrorLine Apply returns empty pair array (8d.2 will claim)`
-  test was retitled (8d.2 chose Extensions metadata over the
-  ErrorLine Semantic; ErrorLine remains reserved).
+- `error-tone` (400Hz × 150ms × 10ms attack)
+- `warning-tone` (600Hz × 120ms × 10ms attack)
 
-#### Behaviour preservation
-
-All ~202 pre-existing load-bearing tests stay green. The
-StreamProfile's coalescing algorithm is unchanged (colour
-detection runs alongside, doesn't modify the existing
-CoalescedNotification flow). The EarconProfile.BellRang case
-is unchanged. NvdaChannel + FileLoggerChannel are unchanged
-(they receive StreamChunk OutputEvents with the new Extensions
-field; both channels ignore Extensions today, so no behaviour
-change for plain streaming).
-
-NVDA-validation row (manual; maintainer):
-- PowerShell: `Write-Host "Error" -ForegroundColor Red` →
-  hear the 400Hz error-tone alongside NVDA reading "Error"
-- PowerShell: `Write-Host "Warning" -ForegroundColor Yellow` →
-  hear the 600Hz warning-tone alongside NVDA reading "Warning"
-- Plain output (`dir`, `ls`) → no earcon, NVDA reads as before
-- Ctrl+Shift+M still mutes ALL earcons (bell-ping +
-  error-tone + warning-tone)
-- Verify `Ctrl+Shift+;` log now includes `dominantColor=red`
-  / `=yellow` in the structured Extensions field for
-  diagnostics
-
-### Out of scope (deferred)
-
-- NVDA-channel suppression for earcon-claimed events
-  (substrate API extension; lives with the carried-open
-  ParserError → Background reconciliation PR)
-- Truecolor (`Rgb (r, g, b)`) red/yellow detection
-- 256-colour cube (Indexed 16-231) red/yellow detection
-- Background-colour detection
-- Per-shell mute / palette / TOML config (Phase 2)
-- User-customisable palette frequencies / durations
-- ErrorLine / WarningLine producer (the alternative design
-  that emits separate Semantic events; 8d.2 chose Extensions
-  metadata instead — simpler delta)
-
-### Open question carried forward (still)
-
-Spec D.2 ParserError → Background suppression. Substrate API
-(cross-profile suppression markers) still pending; will land
-with a focused future PR.
+No producer is wired to these IDs in this PR — the StreamProfile
+colour-detection that would have triggered them lives in the
+reverted 8d.2 commit and will return in a future PR. The
+palette entries are kept so the Ctrl+Shift+D diagnostic can
+exercise the full three-tone earcon path without depending on
+a coloured-shell-output trigger.
 
 ### Added (Stage 8d.1 — WASAPI Earcons channel + Earcon profile + Bell)
 

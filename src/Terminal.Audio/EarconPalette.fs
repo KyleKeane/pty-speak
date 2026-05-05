@@ -30,23 +30,23 @@ module EarconPalette =
     /// compatibility (Phase 2).
     type EarconId = string
 
-    /// Default palette. v1 (8d.1) shipped only the bell-ping
-    /// entry; v2 (8d.2) adds error-tone + warning-tone for
-    /// SGR-coloured streaming output detected by the
-    /// StreamProfile. Tunable in Phase 2 via TOML.
-    ///
-    /// Frequency / duration choices follow the spec §9.3 palette
-    /// intent (alarm low / confirm high / warn middle):
-    /// - bell-ping (800Hz × 100ms) — high pitch + short duration;
-    ///   reads as a "ping" or "ding". Triggered by BEL (0x07).
-    /// - error-tone (400Hz × 150ms) — low pitch + longer
-    ///   duration; reads as "alarm" or "wrong". Triggered by
-    ///   red-dominant streaming output (StreamProfile detection).
-    /// - warning-tone (600Hz × 120ms) — middle pitch + middle
-    ///   duration; sits between bell-ping and error-tone.
-    ///   Triggered by yellow-dominant streaming output.
-    /// All three are shorter than the StreamProfile's 200ms
+    /// Default palette. Three entries — the audio side of the
+    /// 8d sub-stages.
+    /// - `bell-ping` (800Hz × 100ms): triggered by BEL (0x07).
+    /// - `error-tone` (400Hz × 150ms): triggered by future
+    ///   colour-detection (red rows). Currently unused by any
+    ///   producer (the 8d.2 colour-detection PR was reverted
+    ///   while the maintainer triaged a NVDA-silence regression).
+    ///   Kept in the palette so the Ctrl+Shift+D diagnostic can
+    ///   exercise the full earcon path without depending on a
+    ///   coloured-shell-output trigger.
+    /// - `warning-tone` (600Hz × 120ms): triggered by future
+    ///   colour-detection (yellow rows). Same status as
+    ///   error-tone — present in the palette for diagnostic
+    ///   coverage, no producer wired yet.
+    /// All earcons stay shorter than the StreamProfile's 200ms
     /// debounce window so consecutive earcons don't overlap.
+    /// Tunable in Phase 2 via TOML.
     let defaultPalette : Map<EarconId, EarconWaveform.Parameters> =
         Map.ofList
             [ "bell-ping",
