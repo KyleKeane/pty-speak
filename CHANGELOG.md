@@ -15,6 +15,71 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Reverted (Stage 8d.2 — colour detection + ErrorLine/WarningLine earcons)
+
+The maintainer cut a release build with PR #156 (Stage 8d.2)
+merged and reported that NVDA stopped reading streaming output
+entirely after install. Exact cause is not yet known — most
+likely candidates are an exception path in
+`StreamProfile.snapshotDominantColor` that crashes the
+TranslatorPump task, or an interaction between the new
+`Extensions["dominantColor"]` stamping and the post-8c
+FileLogger / NvdaChannel dispatch. The CI test suite passes,
+so the failure is something only surfaced in the live
+release-build pipeline.
+
+8d.2's commit is reverted to restore the user-visible
+post-8d.1 behaviour (NVDA reads streaming output; bell-ping
+plays on BEL; Ctrl+Shift+M mute hotkey works). The 8d.2 work
+will land again in a fresh PR after the regression's root
+cause is diagnosed, ideally with the new Ctrl+Shift+D
+diagnostic (below) used to verify each step of the earcon
+audio path independently.
+
+### Changed (Ctrl+Shift+D diagnostic — earcon audio test)
+
+The diagnostic ritual triggered by `Ctrl+Shift+D` is
+restructured for the 8d sub-stage cycle:
+
+- **PowerShell-script launch commented out.** The original
+  ritual (`scripts/test-process-cleanup.ps1` running in a
+  separate PowerShell window) had been consistently passing
+  in NVDA validation but required closing pty-speak to
+  complete its close-and-recheck flow. The commented block in
+  `Program.fs runDiagnostic` preserves the code for future
+  reactivation; the PS1 file still ships in the installer.
+- **Earcon audio test added.** Pressing `Ctrl+Shift+D` now
+  announces the shell-process snapshot (unchanged) followed
+  by an earcon test that plays each earcon in sequence with
+  an announce between:
+  ```
+  Diagnostic snapshot: 1 cmd, 0 powershell, 0 pwsh, 1 claude,
+                       1 Terminal.App. Testing earcons.
+  Bell ping. [bell-ping plays]
+  Error tone. [error-tone plays]
+  Warning tone. [warning-tone plays]
+  Earcon test complete.
+  ```
+  The earcons play via direct `EarconPlayer.play` (bypassing
+  the `EarconChannel` mute state) so the test verifies the
+  WASAPI audio output path even when the user has earcons
+  muted via `Ctrl+Shift+M` for normal use.
+
+### Added (palette: error-tone + warning-tone)
+
+`src/Terminal.Audio/EarconPalette.fs`'s `defaultPalette` gains
+two new entries (forward-ported from the reverted 8d.2):
+
+- `error-tone` (400Hz × 150ms × 10ms attack)
+- `warning-tone` (600Hz × 120ms × 10ms attack)
+
+No producer is wired to these IDs in this PR — the StreamProfile
+colour-detection that would have triggered them lives in the
+reverted 8d.2 commit and will return in a future PR. The
+palette entries are kept so the Ctrl+Shift+D diagnostic can
+exercise the full three-tone earcon path without depending on
+a coloured-shell-output trigger.
+
 ### Added (Stage 8d.1 — WASAPI Earcons channel + Earcon profile + Bell)
 
 The fourth sub-stage of the Output framework cycle. Adds WASAPI

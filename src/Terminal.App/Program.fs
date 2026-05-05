@@ -379,83 +379,108 @@ module Program =
         String.concat ", " parts
 
     let private runDiagnostic (window: MainWindow) : unit =
-        let scriptPath =
-            System.IO.Path.Combine(
-                System.AppContext.BaseDirectory,
-                "test-process-cleanup.ps1")
-        // PR-J — inline process enumeration. The user's previous
-        // diagnostic ritual was "press Ctrl+Shift+D, close the
-        // window, watch what gets reaped" — fine for a deliberate
-        // close-and-recheck sweep but heavyweight for a quick "is
-        // anything weird running right now?" check. Enumerating
-        // up-front and announcing the counts means a screen-reader
-        // user gets the snapshot in one keystroke without losing
-        // their pty-speak session. Maintainer feedback 2026-05-03:
-        // "you should automatically check child processes when you
-        // launch diagnostics".
-        //
-        // The full close-and-recheck flow (PowerShell script in a
-        // separate window) STILL launches afterwards so the
-        // existing orphan-detection workflow continues working;
-        // the inline enumeration is purely additive.
         let snapshot = enumerateShellProcesses ()
         let log = Logger.get "Terminal.App.Program.runDiagnostic"
         log.LogInformation(
             "Diagnostic snapshot. ProcessCounts={Snapshot}",
             snapshot)
-        if not (System.IO.File.Exists scriptPath) then
-            window.TerminalSurface.Announce(
-                sprintf
-                    "Diagnostic snapshot: %s. Cleanup script not found at %s."
-                    snapshot
-                    scriptPath,
-                ActivityIds.diagnostic)
-        else
-            // Announce FIRST so NVDA's speech queue holds the message
-            // before focus shifts. The new PowerShell window's
-            // activation triggers NVDA's interrupt-on-focus-change,
-            // which truncates whatever is currently being spoken — so
-            // the previous "Process.Start then Announce" order made the
-            // announce effectively silent (the queued speech was
-            // immediately overwritten by NVDA reading the new PowerShell
-            // window's title). Pre-Stage-5 NVDA verification on
-            // `v0.0.1-preview.NN` confirmed the regression.
-            //
-            // PR-J prefixes the snapshot to the launch cue so a
-            // screen-reader user hears "1 cmd, 0 powershell, 0 pwsh,
-            // 1 claude, 1 Terminal.App. Launching diagnostic." in
-            // one announcement — strictly additive to the previous
-            // "Launching diagnostic." cue. The 700ms-then-spawn
-            // pattern below stays unchanged.
-            // TODO Phase 2: the 700ms delay should come from a TOML
-            // setting alongside the Stage 5 coalescer constants.
-            window.TerminalSurface.Announce(
-                sprintf
-                    "Diagnostic snapshot: %s. Launching cleanup test."
-                    snapshot,
-                ActivityIds.diagnostic)
-            let _ =
-                task {
-                    do! Task.Delay(700)
+        // Stage 8d-followup (2026-05-04) — earcon audio diagnostic.
+        //
+        // The original Ctrl+Shift+D ritual launched a PowerShell
+        // script (`test-process-cleanup.ps1`) in a separate window
+        // that ran a process-tree close-and-recheck. The script
+        // had been consistently passing in NVDA validation, but
+        // required closing pty-speak to complete — adding friction
+        // to the diagnostic ritual. The PS1 launch is commented
+        // out below per maintainer 2026-05-04. Restore by
+        // uncommenting if orphan-detection diagnosis ever needs
+        // it again; the PS1 file still ships in the installer.
+        //
+        // The new ritual plays each earcon in sequence with an
+        // announce between, so the maintainer can verify the
+        // earcon audio path by pressing Ctrl+Shift+D — no need to
+        // trigger BEL or coloured shell output. Earcons play via
+        // a direct `EarconPlayer.play` call (bypassing the
+        // EarconChannel mute state); this lets the test verify
+        // the audio output path even when earcons are muted via
+        // Ctrl+Shift+M for normal use.
+        window.TerminalSurface.Announce(
+            sprintf
+                "Diagnostic snapshot: %s. Testing earcons."
+                snapshot,
+            ActivityIds.diagnostic)
+        let _ =
+            task {
+                // Brief settle so the snapshot announce reaches
+                // NVDA's speech queue before the first per-earcon
+                // announce queues up behind it.
+                do! Task.Delay(800)
+                let earconLineup =
+                    [ "Bell ping.", "bell-ping"
+                      "Error tone.", "error-tone"
+                      "Warning tone.", "warning-tone" ]
+                for label, earconId in earconLineup do
                     let action () =
-                        try
-                            let psi = System.Diagnostics.ProcessStartInfo()
-                            psi.FileName <- "powershell.exe"
-                            psi.Arguments <-
-                                sprintf
-                                    "-ExecutionPolicy Bypass -NoExit -File \"%s\""
-                                    scriptPath
-                            psi.UseShellExecute <- true
-                            System.Diagnostics.Process.Start(psi) |> ignore
-                        with ex ->
-                            let safe = AnnounceSanitiser.sanitise ex.Message
-                            window.TerminalSurface.Announce(
-                                sprintf "Could not launch diagnostic: %s" safe,
-                                ActivityIds.error)
+                        window.TerminalSurface.Announce(
+                            label,
+                            ActivityIds.diagnostic)
                     do! window.Dispatcher.InvokeAsync(Action(action)).Task
-                    ()
-                }
-            ()
+                    // Wait for NVDA to finish reading the label
+                    // before the tone plays — otherwise the tone
+                    // overlaps the speech.
+                    do! Task.Delay(400)
+                    EarconPlayer.play
+                        EarconPalette.defaultPalette
+                        earconId
+                    // Wait for the tone to finish (max 150ms) so
+                    // the next label announce doesn't fire while
+                    // the tone is still audible.
+                    do! Task.Delay(500)
+                let final () =
+                    window.TerminalSurface.Announce(
+                        "Earcon test complete.",
+                        ActivityIds.diagnostic)
+                do! window.Dispatcher.InvokeAsync(Action(final)).Task
+                ()
+            }
+        // PowerShell script launch — commented out per maintainer
+        // 2026-05-04. Original code preserved below for future
+        // reactivation if needed.
+        //
+        // let scriptPath =
+        //     System.IO.Path.Combine(
+        //         System.AppContext.BaseDirectory,
+        //         "test-process-cleanup.ps1")
+        // if not (System.IO.File.Exists scriptPath) then
+        //     window.TerminalSurface.Announce(
+        //         sprintf
+        //             "Cleanup script not found at %s."
+        //             scriptPath,
+        //         ActivityIds.diagnostic)
+        // else
+        //     let _ =
+        //         task {
+        //             do! Task.Delay(700)
+        //             let action () =
+        //                 try
+        //                     let psi = System.Diagnostics.ProcessStartInfo()
+        //                     psi.FileName <- "powershell.exe"
+        //                     psi.Arguments <-
+        //                         sprintf
+        //                             "-ExecutionPolicy Bypass -NoExit -File \"%s\""
+        //                             scriptPath
+        //                     psi.UseShellExecute <- true
+        //                     System.Diagnostics.Process.Start(psi) |> ignore
+        //                 with ex ->
+        //                     let safe = AnnounceSanitiser.sanitise ex.Message
+        //                     window.TerminalSurface.Announce(
+        //                         sprintf "Could not launch diagnostic: %s" safe,
+        //                         ActivityIds.error)
+        //             do! window.Dispatcher.InvokeAsync(Action(action)).Task
+        //             ()
+        //         }
+        //     ()
+        ()
 
     /// Open the GitHub "draft a new release" form for this
     /// repository in the user's default web browser. Triggered
