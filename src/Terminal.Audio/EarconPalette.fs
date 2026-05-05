@@ -30,34 +30,14 @@ module EarconPalette =
     /// compatibility (Phase 2).
     type EarconId = string
 
-    /// Default palette. v1 (8d.1) shipped only the bell-ping
-    /// entry; v2 (8d.2) adds error-tone + warning-tone for
-    /// SGR-coloured streaming output detected by the
-    /// StreamProfile. Tunable in Phase 2 via TOML.
-    ///
-    /// Frequency / duration choices follow the spec §9.3 palette
-    /// intent (alarm low / confirm high / warn middle):
-    /// - bell-ping (800Hz × 100ms) — high pitch + short duration;
-    ///   reads as a "ping" or "ding". Triggered by BEL (0x07).
-    /// - error-tone (400Hz × 150ms) — low pitch + longer
-    ///   duration; reads as "alarm" or "wrong". Triggered by
-    ///   red-dominant streaming output (StreamProfile detection).
-    /// - warning-tone (600Hz × 120ms) — middle pitch + middle
-    ///   duration; sits between bell-ping and error-tone.
-    ///   Triggered by yellow-dominant streaming output.
-    /// All three are shorter than the StreamProfile's 200ms
-    /// debounce window so consecutive earcons don't overlap.
+    /// Default palette. v1 ships a single bell-ping entry. The
+    /// 800Hz frequency was chosen as a clearly-audible mid-tone
+    /// that doesn't conflict with NVDA's speech band; the 100ms
+    /// duration is short enough to feel like a "bell" rather
+    /// than a "tone". Tunable in Phase 2 via TOML.
     let defaultPalette : Map<EarconId, EarconWaveform.Parameters> =
         Map.ofList
             [ "bell-ping",
               { FrequencyHz = 800.0
                 DurationMs = 100
-                AttackMs = 10 }
-              "error-tone",
-              { FrequencyHz = 400.0
-                DurationMs = 150
-                AttackMs = 10 }
-              "warning-tone",
-              { FrequencyHz = 600.0
-                DurationMs = 120
                 AttackMs = 10 } ]
