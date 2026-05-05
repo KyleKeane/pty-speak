@@ -15,6 +15,140 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Phase B subset — TOML config for pathway selection + parameters)
+
+Closes the Phase B "TOML config" item the Phase A plan deferred
+(`/root/.claude/plans/hello-i-lost-my-velvet-deer.md` decision
+#5: "Per-shell pathway selection in v1 — Hardcoded mapping in
+Program.fs"). With C2 landed, users can override pathway
+selection and pathway parameters via a TOML file at
+`%LOCALAPPDATA%\PtySpeak\config.toml` without rebuilding
+pty-speak.
+
+Closes the loop on the maintainer's guiding principle for
+display configurability:
+
+> The interpreter pathway should be transparent and user
+> configurable and customizable with sensible defaults.
+
+C2 ships the *substrate* that realises this principle for
+pathway selection + pathway parameters. Future stages build on
+the substrate: per-content-type triggers (regex / colour /
+semantic-parser / LLM) are Phase 2/3 territory and need actual
+pathways that consume the triggers; runtime "adjust on the fly,
+save as template" workflows are Phase 2/3 UI work that this
+substrate enables.
+
+**Schema (v1).** `schema_version = 1` is required. Two table
+families:
+
+```toml
+schema_version = 1
+
+[shell.cmd]
+pathway = "stream"
+
+[shell.powershell]
+pathway = "stream"
+
+[shell.claude]
+pathway = "stream"
+
+[pathway.stream]
+debounce_window_ms = 200
+spinner_window_ms = 1000
+spinner_threshold = 5
+max_announce_chars = 500
+
+[pathway.tui]
+# reserved; no parameters today
+```
+
+`[shell.<id>]` keys mirror the lowercase IDs `parseEnvVar`
+recognises (`cmd`, `claude`, `powershell`). `pathway` values
+are pathway IDs (`"stream"`, `"tui"`; future Phase 2 IDs added
+without schema migration). `[pathway.<id>]` tables hold
+per-pathway parameter overrides; v1 ships `[pathway.stream]`
+with the four StreamPathway tunables.
+
+**Forward-compat with input-bindings.** Spec
+`event-and-output-framework.md` A.5 sketches a future schema
+for hotkey overrides (`[[bindings]]` / `[[handlers]]` arrays
+at top level). C2's loader silently ignores those sections —
+the same `config.toml` will accumulate sections cumulatively
+across Phase B sub-stages without conflict.
+
+**Defaults preserved exactly.** `Config.defaultConfig` matches
+`StreamPathway.defaultParameters` field-for-field; absence of
+the file (or any key within it) is byte-equivalent to pre-C2
+behaviour. Tests pin this equivalence.
+
+**Error handling — never crashes, never opens a dialog.**
+The maintainer is a screen-reader user; every error path logs
+via `ILogger` (routed to FileLogger, readable via
+`Ctrl+Shift+;`) and falls back to defaults:
+
+- Missing file → Information log; defaults
+- Malformed TOML → Error log (with parse detail); defaults
+- Schema version newer than supported → Error log; defaults
+- Unknown pathway name (e.g. `"stram"`) → Warning; that shell
+  falls to default
+- Unknown parameter key → Warning ("ignored"); drop value
+- Negative or zero parameter → Warning ("clamped to default");
+  use default for that field
+
+A single `Information` line on startup summarises the resolved
+config (e.g. `Config loaded: cmd→stream, claude→stream,
+powershell→stream; stream debounce=200ms`).
+
+**TOML library.** Tomlyn 0.18.0 (xoofx, BSD 2-Clause). Spec
+already named it (`tech-plan.md:997`,
+`event-and-output-framework.md:501`); this is its first
+appearance.
+
+Files:
+- `Directory.Packages.props` — Tomlyn 0.18.0 PackageVersion
+  added.
+- `src/Terminal.Core/Terminal.Core.fsproj` — Tomlyn
+  PackageReference + `Config.fs` Compile entry.
+- `src/Terminal.Core/Config.fs` — new module with `Config`
+  record, `defaultConfig`, `tryLoad`, `resolveShellPathway`,
+  `resolveStreamParameters`, `defaultConfigFilePath`.
+- `src/Terminal.App/Program.fs` — `Config.tryLoad` invoked at
+  composition root; `selectPathwayForShell` rewritten as a
+  closure capturing the loaded config (collapses three
+  identical hardcoded match arms into one config-consulting
+  body).
+- `tests/Tests.Unit/ConfigTests.fs` — new file pinning the
+  loader behaviour (15 tests covering parse OK / malformed /
+  defaults / overrides / unknown keys / schema versioning /
+  coexistence with future `[[bindings]]` sections).
+- `tests/Tests.Unit/Tests.Unit.fsproj` — `ConfigTests.fs`
+  Compile entry.
+- `docs/USER-SETTINGS.md` — intro updated to note C2 ships
+  the TOML substrate; new "Pathway selection" section with
+  schema, defaults table, error semantics, out-of-scope
+  list. "Process for adding a new setting" updated to tick
+  off "substrate is shipped".
+
+**Out of scope** (explicit, for reviewer + future-self
+clarity):
+
+- Hot-reload — changes require a restart.
+- Runtime config write-back from a hotkey or palette ("save
+  current settings as my config" workflow). Phase 2/3.
+- Kill-switch substrate (`Ctrl+Shift+K` + `extensibility.killSwitch`
+  per spec A.6). Phase B input-bindings owns this.
+- Per-content-type triggers (regex / colour / semantic-parser
+  / LLM dispatchers). Phase 2/3 — needs actual semantic /
+  AI-interpretation pathways that consume the triggers.
+- ClaudeCodePathway / ReplPathway / FormPathway selection —
+  those pathways don't exist yet (Phase 2).
+- Schema additions for input-binding overrides
+  (`[[bindings]]`). Separate Phase B sub-stage; coexists
+  cleanly with the current schema.
+- Config validator binary or CLI.
+
 ### Added (Phase B subset — alt-screen → TuiPathway auto-detect)
 
 `TuiPathway` shipped in Phase A as a wired-but-never-selected

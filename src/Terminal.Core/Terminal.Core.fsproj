@@ -22,6 +22,7 @@
     <Compile Include="StreamPathway.fs" />
     <Compile Include="TuiPathway.fs" />
     <Compile Include="PathwaySelector.fs" />
+    <Compile Include="Config.fs" />
     <Compile Include="EarconChannel.fs" />
     <Compile Include="EarconProfile.fs" />
     <Compile Include="PassThroughProfile.fs" />
@@ -33,6 +34,7 @@
   <ItemGroup>
     <PackageReference Include="FSharp.Core" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Tomlyn" />
   </ItemGroup>
 
 </Project>
