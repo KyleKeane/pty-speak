@@ -8,95 +8,82 @@ open Microsoft.Extensions.Logging
 open Terminal.Core
 
 /// Stage 8d.1 — WASAPI playback glue for earcons.
+/// Re-architected 2026-05-05 after the post-8d.1 release-build
+/// logs surfaced `AUDCLNT_E_ALREADY_INITIALIZED` (0x88890002)
+/// errors on the second + third calls to `WasapiOut.Init`.
 ///
-/// Holds a singleton `WasapiOut` instance, initialised lazily on
-/// first call to `play`. NAudio's `WasapiOut` runs its own audio
-/// thread internally — `Play()` returns immediately once the
-/// engine is primed and the audio thread feeds samples on its
-/// own schedule. So `play` is non-blocking from the dispatcher's
-/// perspective, satisfying the channel "do not block the
-/// dispatcher" contract (spec B.5.3).
+/// **Per-play WasapiOut.** Each call to `play` constructs a
+/// fresh `WasapiOut` instance, calls `Init`, calls `Play`, and
+/// registers a `PlaybackStopped` handler that disposes the
+/// instance once the bounded sample provider exhausts. NAudio's
+/// underlying `AudioClient.Initialize` cannot be called twice
+/// on the same `WasapiOut` — it throws
+/// `AUDCLNT_E_ALREADY_INITIALIZED` — so the lazy-singleton
+/// pattern we shipped initially in 8d.1 was wrong: only the
+/// first earcon ever played; the second + third silently
+/// failed (and the original 8d.1 release wasn't end-to-end-
+/// validated for the multi-earcon path because we shipped
+/// before the diagnostic that exercises it).
 ///
-/// **Lazy init.** The WasapiOut + MMDeviceEnumerator are
-/// constructed on first use rather than at app startup. This
-/// avoids paying the audio-subsystem initialisation cost for
-/// users who never trigger an earcon (e.g., shell sessions
-/// that never emit BEL). The lazy init is gated by a `lock` so
-/// concurrent first-plays don't double-construct.
+/// `MMDeviceEnumerator` is still cached because it's a thin
+/// COM wrapper around device enumeration that's safe to share
+/// across `WasapiOut` instances and not free to construct.
 ///
-/// **Single-stream model.** WasapiOut plays ONE sample provider
-/// at a time. If a second `play` arrives while the previous is
-/// still rendering, the first is stopped and the second begins.
-/// In practice earcons are short (100ms) and rare (BEL triggers
-/// only when a shell emits 0x07); collisions are unlikely. A
-/// future PR can add a mixer (`MixingSampleProvider`) if
-/// overlapping earcons become a real use case.
+/// **Concurrency.** A single `lock initLock` brackets the
+/// device-acquire + WasapiOut-create + Init + Play sequence
+/// so two concurrent `play` calls don't race during
+/// initialisation. The audio playback itself runs on NAudio's
+/// internal audio thread; multiple in-flight `WasapiOut`
+/// instances can coexist and play in parallel (each owns its
+/// own `AudioClient`). For our use case (BEL + diagnostic +
+/// future colour-detection), play rates are well below
+/// once-per-150ms, so overlap is rare.
 ///
 /// **Error swallowing.** Audio failures must NEVER crash the
-/// app or block the dispatcher. Every `play` call is wrapped in
-/// `try/with`; exceptions are logged at Information level and
-/// silently dropped. Common failure modes: no audio device, WASAPI
-/// init failure (e.g., headless CI), driver permission errors.
-/// All of these become "no sound" for the user — the rest of the
-/// app continues running.
+/// app or block the dispatcher. Every `play` call is wrapped
+/// in `try/with`; exceptions are logged at Information level
+/// and silently dropped. Common failure modes: no audio
+/// device, WASAPI init failure, driver permission errors,
+/// the AUDCLNT_E_ALREADY_INITIALIZED bug above (now fixed).
+/// All of these become "no sound" for the user — the rest of
+/// the app continues running.
 module EarconPlayer =
 
     /// Helper: fetch the current logger. Called per-log-site
     /// rather than cached at module-init because
     /// `Terminal.Core.Logger` returns a NullLogger sentinel
-    /// before `Logger.configure` runs (composition root,
-    /// `Program.fs` line ~788) and the real factory-backed
-    /// logger after. Module-init for Terminal.Audio happens
-    /// when `compose` touches the EarconPlayer (after
-    /// configure), but we use the per-call lookup pattern that
-    /// the rest of the codebase uses (see e.g.
-    /// `Coalescer.processRowsChanged`).
+    /// before `Logger.configure` runs.
     let private getLogger () : ILogger =
         Logger.get "Terminal.Audio.EarconPlayer"
 
     let private initLock : obj = obj ()
-    let mutable private wasapiOut : WasapiOut option = None
     let mutable private deviceEnumerator : MMDeviceEnumerator option = None
 
-    /// Initialise the WASAPI output device on first use. Caller
-    /// MUST hold `initLock`. Returns the cached instance on
-    /// subsequent calls. Returns `None` if the audio subsystem
-    /// is unavailable (no device, permission denied, headless
-    /// runner, etc.).
-    let private ensureWasapiOut () : WasapiOut option =
-        match wasapiOut with
+    /// Lazily acquire the device enumerator on first play.
+    /// Caller MUST hold `initLock`. Returns `None` if the audio
+    /// subsystem is unavailable.
+    let private ensureEnumerator () : MMDeviceEnumerator option =
+        match deviceEnumerator with
         | Some _ as cached -> cached
         | None ->
             try
                 let enumerator = new MMDeviceEnumerator()
-                let device =
-                    enumerator.GetDefaultAudioEndpoint(
-                        DataFlow.Render,
-                        Role.Console)
-                let wo =
-                    new WasapiOut(
-                        device,
-                        AudioClientShareMode.Shared,
-                        true,
-                        100)
                 deviceEnumerator <- Some enumerator
-                wasapiOut <- Some wo
                 (getLogger ()).LogInformation(
-                    "WasapiOut initialised. Device={Device}",
-                    device.FriendlyName)
-                Some wo
+                    "MMDeviceEnumerator initialised.")
+                Some enumerator
             with ex ->
                 (getLogger ()).LogInformation(
                     ex,
-                    "WasapiOut initialisation failed; earcons will be silent. Reason: {Reason}",
+                    "MMDeviceEnumerator initialisation failed; earcons will be silent. Reason: {Reason}",
                     ex.Message)
                 None
 
     /// Play the earcon identified by `earconId` using the
     /// supplied palette. Non-blocking: returns immediately
-    /// after starting the playback. Errors are logged and
-    /// silently swallowed — earcon failures don't crash the
-    /// dispatcher.
+    /// after `WasapiOut.Play` (the audio thread feeds samples
+    /// asynchronously). Errors are logged and silently
+    /// swallowed.
     let play
             (palette: Map<EarconPalette.EarconId, EarconWaveform.Parameters>)
             (earconId: EarconPalette.EarconId)
@@ -110,34 +97,54 @@ module EarconPlayer =
         | Some parameters ->
             try
                 lock initLock (fun () ->
-                    match ensureWasapiOut () with
+                    match ensureEnumerator () with
                     | None -> ()
-                    | Some wo ->
-                        // Stop the in-flight earcon (if any)
-                        // before initialising the next. WasapiOut
-                        // doesn't queue; calling Init twice
-                        // without Stop produces undefined
-                        // behaviour.
-                        if wo.PlaybackState = PlaybackState.Playing then
-                            wo.Stop()
+                    | Some enumerator ->
+                        let device =
+                            enumerator.GetDefaultAudioEndpoint(
+                                DataFlow.Render,
+                                Role.Console)
+                        // Fresh WasapiOut per play. NAudio's
+                        // AudioClient.Initialize throws
+                        // AUDCLNT_E_ALREADY_INITIALIZED if Init
+                        // is called twice on the same WasapiOut.
+                        // Each play is short (≤150ms tone); the
+                        // construct/dispose overhead is acceptable.
+                        let wo =
+                            new WasapiOut(
+                                device,
+                                AudioClientShareMode.Shared,
+                                true,
+                                100)
+                        // Dispose-on-stop chain: when the bounded
+                        // sample provider exhausts, NAudio fires
+                        // PlaybackStopped on its audio thread; we
+                        // dispose the WasapiOut to release the
+                        // AudioClient handle. Wrapped in try/with
+                        // because Dispose can race with the GC
+                        // finalizer and multiple Dispose calls
+                        // can throw; we treat the cleanup as
+                        // best-effort.
+                        wo.PlaybackStopped.Add(fun _ ->
+                            try wo.Dispose() with _ -> ())
                         let waveform =
                             EarconWaveform.synthSineEnvelope parameters
-                        // WasapiOut.Init takes IWaveProvider;
-                        // wrap the ISampleProvider chain in a
-                        // 16-bit PCM converter (NAudio's
-                        // standard adapter). 16-bit is the
-                        // universally-supported lowest-CPU
-                        // option for short tones; spatial
-                        // future-stages may upgrade to 32-bit
-                        // float for better dynamic range.
                         let waveProvider = SampleToWaveProvider16(waveform)
-                        wo.Init(waveProvider :> IWaveProvider)
-                        wo.Play()
-                        (getLogger ()).LogDebug(
-                            "Earcon play started. EarconId={EarconId} FreqHz={FreqHz} DurationMs={DurationMs}",
-                            earconId,
-                            parameters.FrequencyHz,
-                            parameters.DurationMs))
+                        try
+                            wo.Init(waveProvider :> IWaveProvider)
+                            wo.Play()
+                            (getLogger ()).LogDebug(
+                                "Earcon play started. EarconId={EarconId} FreqHz={FreqHz} DurationMs={DurationMs}",
+                                earconId,
+                                parameters.FrequencyHz,
+                                parameters.DurationMs)
+                        with ex ->
+                            // Init or Play failed before
+                            // PlaybackStopped could fire to clean
+                            // up; dispose explicitly here, then
+                            // rethrow to the outer handler.
+                            try wo.Dispose() with _ -> ()
+                            reraise ())
             with ex ->
                 (getLogger ()).LogInformation(
                     ex,
