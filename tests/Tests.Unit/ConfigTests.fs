@@ -106,7 +106,7 @@ let ``tryLoad on minimal valid TOML returns default-shape Config`` () =
     let toml = "schema_version = 1\n"
     let config, _ = loadFromText toml
     Assert.Equal(1, config.SchemaVersion)
-    Assert.Equal(Map.empty, config.ShellOverrides)
+    Assert.Equal<Map<string, Config.ShellPathwayConfig>>(Map.empty, config.ShellOverrides)
     Assert.Equal(StreamPathway.defaultParameters, Config.resolveStreamParameters config)
 
 // ---- Per-shell pathway override ------------------------------------
