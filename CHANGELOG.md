@@ -15,6 +15,77 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Phase B subset — alt-screen → TuiPathway auto-detect)
+
+`TuiPathway` shipped in Phase A as a wired-but-never-selected
+option (only the hardcoded `selectPathwayForShell` mapping
+chose pathways, and v1 mapped cmd / powershell / claude all to
+StreamPathway). The Phase A plan deferred auto-detection of
+pathway from screen state to "Phase B paired with TOML config"
+because mid-session pathway swap had unsettled state semantics.
+
+Phase A.1's `DisplayPathway.T.SetBaseline` primitive resolved
+the state-semantics concern (no leaked baseline, no stale-diff
+regression on swap), so alt-screen auto-detect is now
+independently shippable without the TOML config.
+
+**Behaviour.** When the active shell enters an alt-screen TUI
+(`vim`, `less`, `top`, full-screen `fzf`), the screen fires
+`ModeChanged(AltScreen, true)`; the `PathwayPump` swaps the
+active pathway to `TuiPathway` (no streaming output — review-
+cursor / browse-mode is the navigation primary). When the user
+quits the TUI, `ModeChanged(AltScreen, false)` swaps the
+pathway back to whatever the active shell's default is
+(`StreamPathway` for cmd / powershell / claude in v1).
+
+Without this change, the user's NVDA experience inside vim was
+constant streaming announcements as the editor repainted —
+unusable. The vim experience now matches the implicit Stage 5
+alt-screen suppression that pre-Stage-8 pty-speak shipped, but
+with the pathway substrate's state-management discipline
+(flush via `OnModeBarrier`, `Reset` outgoing, seed `SetBaseline`
+on incoming) so no diff state leaks across the swap.
+
+**Implementation.** A new pure decision module
+`PathwaySelector` returns one of `Keep` / `SwapToTui` /
+`SwapToShellDefault` from `(currentPathwayId, ScreenNotification)`
+without depending on `Terminal.Pty`'s `ShellRegistry`. The
+`PathwayPump`'s `handleModeChanged` calls it after the existing
+`OnModeBarrier` flush + before the existing barrier-OutputEvent
+dispatch; on a non-`Keep` decision, it runs the same
+flush/Reset/reassign/SetBaseline sequence used by the
+`switchToShell` hot-switch path so the swap-state semantics are
+identical.
+
+The PathwayPump tracks a new `currentShellId` mutable
+(initialised to `Cmd`, updated on startup-shell resolve and on
+`switchToShell`'s `Ok newHost` branch) so a `SwapToShellDefault`
+on alt-screen exit resolves to the active shell's default
+pathway, not always to cmd's.
+
+Files:
+- `src/Terminal.Core/PathwaySelector.fs` — new pure decision
+  module.
+- `src/Terminal.Core/Terminal.Core.fsproj` — `<Compile Include>`
+  for the new module.
+- `src/Terminal.App/Program.fs` — `currentShellId` mutable +
+  `swapPathwayForAltScreen` helper + updated `handleModeChanged`
+  + sync at startup-resolve and `switchToShell`.
+- `tests/Tests.Unit/PathwaySelectorTests.fs` — 11 tests
+  exhausting the swap matrix (alt-screen entry/exit × current
+  pathway × non-alt-screen flag toggles + non-ModeChanged
+  notification defensives).
+- `tests/Tests.Unit/Tests.Unit.fsproj` — `<Compile Include>`
+  for the new test file.
+- `CHANGELOG.md` — this entry.
+
+**Out of scope.** The TOML-driven per-shell pathway selection
+that was originally bundled with this change in the Phase B
+sequencing — landing separately so the user-facing alt-screen
+experience improves without waiting on a config-file design
+cycle. Auto-detection of OSC 133 → ReplPathway is also
+deferred (no ReplPathway exists yet; Phase 2 territory).
+
 ### Fixed (Phase A.1 — hot-switch baseline-seed)
 
 The maintainer's NVDA validation pass on Phase A surfaced a

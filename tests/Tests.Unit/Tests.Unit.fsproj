@@ -29,6 +29,7 @@
     <Compile Include="CanonicalStateTests.fs" />
     <Compile Include="StreamPathwayTests.fs" />
     <Compile Include="TuiPathwayTests.fs" />
+    <Compile Include="PathwaySelectorTests.fs" />
     <Compile Include="OutputEventTests.fs" />
     <Compile Include="NvdaChannelTests.fs" />
     <Compile Include="FileLoggerChannelTests.fs" />

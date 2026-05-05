@@ -1048,6 +1048,26 @@ module Program =
         let mutable activePathway : DisplayPathway.T =
             StreamPathway.create StreamPathway.defaultParameters
 
+        // Phase B (subset) — alt-screen → TuiPathway auto-detect
+        // bookkeeping. The PathwayPump's `handleModeChanged`
+        // consults `PathwaySelector.decideAltScreenAction` on
+        // every `ModeChanged`; when an alt-screen toggle requires
+        // a pathway swap, the pump needs to know which shell to
+        // resolve the "default" back to (i.e., on alt-screen
+        // exit, swap back to the active shell's default
+        // streaming pathway, not always to cmd's). Tracked as a
+        // `ShellId` rather than the full `Shell` record because
+        // `selectPathwayForShell` only needs the id; this avoids
+        // a forward reference to `chosenShell` (which is resolved
+        // later in `compose`). Defaults to `Cmd` so a swap that
+        // somehow fires before `chosenShell` resolves still
+        // produces a valid pathway. Updated in two places:
+        //   - startup-shell alignment (after `chosenShell`
+        //     resolves)
+        //   - `switchToShell`'s `Ok newHost` branch
+        let mutable currentShellId : ShellRegistry.ShellId =
+            ShellRegistry.Cmd
+
         // PathwayPump — Phase A replacement for TranslatorPump.
         // Reads raw ScreenNotifications and routes by case:
         //   - RowsChanged: snapshot the screen → build a
@@ -1088,14 +1108,61 @@ module Program =
                 activePathway.Id,
                 emitted.Length)
             dispatchPathwayEvents emitted
+        // Phase B (subset) — alt-screen swap helper. Mirrors
+        // `switchToShell`'s pathway-swap sequence (flush via
+        // `OnModeBarrier`, `Reset` outgoing, reassign, seed
+        // `SetBaseline` against the current screen) so the
+        // mid-session pathway-swap state semantics match the
+        // hot-switch path. Idempotent under no-op decisions
+        // (`PathwaySelector.Keep` short-circuits to the existing
+        // mode-barrier flush).
+        let swapPathwayForAltScreen (next: DisplayPathway.T) : unit =
+            try activePathway.Reset () with _ -> ()
+            activePathway <- next
+            try
+                let seq, snapshot =
+                    screen.SnapshotRows(0, screen.Rows)
+                let canonical =
+                    CanonicalState.create snapshot seq
+                activePathway.SetBaseline canonical
+            with _ -> ()
+            pumpLog.LogInformation(
+                "PathwayPump auto-swapped pathway. NewPathway={Pathway}",
+                activePathway.Id)
+
         let handleModeChanged (notification: ScreenNotification) : unit =
             let now = DateTimeOffset.UtcNow
+            // Step 1 — flush the OUTGOING pathway's pending
+            // state via OnModeBarrier so any pre-mode-change
+            // diff lands at NVDA before the pathway swap.
             let flushed = activePathway.OnModeBarrier now
             pumpLog.LogDebug(
                 "PathwayPump ModeChanged → {Pathway}.OnModeBarrier → {Count} flushed events.",
                 activePathway.Id,
                 flushed.Length)
             dispatchPathwayEvents flushed
+            // Step 2 — consult PathwaySelector to decide whether
+            // an alt-screen toggle warrants a pathway swap. Most
+            // ModeChanged events return Keep (no swap) and the
+            // existing barrier-OutputEvent dispatch finishes
+            // the flow. Alt-screen toggles between the user's
+            // streaming shell and a TUI app (vim / less / top)
+            // swap pathways here so the user gets streaming
+            // diffs in cmd / powershell / claude and review-
+            // cursor-only navigation in vim / less.
+            match PathwaySelector.decideAltScreenAction
+                    activePathway.Id notification with
+            | PathwaySelector.Keep ->
+                ()
+            | PathwaySelector.SwapToTui ->
+                swapPathwayForAltScreen (TuiPathway.create ())
+            | PathwaySelector.SwapToShellDefault ->
+                swapPathwayForAltScreen (selectPathwayForShell currentShellId)
+            // Step 3 — dispatch the barrier OutputEvent so the
+            // FileLogger captures the mode transition in the
+            // audit trail and NvdaChannel routes via
+            // ActivityIds.mode (empty Payload skips the actual
+            // announce per NvdaChannel's contract).
             let barrier =
                 OutputEventBuilder.fromScreenNotification notification
             OutputDispatcher.dispatch barrier
@@ -1278,6 +1345,12 @@ module Program =
         // PathwayPump processes the first ScreenNotification.
         try activePathway.Reset () with _ -> ()
         activePathway <- selectPathwayForShell chosenShell.Id
+        // Phase B (subset) — sync the alt-screen-detect
+        // bookkeeping with the resolved startup shell so the
+        // PathwayPump's `SwapToShellDefault` (alt-screen exit)
+        // resolves to the correct pathway for the running
+        // shell.
+        currentShellId <- chosenShell.Id
 
         // Stage 7-followup PR-I — `chosenShell` is the value chosen
         // at startup and never changes. Hot-switching shells
@@ -1704,6 +1777,18 @@ module Program =
                                         // (cosmetic but confusing for
                                         // log analysis).
                                         currentShell <- shell
+                                        // Phase B (subset) —
+                                        // keep alt-screen-
+                                        // detect bookkeeping
+                                        // aligned with the
+                                        // hot-switched shell so
+                                        // a subsequent alt-
+                                        // screen-exit swap
+                                        // resolves to the new
+                                        // shell's default
+                                        // pathway, not the
+                                        // pre-switch shell's.
+                                        currentShellId <- shell.Id
                                         // Phase A — swap the active
                                         // pathway for the new shell.
                                         // `Reset` clears any pending

@@ -21,6 +21,7 @@
     <Compile Include="DisplayPathway.fs" />
     <Compile Include="StreamPathway.fs" />
     <Compile Include="TuiPathway.fs" />
+    <Compile Include="PathwaySelector.fs" />
     <Compile Include="EarconChannel.fs" />
     <Compile Include="EarconProfile.fs" />
     <Compile Include="PassThroughProfile.fs" />
