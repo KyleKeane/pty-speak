@@ -372,7 +372,16 @@ module StreamPathway =
             : DisplayPathway.T * State
             =
         let state = createState ()
-        let pathway =
+        // Type annotation needed: the function returns a tuple,
+        // so F#'s record-type inference can't flow back through
+        // the tuple shape to identify `DisplayPathway.T` from the
+        // field labels alone — without the annotation, F# picks
+        // the first record-in-scope with an `Id` field (Profile)
+        // and fails on Consume / OnModeBarrier / Reset. (The
+        // sister `create` function below works without an
+        // annotation because its return type IS DisplayPathway.T
+        // directly, which seeds inference.)
+        let pathway : DisplayPathway.T =
             { Id = id
               Consume =
                 fun canonical ->
