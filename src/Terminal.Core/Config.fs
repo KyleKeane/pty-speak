@@ -92,7 +92,27 @@ module Config =
           /// false` disables the supplementary
           /// ErrorLine/WarningLine OutputEvents and the
           /// associated error-tone/warning-tone earcons.
-          ColorDetection: bool option }
+          ColorDetection: bool option
+          /// PR #168 — Tier 1 parameter from
+          /// `docs/USER-SETTINGS.md` "Suffix-diff parameters".
+          /// `None` falls back to the default (3). Above this
+          /// many changed rows in one frame, the suffix-diff
+          /// stage bypasses per-row LCP and emits the full
+          /// ChangedText (verbose fallback).
+          BulkChangeThreshold: int option
+          /// PR #168 — backspace policy for the suffix-diff
+          /// Shrink branch. `None` falls back to the default
+          /// (`AnnounceDeletedCharacter`). TOML values:
+          /// `"silent"`, `"announce_deleted_character"`,
+          /// `"announce_deleted_word"`. Unknown / non-string
+          /// values log a Warning and fall back.
+          BackspacePolicy: StreamPathway.BackspacePolicy option
+          /// PR #168 — mode-barrier flush policy. `None` falls
+          /// back to the default (`SummaryOnly`). TOML values:
+          /// `"verbose"`, `"summary_only"`, `"suppressed"`.
+          /// Unknown / non-string values log a Warning and
+          /// fall back.
+          ModeBarrierFlushPolicy: StreamPathway.ModeBarrierFlushPolicy option }
 
     /// The top-level config record. `ShellOverrides` is keyed
     /// by lowercase shell-id strings (`"cmd"`, `"claude"`,
@@ -119,7 +139,13 @@ module Config =
               SpinnerWindowMs = None
               SpinnerThreshold = None
               MaxAnnounceChars = None
-              ColorDetection = None } }
+              ColorDetection = None
+              // PR #168 — Tier 1 parameters from
+              // `docs/USER-SETTINGS.md`'s "Suffix-diff
+              // parameters" section.
+              BulkChangeThreshold = None
+              BackspacePolicy = None
+              ModeBarrierFlushPolicy = None } }
 
     /// The default config file path —
     /// `%LOCALAPPDATA%\PtySpeak\config.toml`. Mirrors the
@@ -185,7 +211,11 @@ module Config =
               "spinner_window_ms"
               "spinner_threshold"
               "max_announce_chars"
-              "color_detection" ]
+              "color_detection"
+              // PR #168 — Tier 1 parameters.
+              "bulk_change_threshold"
+              "backspace_policy"
+              "mode_barrier_flush_policy" ]
 
     /// Internal — known shell-id keys for `[shell.<id>]`.
     /// Mirrors `ShellRegistry.parseEnvVar`'s lowercase
@@ -265,11 +295,50 @@ module Config =
                         key)
                 None
             | Some b -> Some b
+        // PR #168 — enum-string parsers for backspace_policy
+        // and mode_barrier_flush_policy. Unknown / non-string
+        // values log a Warning and return None (falls back to
+        // default).
+        let readBackspacePolicy (key: string) : StreamPathway.BackspacePolicy option =
+            match tryGetString table key with
+            | None ->
+                if table.ContainsKey(key) then
+                    logger.LogWarning(
+                        "Config: [pathway.stream] {Key} is non-string; ignored.",
+                        key)
+                None
+            | Some "silent" -> Some StreamPathway.SuppressShrink
+            | Some "announce_deleted_character" -> Some StreamPathway.AnnounceDeletedCharacter
+            | Some "announce_deleted_word" -> Some StreamPathway.AnnounceDeletedWord
+            | Some other ->
+                logger.LogWarning(
+                    "Config: [pathway.stream] {Key} = '{Value}' is not one of 'silent' / 'announce_deleted_character' / 'announce_deleted_word'; ignored.",
+                    key, other)
+                None
+        let readModeBarrierFlushPolicy (key: string) : StreamPathway.ModeBarrierFlushPolicy option =
+            match tryGetString table key with
+            | None ->
+                if table.ContainsKey(key) then
+                    logger.LogWarning(
+                        "Config: [pathway.stream] {Key} is non-string; ignored.",
+                        key)
+                None
+            | Some "verbose" -> Some StreamPathway.Verbose
+            | Some "summary_only" -> Some StreamPathway.SummaryOnly
+            | Some "suppressed" -> Some StreamPathway.Suppressed
+            | Some other ->
+                logger.LogWarning(
+                    "Config: [pathway.stream] {Key} = '{Value}' is not one of 'verbose' / 'summary_only' / 'suppressed'; ignored.",
+                    key, other)
+                None
         { DebounceWindowMs = readField "debounce_window_ms"
           SpinnerWindowMs = readField "spinner_window_ms"
           SpinnerThreshold = readField "spinner_threshold"
           MaxAnnounceChars = readField "max_announce_chars"
-          ColorDetection = readBool "color_detection" }
+          ColorDetection = readBool "color_detection"
+          BulkChangeThreshold = readField "bulk_change_threshold"
+          BackspacePolicy = readBackspacePolicy "backspace_policy"
+          ModeBarrierFlushPolicy = readModeBarrierFlushPolicy "mode_barrier_flush_policy" }
 
     /// Internal — parse the `[shell.X]` family into
     /// `Map<string, ShellPathwayConfig>`. Unknown shell keys
@@ -456,4 +525,10 @@ module Config =
           MaxAnnounceChars =
             Option.defaultValue defaults.MaxAnnounceChars ov.MaxAnnounceChars
           ColorDetection =
-            Option.defaultValue defaults.ColorDetection ov.ColorDetection }
+            Option.defaultValue defaults.ColorDetection ov.ColorDetection
+          BulkChangeThreshold =
+            Option.defaultValue defaults.BulkChangeThreshold ov.BulkChangeThreshold
+          BackspacePolicy =
+            Option.defaultValue defaults.BackspacePolicy ov.BackspacePolicy
+          ModeBarrierFlushPolicy =
+            Option.defaultValue defaults.ModeBarrierFlushPolicy ov.ModeBarrierFlushPolicy }

@@ -56,6 +56,63 @@ module StreamPathway =
     /// stopgap) is kept but its load-bearing role diminishes
     /// post-Phase-A because most diffs are small (one or two
     /// rows of new text).
+    /// Backspace policy — what `computeRowSuffixDelta` does
+    /// when a row shrinks (backspace, line clear, Ctrl+W
+    /// word-delete, etc.). PR #168 (Tier 1 parameters from
+    /// `docs/USER-SETTINGS.md`'s "Suffix-diff parameters"
+    /// section). Default `AnnounceDeletedCharacter` replaces
+    /// PR #166's silent-on-shrink default, which assumed
+    /// NVDA's keyboard echo would handle backspace audibility
+    /// — confirmed wrong on 2026-05-06 release-build
+    /// validation.
+    ///
+    /// The case name `SuppressShrink` (rather than `Silent`)
+    /// avoids collision with `EditDelta.Silent`. The TOML key
+    /// for this case stays `"silent"`; the rename is internal
+    /// only.
+    type BackspacePolicy =
+        /// PR #166's original behaviour: shrink → no emit.
+        /// Useful only if NVDA gains a "speak deletions"
+        /// setting in the future. TOML value: `"silent"`.
+        | SuppressShrink
+        /// Default. Row shrink emits the deleted segment
+        /// (the part of `previousText` beyond the longest-
+        /// common-prefix with `currentText`). For a single
+        /// backspace, that's one character; for Ctrl+W it
+        /// would be the deleted word. TOML value:
+        /// `"announce_deleted_character"`.
+        | AnnounceDeletedCharacter
+        /// Reserved for future word-boundary-aware behaviour.
+        /// In v1.1, treated identically to
+        /// `AnnounceDeletedCharacter` (the deleted segment is
+        /// emitted as-is). TOML value: `"announce_deleted_word"`.
+        | AnnounceDeletedWord
+
+    /// Mode-barrier flush policy — what `onModeBarrier` does
+    /// with any pending diff at shell-switch / alt-screen /
+    /// mode-change. PR #168. Default `SummaryOnly` replaces
+    /// PR #166's verbose flush — confirmed unpleasant on
+    /// 2026-05-06 release-build validation (1200-character
+    /// flushes of stale shell history).
+    type ModeBarrierFlushPolicy =
+        /// PR #166's original behaviour. Emit the previous
+        /// shell's full screen as a flush event before the new
+        /// shell's startup. Preserves verbose context at
+        /// discontinuities; jarring in practice.
+        | Verbose
+        /// Default. Suppress the previous-shell flush; rely
+        /// on the App-layer "switching to X" announce + the
+        /// new shell's startup output for context. Subsumes
+        /// strategic backlog items 23 + 24.
+        | SummaryOnly
+        /// Silent on barrier; the new shell's startup output
+        /// is the user's only signal that anything changed.
+        /// At the StreamPathway level, identical behaviour to
+        /// `SummaryOnly`; the difference materialises at the
+        /// App-layer (which announces "switching to X" under
+        /// `SummaryOnly` but stays silent under `Suppressed`).
+        | Suppressed
+
     type Parameters =
         { DebounceWindowMs: int
           SpinnerWindowMs: int
@@ -71,14 +128,38 @@ module StreamPathway =
           /// emit, identical to the post-revert behaviour. The
           /// TOML config schema exposes this as
           /// `[pathway.stream] color_detection`.
-          ColorDetection: bool }
+          ColorDetection: bool
+          /// PR #168 — when the row-level diff reports more
+          /// changed rows than this threshold in a single
+          /// frame, the suffix-diff stage bypasses per-row LCP
+          /// and emits the full `ChangedText` (the pre-PR-#166
+          /// verbose path). Catches scrolls, screen clears,
+          /// and TUI repaints with one heuristic. Default 3 is
+          /// conservative: typing produces 1 changed row;
+          /// Enter usually produces 1-2; small pastes 2-3.
+          /// Scrolls affect ~30 rows — engages the fallback.
+          /// TOML key: `[pathway.stream] bulk_change_threshold`.
+          BulkChangeThreshold: int
+          /// PR #168 — what to do when a row shrinks (backspace
+          /// etc.). See `BackspacePolicy`. Default
+          /// `AnnounceDeletedCharacter`. TOML key:
+          /// `[pathway.stream] backspace_policy`.
+          BackspacePolicy: BackspacePolicy
+          /// PR #168 — what to do at mode-barrier flush time.
+          /// See `ModeBarrierFlushPolicy`. Default
+          /// `SummaryOnly`. TOML key:
+          /// `[pathway.stream] mode_barrier_flush_policy`.
+          ModeBarrierFlushPolicy: ModeBarrierFlushPolicy }
 
     let defaultParameters: Parameters =
         { DebounceWindowMs = 200
           SpinnerWindowMs = 1000
           SpinnerThreshold = 5
           MaxAnnounceChars = 500
-          ColorDetection = true }
+          ColorDetection = true
+          BulkChangeThreshold = 3
+          BackspacePolicy = AnnounceDeletedCharacter
+          ModeBarrierFlushPolicy = SummaryOnly }
 
     type private SpinnerKey = int * uint64
 
@@ -361,7 +442,11 @@ module StreamPathway =
     /// all stay on the suffix-diff path. Scroll affects ~30
     /// rows; screen clear all of them — both engage the
     /// fallback.
-    let private BulkChangeThreshold : int = 3
+    ///
+    /// PR #168 — moved from a top-level `let private` constant
+    /// to `Parameters.BulkChangeThreshold`. The default value
+    /// (3) lives in `defaultParameters` above; the constant
+    /// binding is removed to avoid two sources of truth.
 
     /// Result of the sub-row suffix-diff stage for one row.
     type internal EditDelta =
@@ -392,15 +477,24 @@ module StreamPathway =
     /// - identical text → `Silent` (no displayable change)
     /// - previous empty → `Suffix current` (Initial — first
     ///   time we've emitted this row)
-    /// - current shorter than previous → `Silent` (Shrink;
-    ///   v1 leaves backspace audibility to NVDA's keyboard
-    ///   echo per Default 1 in the plan)
+    /// - current shorter than previous (Shrink — backspace,
+    ///   line clear, Ctrl+W) → behaviour depends on
+    ///   `backspacePolicy`:
+    ///     - `SuppressShrink`: returns `Silent` (PR #166's
+    ///       behaviour; relies on NVDA keyboard echo for
+    ///       backspace feedback, which doesn't actually fire
+    ///       for screen-content shrinks)
+    ///     - `AnnounceDeletedCharacter` /
+    ///       `AnnounceDeletedWord`: returns `Suffix
+    ///       deletedText` where `deletedText` is the part of
+    ///       `previousText` beyond the longest-common-prefix
     /// - common prefix covers all of current → `Silent`
     ///   (attribute-only differences land here when the
     ///   per-row hash differs but the rendered text is the
     ///   same)
     /// - otherwise → `Suffix (current beyond common prefix)`
     let internal computeRowSuffixDelta
+            (backspacePolicy: BackspacePolicy)
             (currentText: string)
             (previousText: string)
             : EditDelta
@@ -410,7 +504,14 @@ module StreamPathway =
         elif previousText.Length = 0 then
             Suffix currentText
         elif currentText.Length < previousText.Length then
-            Silent
+            // Shrink case — apply policy.
+            match backspacePolicy with
+            | SuppressShrink -> Silent
+            | AnnounceDeletedCharacter | AnnounceDeletedWord ->
+                let commonLen = longestCommonPrefixLength currentText previousText
+                let deleted = previousText.Substring(commonLen)
+                if String.IsNullOrEmpty deleted then Silent
+                else Suffix deleted
         else
             let commonLen = longestCommonPrefixLength currentText previousText
             if commonLen = currentText.Length then
@@ -444,12 +545,13 @@ module StreamPathway =
     /// short-circuits empty per `NvdaChannel.fs:87` but the
     /// CONTRACT is to not emit empty payloads).
     let private assembleSuffixPayload
+            (parameters: Parameters)
             (snapshot: Cell[][])
             (diff: CanonicalState.CanonicalDiff)
             (lastRowText: string[])
             : string
             =
-        if diff.ChangedRows.Length > BulkChangeThreshold then
+        if diff.ChangedRows.Length > parameters.BulkChangeThreshold then
             // Stage 8b — bulk-change fallback. Defer to the
             // existing ChangedText; downstream behaviour is the
             // pre-PR-#166 verbose emit.
@@ -463,7 +565,12 @@ module StreamPathway =
                     let previousText =
                         if rowIdx < lastRowText.Length then lastRowText.[rowIdx]
                         else ""
-                    match computeRowSuffixDelta currentText previousText with
+                    let delta =
+                        computeRowSuffixDelta
+                            parameters.BackspacePolicy
+                            currentText
+                            previousText
+                    match delta with
                     | Suffix text -> parts.Add(text)
                     | Silent -> ()
             String.concat "\n" parts
@@ -583,6 +690,7 @@ module StreamPathway =
                         // baseline the suffix-diff reads).
                         let payload =
                             assembleSuffixPayload
+                                parameters
                                 canonical.Snapshot
                                 diff
                                 state.LastEmittedRowText
@@ -698,7 +806,7 @@ module StreamPathway =
                         match pendingSnapshot with
                         | ValueSome snap ->
                             let p =
-                                assembleSuffixPayload snap diff state.LastEmittedRowText
+                                assembleSuffixPayload parameters snap diff state.LastEmittedRowText
                             state.LastEmittedRowText <- renderAllRows snap
                             p
                         | ValueNone ->
@@ -731,16 +839,34 @@ module StreamPathway =
     /// content) and resets row-hash baselines (so the
     /// post-mode-change first emit treats every row as
     /// "new").
+    ///
+    /// PR #168 — `ModeBarrierFlushPolicy` controls whether the
+    /// flush is verbose (PR #166's behaviour, emit
+    /// `diff.ChangedText` for the previous shell's full
+    /// screen) or suppressed (default `SummaryOnly` /
+    /// `Suppressed` — return `[||]`, rely on the App-layer
+    /// shell-switch announce + the new shell's startup output
+    /// for context). At the StreamPathway level
+    /// `SummaryOnly` and `Suppressed` are identical; the
+    /// difference materialises at the App-layer
+    /// shell-switch announce (which is the maintainer's
+    /// future TOML-driven concern, not a StreamPathway
+    /// concern).
     let internal onModeBarrier
+            (parameters: Parameters)
             (state: State)
             (now: DateTimeOffset)
             : OutputEvent[]
             =
         let flushed =
-            match state.PendingDiff with
-            | ValueSome diff when diff.ChangedRows.Length > 0 ->
-                [| streamOutputEvent diff.ChangedText |]
-            | _ -> [||]
+            match parameters.ModeBarrierFlushPolicy with
+            | Verbose ->
+                match state.PendingDiff with
+                | ValueSome diff when diff.ChangedRows.Length > 0 ->
+                    [| streamOutputEvent diff.ChangedText |]
+                | _ -> [||]
+            | SummaryOnly | Suppressed ->
+                [||]
         // Phase A.2 — clear PendingColor WITHOUT emitting the
         // supplementary ErrorLine/WarningLine. Mode barriers are
         // themselves discontinuities (alt-screen toggle, vim
@@ -829,7 +955,7 @@ module StreamPathway =
                 onTimerTick parameters state now
           OnModeBarrier =
             fun now ->
-                onModeBarrier state now
+                onModeBarrier parameters state now
           Reset =
             fun () -> resetState state
           SetBaseline =
@@ -862,7 +988,7 @@ module StreamPathway =
                     onTimerTick parameters state now
               OnModeBarrier =
                 fun now ->
-                    onModeBarrier state now
+                    onModeBarrier parameters state now
               Reset =
                 fun () -> resetState state
               SetBaseline =
