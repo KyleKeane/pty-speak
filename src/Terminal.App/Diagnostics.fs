@@ -572,10 +572,11 @@ module Diagnostics =
                                 window.TerminalSurface.Announce(msg, ActivityIds.diagnostic)
                             do! window.Dispatcher.InvokeAsync(Action(act)).Task
                         }
-                    do! announce
-                        (sprintf
+                    let startMsg =
+                        sprintf
                             "Starting diagnostic on %s. About 10 seconds; commands will run in your shell."
-                            shell.DisplayName)
+                            shell.DisplayName
+                    do! announce startMsg
                     // T0 — process snapshot.
                     let snapshot = enumerateShellProcesses ()
                     writer.WriteLine LogLevel.Information "Diagnostic.T0.Snapshot" snapshot
@@ -639,19 +640,20 @@ module Diagnostics =
                                 "Diagnostic complete. %d of %d passed."
                                 pass total
                     if String.IsNullOrEmpty content then
-                        do! announce
-                            (sprintf "%s Could not read diagnostic log." summaryLine)
+                        let msg = sprintf "%s Could not read diagnostic log." summaryLine
+                        do! announce msg
                     else
                         let! copied = copyToClipboardSta log content
                         if copied then
-                            do! announce
-                                (sprintf "%s Diagnostic log copied to clipboard." summaryLine)
+                            let msg = sprintf "%s Diagnostic log copied to clipboard." summaryLine
+                            do! announce msg
                         else
-                            do! announce
-                                (sprintf
+                            let msg =
+                                sprintf
                                     "%s Clipboard copy failed; diagnostic log at %s."
                                     summaryLine
-                                    logPath)
+                                    logPath
+                            do! announce msg
                 with ex ->
                     log.LogError(
                         ex,
