@@ -406,24 +406,82 @@ let ``onModeBarrier with no pending returns no events`` () =
     Assert.Equal(0, result.Length)
 
 [<Fact>]
-let ``onModeBarrier resets frame-dedup state`` () =
+let ``onModeBarrier resets frame-dedup state under Verbose policy`` () =
+    // PR #169 — verbose policy preserves the legacy
+    // behaviour: barrier clears LastEmittedRowHashes (and
+    // LastFrameHash), so post-barrier first emit treats the
+    // same content as Initial and re-announces it. Verbose
+    // already announced the previous content via the explicit
+    // flush; the post-barrier "everything is fresh" emit
+    // matches the verbose-flush mental model.
+    let state = StreamPathway.createState ()
+    let snap = snapshotOf 1 5 [ "hello" ]
+    let _ =
+        StreamPathway.processCanonicalState
+            verboseFlushParameters state (at 0) (canonicalAt snap 0L)
+    // Frame dedup would normally suppress this repeat...
+    let dup =
+        StreamPathway.processCanonicalState
+            verboseFlushParameters state (at 500) (canonicalAt snap 1L)
+    Assert.Equal(0, dup.Length)
+    // ...but a mode barrier (Verbose) resets the dedup state,
+    // so the same content emits again afterward.
+    let _ = StreamPathway.onModeBarrier verboseFlushParameters state (at 600)
+    let after =
+        StreamPathway.processCanonicalState
+            verboseFlushParameters state (at 1000) (canonicalAt snap 2L)
+    Assert.Equal(1, after.Length)
+
+[<Fact>]
+let ``onModeBarrier under SummaryOnly preserves per-row baselines so unchanged content stays deduped`` () =
+    // PR #169 — under SummaryOnly (the default), the barrier
+    // PRESERVES `LastEmittedRowHashes` and
+    // `LastEmittedRowText` so the post-barrier first emit's
+    // diff is grounded against pre-barrier state. If the
+    // screen still shows the same content immediately after
+    // the barrier (e.g. shell-switch transition window
+    // before the new shell paints), there's no diff and no
+    // emit — exactly the behaviour that fixes the
+    // 1610-character "stale dir output" announce in the
+    // 2026-05-06 release-build validation.
     let state = StreamPathway.createState ()
     let snap = snapshotOf 1 5 [ "hello" ]
     let _ =
         StreamPathway.processCanonicalState
             StreamPathway.defaultParameters state (at 0) (canonicalAt snap 0L)
-    // Frame dedup would normally suppress this repeat...
-    let dup =
-        StreamPathway.processCanonicalState
-            StreamPathway.defaultParameters state (at 500) (canonicalAt snap 1L)
-    Assert.Equal(0, dup.Length)
-    // ...but a mode barrier resets the dedup state, so the
-    // same content emits again afterward.
+    // Mode barrier (SummaryOnly default) preserves per-row
+    // baselines.
     let _ = StreamPathway.onModeBarrier StreamPathway.defaultParameters state (at 600)
+    // Same content post-barrier → diff is empty → no emit.
+    // This is the post-barrier "transition window" case
+    // where the new shell hasn't painted yet.
     let after =
         StreamPathway.processCanonicalState
             StreamPathway.defaultParameters state (at 1000) (canonicalAt snap 2L)
+    Assert.Empty(after)
+
+[<Fact>]
+let ``onModeBarrier under SummaryOnly emits new content when post-barrier screen actually changes`` () =
+    // PR #169 — when the new shell DOES paint different
+    // content after the barrier, that change is announced
+    // normally via the suffix-diff path. Verifies the
+    // baseline-preservation doesn't accidentally suppress
+    // genuine post-barrier content.
+    let state = StreamPathway.createState ()
+    let snapPre = snapshotOf 1 20 [ "old shell content" ]
+    let snapPost = snapshotOf 1 20 [ "new shell content" ]
+    let _ =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0) (canonicalAt snapPre 0L)
+    let _ = StreamPathway.onModeBarrier StreamPathway.defaultParameters state (at 600)
+    let after =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 1000) (canonicalAt snapPost 2L)
     Assert.Equal(1, after.Length)
+    // The diff is per-row suffix vs the preserved baseline.
+    // LCP("new shell content", "old shell content") = 0
+    // (different first chars). Suffix = "new shell content".
+    Assert.Equal("new shell content", after.[0].Payload)
 
 // ---- Pathway-level wiring (Consume / Tick / Reset) -----------------
 
