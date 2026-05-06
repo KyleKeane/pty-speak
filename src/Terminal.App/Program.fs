@@ -320,175 +320,14 @@ module Program =
                 ExecutedRoutedEventHandler(fun _ _ -> handler ())))
         |> ignore
 
-    /// Launch the bundled process-cleanup diagnostic script in a
-    /// separate PowerShell window. Triggered by `Ctrl+Shift+D` —
-    /// added because Task Manager's Processes-tab chevron-expand
-    /// affordance is not screen-reader-accessible, so a maintainer
-    /// running the deferred Stage 4 process-cleanup test on
-    /// NVDA cannot navigate the Task Manager UI to verify the
-    /// process tree by hand. The diagnostic script lives next to
-    /// `Terminal.App.exe` (bundled via `Terminal.App.fsproj`'s
-    /// `Content` include) and emits one-fact-per-line stdout that
-    /// NVDA reads aloud naturally.
-    ///
-    /// The PowerShell process is launched with `-NoExit` so the
-    /// spawned window stays open after the test completes; the
-    /// user reads the result, then closes that window manually.
-    /// This is intentional — auto-closing would lose the output.
-    ///
-    /// Future: more diagnostics (UIA peer health, ConPTY child
-    /// status, version dump) can be added as additional scripts
-    /// next to this one and routed through the same hotkey via
-    /// a sub-menu, OR added as their own hotkeys following the
-    /// app-reserved-hotkey contract in `spec/tech-plan.md` §6.
-    /// PR-J — enumerate the live shell-related processes and
-    /// return both a per-name count list and a one-line announce-
-    /// safe summary. Used by the Ctrl+Shift+D handler to report
-    /// state inline BEFORE launching the cleanup script — gives
-    /// the user (or a Claude session triaging on their behalf)
-    /// an immediate "what's currently running" snapshot without
-    /// the close-and-recheck round trip.
-    ///
-    /// Names checked: `cmd`, `powershell`, `pwsh`, `claude`,
-    /// `Terminal.App`. `Process.GetProcessesByName` is the supported
-    /// .NET API — case-insensitive, no `.exe` suffix in the name
-    /// argument. The returned `Process` objects are disposed
-    /// immediately; we only need the count.
-    ///
-    /// Logged at Information level too so post-hoc log analysis
-    /// captures the snapshot even if the user pressed Ctrl+Shift+D
-    /// without writing down what NVDA said.
-    let private enumerateShellProcesses () : string =
-        let names = [| "cmd"; "powershell"; "pwsh"; "claude"; "Terminal.App" |]
-        let counts =
-            names
-            |> Array.map (fun n ->
-                let count =
-                    try
-                        let procs = System.Diagnostics.Process.GetProcessesByName(n)
-                        for p in procs do
-                            try p.Dispose() with _ -> ()
-                        procs.Length
-                    with _ -> -1
-                n, count)
-        let parts =
-            counts
-            |> Array.map (fun (n, c) ->
-                if c < 0 then sprintf "%s ?" n
-                else sprintf "%d %s" c n)
-        String.concat ", " parts
-
-    let private runDiagnostic (window: MainWindow) : unit =
-        let snapshot = enumerateShellProcesses ()
-        let log = Logger.get "Terminal.App.Program.runDiagnostic"
-        log.LogInformation(
-            "Diagnostic snapshot. ProcessCounts={Snapshot}",
-            snapshot)
-        // Stage 8d-followup (2026-05-04) — earcon audio diagnostic.
-        //
-        // The original Ctrl+Shift+D ritual launched a PowerShell
-        // script (`test-process-cleanup.ps1`) in a separate window
-        // that ran a process-tree close-and-recheck. The script
-        // had been consistently passing in NVDA validation, but
-        // required closing pty-speak to complete — adding friction
-        // to the diagnostic ritual. The PS1 launch is commented
-        // out below per maintainer 2026-05-04. Restore by
-        // uncommenting if orphan-detection diagnosis ever needs
-        // it again; the PS1 file still ships in the installer.
-        //
-        // The new ritual plays each earcon in sequence with an
-        // announce between, so the maintainer can verify the
-        // earcon audio path by pressing Ctrl+Shift+D — no need to
-        // trigger BEL or coloured shell output. Earcons play via
-        // a direct `EarconPlayer.play` call (bypassing the
-        // EarconChannel mute state); this lets the test verify
-        // the audio output path even when earcons are muted via
-        // Ctrl+Shift+M for normal use.
-        window.TerminalSurface.Announce(
-            sprintf
-                "Diagnostic snapshot: %s. Testing earcons."
-                snapshot,
-            ActivityIds.diagnostic)
-        // Helper: announce a label, wait for NVDA to read it,
-        // play the earcon, wait for the tone to finish. Defined
-        // outside the outer `task { ... }` block to keep the
-        // outer state machine statically compilable (the F# 9
-        // task CE flags `for tuple in list do { do! ... }`
-        // patterns as `FS3511`; an explicit unroll with three
-        // `do!` calls compiles cleanly).
-        let announceAndPlay (label: string) (earconId: string) : Task =
-            task {
-                let action () =
-                    window.TerminalSurface.Announce(
-                        label,
-                        ActivityIds.diagnostic)
-                do! window.Dispatcher.InvokeAsync(Action(action)).Task
-                // Wait for NVDA to finish reading the label
-                // before the tone plays — otherwise the tone
-                // overlaps the speech.
-                do! Task.Delay(400)
-                EarconPlayer.play
-                    EarconPalette.defaultPalette
-                    earconId
-                // Wait for the tone to finish (max 150ms) so
-                // the next label announce doesn't fire while
-                // the tone is still audible.
-                do! Task.Delay(500)
-            }
-        let _ =
-            task {
-                // Brief settle so the snapshot announce reaches
-                // NVDA's speech queue before the first per-earcon
-                // announce queues up behind it.
-                do! Task.Delay(800)
-                do! announceAndPlay "Bell ping." "bell-ping"
-                do! announceAndPlay "Error tone." "error-tone"
-                do! announceAndPlay "Warning tone." "warning-tone"
-                let final () =
-                    window.TerminalSurface.Announce(
-                        "Earcon test complete.",
-                        ActivityIds.diagnostic)
-                do! window.Dispatcher.InvokeAsync(Action(final)).Task
-                ()
-            }
-        // PowerShell script launch — commented out per maintainer
-        // 2026-05-04. Original code preserved below for future
-        // reactivation if needed.
-        //
-        // let scriptPath =
-        //     System.IO.Path.Combine(
-        //         System.AppContext.BaseDirectory,
-        //         "test-process-cleanup.ps1")
-        // if not (System.IO.File.Exists scriptPath) then
-        //     window.TerminalSurface.Announce(
-        //         sprintf
-        //             "Cleanup script not found at %s."
-        //             scriptPath,
-        //         ActivityIds.diagnostic)
-        // else
-        //     let _ =
-        //         task {
-        //             do! Task.Delay(700)
-        //             let action () =
-        //                 try
-        //                     let psi = System.Diagnostics.ProcessStartInfo()
-        //                     psi.FileName <- "powershell.exe"
-        //                     psi.Arguments <-
-        //                         sprintf
-        //                             "-ExecutionPolicy Bypass -NoExit -File \"%s\""
-        //                             scriptPath
-        //                     psi.UseShellExecute <- true
-        //                     System.Diagnostics.Process.Start(psi) |> ignore
-        //                 with ex ->
-        //                     let safe = AnnounceSanitiser.sanitise ex.Message
-        //                     window.TerminalSurface.Announce(
-        //                         sprintf "Could not launch diagnostic: %s" safe,
-        //                         ActivityIds.error)
-        //             do! window.Dispatcher.InvokeAsync(Action(action)).Task
-        //             ()
-        //         }
-        //     ()
-        ()
+    // Ctrl+Shift+D's body lives in
+    // `Terminal.App.Diagnostics.runFullBattery` (PR #165 —
+    // extended diagnostic battery). The closure that wires the
+    // hotkey to the new module is defined next to
+    // `runHealthCheck` further down because it captures compose-
+    // local state (`hostHandle`, `currentShell`,
+    // `screen.SequenceNumber`); the bind itself sits in the
+    // closure-bind group near line 1537.
 
     /// Open the GitHub "draft a new release" form for this
     /// repository in the user's default web browser. Triggered
@@ -517,8 +356,8 @@ module Program =
     /// inherits whatever the user configures.
     let private runOpenNewRelease (window: MainWindow) : unit =
         let url = UpdateRepoUrl + "/releases/new"
-        // Same announce-before-focus-grab pattern as `runDiagnostic`
-        // above (the launched browser will steal focus and NVDA's
+        // Announce-before-focus-grab pattern: the launched browser
+        // will steal focus and NVDA's
         // interrupt-on-focus-change will truncate the queued speech
         // unless we give it ~700ms head start).
         // TODO Phase 2: TOML-configurable delay.
@@ -866,7 +705,10 @@ module Program =
         // below; we install before the window is loaded so the
         // keybindings are live for the user's first keypress.
         bindHotkey window HotkeyRegistry.CheckForUpdates (fun () -> runUpdateFlow window)
-        bindHotkey window HotkeyRegistry.RunDiagnostic (fun () -> runDiagnostic window)
+        // Ctrl+Shift+D's bind is in the closure-bind group below
+        // (around line 1537) — its handler captures local
+        // mutables (`hostHandle`, `currentShell`, `screen`) that
+        // aren't in scope here yet.
         bindHotkey window HotkeyRegistry.DraftNewRelease (fun () -> runOpenNewRelease window)
         bindHotkey window HotkeyRegistry.OpenLogsFolder (fun () -> runOpenLogs window)
         bindHotkey window HotkeyRegistry.CopyLatestLog (fun () -> runCopyLatestLog window)
@@ -1528,6 +1370,20 @@ module Program =
                     sprintf "Health check failed: %s" safe,
                     ActivityIds.error)
 
+        // PR #165 — Ctrl+Shift+D (extended diagnostic battery).
+        // The closure is defined here (not at module top) because
+        // it reads `hostHandle`, `currentShell`, and the live
+        // `screen.SequenceNumber` for quiescence detection — all
+        // compose-local. Each resolver runs at hotkey-press time
+        // so a hot-switch between Ctrl+Shift+D presses is picked
+        // up correctly.
+        let runDiagnostic () : unit =
+            Diagnostics.runFullBattery
+                window
+                (fun () -> hostHandle)
+                (fun () -> currentShell)
+                (fun () -> screen.SequenceNumber)
+
         // Stage 7-followup PR-F — wire Ctrl+Shift+H and Ctrl+Shift+B
         // through the unified `bindHotkey` helper (PR-O). Both
         // closures capture compose-local state (lastReadUtc,
@@ -1536,6 +1392,7 @@ module Program =
         // Ctrl+Shift+G toggle (which only needs loggerSink).
         bindHotkey window HotkeyRegistry.HealthCheck runHealthCheck
         bindHotkey window HotkeyRegistry.IncidentMarker runIncidentMarker
+        bindHotkey window HotkeyRegistry.RunDiagnostic runDiagnostic
 
         // Stage 7-followup PR-F — background heartbeat. Every 5
         // seconds, log a single Information-level "Heartbeat" line

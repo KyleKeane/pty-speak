@@ -109,6 +109,58 @@ module OutputDispatcher =
             | Some channel -> channel.Send effectiveEvent decision.Render
             | None -> ()
 
+    /// Event-tap registry — a list of `OutputEvent -> unit`
+    /// observers fired before profile fan-out. Used by the
+    /// Ctrl+Shift+D diagnostic battery to capture every event
+    /// dispatched during a known time window. Taps are NOT a
+    /// general-purpose hook; they exist for short-lived
+    /// instrumentation runs and have a narrow contract:
+    ///
+    /// - Taps must not throw. The dispatcher swallows tap
+    ///   exceptions to keep production routing intact even when
+    ///   a misbehaving tap is registered. A throwing tap is a
+    ///   bug in the tap, not a reason to drop events.
+    /// - Taps see the raw `OutputEvent` before profiles claim
+    ///   it. They observe; they cannot mutate routing. Per-
+    ///   channel `RenderInstruction` is profile-derived and is
+    ///   therefore not visible to taps — this is intentional;
+    ///   taps verify "the pathway emitted X", not "channel Y
+    ///   rendered X as Z".
+    /// - `installEventTap` returns an `IDisposable`. Disposing
+    ///   removes the tap. Multiple taps can be active
+    ///   simultaneously; each disposes independently.
+    let private tapsLock: obj = obj ()
+    let mutable private nextTapToken: int = 0
+    let mutable private eventTaps: Map<int, OutputEvent -> unit> = Map.empty
+
+    /// Register an event-tap that fires for every dispatched
+    /// `OutputEvent` (both `dispatch` and `dispatchTick`-routed
+    /// events) until disposed. Each registration is keyed by a
+    /// unique integer token so disposing one subscription cannot
+    /// accidentally remove another even when the caller passes
+    /// identical (capture-free) lambdas to multiple
+    /// `installEventTap` calls.
+    let installEventTap (tap: OutputEvent -> unit) : IDisposable =
+        let token =
+            lock tapsLock (fun () ->
+                let t = nextTapToken
+                nextTapToken <- t + 1
+                eventTaps <- eventTaps |> Map.add t tap
+                t)
+        { new IDisposable with
+            member _.Dispose () =
+                lock tapsLock (fun () ->
+                    eventTaps <- eventTaps |> Map.remove token) }
+
+    /// Fire all registered taps for one event. Snapshot the
+    /// map under the lock so a concurrent dispose doesn't
+    /// mutate the iteration target.
+    let private fireTaps (event: OutputEvent) : unit =
+        let snapshot = lock tapsLock (fun () -> eventTaps)
+        for KeyValue(_, tap) in snapshot do
+            try tap event
+            with _ -> ()
+
     /// Dispatch one `OutputEvent` through the active profile set
     /// and into each profile-decided channel. Each profile's
     /// `Apply` returns an array of `(effectiveEvent, decisions)`
@@ -117,6 +169,7 @@ module OutputDispatcher =
     /// when a mode-change forces a pending-stream flush). The
     /// dispatcher routes each pair through `routePair`.
     let dispatch (event: OutputEvent) : unit =
+        fireTaps event
         let profileSet = ProfileRegistry.getActiveProfileSet ()
         for profile in profileSet do
             let pairs = profile.Apply event
@@ -141,4 +194,5 @@ module OutputDispatcher =
         for profile in profileSet do
             let pairs = profile.Tick now
             for (effectiveEvent, decisions) in pairs do
+                fireTaps effectiveEvent
                 routePair effectiveEvent decisions
