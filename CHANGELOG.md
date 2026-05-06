@@ -15,6 +15,84 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed (shell-switch flush regression — PR #168 didn't fully resolve UX issue #5)
+
+PR #168 changed the default `mode_barrier_flush_policy` from
+verbose to `"summary_only"` to suppress the previous-shell
+flush at shell-switch. Maintainer release-build validation
+2026-05-06 confirmed that change worked at the
+`onModeBarrier` level — but a SECOND code path was still
+emitting the previous shell's screen content via
+`processCanonicalState`'s bulk-change fallback. The user log
+showed a 1610-character emit of the previous `dir` listing
+fired immediately after the shell-switch, before the new
+shell painted its startup output.
+
+**Root cause**: `onModeBarrier` was clearing
+`LastEmittedRowHashes` and `LastEmittedRowText` regardless of
+policy (PR #166's behaviour, designed for the verbose-flush
+case where post-barrier "Initial" emits made sense). Under
+`SummaryOnly`, the cleared baselines made the next
+`processCanonicalState` pass see the diff as "all 30 rows
+changed" (against empty hashes) → above `BulkChangeThreshold`
+(3) → bulk-change fallback engages → emits `ChangedText`
+(the previous shell's content).
+
+**Fix**: under `SummaryOnly` and `Suppressed`, preserve the
+hash and text baselines at barrier time. The post-barrier
+first emit's diff is then grounded against pre-barrier state
+— rows still showing the previous shell's content match the
+cache and produce 0-row diffs. When the new shell paints,
+those rows DO change, and suffix-diff catches the new
+content correctly.
+
+Under `Verbose`, baselines are still cleared (preserves
+PR #166's "user heard the flush, post-barrier emits Initial-
+treat the new content" semantics).
+
+#### Files
+
+- `src/Terminal.Core/StreamPathway.fs` — `onModeBarrier`
+  now branches on `ModeBarrierFlushPolicy`: clears baselines
+  under `Verbose`, preserves under `SummaryOnly` /
+  `Suppressed`. ~25 LOC change.
+- `tests/Tests.Unit/StreamPathwayTests.fs` — 5 new tests:
+  - "post-barrier first emit under SummaryOnly does NOT
+    re-announce stale screen content" (the regression
+    guard).
+  - "post-barrier first emit under SummaryOnly emits new
+    content when screen actually changes" (companion
+    positive case).
+  - "post-barrier first emit under Verbose policy does
+    re-announce (Initial)" (verifies Verbose path
+    unchanged).
+  - "backspace with pause emits the deleted character"
+    (pins the v1.1 backspace baseline for the simple
+    case).
+  - "backspace + retype within debounce window collapses
+    to Replace" (documents the v1.1 debounce-collapsing
+    limitation as expected behaviour — see USER-SETTINGS).
+
+### Documented (v1.1 backspace debounce-collapsing limitation)
+
+`docs/USER-SETTINGS.md`'s `stream.suffixDiff.backspacePolicy`
+entry now includes a "Known v1.1 limitation: rapid backspace
++ retype is silenced (debounce-collapsing)" subsection.
+
+When the user backspaces and re-types within the 200ms
+debounce window, the cumulative leading-edge / trailing-edge
+emit sees the FINAL state, computes the suffix via the
+Append/Replace branch (not Shrink), and silently drops the
+deleted segment. Pause-after-backspace works correctly;
+rapid edit-mid-debounce gets absorbed.
+
+The structural fix is **Phase 2's echo correlation**, which
+tracks outgoing keystrokes independently of screen mutations
+and can surface "Backspace was pressed" as an explicit
+event. Documented here so v1.1 users have realistic
+expectations and so the limitation is captured for the
+Phase 2 design space.
+
 ### Changed (Tier 1 parameters from suffix-diff UX feedback)
 
 Three parameters from `docs/USER-SETTINGS.md`'s "Suffix-diff

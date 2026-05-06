@@ -882,14 +882,40 @@ module StreamPathway =
         state.LastFrameHash <- ValueNone
         state.LastFlushAt <- ValueSome now
         state.LastRowHashes <- ValueNone
-        state.LastEmittedRowHashes <- [||]
-        // PR #166 — clear per-row text cache so the post-
-        // barrier first emit treats every row as Initial
-        // (full text becomes the "suffix"). The barrier flush
-        // above used `diff.ChangedText` (verbose); the next
-        // emit through `processCanonicalState` will pick up
-        // suffix-diff against an empty baseline.
-        state.LastEmittedRowText <- [||]
+        // PR #169 — under `SummaryOnly` / `Suppressed`,
+        // preserve `LastEmittedRowHashes` and `LastEmittedRowText`
+        // so the next `processCanonicalState` pass diffs against
+        // pre-barrier state. PR #168's change to the default
+        // suppressed `onModeBarrier`'s explicit flush, but the
+        // post-barrier first emit was still re-announcing the
+        // previous shell's content via `processCanonicalState`'s
+        // bulk-change fallback (diff against empty hashes →
+        // "all 30 rows changed" → > BulkChangeThreshold →
+        // emit ChangedText verbose). Confirmed in 2026-05-06
+        // release-build validation: 1610-character emits of
+        // stale `dir` listings on shell-switch.
+        //
+        // Preserving the baselines means the post-barrier first
+        // emit's diff sees only the rows that ACTUALLY changed
+        // since pre-barrier — typically the rows the new shell
+        // paints over. Rows still showing the previous shell's
+        // content (between barrier and new-shell-paint) match
+        // the cached state and don't emit. When the new shell
+        // paints, those rows DO change, and suffix-diff catches
+        // the new content correctly.
+        //
+        // Under `Verbose`, the explicit flush already announces
+        // the previous content, so clearing the cache is
+        // appropriate — post-barrier emits SHOULD treat every
+        // row as Initial under that policy, matching the
+        // verbose-flush expectation that the user hears
+        // "previous content + new content".
+        match parameters.ModeBarrierFlushPolicy with
+        | Verbose ->
+            state.LastEmittedRowHashes <- [||]
+            state.LastEmittedRowText <- [||]
+        | SummaryOnly | Suppressed ->
+            ()  // Preserve baselines for grounded post-barrier diff.
         state.PerRowHistory.Clear()
         state.HashHistory.Clear()
         flushed
