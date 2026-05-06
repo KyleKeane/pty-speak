@@ -60,6 +60,25 @@ let private at (msFromEpoch: int) : DateTimeOffset =
 let private canonicalAt (snapshot: Cell[][]) (seq: int64) : CanonicalState.Canonical =
     CanonicalState.create snapshot seq
 
+// PR #168 — many existing tests were written against PR #166's
+// verbose-flush mode-barrier default. Tier 1 parameters change
+// the default to `SummaryOnly` (no flush). Tests that
+// specifically verify the verbose-flush behaviour use this
+// helper to opt into the old policy explicitly; tests that
+// verify state-clear-only behaviour use `defaultParameters`.
+let private verboseFlushParameters : StreamPathway.Parameters =
+    { StreamPathway.defaultParameters with
+        ModeBarrierFlushPolicy = StreamPathway.Verbose }
+
+// PR #168 — likewise, the Shrink branch of `computeRowSuffixDelta`
+// used to be unconditionally Silent. The new default (announce
+// the deleted segment) is captured by `defaultParameters`'s
+// `BackspacePolicy = AnnounceDeletedCharacter`. Tests that
+// verify the SuppressShrink behaviour use this helper.
+let private suppressShrinkParameters : StreamPathway.Parameters =
+    { StreamPathway.defaultParameters with
+        BackspacePolicy = StreamPathway.SuppressShrink }
+
 // ---- Frame dedup ----------------------------------------------------
 
 [<Fact>]
@@ -325,7 +344,7 @@ let ``onModeBarrier resets LastRowHashes and HashHistory (PR-M, Issue #117)`` ()
         "LastRowHashes should be populated after first frame")
     Assert.True(state.HashHistory.Count > 0,
         "HashHistory should be populated after first frame")
-    let _ = StreamPathway.onModeBarrier state (at 100)
+    let _ = StreamPathway.onModeBarrier StreamPathway.defaultParameters state (at 100)
     Assert.True(state.LastRowHashes.IsNone,
         "LastRowHashes should be reset to None after mode barrier")
     Assert.Equal(0, state.HashHistory.Count)
@@ -357,20 +376,25 @@ let ``spinner per-key history is GC'd after spinnerWindow elapses`` () =
 
 [<Fact>]
 let ``onModeBarrier flushes pending accumulator first`` () =
+    // PR #168 — uses `verboseFlushParameters` to opt into
+    // the pre-PR-#168 verbose-flush behaviour. The new
+    // default (`SummaryOnly`) suppresses the flush; the
+    // pre-PR-#168 verbose case is still a valid policy and
+    // this test pins it.
     let state = StreamPathway.createState ()
     let snap1 = snapshotOf 1 5 [ "hello" ]
     let snap2 = snapshotOf 1 5 [ "world" ]
     // Leading-edge emit at t=0.
     let _ =
         StreamPathway.processCanonicalState
-            StreamPathway.defaultParameters state (at 0) (canonicalAt snap1 0L)
+            verboseFlushParameters state (at 0) (canonicalAt snap1 0L)
     // Within debounce — accumulates.
     let r2 =
         StreamPathway.processCanonicalState
-            StreamPathway.defaultParameters state (at 50) (canonicalAt snap2 1L)
+            verboseFlushParameters state (at 50) (canonicalAt snap2 1L)
     Assert.Equal(0, r2.Length)
-    // Mode barrier flushes the pending diff.
-    let result = StreamPathway.onModeBarrier state (at 100)
+    // Mode barrier flushes the pending diff (Verbose policy).
+    let result = StreamPathway.onModeBarrier verboseFlushParameters state (at 100)
     Assert.Equal(1, result.Length)
     Assert.Contains("world", result.[0].Payload)
     Assert.Equal(SemanticCategory.StreamChunk, result.[0].Semantic)
@@ -378,7 +402,7 @@ let ``onModeBarrier flushes pending accumulator first`` () =
 [<Fact>]
 let ``onModeBarrier with no pending returns no events`` () =
     let state = StreamPathway.createState ()
-    let result = StreamPathway.onModeBarrier state (at 0)
+    let result = StreamPathway.onModeBarrier StreamPathway.defaultParameters state (at 0)
     Assert.Equal(0, result.Length)
 
 [<Fact>]
@@ -395,7 +419,7 @@ let ``onModeBarrier resets frame-dedup state`` () =
     Assert.Equal(0, dup.Length)
     // ...but a mode barrier resets the dedup state, so the
     // same content emits again afterward.
-    let _ = StreamPathway.onModeBarrier state (at 600)
+    let _ = StreamPathway.onModeBarrier StreamPathway.defaultParameters state (at 600)
     let after =
         StreamPathway.processCanonicalState
             StreamPathway.defaultParameters state (at 1000) (canonicalAt snap 2L)
@@ -739,20 +763,27 @@ let ``red snapshot accumulated within debounce → onTimerTick emits both events
 
 [<Fact>]
 let ``onModeBarrier with PendingColor clears it without emitting colour event`` () =
+    // PR #168 — uses `verboseFlushParameters` because this
+    // test specifically verifies "the flush emits StreamChunk
+    // but NOT the colour event". With the new SummaryOnly
+    // default no flush would happen at all, so the
+    // colour-event-suppression assertion would be trivially
+    // true (no events emitted period). The Verbose path is
+    // where the suppression matters.
     let state = StreamPathway.createState ()
     let snap1 = redSnapshotOf 1 10 [ "E" ]
     let snap2 = redSnapshotOf 1 10 [ "Err" ]
     // Leading-edge emit (resets PendingColor inside).
     let _ =
         StreamPathway.processCanonicalState
-            StreamPathway.defaultParameters state (at 0) (canonicalAt snap1 0L)
+            verboseFlushParameters state (at 0) (canonicalAt snap1 0L)
     // Within debounce — accumulates with PendingColor = ValueSome "red".
     let _ =
         StreamPathway.processCanonicalState
-            StreamPathway.defaultParameters state (at 50) (canonicalAt snap2 1L)
+            verboseFlushParameters state (at 50) (canonicalAt snap2 1L)
     Assert.Equal(ValueSome "red", state.PendingColor)
     // Mode barrier flushes the pending diff but NOT the colour event.
-    let result = StreamPathway.onModeBarrier state (at 100)
+    let result = StreamPathway.onModeBarrier verboseFlushParameters state (at 100)
     Assert.Equal(1, result.Length)
     Assert.Equal(SemanticCategory.StreamChunk, result.[0].Semantic)
     Assert.Equal(ValueNone, state.PendingColor)
@@ -837,40 +868,86 @@ let ``longestCommonPrefixLength — one is prefix of the other`` () =
     Assert.Equal(3, StreamPathway.longestCommonPrefixLength "abc" "abcdef")
     Assert.Equal(3, StreamPathway.longestCommonPrefixLength "abcdef" "abc")
 
+// PR #168 — `computeRowSuffixDelta` takes a `BackspacePolicy` as
+// its first argument. Most cases (Identical / Initial / Append /
+// Replace) are policy-agnostic; the policy only affects the
+// Shrink branch. Tests pass `AnnounceDeletedCharacter` (the new
+// default) where the policy doesn't matter.
+
 [<Fact>]
 let ``computeRowSuffixDelta — identical text returns Silent`` () =
-    let result = StreamPathway.computeRowSuffixDelta "abc" "abc"
+    let result =
+        StreamPathway.computeRowSuffixDelta
+            StreamPathway.AnnounceDeletedCharacter "abc" "abc"
     Assert.Equal(StreamPathway.Silent, result)
 
 [<Fact>]
 let ``computeRowSuffixDelta — empty previous returns Suffix of full current`` () =
-    let result = StreamPathway.computeRowSuffixDelta "Hello" ""
+    let result =
+        StreamPathway.computeRowSuffixDelta
+            StreamPathway.AnnounceDeletedCharacter "Hello" ""
     Assert.Equal(StreamPathway.Suffix "Hello", result)
 
 [<Fact>]
 let ``computeRowSuffixDelta — append at end returns suffix only`` () =
     let result =
-        StreamPathway.computeRowSuffixDelta "> echo hi" "> echo h"
+        StreamPathway.computeRowSuffixDelta
+            StreamPathway.AnnounceDeletedCharacter "> echo hi" "> echo h"
     Assert.Equal(StreamPathway.Suffix "i", result)
 
 [<Fact>]
 let ``computeRowSuffixDelta — multi-character append returns full new suffix`` () =
     let result =
-        StreamPathway.computeRowSuffixDelta "PtySpeakDiagPlain" "PtySpeak"
+        StreamPathway.computeRowSuffixDelta
+            StreamPathway.AnnounceDeletedCharacter "PtySpeakDiagPlain" "PtySpeak"
     Assert.Equal(StreamPathway.Suffix "DiagPlain", result)
 
 [<Fact>]
-let ``computeRowSuffixDelta — current shorter than previous returns Silent (Shrink)`` () =
-    // Backspace case — relies on NVDA keyboard echo per Default 1.
-    let result = StreamPathway.computeRowSuffixDelta "> echo h" "> echo hi"
+let ``computeRowSuffixDelta — Shrink under SuppressShrink returns Silent`` () =
+    // PR #166's original behaviour. Preserved as opt-in
+    // policy under PR #168.
+    let result =
+        StreamPathway.computeRowSuffixDelta
+            StreamPathway.SuppressShrink "> echo h" "> echo hi"
     Assert.Equal(StreamPathway.Silent, result)
+
+[<Fact>]
+let ``computeRowSuffixDelta — Shrink under AnnounceDeletedCharacter returns Suffix of deleted segment`` () =
+    // PR #168's new default. Single-character delete:
+    // previous "> echo hi", current "> echo h" → deleted "i"
+    // → Suffix "i".
+    let result =
+        StreamPathway.computeRowSuffixDelta
+            StreamPathway.AnnounceDeletedCharacter "> echo h" "> echo hi"
+    Assert.Equal(StreamPathway.Suffix "i", result)
+
+[<Fact>]
+let ``computeRowSuffixDelta — Shrink under AnnounceDeletedCharacter handles multi-character delete`` () =
+    // Ctrl+W or similar produces a longer delete.
+    // previous "echo world", current "echo " → deleted "world"
+    // → Suffix "world". User hears the whole deleted segment.
+    let result =
+        StreamPathway.computeRowSuffixDelta
+            StreamPathway.AnnounceDeletedCharacter "echo " "echo world"
+    Assert.Equal(StreamPathway.Suffix "world", result)
+
+[<Fact>]
+let ``computeRowSuffixDelta — Shrink under AnnounceDeletedWord behaves identically to AnnounceDeletedCharacter in v1_1`` () =
+    // PR #168 reserves AnnounceDeletedWord for future
+    // word-boundary work. v1.1 treats both identically.
+    let result =
+        StreamPathway.computeRowSuffixDelta
+            StreamPathway.AnnounceDeletedWord "echo " "echo world"
+    Assert.Equal(StreamPathway.Suffix "world", result)
 
 [<Fact>]
 let ``computeRowSuffixDelta — replace case returns suffix beyond common prefix`` () =
     // V1 over-reports mid-line edits — documents the
     // limitation as expected behaviour. Cursor-aware diff
     // (v2) would scope the announce to the cursor position.
-    let result = StreamPathway.computeRowSuffixDelta "abXc" "abc"
+    let result =
+        StreamPathway.computeRowSuffixDelta
+            StreamPathway.AnnounceDeletedCharacter "abXc" "abc"
     Assert.Equal(StreamPathway.Suffix "Xc", result)
 
 [<Fact>]
@@ -962,9 +1039,37 @@ let ``bulk-change fallback engages when more than 3 rows change`` () =
     Assert.Contains("row4", r2.[0].Payload)
 
 [<Fact>]
-let ``backspace case (row shrinks) produces empty payload and no emit`` () =
+let ``backspace case under SuppressShrink policy produces empty payload and no emit`` () =
     // After typing "> echo hi", backspace produces
-    // "> echo h" — Shrink case, Silent, no announcement.
+    // "> echo h" — Shrink case. Under the legacy
+    // `SuppressShrink` policy (PR #166's behaviour),
+    // pty-speak emits nothing; the user relies on NVDA's
+    // keyboard echo for backspace feedback. PR #168 changed
+    // the default to `AnnounceDeletedCharacter` (see the
+    // companion test below), but the SuppressShrink path is
+    // still a valid policy and pinned here.
+    let state = StreamPathway.createState ()
+    let snap1 = snapshotOf 1 20 [ "> echo hi" ]
+    let snap2 = snapshotOf 1 20 [ "> echo h" ]
+    let r1 =
+        StreamPathway.processCanonicalState
+            suppressShrinkParameters state (at 0)
+            (canonicalAt snap1 0L)
+    Assert.Equal(1, r1.Length)
+    let r2 =
+        StreamPathway.processCanonicalState
+            suppressShrinkParameters state (at 500)
+            (canonicalAt snap2 1L)
+    // No emit — empty payload short-circuits.
+    Assert.Empty(r2)
+
+[<Fact>]
+let ``backspace case under default AnnounceDeletedCharacter policy emits the deleted segment`` () =
+    // PR #168 — new default. After backspacing the `i`
+    // from `> echo hi`, the StreamPathway emits a
+    // StreamChunk with payload `i` (the segment of the
+    // previous-emit text beyond the longest-common-prefix
+    // with the current text).
     let state = StreamPathway.createState ()
     let snap1 = snapshotOf 1 20 [ "> echo hi" ]
     let snap2 = snapshotOf 1 20 [ "> echo h" ]
@@ -977,8 +1082,9 @@ let ``backspace case (row shrinks) produces empty payload and no emit`` () =
         StreamPathway.processCanonicalState
             StreamPathway.defaultParameters state (at 500)
             (canonicalAt snap2 1L)
-    // No emit — empty payload short-circuits.
-    Assert.Empty(r2)
+    Assert.Equal(1, r2.Length)
+    Assert.Equal(SemanticCategory.StreamChunk, r2.[0].Semantic)
+    Assert.Equal("i", r2.[0].Payload)
 
 [<Fact>]
 let ``first emit on a fresh pathway treats every row as Initial`` () =
@@ -994,29 +1100,118 @@ let ``first emit on a fresh pathway treats every row as Initial`` () =
     Assert.Equal("Hello world", r.[0].Payload)
 
 [<Fact>]
-let ``onModeBarrier flushes verbose, then clears LastEmittedRowText`` () =
-    // Mode barriers are discontinuities. The flushed pending
-    // diff uses ChangedText (verbose), not suffix-diff. After
-    // the barrier, LastEmittedRowText is empty so the next
-    // emit treats every row as Initial.
+let ``onModeBarrier under Verbose policy flushes pending, then clears LastEmittedRowText`` () =
+    // PR #168 — uses `verboseFlushParameters` to opt into
+    // the pre-PR-#168 verbose-flush behaviour (the test
+    // documents that policy's mechanics — the SummaryOnly
+    // / Suppressed default emits nothing on barrier).
+    // Mode barriers are discontinuities. The flushed
+    // pending diff uses ChangedText (verbose), not
+    // suffix-diff. After the barrier, LastEmittedRowText
+    // is empty so the next emit treats every row as
+    // Initial.
     let state = StreamPathway.createState ()
     let snap1 = snapshotOf 1 20 [ "> echo h" ]
     let snap2 = snapshotOf 1 20 [ "> echo hi" ]
     // Leading-edge emit primes the cache.
     let _ =
         StreamPathway.processCanonicalState
-            StreamPathway.defaultParameters state (at 0)
+            verboseFlushParameters state (at 0)
             (canonicalAt snap1 0L)
     // Within debounce — accumulate (PendingDiff set).
     let _ =
         StreamPathway.processCanonicalState
-            StreamPathway.defaultParameters state (at 50)
+            verboseFlushParameters state (at 50)
             (canonicalAt snap2 1L)
     // Mode barrier flushes pending. Verbose payload
     // (ChangedText) — not suffix-diff'd.
-    let flushed = StreamPathway.onModeBarrier state (at 100)
+    let flushed = StreamPathway.onModeBarrier verboseFlushParameters state (at 100)
     Assert.Equal(1, flushed.Length)
     // Verbose flush carries the full row content.
     Assert.Equal("> echo hi", flushed.[0].Payload)
     // After barrier, cache is cleared.
     Assert.Equal(0, state.LastEmittedRowText.Length)
+
+// ---- Tier 1 parameters (PR #168) ----------------------------------
+
+[<Fact>]
+let ``onModeBarrier under SummaryOnly default returns no flush events`` () =
+    // PR #168 — new default. Mode barrier with pending diff
+    // suppresses the previous-shell flush; the App-layer
+    // shell-switch announce + the new shell's startup
+    // output carry the context.
+    let state = StreamPathway.createState ()
+    let snap1 = snapshotOf 1 5 [ "hello" ]
+    let snap2 = snapshotOf 1 5 [ "world" ]
+    let _ =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0) (canonicalAt snap1 0L)
+    let _ =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 50) (canonicalAt snap2 1L)
+    // Default ModeBarrierFlushPolicy = SummaryOnly. Flush
+    // suppressed — pending diff is cleared without an emit.
+    let result = StreamPathway.onModeBarrier StreamPathway.defaultParameters state (at 100)
+    Assert.Empty(result)
+
+[<Fact>]
+let ``onModeBarrier under Suppressed policy returns no flush events`` () =
+    // PR #168 — `Suppressed` policy is identical to
+    // `SummaryOnly` at the StreamPathway level (the
+    // difference materialises at the App-layer
+    // shell-switch announce).
+    let suppressedParameters =
+        { StreamPathway.defaultParameters with
+            ModeBarrierFlushPolicy = StreamPathway.Suppressed }
+    let state = StreamPathway.createState ()
+    let snap = snapshotOf 1 5 [ "hello" ]
+    let _ =
+        StreamPathway.processCanonicalState
+            suppressedParameters state (at 0) (canonicalAt snap 0L)
+    let result = StreamPathway.onModeBarrier suppressedParameters state (at 100)
+    Assert.Empty(result)
+
+[<Fact>]
+let ``BulkChangeThreshold is configurable via Parameters`` () =
+    // PR #168 — was a top-level `let private = 3` constant;
+    // now a Parameters field. With threshold = 1, even a
+    // 2-row diff engages the bulk-change fallback.
+    let aggressiveParameters =
+        { StreamPathway.defaultParameters with
+            BulkChangeThreshold = 1 }
+    let state = StreamPathway.createState ()
+    let snap1 = snapshotOf 2 5 [ ""; "" ]
+    let snap2 = snapshotOf 2 5 [ "row0"; "row1" ]
+    let _ =
+        StreamPathway.processCanonicalState
+            aggressiveParameters state (at 0) (canonicalAt snap1 0L)
+    let r2 =
+        StreamPathway.processCanonicalState
+            aggressiveParameters state (at 500) (canonicalAt snap2 1L)
+    Assert.Equal(1, r2.Length)
+    // Bulk-change fallback engaged because 2 > threshold 1.
+    // Payload is the full ChangedText (verbose) with both
+    // rows joined by '\n'.
+    Assert.Contains("row0", r2.[0].Payload)
+    Assert.Contains("row1", r2.[0].Payload)
+
+[<Fact>]
+let ``BulkChangeThreshold = 30 keeps even large diffs on suffix-diff path`` () =
+    // PR #168 — opposite extreme. Threshold above the
+    // typical row count keeps everything on the suffix
+    // path. With a 5-row first emit (Initial = full text),
+    // the per-row suffixes still concatenate to the full
+    // content, so payload is the same as bulk-change in
+    // this Initial case. The test mainly exercises the
+    // parametrization wiring.
+    let permissiveParameters =
+        { StreamPathway.defaultParameters with
+            BulkChangeThreshold = 30 }
+    let state = StreamPathway.createState ()
+    let snap = snapshotOf 5 10 [ "a"; "b"; "c"; "d"; "e" ]
+    let r =
+        StreamPathway.processCanonicalState
+            permissiveParameters state (at 0) (canonicalAt snap 0L)
+    Assert.Equal(1, r.Length)
+    Assert.Contains("a", r.[0].Payload)
+    Assert.Contains("e", r.[0].Payload)

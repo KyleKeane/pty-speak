@@ -333,3 +333,94 @@ let ``non-bool color_detection logs Warning and falls back to default`` () =
     let resolved = Config.resolveStreamParameters config
     Assert.True(resolved.ColorDetection)
     Assert.True(logger.HasLevel(LogLevel.Warning))
+
+// ---- PR #168 — Tier 1 parameters ---------------------------------
+
+[<Fact>]
+let ``defaultConfig resolveStreamParameters has BulkChangeThreshold = 3`` () =
+    let resolved = Config.resolveStreamParameters Config.defaultConfig
+    Assert.Equal(3, resolved.BulkChangeThreshold)
+
+[<Fact>]
+let ``defaultConfig resolveStreamParameters has BackspacePolicy = AnnounceDeletedCharacter`` () =
+    let resolved = Config.resolveStreamParameters Config.defaultConfig
+    Assert.Equal(StreamPathway.AnnounceDeletedCharacter, resolved.BackspacePolicy)
+
+[<Fact>]
+let ``defaultConfig resolveStreamParameters has ModeBarrierFlushPolicy = SummaryOnly`` () =
+    let resolved = Config.resolveStreamParameters Config.defaultConfig
+    Assert.Equal(StreamPathway.SummaryOnly, resolved.ModeBarrierFlushPolicy)
+
+[<Fact>]
+let ``[pathway.stream] bulk_change_threshold = 5 flows through resolveStreamParameters`` () =
+    let toml =
+        "schema_version = 1\n[pathway.stream]\nbulk_change_threshold = 5\n"
+    let config, _ = loadFromText toml
+    let resolved = Config.resolveStreamParameters config
+    Assert.Equal(5, resolved.BulkChangeThreshold)
+
+[<Fact>]
+let ``[pathway.stream] backspace_policy = silent maps to SuppressShrink`` () =
+    let toml =
+        "schema_version = 1\n[pathway.stream]\nbackspace_policy = \"silent\"\n"
+    let config, _ = loadFromText toml
+    let resolved = Config.resolveStreamParameters config
+    Assert.Equal(StreamPathway.SuppressShrink, resolved.BackspacePolicy)
+
+[<Fact>]
+let ``[pathway.stream] backspace_policy = announce_deleted_character maps to AnnounceDeletedCharacter`` () =
+    let toml =
+        "schema_version = 1\n[pathway.stream]\nbackspace_policy = \"announce_deleted_character\"\n"
+    let config, _ = loadFromText toml
+    let resolved = Config.resolveStreamParameters config
+    Assert.Equal(StreamPathway.AnnounceDeletedCharacter, resolved.BackspacePolicy)
+
+[<Fact>]
+let ``[pathway.stream] backspace_policy = announce_deleted_word maps to AnnounceDeletedWord`` () =
+    let toml =
+        "schema_version = 1\n[pathway.stream]\nbackspace_policy = \"announce_deleted_word\"\n"
+    let config, _ = loadFromText toml
+    let resolved = Config.resolveStreamParameters config
+    Assert.Equal(StreamPathway.AnnounceDeletedWord, resolved.BackspacePolicy)
+
+[<Fact>]
+let ``unknown backspace_policy value logs Warning and falls back to default`` () =
+    let toml =
+        "schema_version = 1\n[pathway.stream]\nbackspace_policy = \"chirp\"\n"
+    let config, logger = loadFromText toml
+    let resolved = Config.resolveStreamParameters config
+    Assert.Equal(StreamPathway.AnnounceDeletedCharacter, resolved.BackspacePolicy)
+    Assert.True(logger.HasLevel(LogLevel.Warning))
+
+[<Fact>]
+let ``[pathway.stream] mode_barrier_flush_policy = verbose maps to Verbose`` () =
+    let toml =
+        "schema_version = 1\n[pathway.stream]\nmode_barrier_flush_policy = \"verbose\"\n"
+    let config, _ = loadFromText toml
+    let resolved = Config.resolveStreamParameters config
+    Assert.Equal(StreamPathway.Verbose, resolved.ModeBarrierFlushPolicy)
+
+[<Fact>]
+let ``[pathway.stream] mode_barrier_flush_policy = summary_only maps to SummaryOnly`` () =
+    let toml =
+        "schema_version = 1\n[pathway.stream]\nmode_barrier_flush_policy = \"summary_only\"\n"
+    let config, _ = loadFromText toml
+    let resolved = Config.resolveStreamParameters config
+    Assert.Equal(StreamPathway.SummaryOnly, resolved.ModeBarrierFlushPolicy)
+
+[<Fact>]
+let ``[pathway.stream] mode_barrier_flush_policy = suppressed maps to Suppressed`` () =
+    let toml =
+        "schema_version = 1\n[pathway.stream]\nmode_barrier_flush_policy = \"suppressed\"\n"
+    let config, _ = loadFromText toml
+    let resolved = Config.resolveStreamParameters config
+    Assert.Equal(StreamPathway.Suppressed, resolved.ModeBarrierFlushPolicy)
+
+[<Fact>]
+let ``unknown mode_barrier_flush_policy value logs Warning and falls back to default`` () =
+    let toml =
+        "schema_version = 1\n[pathway.stream]\nmode_barrier_flush_policy = \"warbly\"\n"
+    let config, logger = loadFromText toml
+    let resolved = Config.resolveStreamParameters config
+    Assert.Equal(StreamPathway.SummaryOnly, resolved.ModeBarrierFlushPolicy)
+    Assert.True(logger.HasLevel(LogLevel.Warning))

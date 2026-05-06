@@ -15,6 +15,68 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Tier 1 parameters from suffix-diff UX feedback)
+
+Three parameters from `docs/USER-SETTINGS.md`'s "Suffix-diff
+parameters (PR #166 follow-up)" section now ship as
+configurable, with defaults updated where the old behaviour
+was confirmed problematic during PR #166's release-build
+validation:
+
+- **`bulk_change_threshold`** (was a hard-coded `3` in
+  `StreamPathway.fs`; now `[pathway.stream] bulk_change_threshold`,
+  default 3). Above this many changed rows in a single frame,
+  the suffix-diff stage bypasses per-row LCP and emits the
+  full ChangedText (verbose fallback). Default unchanged;
+  exposed for tuning.
+- **`backspace_policy`** (was hard-coded "Silent" in PR #166;
+  now `[pathway.stream] backspace_policy`, default
+  `"announce_deleted_character"`). PR #166's "rely on NVDA
+  keyboard echo for backspace audibility" assumption was
+  confirmed wrong: NVDA's keyboard echo speaks the *key
+  pressed* (Backspace), not the screen-content change. With
+  the new default, backspacing the `i` from `echo hi` makes
+  pty-speak announce `i` (the deleted segment of the row's
+  rendered text). Legacy `"silent"` preserved as opt-in.
+  Reserved `"announce_deleted_word"` treated identically to
+  `"announce_deleted_character"` in v1.1 (word-boundary work
+  is future).
+- **`mode_barrier_flush_policy`** (was hard-coded verbose in
+  PR #166; now `[pathway.stream] mode_barrier_flush_policy`,
+  default `"summary_only"`). The PR #166 verbose flush at
+  shell-switch / alt-screen / mode-change emitted the
+  previous shell's full screen as a flush event before the
+  new shell's startup — confirmed unpleasant (1200-character
+  flushes of stale history). With the new default, the
+  previous-shell flush is suppressed; the App-layer
+  "switching to X" announce + the new shell's startup output
+  carry the context. Legacy `"verbose"` preserved as opt-in.
+  Subsumes strategic backlog items 23 + 24.
+
+The internal F# DU case `BackspacePolicy.Silent` is exposed
+as `SuppressShrink` to avoid collision with
+`EditDelta.Silent`. The TOML value stays `"silent"`; the
+rename is internal only.
+
+What this addresses from the 2026-05-06 UX session:
+
+- **UX issue #2** (backspace silent + NVDA also silent) —
+  fixed by `backspace_policy` default change.
+- **UX issue #5** (shell-switch reads previous shell's
+  content) — fixed by `mode_barrier_flush_policy` default
+  change.
+- UX issues #1 (double-announce), #3 (cursor movement
+  silent), #4 (stuttering on rapid typing) remain — they
+  need the Phase 2 input framework substrate (echo
+  correlation, cursor-aware diff, per-input-vs-output
+  ActivityIds) and are documented in `USER-SETTINGS.md` as
+  Tier 2 parameters.
+
+Files: `src/Terminal.Core/StreamPathway.fs`,
+`src/Terminal.Core/Config.fs`,
+`tests/Tests.Unit/StreamPathwayTests.fs`,
+`tests/Tests.Unit/ConfigTests.fs`.
+
 ### Added (sub-row suffix-diff at StreamPathway emit)
 
 When typing `echo hi` at a shell prompt, NVDA used to read the
