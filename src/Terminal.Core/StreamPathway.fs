@@ -264,6 +264,34 @@ module StreamPathway =
         elif hasYellow then Some "yellow"
         else None
 
+    /// Phase A.2 hotfix — same precedence logic as
+    /// `snapshotDominantColor` but scoped to the rows that
+    /// CHANGED in the most recent diff (`diff.ChangedRows`)
+    /// rather than every row of the snapshot. Without this
+    /// scoping the earcon path treated "any red anywhere on
+    /// screen" as a trigger — so a red error message rendered
+    /// once would fire `error-tone` on every subsequent
+    /// keystroke (the new prompt row was the only changed row,
+    /// but the snapshot still contained the leftover red row).
+    /// The intent of the colour earcon is to supplement *new*
+    /// content; only changed rows count.
+    let internal changedRowsDominantColor
+            (snapshot: Cell[][])
+            (changedRows: int[])
+            : string option
+            =
+        let mutable hasRed = false
+        let mutable hasYellow = false
+        for rowIdx in changedRows do
+            if rowIdx >= 0 && rowIdx < snapshot.Length then
+                match rowDominantColor snapshot.[rowIdx] with
+                | Some "red" -> hasRed <- true
+                | Some "yellow" -> hasYellow <- true
+                | _ -> ()
+        if hasRed then Some "red"
+        elif hasYellow then Some "yellow"
+        else None
+
     /// Build the StreamChunk OutputEvent for a flushed diff.
     /// Producer-stamp is "stream" (the StreamPathway origin).
     let private streamOutputEvent (text: string) : OutputEvent =
@@ -320,13 +348,16 @@ module StreamPathway =
             let mutable h = 0UL
             for rh in rowHashes do h <- h ^^^ rh
             h
-        // Phase A.2 — compute the dominant colour eagerly
-        // (only if config-enabled). Used both at leading-edge
-        // (emits supplementary event) and at debounce-accumulate
-        // (stashed in state.PendingColor for trailing-edge flush).
-        let dominantColor =
+        // Phase A.2 hotfix — colour detection moved INSIDE the
+        // emit branches so it runs against the diff's
+        // `ChangedRows` rather than the whole snapshot. See
+        // `changedRowsDominantColor` for the rationale; the
+        // earlier "scan all rows" version made stale red text
+        // re-trigger error-tone on every keystroke at a new
+        // prompt.
+        let computeColor (changedRows: int[]) : string option =
             if parameters.ColorDetection then
-                snapshotDominantColor canonical.Snapshot
+                changedRowsDominantColor canonical.Snapshot changedRows
             else
                 None
         match state.LastFrameHash with
@@ -371,6 +402,7 @@ module StreamPathway =
                             "Suppressed (empty-diff). FrameHash=0x{Hash:X16}", frameHash)
                         [||]
                     else
+                        let dominantColor = computeColor diff.ChangedRows
                         state.LastFrameHash <- ValueSome frameHash
                         state.LastFlushAt <- ValueSome now
                         state.PendingDiff <- ValueNone
@@ -384,9 +416,10 @@ module StreamPathway =
                             (match dominantColor with Some c -> c | None -> "none"))
                         // Phase A.2 — emit a supplementary
                         // ErrorLine/WarningLine event when the
-                        // frame is colour-dominant. EarconProfile
-                        // claims it semantically; NvdaChannel skips
-                        // the empty payload so no double-announce.
+                        // diff's changed rows are colour-dominant.
+                        // EarconProfile claims it semantically;
+                        // NvdaChannel skips the empty payload so no
+                        // double-announce.
                         match dominantColor |> Option.bind colorOutputEvent with
                         | Some colorEvt -> [| streamOutputEvent capped; colorEvt |]
                         | None -> [| streamOutputEvent capped |]
@@ -397,7 +430,9 @@ module StreamPathway =
                     // emits both events together. Overwrite any
                     // previous PendingColor — latest pending frame
                     // wins, matching PendingDiff semantics.
-                    state.PendingDiff <- ValueSome (canonical.computeDiff state.LastEmittedRowHashes)
+                    let pendingDiff = canonical.computeDiff state.LastEmittedRowHashes
+                    let dominantColor = computeColor pendingDiff.ChangedRows
+                    state.PendingDiff <- ValueSome pendingDiff
                     state.PendingFrameHash <- ValueSome frameHash
                     state.PendingColor <-
                         match dominantColor with
