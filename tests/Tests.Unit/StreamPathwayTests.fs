@@ -1215,3 +1215,159 @@ let ``BulkChangeThreshold = 30 keeps even large diffs on suffix-diff path`` () =
     Assert.Equal(1, r.Length)
     Assert.Contains("a", r.[0].Payload)
     Assert.Contains("e", r.[0].Payload)
+
+// ---- PR #169 — shell-switch flush regression guard ---------------
+
+[<Fact>]
+let ``post-barrier first emit under SummaryOnly does NOT re-announce stale screen content`` () =
+    // PR #169 — regression guard. PR #168 changed the
+    // default ModeBarrierFlushPolicy to SummaryOnly, but
+    // the post-barrier `processCanonicalState` was still
+    // emitting the previous shell's screen content via
+    // bulk-change fallback (diff against empty hashes →
+    // all rows changed → > threshold → ChangedText). This
+    // test pins the fix: under SummaryOnly the barrier
+    // preserves the cache, so the next pass against the
+    // SAME screen content sees a 0-row diff and emits
+    // nothing.
+    let state = StreamPathway.createState ()
+    let snap = snapshotOf 5 10 [ "row0"; "row1"; "row2"; "row3"; "row4" ]
+    // Initial emit primes the cache.
+    let _ =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0) (canonicalAt snap 0L)
+    // Mode barrier (e.g. shell-switch) — under SummaryOnly
+    // default, returns no events.
+    let barrierResult =
+        StreamPathway.onModeBarrier StreamPathway.defaultParameters state (at 100)
+    Assert.Empty(barrierResult)
+    // Post-barrier: same screen content (new shell hasn't
+    // painted yet). Diff against preserved cache = 0 rows
+    // changed → no emit.
+    let r2 =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 600) (canonicalAt snap 1L)
+    Assert.Empty(r2)
+
+[<Fact>]
+let ``post-barrier first emit under SummaryOnly emits new content when screen actually changes`` () =
+    // PR #169 — companion to the regression guard. After
+    // the barrier preserves the cache, when the new shell
+    // ACTUALLY paints (changes screen content), the diff
+    // sees the new rows and emits them.
+    let state = StreamPathway.createState ()
+    let oldShellSnap = snapshotOf 5 10 [ "old0"; "old1"; "old2"; "old3"; "old4" ]
+    let newShellSnap = snapshotOf 5 10 [ "new0"; "new1"; "new2"; "new3"; "new4" ]
+    let _ =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0) (canonicalAt oldShellSnap 0L)
+    let _ = StreamPathway.onModeBarrier StreamPathway.defaultParameters state (at 100)
+    // New shell paints — all rows differ from cached
+    // baseline. Bulk-change fallback engages (5 > 3),
+    // emits ChangedText with the new content.
+    let r =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 600) (canonicalAt newShellSnap 1L)
+    Assert.Equal(1, r.Length)
+    Assert.Contains("new0", r.[0].Payload)
+    Assert.Contains("new4", r.[0].Payload)
+    Assert.DoesNotContain("old0", r.[0].Payload)
+
+[<Fact>]
+let ``post-barrier first emit under Verbose policy does re-announce (Initial) per PR #166`` () =
+    // PR #169 — Verbose policy preserves PR #166's
+    // post-barrier-Initial behaviour. The explicit verbose
+    // flush already announces the previous content, so the
+    // post-barrier first emit Initial-treats every row.
+    let state = StreamPathway.createState ()
+    let snap = snapshotOf 2 10 [ "row0"; "row1" ]
+    let _ =
+        StreamPathway.processCanonicalState
+            verboseFlushParameters state (at 0) (canonicalAt snap 0L)
+    let _ = StreamPathway.onModeBarrier verboseFlushParameters state (at 100)
+    // Post-barrier under Verbose: cache cleared. Next pass
+    // sees all rows as Initial → emits full content.
+    let r =
+        StreamPathway.processCanonicalState
+            verboseFlushParameters state (at 600) (canonicalAt snap 1L)
+    Assert.Equal(1, r.Length)
+    Assert.Contains("row0", r.[0].Payload)
+
+[<Fact>]
+let ``backspace with pause emits the deleted character (Tier 1 baseline test)`` () =
+    // PR #169 regression test — the simple "type, pause,
+    // backspace, pause" case should produce the deleted
+    // character emit. The 2026-05-06 maintainer report
+    // suggested backspace wasn't audible; this test pins
+    // the simple case explicitly so we can distinguish
+    // "v1.1 backspace works as designed" from "v1.1
+    // backspace is broken". Rapid backspace+retype is a
+    // separate (debounce-collapsing) limitation documented
+    // in USER-SETTINGS.
+    let state = StreamPathway.createState ()
+    let snap1 = snapshotOf 1 20 [ "echo hi" ]
+    let snap2 = snapshotOf 1 20 [ "echo h" ]
+    // Initial emit; cache primed with "echo hi".
+    let r1 =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0)
+            (canonicalAt snap1 0L)
+    Assert.Equal(1, r1.Length)
+    Assert.Equal("echo hi", r1.[0].Payload)
+    // Backspace — row shrinks. Pause is implicit (next
+    // call is past debounce window). Emit should be the
+    // deleted character.
+    let r2 =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 500)
+            (canonicalAt snap2 1L)
+    Assert.Equal(1, r2.Length)
+    Assert.Equal(SemanticCategory.StreamChunk, r2.[0].Semantic)
+    Assert.Equal("i", r2.[0].Payload)
+
+[<Fact>]
+let ``backspace + retype within debounce window collapses to Replace (debounce-collapsing limitation)`` () =
+    // PR #169 documents the v1.1 limitation: when
+    // backspace + retype happen within the debounce
+    // window, the leading-edge sees the cumulative state
+    // and computes the suffix via the Replace branch
+    // (current and previous lengths equal), NOT the
+    // Shrink branch. The deleted character is silenced
+    // because the LCP-based diff doesn't surface it.
+    //
+    // Real fix: Phase 2 echo correlation, which tracks
+    // outgoing keystrokes and can surface "backspace was
+    // pressed" as an explicit event. v1.1 lives with
+    // this limitation.
+    //
+    // Test pins the limitation as expected behaviour so
+    // any future change is intentional.
+    let state = StreamPathway.createState ()
+    let snap1 = snapshotOf 1 20 [ "echo hi" ]
+    // Final state after backspace + retype: same length
+    // as previous (7 chars), common prefix is "echo " (5
+    // chars), so it lands in the Replace branch (current
+    // and previous lengths equal, not Shrink).
+    let snap2 = snapshotOf 1 20 [ "echo XY" ]
+    let r1 =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0)
+            (canonicalAt snap1 0L)
+    Assert.Equal(1, r1.Length)
+    // Within debounce — accumulates.
+    let r2a =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 50)
+            (canonicalAt snap2 1L)
+    Assert.Empty(r2a)
+    // Trailing-edge tick — debounce window elapsed.
+    // Computes suffix-diff against last-emitted "echo hi".
+    // Both 7 chars, common prefix "echo " (5), suffix "XY".
+    // The deleted "hi" is silenced under the Replace branch.
+    let tick = StreamPathway.onTimerTick StreamPathway.defaultParameters state (at 250)
+    Assert.Equal(1, tick.Length)
+    Assert.Equal("XY", tick.[0].Payload)
+    // Documented limitation: "hi" (the deleted segment)
+    // is NOT in the announced payload, even though
+    // semantically the user deleted "hi" and added "XY".
+    Assert.DoesNotContain("hi", tick.[0].Payload)

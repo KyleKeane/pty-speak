@@ -1005,6 +1005,70 @@ currentText previousText)` — already computed adjacently.
 - Tests: extend the `computeRowSuffixDelta` unit tests to
   pin both default and silent-mode behaviour.
 
+#### Known v1.1 limitation: rapid backspace + retype is silenced (debounce-collapsing)
+
+**Status as of PR #169 (2026-05-06)**: this limitation is
+inherent to the LCP-based suffix-diff design when combined
+with the debounce window. Documented here so future PRs
+don't regress without authorisation.
+
+**The scenario**: user types `echo hi`, then quickly
+backspaces twice and types ` X` — final state is `echo X`.
+All within the 200ms debounce window. The leading-edge
+emit fires once per debounce window; the trailing-edge
+processes accumulated state.
+
+**Why backspace is silenced under `AnnounceDeletedCharacter`**:
+the diff at trailing-edge time compares `current` ("echo X",
+6 chars) against `previousText` ("echo hi", 7 chars). Since
+`current.Length < previousText.Length`, the function would
+enter the Shrink branch and emit the deleted segment. So
+single backspace (without retype) DOES work.
+
+But: **rapid backspace + retype** like the example above
+produces a final `current` length that may equal or exceed
+`previousText` length. In the example, "echo X" is only one
+char shorter — but with 2 backspaces + 2 retyped chars, the
+final lengths could be equal. When `current.Length >=
+previousText.Length`, the function falls through to the
+Append/Replace branch:
+
+- LCP("echo X", "echo hi") = 5 ("echo " — the trailing space
+  matches)
+- Suffix = "X"
+
+The deleted "hi" is **silenced** because the LCP-based diff
+doesn't surface it. The user hears "X" (the retyped content)
+but no audible signal that "hi" was deleted.
+
+**This is the v1.1 debounce-collapsing limitation**: any
+backspace event that gets followed within 200ms by enough
+retyping to bring `current.Length >= previousText.Length` is
+absorbed by the cumulative leading-edge / trailing-edge
+emit.
+
+**Workarounds**:
+
+1. **Pause after backspace before retyping** — if the user
+   pauses for more than 200ms after backspace, the trailing-
+   edge emits the Shrink case (deleted segment) before the
+   retyping arrives. The retyping then becomes its own
+   emit. Both events surface audibly.
+2. **`backspace_policy = "silent"`** for users who only ever
+   backspace + retype quickly — the silent mode is honest
+   about not announcing the operation, rather than silently
+   dropping the deletion's audible signal in favour of the
+   retyping content.
+
+**Real fix**: the **Phase 2 input framework's echo correlation**
+solves this structurally. With keystroke tracking,
+pty-speak can detect "the user pressed Backspace at time T"
+as an explicit event, independent of the screen mutation
+that follows. The deletion event surfaces audibly even when
+collapsed into the same debounce window as a retype. See
+the `stream.echoCorrelation.policy` entry below for the
+substrate.
+
 ### `stream.echoCorrelation.policy` (not yet implemented)
 
 #### Current state
