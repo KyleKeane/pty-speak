@@ -15,6 +15,107 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Ctrl+Shift+D extended diagnostic battery)
+
+Ctrl+Shift+D now runs a self-test battery against the active
+shell rather than just snapshotting + replaying earcons. Goal:
+collapse the manual NVDA validation loop ("open shell → run
+command → listen → describe what NVDA said") into a single
+"press hotkey, paste log" round-trip. The maintainer's framing
+2026-05-06: every future colour-detection or pathway behaviour
+change should be validatable without minutes of describe-what-
+you-heard.
+
+What runs on press:
+
+1. Process snapshot via `enumerateShellProcesses` (kept from the
+   previous behaviour) — counts of `cmd.exe`,
+   `powershell.exe`, `pwsh.exe`, `claude.exe`, and
+   `Terminal.App.exe`.
+2. Earcon replay (kept) — plays bell-ping, error-tone,
+   warning-tone with NVDA labels between each, so the audio
+   path is verifiable independent of the test battery.
+3. Per-shell command battery, exercising the canonical pipeline
+   end-to-end. For each test case: write command bytes via
+   `ConPtyHost.WriteBytes`, capture the resulting `OutputEvent`s
+   via a temporary tap on `OutputDispatcher`, compare against
+   expected, log PASS / FAIL with full event detail.
+4. Summary line + clipboard copy of the full diagnostic log,
+   announced via NVDA. Maintainer pastes the log into chat
+   directly — no `Ctrl+Shift+;` step needed.
+
+PowerShell test set (5 cases, each ~1.5s settle window):
+
+* **T1.Plain** — `Write-Host` plain text emits `StreamChunk`
+  only, no colour event.
+* **T2.Red** — `Write-Host -ForegroundColor Red` emits
+  `StreamChunk + ErrorLine`.
+* **T3.Yellow** — `Write-Host -ForegroundColor Yellow` emits
+  `StreamChunk + WarningLine`.
+* **T4.PlainAfterRed** — red command, then plain. Asserts the
+  second emit has NO `ErrorLine` (PR #164 hotfix regression
+  guard — catches "stale red row in snapshot fires error-tone
+  on every keystroke").
+* **T5.YellowAfterRed** — red command, then yellow. Asserts
+  the second emit has `WarningLine`, not `ErrorLine` (catches
+  "red precedence shadows yellow when red is outside the diff
+  scope").
+
+Cmd test set (1 case): plain `echo`. Cmd has minimal colour
+support; ANSI-escape colour testing is a separate follow-up.
+
+Claude shell: command battery skipped (non-deterministic
+interactive AI). Snapshot + earcon replay still run.
+
+Diagnostic log file:
+`%LOCALAPPDATA%\PtySpeak\logs\YYYY-MM-DD\diagnostic-YYYY-MM-DD-HH-mm-ss-fff.log`.
+Same parent folder as regular `pty-speak-*.log` so
+`Ctrl+Shift+L` opens the right area; `diagnostic-` prefix is
+the distinguisher. Crash-safety mirrors `FileLogger`:
+`StreamWriter.AutoFlush = true` + `FileShare.ReadWrite` +
+`FileMode.Create`. Every line is on disk before the next is
+queued, so a crash mid-battery still leaves a tail file with
+everything up to the crash.
+
+New infrastructure under the hood:
+
+* `OutputDispatcher.installEventTap` — registers an
+  `OutputEvent -> unit` observer that fires before profile
+  fan-out. Returns `IDisposable` for cleanup. Tap exceptions
+  are swallowed so a misbehaving tap can't break production
+  routing. 6 new unit tests in
+  `tests/Tests.Unit/OutputDispatcherTests.fs` cover register-
+  fires, dispose-stops, multi-tap fan-out, single-dispose-
+  doesn't-affect-others, throwing-tap-doesn't-break-dispatch,
+  and tap-fires-with-no-profiles.
+* `Terminal.App.Diagnostics` (new module) — owns the writer,
+  the tap wrapper, the test definitions, the per-test loop,
+  and the entry point `runFullBattery`. ~510 lines; lives
+  under `src/Terminal.App/Diagnostics.fs`.
+
+Files:
+
+* `src/Terminal.App/Diagnostics.fs` — new module.
+* `src/Terminal.App/Terminal.App.fsproj` — `Diagnostics.fs`
+  ordered before `Program.fs`.
+* `src/Terminal.Core/OutputDispatcher.fs` — `installEventTap` +
+  `fireTaps` + tap-firing in `dispatch` and `dispatchTick`.
+* `src/Terminal.App/Program.fs` — old `runDiagnostic` body +
+  `enumerateShellProcesses` helper deleted (~140 lines, plus
+  the dead commented-out PowerShell-script launch). The
+  Ctrl+Shift+D bind moves to the closure-bind group near the
+  health-check + incident-marker binds because the new
+  closure captures `hostHandle` / `currentShell` /
+  `screen.SequenceNumber`.
+* `tests/Tests.Unit/OutputDispatcherTests.fs` — 6 new tests
+  for the tap surface.
+
+The `scripts/test-process-cleanup.ps1` script remains in the
+repo and can still be invoked manually for close-and-recheck
+testing — it just no longer launches from Ctrl+Shift+D (the
+launch was already commented out as of 2026-05-04; this PR
+removes the dead code and the surrounding stale comments).
+
 ### Fixed (Phase A.2 hotfix — colour detection scoped to diff)
 
 The maintainer's release-build validation of Phase A.2 (PR

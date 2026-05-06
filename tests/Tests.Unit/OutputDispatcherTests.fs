@@ -282,3 +282,111 @@ let ``dispatchTick fans out across multiple Tick-emitting profiles`` () =
     OutputDispatcher.dispatchTick DateTimeOffset.UtcNow
     Assert.Equal(2, calls.Count)
     resetRegistries ()
+
+// ---- installEventTap (PR #165 — Ctrl+Shift+D diagnostic) ----------
+//
+// The Diagnostics module installs short-lived taps to capture
+// every OutputEvent flowing through the dispatcher during a
+// known time window. These tests pin the tap-registry mechanics:
+// register-fires-tap, dispose-stops-firing, multi-tap fan-out,
+// throwing-tap-doesnt-break-routing.
+
+[<Fact>]
+let ``installEventTap fires for every dispatched OutputEvent`` () =
+    resetRegistries ()
+    let captured = ResizeArray<OutputEvent>()
+    use _ = OutputDispatcher.installEventTap (fun ev -> captured.Add(ev))
+    let channel, _ = recordingChannel "tap-test"
+    OutputDispatcher.ChannelRegistry.register channel
+    let profile = passthroughProfile "tap-prof" "tap-test"
+    OutputDispatcher.ProfileRegistry.setActiveProfileSet [ profile ]
+    let ev1 = buildEvent SemanticCategory.StreamChunk "first"
+    let ev2 = buildEvent SemanticCategory.StreamChunk "second"
+    OutputDispatcher.dispatch ev1
+    OutputDispatcher.dispatch ev2
+    Assert.Equal(2, captured.Count)
+    Assert.Equal("first", captured.[0].Payload)
+    Assert.Equal("second", captured.[1].Payload)
+    resetRegistries ()
+
+[<Fact>]
+let ``installEventTap returns IDisposable that stops firing on Dispose`` () =
+    resetRegistries ()
+    let captured = ResizeArray<OutputEvent>()
+    let sub = OutputDispatcher.installEventTap (fun ev -> captured.Add(ev))
+    let channel, _ = recordingChannel "tap-test"
+    OutputDispatcher.ChannelRegistry.register channel
+    let profile = passthroughProfile "tap-prof" "tap-test"
+    OutputDispatcher.ProfileRegistry.setActiveProfileSet [ profile ]
+    OutputDispatcher.dispatch (buildEvent SemanticCategory.StreamChunk "before")
+    sub.Dispose()
+    OutputDispatcher.dispatch (buildEvent SemanticCategory.StreamChunk "after")
+    Assert.Equal(1, captured.Count)
+    Assert.Equal("before", captured.[0].Payload)
+    resetRegistries ()
+
+[<Fact>]
+let ``installEventTap supports multiple simultaneous subscriptions`` () =
+    resetRegistries ()
+    let captured1 = ResizeArray<OutputEvent>()
+    let captured2 = ResizeArray<OutputEvent>()
+    use _ = OutputDispatcher.installEventTap (fun ev -> captured1.Add(ev))
+    use _ = OutputDispatcher.installEventTap (fun ev -> captured2.Add(ev))
+    let channel, _ = recordingChannel "tap-test"
+    OutputDispatcher.ChannelRegistry.register channel
+    let profile = passthroughProfile "tap-prof" "tap-test"
+    OutputDispatcher.ProfileRegistry.setActiveProfileSet [ profile ]
+    OutputDispatcher.dispatch (buildEvent SemanticCategory.StreamChunk "shared")
+    Assert.Equal(1, captured1.Count)
+    Assert.Equal(1, captured2.Count)
+    Assert.Equal("shared", captured1.[0].Payload)
+    Assert.Equal("shared", captured2.[0].Payload)
+    resetRegistries ()
+
+[<Fact>]
+let ``disposing one tap does not affect other simultaneous taps`` () =
+    resetRegistries ()
+    let captured1 = ResizeArray<OutputEvent>()
+    let captured2 = ResizeArray<OutputEvent>()
+    let sub1 = OutputDispatcher.installEventTap (fun ev -> captured1.Add(ev))
+    use _ = OutputDispatcher.installEventTap (fun ev -> captured2.Add(ev))
+    let channel, _ = recordingChannel "tap-test"
+    OutputDispatcher.ChannelRegistry.register channel
+    let profile = passthroughProfile "tap-prof" "tap-test"
+    OutputDispatcher.ProfileRegistry.setActiveProfileSet [ profile ]
+    OutputDispatcher.dispatch (buildEvent SemanticCategory.StreamChunk "first")
+    sub1.Dispose()
+    OutputDispatcher.dispatch (buildEvent SemanticCategory.StreamChunk "second")
+    Assert.Equal(1, captured1.Count)
+    Assert.Equal(2, captured2.Count)
+    resetRegistries ()
+
+[<Fact>]
+let ``throwing tap does not break dispatch or other taps`` () =
+    resetRegistries ()
+    let goodCaptured = ResizeArray<OutputEvent>()
+    use _ = OutputDispatcher.installEventTap (fun _ ->
+        raise (System.InvalidOperationException("tap blew up")))
+    use _ = OutputDispatcher.installEventTap (fun ev -> goodCaptured.Add(ev))
+    let channel, channelCalls = recordingChannel "tap-test"
+    OutputDispatcher.ChannelRegistry.register channel
+    let profile = passthroughProfile "tap-prof" "tap-test"
+    OutputDispatcher.ProfileRegistry.setActiveProfileSet [ profile ]
+    // Should not throw despite the bad tap.
+    OutputDispatcher.dispatch (buildEvent SemanticCategory.StreamChunk "payload")
+    // Channel still received the event (dispatch wasn't aborted).
+    Assert.Equal(1, channelCalls.Count)
+    // Good tap still received the event.
+    Assert.Equal(1, goodCaptured.Count)
+    Assert.Equal("payload", goodCaptured.[0].Payload)
+    resetRegistries ()
+
+[<Fact>]
+let ``installEventTap with no profiles still fires (taps run before fan-out)`` () =
+    resetRegistries ()
+    let captured = ResizeArray<OutputEvent>()
+    use _ = OutputDispatcher.installEventTap (fun ev -> captured.Add(ev))
+    // No active profiles — dispatch normally would no-op.
+    OutputDispatcher.dispatch (buildEvent SemanticCategory.StreamChunk "no-profiles")
+    Assert.Equal(1, captured.Count)
+    resetRegistries ()
