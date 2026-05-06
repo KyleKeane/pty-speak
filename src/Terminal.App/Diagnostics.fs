@@ -566,92 +566,92 @@ module Diagnostics =
                     log.LogInformation(
                         "Diagnostic battery starting. Shell={Shell} LogPath={LogPath}",
                         shell.DisplayName, logPath)
-                let announce (msg: string) : Task =
-                    task {
-                        let act () =
-                            window.TerminalSurface.Announce(msg, ActivityIds.diagnostic)
-                        do! window.Dispatcher.InvokeAsync(Action(act)).Task
-                    }
-                do! announce
-                    (sprintf
-                        "Starting diagnostic on %s. About 10 seconds; commands will run in your shell."
-                        shell.DisplayName)
-                // T0 — process snapshot.
-                let snapshot = enumerateShellProcesses ()
-                writer.WriteLine LogLevel.Information "Diagnostic.T0.Snapshot" snapshot
-                log.LogInformation(
-                    "Diagnostic snapshot. ProcessCounts={Snapshot}", snapshot)
-                // T_Earcons — replay the three earcons.
-                do! runEarconReplay window writer
-                // Per-shell command battery.
-                let writeBytes (bytes: byte[]) : Task =
-                    task {
-                        let act () =
-                            match resolveHost () with
-                            | Some h -> h.WriteBytes(bytes)
-                            | None -> ()
-                        do! window.Dispatcher.InvokeAsync(Action(act)).Task
-                    }
-                let tests = selectTestsForShell shell.Id
-                let mutable pass = 0
-                let mutable fail = 0
-                if Array.isEmpty tests then
-                    writer.WriteLine LogLevel.Information "Diagnostic.Battery"
-                        (sprintf
-                            "Skipped command battery: no test set for shell %A."
-                            shell.Id)
-                else
-                    for test in tests do
-                        let! ok = runOneTest writer writeBytes resolveSeq test
-                        if ok then pass <- pass + 1 else fail <- fail + 1
-                let total = pass + fail
-                writer.WriteLine LogLevel.Information "Diagnostic.Summary"
-                    (sprintf "PASS=%d FAIL=%d TOTAL=%d Shell=%A"
-                         pass fail total shell.Id)
-                log.LogInformation(
-                    "Diagnostic battery complete. Pass={Pass} Fail={Fail} Total={Total}",
-                    pass, fail, total)
-                // Close the writer BEFORE reading the file for clipboard.
-                (writer :> IDisposable).Dispose()
-                // Read the diagnostic log content for clipboard. Same
-                // FileShare.ReadWrite open mode as Ctrl+Shift+; uses.
-                let content =
-                    try
-                        use stream =
-                            new FileStream(
-                                logPath, FileMode.Open, FileAccess.Read,
-                                FileShare.ReadWrite)
-                        use reader = new StreamReader(stream, Encoding.UTF8)
-                        reader.ReadToEnd()
-                    with ex ->
-                        log.LogWarning(
-                            ex,
-                            "Failed to read diagnostic log for clipboard: {Message}",
-                            ex.Message)
-                        ""
-                let summaryLine =
-                    if total = 0 then
-                        sprintf
-                            "Diagnostic complete. Snapshot and earcons logged. Shell %s skipped command battery."
-                            shell.DisplayName
-                    else
-                        sprintf
-                            "Diagnostic complete. %d of %d passed."
-                            pass total
-                if String.IsNullOrEmpty content then
+                    let announce (msg: string) : Task =
+                        task {
+                            let act () =
+                                window.TerminalSurface.Announce(msg, ActivityIds.diagnostic)
+                            do! window.Dispatcher.InvokeAsync(Action(act)).Task
+                        }
                     do! announce
-                        (sprintf "%s Could not read diagnostic log." summaryLine)
-                else
-                    let! copied = copyToClipboardSta log content
-                    if copied then
-                        do! announce
-                            (sprintf "%s Diagnostic log copied to clipboard." summaryLine)
-                    else
-                        do! announce
+                        (sprintf
+                            "Starting diagnostic on %s. About 10 seconds; commands will run in your shell."
+                            shell.DisplayName)
+                    // T0 — process snapshot.
+                    let snapshot = enumerateShellProcesses ()
+                    writer.WriteLine LogLevel.Information "Diagnostic.T0.Snapshot" snapshot
+                    log.LogInformation(
+                        "Diagnostic snapshot. ProcessCounts={Snapshot}", snapshot)
+                    // T_Earcons — replay the three earcons.
+                    do! runEarconReplay window writer
+                    // Per-shell command battery.
+                    let writeBytes (bytes: byte[]) : Task =
+                        task {
+                            let act () =
+                                match resolveHost () with
+                                | Some h -> h.WriteBytes(bytes)
+                                | None -> ()
+                            do! window.Dispatcher.InvokeAsync(Action(act)).Task
+                        }
+                    let tests = selectTestsForShell shell.Id
+                    let mutable pass = 0
+                    let mutable fail = 0
+                    if Array.isEmpty tests then
+                        writer.WriteLine LogLevel.Information "Diagnostic.Battery"
                             (sprintf
-                                "%s Clipboard copy failed; diagnostic log at %s."
-                                summaryLine
-                                logPath)
+                                "Skipped command battery: no test set for shell %A."
+                                shell.Id)
+                    else
+                        for test in tests do
+                            let! ok = runOneTest writer writeBytes resolveSeq test
+                            if ok then pass <- pass + 1 else fail <- fail + 1
+                    let total = pass + fail
+                    writer.WriteLine LogLevel.Information "Diagnostic.Summary"
+                        (sprintf "PASS=%d FAIL=%d TOTAL=%d Shell=%A"
+                             pass fail total shell.Id)
+                    log.LogInformation(
+                        "Diagnostic battery complete. Pass={Pass} Fail={Fail} Total={Total}",
+                        pass, fail, total)
+                    // Close the writer BEFORE reading the file for clipboard.
+                    (writer :> IDisposable).Dispose()
+                    // Read the diagnostic log content for clipboard. Same
+                    // FileShare.ReadWrite open mode as Ctrl+Shift+; uses.
+                    let content =
+                        try
+                            use stream =
+                                new FileStream(
+                                    logPath, FileMode.Open, FileAccess.Read,
+                                    FileShare.ReadWrite)
+                            use reader = new StreamReader(stream, Encoding.UTF8)
+                            reader.ReadToEnd()
+                        with ex ->
+                            log.LogWarning(
+                                ex,
+                                "Failed to read diagnostic log for clipboard: {Message}",
+                                ex.Message)
+                            ""
+                    let summaryLine =
+                        if total = 0 then
+                            sprintf
+                                "Diagnostic complete. Snapshot and earcons logged. Shell %s skipped command battery."
+                                shell.DisplayName
+                        else
+                            sprintf
+                                "Diagnostic complete. %d of %d passed."
+                                pass total
+                    if String.IsNullOrEmpty content then
+                        do! announce
+                            (sprintf "%s Could not read diagnostic log." summaryLine)
+                    else
+                        let! copied = copyToClipboardSta log content
+                        if copied then
+                            do! announce
+                                (sprintf "%s Diagnostic log copied to clipboard." summaryLine)
+                        else
+                            do! announce
+                                (sprintf
+                                    "%s Clipboard copy failed; diagnostic log at %s."
+                                    summaryLine
+                                    logPath)
                 with ex ->
                     log.LogError(
                         ex,
