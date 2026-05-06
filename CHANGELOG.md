@@ -15,6 +15,101 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (sub-row suffix-diff at StreamPathway emit)
+
+When typing `echo hi` at a shell prompt, NVDA used to read the
+entire row on every keystroke (`> echo h`, then `> echo hi`).
+Each character meant hearing the full prompt + command line
+again. After this change, NVDA reads only the new content
+since the last emit — `h`, then `i`. The verbose-readback
+issue (GitHub #115/#139) regresses to "single-character
+announcement on each keystroke" as intended in Phase A.
+
+#### Behaviour
+
+| Action | Before this PR | After this PR |
+|---|---|---|
+| Type `e` at a fresh prompt | Reads `> e` | Reads `e` (or `> e` on first prompt emit) |
+| Type `c` after `e` | Reads `> ec` | Reads `c` |
+| Type Enter on a populated line | Reads the full historical command + new prompt | Reads only the new content (next prompt + maybe output) |
+| Press Backspace on `echo hi` | Reads `> echo h` | Silent (NVDA's own keyboard echo handles it) |
+| Paste a multi-line script (5+ lines) | Reads the full content | Reads the full content (bulk-change fallback engages) |
+| Switch shell with Ctrl+Shift+1/2/3 | Reads the new shell's startup output | Reads the new shell's startup output (mode-barrier flush stays verbose) |
+
+#### Implementation
+
+A new computational stage **sub-row suffix detection** sits
+between the existing row-level diff (stage 7) and the
+announcement payload assembly (stage 9). For each changed row
+it reads the rendered text, compares against the cached
+text-at-last-emit, and computes the longest-common-prefix.
+The suffix beyond that prefix is what gets announced.
+
+Three propose-defaults the maintainer approved
+(redirectable on next iteration):
+
+1. **Backspace silent.** Row shrink → no announcement; NVDA
+   keyboard-echo handles the feedback at the keyboard layer.
+2. **Bulk-change threshold N=3.** When more than 3 rows
+   change in a single frame (scroll, screen clear, TUI
+   repaint, multi-line paste), bypass suffix-diff and emit
+   the full ChangedText. The maintainer benefits from full
+   context at discontinuities; suffix-diff against a stale
+   baseline would produce gibberish.
+3. **Defer autosuggestion-aware diff to v2.** Fish-shell and
+   zsh-autosuggestion-style ghost text (grey-foreground hint
+   beyond cursor) over-reports under v1's pure-text LCP.
+   Documented limitation; SGR-attribute-aware filtering is a
+   follow-up.
+
+#### Known v1 limitations
+
+- **Mid-line insertion over-reports.** Cursor-left + type X
+  into `> echo h` → `> echXo h` announces `Xo h` instead of
+  just `X`. v2 (cursor-aware diff) fixes.
+- **Powerline / Starship / oh-my-posh prompt redraws
+  over-report.** Async git-status or kube-context segments
+  resolve mid-keystroke and rewrite the PS1; LCP common
+  prefix collapses; the whole line gets re-announced.
+- **Right-aligned RPROMPT (zsh) over-reports.** Same family.
+- **Autosuggestions over-report** (per Default 3 above).
+
+#### Files
+
+- `src/Terminal.Core/CanonicalState.fs` — extracted
+  `renderRow snapshot rowIdx : string` helper from
+  `renderChangedRows` so both the existing concatenated-text
+  path and the new per-row suffix path share the trim +
+  sanitise logic.
+- `src/Terminal.Core/StreamPathway.fs` — added the
+  `EditDelta` discriminated union (`Suffix of string |
+  Silent`), `longestCommonPrefixLength`,
+  `computeRowSuffixDelta`, `BulkChangeThreshold` (=3),
+  `assembleSuffixPayload`, `renderAllRows`. Extended
+  `State` with `LastEmittedRowText: string[]` and
+  `PendingSnapshot: Cell[][] voption`. Wired into all five
+  state-update sites: leading-edge emit (in
+  `processCanonicalState`), trailing-edge tick (in
+  `onTimerTick`), mode-barrier flush, `resetState`, and
+  `seedBaseline`.
+- `tests/Tests.Unit/StreamPathwayTests.fs` — 14 new tests
+  covering the algorithm (`longestCommonPrefixLength`,
+  `computeRowSuffixDelta`) and the integration behaviour
+  (typing-at-prompt, multi-keystroke debounce, bulk-change
+  fallback, backspace silent, first-emit-Initial, mode-
+  barrier-clears-cache).
+
+PR #164's regression tests (red row outside changed-rows scope
+→ no ErrorLine emit) survive the refactor — confirms the
+Phase A.2 hotfix interaction is preserved.
+
+The diagnostic battery's existing T1-T5 PowerShell tests are
+unchanged and continue to validate the colour-detection +
+emit-shape regression coverage. New T6/T7 tests for suffix-
+diff specifically are deferred to a follow-up PR (the v1
+verification path is unit tests for the algorithm + manual
+NVDA matrix for the UX).
+
 ### Added (Ctrl+Shift+D extended diagnostic battery)
 
 Ctrl+Shift+D now runs a self-test battery against the active

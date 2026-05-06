@@ -405,6 +405,46 @@ empty `tests/Tests.Ui/` project reserves the path for FlaUI work.
   product stays screen-reader-agnostic, then confirm with a real screen
   reader.
 
+### Tests with semantic-laden assertions need updating when semantics change
+
+PR #166 (sub-row suffix-diff at StreamPathway emit) surfaced
+this rule: when a layer's output semantics change — for example,
+"announce the full row" becomes "announce only the suffix since
+last emit" — every test that asserts on the OUTPUT CONTENT of
+that layer needs updating in the same PR. The compiler can't
+catch semantic regressions; CI surfaces them via failing
+assertions on payload strings.
+
+The failure mode in PR #166 was specific:
+`Assert.Contains("abc", trailingPayload)` was correct under
+verbose-emit (the trailing-edge announced the full burst). Under
+suffix-diff, the trailing-edge announces only `"bc"` because the
+leading-edge already emitted `"a"`. Both behaviours are correct
+for their respective designs; the test was keyed to the older
+one.
+
+**Rule for emit-layer changes:**
+
+1. **Don't loosen the assertions to "make CI green".** A change
+   from `Assert.Equal("abc", payload)` to
+   `Assert.Contains("c", payload)` masks regressions instead of
+   reflecting new semantics. Update assertions to match the
+   NEW expected behaviour exactly.
+2. **Add a sanity-check assertion that recovers the prior intent
+   under the new model.** Example from PR #166: after asserting
+   `r1.Payload = "a"` and `tick.Payload = "bc"` separately,
+   add `Assert.Equal("abc", r1.Payload + tick.Payload)` — this
+   confirms the burst's full content still reaches NVDA, just
+   split across two events.
+3. **Document the semantic change in a code comment on the
+   updated test.** Explain WHY the assertion changed so future
+   readers don't misinterpret the new shape as a bug fix on
+   the test side.
+
+This rule applies to any layer whose output is "what NVDA
+hears" — StreamPathway, the future ReplPathway, ClaudeCodePathway,
+FormPathway, and any post-pathway profile transformations.
+
 ### Test fixtures: CSI / OSC / DCS sequences
 
 Existing tests in `VtParserTests.fs` and `ScreenTests.fs` embed a
