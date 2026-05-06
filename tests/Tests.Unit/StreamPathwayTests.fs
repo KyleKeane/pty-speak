@@ -115,6 +115,16 @@ let ``leading-edge emit produces a StreamChunk OutputEvent`` () =
 
 [<Fact>]
 let ``burst within debounce window collapses to leading + trailing emit`` () =
+    // Burst-within-debounce semantics post-PR-#166 (suffix-
+    // diff): the leading-edge emits the first frame's
+    // suffix-diff vs. the empty cache (Initial → "a"). The
+    // next two frames accumulate (no emit). The trailing-edge
+    // emits the suffix-diff vs. the last-emit baseline ("a"),
+    // which is "bc" — the new content since that baseline.
+    // Cumulative announcement across both emits = "a" + "bc"
+    // = "abc"; this preserves the original test intent (the
+    // burst's full content reaches NVDA) while reflecting
+    // the new suffix-diff semantics.
     let state = StreamPathway.createState ()
     let snap1 = snapshotOf 3 5 [ "a" ]
     let snap2 = snapshotOf 3 5 [ "ab" ]
@@ -123,6 +133,7 @@ let ``burst within debounce window collapses to leading + trailing emit`` () =
         StreamPathway.processCanonicalState
             StreamPathway.defaultParameters state (at 0) (canonicalAt snap1 0L)
     Assert.Equal(1, r1.Length)
+    Assert.Equal("a", r1.[0].Payload)
     let r2 =
         StreamPathway.processCanonicalState
             StreamPathway.defaultParameters state (at 50) (canonicalAt snap2 1L)
@@ -135,7 +146,11 @@ let ``burst within debounce window collapses to leading + trailing emit`` () =
         StreamPathway.onTimerTick
             StreamPathway.defaultParameters state (at 250)
     Assert.Equal(1, tick.Length)
-    Assert.Contains("abc", tick.[0].Payload)
+    Assert.Equal("bc", tick.[0].Payload)
+    // Sanity check on the original test intent — cumulative
+    // payload across leading + trailing recovers the full
+    // burst content "abc".
+    Assert.Equal("abc", r1.[0].Payload + tick.[0].Payload)
 
 [<Fact>]
 let ``trailing-edge tick with nothing pending is a no-op`` () =
