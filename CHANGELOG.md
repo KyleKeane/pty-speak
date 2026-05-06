@@ -15,6 +15,58 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Pipeline Narrative research stage — substrate vocabulary doc)
+
+`docs/PIPELINE-NARRATIVE.md` — a snapshot-dated design /
+descriptive document that establishes the shared vocabulary
+for how data flows through pty-speak. Captures:
+
+- **12-stage glossary** of the output pipeline — byte
+  ingestion through NVDA dispatch — with stable names,
+  module locations, inputs / outputs, parameters
+  (cross-referenced to USER-SETTINGS.md), and known
+  fragilities per stage.
+- **Event taxonomy** mapping every UI event (keypress,
+  paste, screen mutation, mode change, bell, parser
+  error, hotkey, shell switch, focus change, window
+  resize, update, diagnostic battery, prompt boundary,
+  command finished, Claude Code response boundary) to
+  its producing source, data carried, pathway
+  responsible, and current-vs-reserved status.
+- **Substrate inventory** with explicit gap entries for
+  forthcoming research-stage work: `InputPathway`
+  protocol (Phase 2), `SessionModel` substrate (item 28),
+  cursor-aware diff (Phase 2), echo correlation (Phase 2),
+  per-input-vs-output ActivityId routing (Phase 2),
+  scrollback navigation (item 27, downstream of item 28),
+  Profile.Priority awareness (Phase 2), per-shell parameter
+  overrides (Phase B / TOML).
+- **Pathway taxonomy** — shipped pathways (StreamPathway,
+  TuiPathway) and reserved-future pathways (ReplPathway,
+  FormPathway, ClaudeCodePathway, AiInterpretedPathway,
+  SessionConsumer) with substrate prerequisites.
+- **Two end-to-end traces** — a single keystroke from
+  WPF KeyDown to NVDA audible output (~17 stages); a
+  single chunk of `dir` output from cmd.exe stdout to
+  NVDA queue, including the bulk-change-fallback +
+  scroll-fragility behaviour.
+- **Seams catalogue** for future capabilities: echo
+  correlation, OSC 133 / SessionModel, cursor-aware diff,
+  per-input-vs-output ActivityId routing,
+  scrollback / history navigation, AI-summarisation,
+  Profile.Priority awareness, per-shell overrides.
+- **Vocabulary glossary** — alphabetised reference for
+  every named term.
+- **Versioning + maintenance notes** — snapshot model,
+  re-snapshot triggers, cross-doc consistency rules.
+
+This document is the canonical authority for stage /
+pathway / event-type names. Companion to USER-SETTINGS.md
+(parameters), spec/event-and-output-framework.md (canonical
+spec), and forthcoming docs/SESSION-MODEL.md (item 28).
+
+DOC-MAP.md updated with the new entry.
+
 ### Fixed (shell-switch flush regression — PR #168 didn't fully resolve UX issue #5)
 
 PR #168 changed the default `mode_barrier_flush_policy` from
