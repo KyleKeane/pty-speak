@@ -15,6 +15,83 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (SessionModel substrate design — item 28 research stage)
+
+`docs/SESSION-MODEL.md` — a snapshot-dated forward-looking
+design doc for the SessionModel substrate. Specifies how
+pty-speak captures structured (prompt, command, output,
+exit-code) tuples sourced from OSC 133 escape sequences
+emitted by shells, with heuristic fallback for shells that
+don't emit OSC 133 (notably `claude.exe` per
+`spec/overview.md:71`, and `cmd.exe` / PowerShell by
+default).
+
+The doc covers:
+
+- **OSC 133 protocol** — the full four-boundary taxonomy
+  (A/B/C/D), optional `aid=<command-id>` and key=value
+  parameters, terminator handling, security
+  considerations.
+- **Heuristic fallback** — per-shell prompt-regex
+  detection with stability checking, special-case Claude
+  Code Ink-box detection, configuration via TOML.
+- **Data model** — `SessionModel`, `SessionTuple`,
+  `ActiveSessionTuple`, `BoundaryKind`, `BoundarySource`
+  with full F# type definitions. Justifies design
+  choices and explicitly documents what's deliberately
+  omitted (stdout/stderr separation, per-character
+  timestamps, cell-attribute preservation).
+- **State machine** for the `ActiveSessionTuple` —
+  PromptStart → AwaitingCommandStart → CommandStart →
+  EditingCommand → OutputStart → OutputStreaming →
+  CommandFinished → Complete. Recovery paths for
+  out-of-order boundaries.
+- **Pipeline integration** — maps SessionModel into the
+  12-stage pipeline from `PIPELINE-NARRATIVE.md`. New
+  notification variant `ScreenNotification.PromptBoundary`,
+  new `DisplayPathway.T.OnPromptBoundary` method,
+  Stage 3.5 insertion between notification emission and
+  canonical-state synthesis. Threading guarantees,
+  capture mechanics for prompt / command / output text.
+- **Pathway integration** — pathway-by-pathway
+  consumption: StreamPathway and TuiPathway stay
+  history-unaware; ReplPathway / FormPathway /
+  ClaudeCodePathway / AiInterpretedPathway are the
+  primary SessionModel consumers; SessionConsumer base
+  pathway provides shared mixin.
+- **Persistence** — three policy modes (memory_only
+  default; session_log; always); JSONL + msgpack
+  formats; cross-session loading via item 4 (REPL CLI
+  replay tool); security (env-var sanitiser applied to
+  `commandText`; file permissions; opt-in only for
+  non-default modes; bounded ring buffer).
+- **Query API** — read methods (Active, History,
+  LatestTuple, NthFromLast, TupleByCommandId,
+  TuplesWhere, TuplesSince), internal write methods
+  (Apply, AppendActiveOutput, AppendActiveCommand,
+  PersistAndReset), diagnostic API
+  (SnapshotForDiagnostic, HealthReport).
+- **Implementation precedence** — 7 tiers, from
+  substrate skeleton through ReplPathway → FormPathway
+  / ClaudeCodePathway / history navigation →
+  persistence → AI summarisation. Recommended
+  ordering with rough scope estimates.
+- **8 open questions** for maintainer review before
+  implementation cycles start (cursor-in-canonical
+  shape, fallback default on/off, alt-screen
+  interaction, multi-line command capture, shell-switch
+  + active tuple, echo correlation interaction,
+  per-output-block AI summarisation timing,
+  exit-code-meaning categorisation).
+
+This document is the contract for the SessionModel
+substrate. Implementation cycles consume it. Companion
+to PIPELINE-NARRATIVE.md (vocabulary), USER-SETTINGS.md
+(parameters), spec/event-and-output-framework.md (spec
+absorbs this when implementation lands).
+
+DOC-MAP.md updated with the new entry.
+
 ### Added (Pipeline Narrative research stage — substrate vocabulary doc)
 
 `docs/PIPELINE-NARRATIVE.md` — a snapshot-dated design /
