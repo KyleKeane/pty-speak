@@ -741,3 +741,58 @@ let ``onModeBarrier with PendingColor clears it without emitting colour event`` 
     Assert.Equal(1, result.Length)
     Assert.Equal(SemanticCategory.StreamChunk, result.[0].Semantic)
     Assert.Equal(ValueNone, state.PendingColor)
+
+// ---- Phase A.2 hotfix — colour detection scoped to diff -----------
+
+[<Fact>]
+let ``changedRowsDominantColor — only walks rows in the changedRows index`` () =
+    // Two rows: row 0 red, row 1 plain. The "all rows" scan
+    // (snapshotDominantColor) returns Some "red"; the
+    // "changed rows only" scan with changedRows = [|1|] must
+    // return None because only the plain row is in scope.
+    let row0 = rowOfFg 10 (Indexed 1uy) "Error"
+    let row1 = rowOf 10 "okay"
+    let snap = [| row0; row1 |]
+    Assert.Equal(Some "red", StreamPathway.snapshotDominantColor snap)
+    Assert.Equal(None, StreamPathway.changedRowsDominantColor snap [| 1 |])
+    Assert.Equal(Some "red", StreamPathway.changedRowsDominantColor snap [| 0 |])
+    Assert.Equal(Some "red", StreamPathway.changedRowsDominantColor snap [| 0; 1 |])
+
+[<Fact>]
+let ``red row outside diff scope produces no ErrorLine emit`` () =
+    // The Phase A.2 hotfix regression. Sequence:
+    //   1. snap1 has row 0 = red "Error", row 1 = plain "okay".
+    //      Leading-edge emit: 2 events (StreamChunk + ErrorLine).
+    //   2. snap2 has row 0 unchanged red "Error", row 1 = plain
+    //      "later". Only row 1 changed.
+    //   3. Second leading-edge (at debounce + 1ms): 1 event
+    //      (StreamChunk only — no ErrorLine). The red row is
+    //      OUTSIDE the diff's ChangedRows so the supplementary
+    //      colour event must NOT fire.
+    //
+    // Pre-hotfix: snapshotDominantColor walks all rows, sees red
+    //   row 0, returns Some "red", emits ErrorLine on every
+    //   keystroke at the new prompt. This is the bug the hotfix
+    //   addresses.
+    let state = StreamPathway.createState ()
+    let row0 = rowOfFg 10 (Indexed 1uy) "Error"
+    let row1Original = rowOf 10 "okay"
+    let row1Changed = rowOf 10 "later"
+    let snap1 = [| row0; row1Original |]
+    let snap2 = [| row0; row1Changed |]
+    let r1 =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0)
+            (canonicalAt snap1 0L)
+    Assert.Equal(2, r1.Length)
+    Assert.Equal(SemanticCategory.ErrorLine, r1.[1].Semantic)
+    let r2 =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 500)
+            (canonicalAt snap2 1L)
+    Assert.Equal(1, r2.Length)
+    Assert.Equal(SemanticCategory.StreamChunk, r2.[0].Semantic)
+    // The diff's changed text contains only the row that
+    // actually changed (row 1).
+    Assert.Contains("later", r2.[0].Payload)
+    Assert.DoesNotContain("Error", r2.[0].Payload)

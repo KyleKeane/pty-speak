@@ -15,6 +15,59 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed (Phase A.2 hotfix — colour detection scoped to diff)
+
+The maintainer's release-build validation of Phase A.2 (PR
+#163) surfaced two coupled symptoms:
+
+1. After running `Write-Host -ForegroundColor Red "Build
+   failed"` (which plays `error-tone` correctly), the next
+   command `Write-Host -ForegroundColor Yellow "..."` plays
+   `error-tone` AGAIN — same tone, never `warning-tone`.
+2. The error-tone fires on every keystroke while typing the
+   new command, even though only the prompt row is changing.
+
+Root cause: Phase A.2's `snapshotDominantColor` walked the
+ENTIRE `canonical.Snapshot` rather than just the rows in
+`diff.ChangedRows`. After the red command, "Build failed"
+remains rendered red on its row in the screen buffer. Every
+subsequent frame sees that red row (even though it's
+unchanged), `snapshotDominantColor` returns `Some "red"`,
+red wins precedence over yellow, ErrorLine fires, and the
+warning-tone path is starved.
+
+Behaviour intent: the colour earcon should supplement *new*
+content, not "any colour anywhere on the screen". A red error
+that scrolls off shouldn't keep beeping; a yellow warning
+typed into a buffer that still contains earlier red text
+should fire warning-tone, not error-tone.
+
+Fix: new `changedRowsDominantColor` helper that walks only the
+rows in `diff.ChangedRows` (or the pending diff's changed rows
+at trailing-edge flush time). The leading-edge emit branch and
+the debounce-accumulate branch both call this scoped variant
+instead of the whole-snapshot version. The original
+`snapshotDominantColor` is retained for the helper-level unit
+tests and for any future caller that legitimately wants the
+whole-snapshot scan.
+
+Files:
+- `src/Terminal.Core/StreamPathway.fs` — new
+  `changedRowsDominantColor`; `processCanonicalState` calls it
+  from a `computeColor (changedRows: int[])` local closure
+  that's invoked inside the leading-edge and accumulate
+  branches against the diff's ChangedRows.
+- `tests/Tests.Unit/StreamPathwayTests.fs` — 2 new tests:
+  `changedRowsDominantColor` walks only the supplied indices;
+  the integration regression — red row outside diff scope
+  produces no ErrorLine emit.
+
+The fix is small (~80 LOC + 2 tests) and the existing 14
+Phase A.2 colour-detection tests all stay green because their
+red/yellow snapshots have the coloured rows IN the diff (the
+tests construct fresh state and emit on first call, where
+every row is "changed").
+
 ### Added (Phase A.2 — colour-detection earcons re-introduced)
 
 Re-introduces the SGR colour-detection feature originally
