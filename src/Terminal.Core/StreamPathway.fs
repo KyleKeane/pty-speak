@@ -99,22 +99,45 @@ module StreamPathway =
     ///   leading-edge or trailing-edge emit.
     type State =
         { mutable LastEmittedRowHashes: uint64[]
+          /// Per-row rendered text at the moment of last emit.
+          /// PR #166 — added for sub-row suffix-diff (the
+          /// announcement payload-assembly stage compares each
+          /// changed row's current text against this baseline
+          /// to compute the longest-common-prefix and emit only
+          /// the suffix that's new since last emit). Updated
+          /// at exactly the same conditional-branch sites as
+          /// `LastEmittedRowHashes` — leading-edge emit,
+          /// trailing-edge tick, mode-barrier flush, baseline
+          /// seed, and `resetState`. Empty array means "no
+          /// emit history yet"; the next emit treats every row
+          /// as Initial (its full text is the suffix).
+          mutable LastEmittedRowText: string[]
           mutable LastFrameHash: uint64 voption
           mutable LastFlushAt: DateTimeOffset voption
           mutable PendingDiff: CanonicalState.CanonicalDiff voption
           mutable PendingFrameHash: uint64 voption
           mutable PendingColor: string voption
+          /// PR #166 — snapshot reference held during the
+          /// debounce-accumulate window so the trailing-edge
+          /// tick can compute the suffix-diff against the
+          /// latest snapshot without re-receiving it from the
+          /// pump. Cleared at every emit + reset site
+          /// alongside `PendingDiff`. Reference-only (no copy);
+          /// stays alive only for the debounce window.
+          mutable PendingSnapshot: Cell[][] voption
           mutable LastRowHashes: uint64[] voption
           PerRowHistory: Dictionary<SpinnerKey, ResizeArray<DateTimeOffset>>
           HashHistory: Dictionary<uint64, ResizeArray<DateTimeOffset>> }
 
     let internal createState () : State =
         { LastEmittedRowHashes = [||]
+          LastEmittedRowText = [||]
           LastFrameHash = ValueNone
           LastFlushAt = ValueNone
           PendingDiff = ValueNone
           PendingFrameHash = ValueNone
           PendingColor = ValueNone
+          PendingSnapshot = ValueNone
           LastRowHashes = ValueNone
           PerRowHistory = Dictionary()
           HashHistory = Dictionary() }
@@ -301,6 +324,150 @@ module StreamPathway =
             id
             text
 
+    // -------------------------------------------------------------
+    // Sub-row suffix-diff (PR #166).
+    //
+    // Goal: when row N of the screen changes from "> echo h" to
+    // "> echo hi", emit only the new "i" rather than the full
+    // "> echo hi" again. The current row-level diff
+    // (CanonicalState.computeDiff) tells us WHICH rows changed
+    // and gives us the ChangedText of all of them concatenated.
+    // The suffix-diff stage takes that information PLUS the
+    // per-row text we last emitted (cached in
+    // `state.LastEmittedRowText`) and produces the cumulative
+    // new content per row.
+    //
+    // Algorithm: per-row longest-common-prefix. If a row shrank
+    // (backspace) we stay silent. If too many rows changed at
+    // once (scroll, screen-clear, TUI repaint), we fall back to
+    // emitting the full ChangedText — see BulkChangeThreshold.
+    //
+    // Spec: docs/SESSION-HANDOFF.md vocabulary glossary stages
+    // 8 (sub-row suffix detection), 8b (bulk-change fallback),
+    // and 9 (announcement payload assembly).
+    // -------------------------------------------------------------
+
+    /// Bulk-change fallback threshold. If the row-level diff
+    /// reports more rows changed than this, we bypass the
+    /// per-row suffix-diff stage and emit the full ChangedText
+    /// (the previous verbose behaviour). Catches scroll, screen
+    /// clears, and TUI repaints with one heuristic — the
+    /// maintainer benefits from full context at those
+    /// discontinuities, where suffix-diff would produce
+    /// gibberish from a stale baseline.
+    ///
+    /// 3 is conservative: typing produces 1 changed row;
+    /// Enter usually produces 1-2; small pastes 2-3 — they
+    /// all stay on the suffix-diff path. Scroll affects ~30
+    /// rows; screen clear all of them — both engage the
+    /// fallback.
+    let private BulkChangeThreshold : int = 3
+
+    /// Result of the sub-row suffix-diff stage for one row.
+    type internal EditDelta =
+        /// Suffix to announce. Always non-empty when this case
+        /// is selected. May be a single character ("i" after
+        /// typing 'i'), a multi-character segment, or the full
+        /// row text (for first-emit / Initial cases).
+        | Suffix of string
+        /// No announcement for this row. Used when the row is
+        /// unchanged, shrank (backspace; rely on NVDA keyboard
+        /// echo), or differs only in attributes (no displayable
+        /// text difference).
+        | Silent
+
+    /// Length of the longest common prefix of two strings.
+    /// Returns 0 for "no common prefix" (including when either
+    /// input is empty), `min(a.Length, b.Length)` when one is
+    /// a prefix of the other.
+    let internal longestCommonPrefixLength (a: string) (b: string) : int =
+        let n = min a.Length b.Length
+        let mutable i = 0
+        while i < n && a.[i] = b.[i] do
+            i <- i + 1
+        i
+
+    /// Compute the EditDelta for one row. Pure function;
+    /// doesn't touch state. Cases:
+    /// - identical text → `Silent` (no displayable change)
+    /// - previous empty → `Suffix current` (Initial — first
+    ///   time we've emitted this row)
+    /// - current shorter than previous → `Silent` (Shrink;
+    ///   v1 leaves backspace audibility to NVDA's keyboard
+    ///   echo per Default 1 in the plan)
+    /// - common prefix covers all of current → `Silent`
+    ///   (attribute-only differences land here when the
+    ///   per-row hash differs but the rendered text is the
+    ///   same)
+    /// - otherwise → `Suffix (current beyond common prefix)`
+    let internal computeRowSuffixDelta
+            (currentText: string)
+            (previousText: string)
+            : EditDelta
+            =
+        if currentText = previousText then
+            Silent
+        elif previousText.Length = 0 then
+            Suffix currentText
+        elif currentText.Length < previousText.Length then
+            Silent
+        else
+            let commonLen = longestCommonPrefixLength currentText previousText
+            if commonLen = currentText.Length then
+                Silent
+            else
+                Suffix (currentText.Substring(commonLen))
+
+    /// Render every row of `snapshot` to its announcement-text
+    /// form. Used when updating `state.LastEmittedRowText` at
+    /// emit sites — caches every row's current text so the
+    /// next emit can compute per-row suffix-diffs against a
+    /// known baseline. Cost: O(rows × cols) on every emit;
+    /// cheap given the 30×120 default screen size.
+    let private renderAllRows (snapshot: Cell[][]) : string[] =
+        let result = Array.zeroCreate<string> snapshot.Length
+        for i in 0 .. snapshot.Length - 1 do
+            result.[i] <- CanonicalState.renderRow snapshot i
+        result
+
+    /// Stage 9 — announcement-payload assembly. Decides
+    /// between bulk-change fallback (verbose ChangedText) and
+    /// per-row suffix-diff. Returns the final string the
+    /// StreamChunk OutputEvent will carry.
+    ///
+    /// Payload-empty contract: if every changed row produced
+    /// `Silent` (e.g. all rows shrank, or all attribute-only
+    /// differences), the returned string is `""`. The caller
+    /// MUST check for empty before emitting — emitting an
+    /// empty StreamChunk would still cause downstream
+    /// processing (FileLoggerChannel logs it; NvdaChannel
+    /// short-circuits empty per `NvdaChannel.fs:87` but the
+    /// CONTRACT is to not emit empty payloads).
+    let private assembleSuffixPayload
+            (snapshot: Cell[][])
+            (diff: CanonicalState.CanonicalDiff)
+            (lastRowText: string[])
+            : string
+            =
+        if diff.ChangedRows.Length > BulkChangeThreshold then
+            // Stage 8b — bulk-change fallback. Defer to the
+            // existing ChangedText; downstream behaviour is the
+            // pre-PR-#166 verbose emit.
+            diff.ChangedText
+        else
+            // Stage 8 — per-row suffix-diff.
+            let parts = ResizeArray<string>()
+            for rowIdx in diff.ChangedRows do
+                if rowIdx >= 0 && rowIdx < snapshot.Length then
+                    let currentText = CanonicalState.renderRow snapshot rowIdx
+                    let previousText =
+                        if rowIdx < lastRowText.Length then lastRowText.[rowIdx]
+                        else ""
+                    match computeRowSuffixDelta currentText previousText with
+                    | Suffix text -> parts.Add(text)
+                    | Silent -> ()
+            String.concat "\n" parts
+
     /// Phase A.2 — build the supplementary colour-event for a
     /// flushed diff. Returns `None` for plain frames (caller
     /// emits only the StreamChunk); `Some ErrorLine` for red,
@@ -398,6 +565,7 @@ module StreamPathway =
                         state.PendingDiff <- ValueNone
                         state.PendingFrameHash <- ValueNone
                         state.PendingColor <- ValueNone
+                        state.PendingSnapshot <- ValueNone
                         logger.LogDebug(
                             "Suppressed (empty-diff). FrameHash=0x{Hash:X16}", frameHash)
                         [||]
@@ -408,21 +576,46 @@ module StreamPathway =
                         state.PendingDiff <- ValueNone
                         state.PendingFrameHash <- ValueNone
                         state.PendingColor <- ValueNone
+                        state.PendingSnapshot <- ValueNone
+                        // PR #166 — sub-row suffix-diff. Compute
+                        // the payload BEFORE updating
+                        // LastEmittedRowText (which is the
+                        // baseline the suffix-diff reads).
+                        let payload =
+                            assembleSuffixPayload
+                                canonical.Snapshot
+                                diff
+                                state.LastEmittedRowText
                         state.LastEmittedRowHashes <- rowHashes
-                        let capped = capAnnounce parameters diff.ChangedText
-                        logger.LogInformation(
-                            "Emit StreamChunk (leading-edge). FrameHash=0x{Hash:X16} ChangedRows={Rows} TextLen={Len} Color={Color}",
-                            frameHash, diff.ChangedRows.Length, capped.Length,
-                            (match dominantColor with Some c -> c | None -> "none"))
-                        // Phase A.2 — emit a supplementary
-                        // ErrorLine/WarningLine event when the
-                        // diff's changed rows are colour-dominant.
-                        // EarconProfile claims it semantically;
-                        // NvdaChannel skips the empty payload so no
-                        // double-announce.
-                        match dominantColor |> Option.bind colorOutputEvent with
-                        | Some colorEvt -> [| streamOutputEvent capped; colorEvt |]
-                        | None -> [| streamOutputEvent capped |]
+                        state.LastEmittedRowText <- renderAllRows canonical.Snapshot
+                        let capped = capAnnounce parameters payload
+                        if String.IsNullOrEmpty capped then
+                            // Suffix-diff produced no audible
+                            // content (every changed row was
+                            // Silent — typically backspace, or
+                            // attribute-only differences). The
+                            // dominant-colour earcon for this
+                            // frame is also dampened: silent +
+                            // colour-tone would announce a tone
+                            // for content the user can't hear.
+                            logger.LogDebug(
+                                "Suppressed (suffix-diff Silent, leading-edge). FrameHash=0x{Hash:X16} ChangedRows={Rows}",
+                                frameHash, diff.ChangedRows.Length)
+                            [||]
+                        else
+                            logger.LogInformation(
+                                "Emit StreamChunk (leading-edge). FrameHash=0x{Hash:X16} ChangedRows={Rows} TextLen={Len} Color={Color}",
+                                frameHash, diff.ChangedRows.Length, capped.Length,
+                                (match dominantColor with Some c -> c | None -> "none"))
+                            // Phase A.2 — emit a supplementary
+                            // ErrorLine/WarningLine event when the
+                            // diff's changed rows are colour-dominant.
+                            // EarconProfile claims it semantically;
+                            // NvdaChannel skips the empty payload so no
+                            // double-announce.
+                            match dominantColor |> Option.bind colorOutputEvent with
+                            | Some colorEvt -> [| streamOutputEvent capped; colorEvt |]
+                            | None -> [| streamOutputEvent capped |]
                 else
                     // Within debounce: accumulate the diff;
                     // trailing edge will flush. Stash the dominant
@@ -438,6 +631,14 @@ module StreamPathway =
                         match dominantColor with
                         | Some c -> ValueSome c
                         | None -> ValueNone
+                    // PR #166 — stash the snapshot so the
+                    // trailing-edge tick can compute the
+                    // suffix-diff payload at flush time. Latest
+                    // snapshot wins (matches PendingDiff
+                    // semantics — only the most recent pending
+                    // frame survives until the trailing-edge
+                    // window expires).
+                    state.PendingSnapshot <- ValueSome canonical.Snapshot
                     logger.LogDebug(
                         "Accumulated (within debounce window). FrameHash=0x{Hash:X16} Color={Color}",
                         frameHash,
@@ -467,12 +668,15 @@ module StreamPathway =
                 // Phase A.2 — capture the pending colour BEFORE
                 // resetting state so it survives the same
                 // condition-block that promotes the diff.
+                // PR #166 — capture pending snapshot too.
                 let pendingColor = state.PendingColor
+                let pendingSnapshot = state.PendingSnapshot
                 state.LastFrameHash <- ValueSome hash
                 state.LastFlushAt <- ValueSome now
                 state.PendingDiff <- ValueNone
                 state.PendingFrameHash <- ValueNone
                 state.PendingColor <- ValueNone
+                state.PendingSnapshot <- ValueNone
                 if diff.ChangedRows.Length = 0 then
                     [||]
                 else
@@ -483,18 +687,40 @@ module StreamPathway =
                     match state.LastRowHashes with
                     | ValueSome rh -> state.LastEmittedRowHashes <- rh
                     | ValueNone -> ()
-                    let capped = capAnnounce parameters diff.ChangedText
-                    let colorEvt =
-                        match pendingColor with
-                        | ValueSome c -> colorOutputEvent c
-                        | ValueNone -> None
-                    logger.LogInformation(
-                        "Emit StreamChunk (trailing-edge). FrameHash=0x{Hash:X16} ChangedRows={Rows} TextLen={Len} Color={Color}",
-                        hash, diff.ChangedRows.Length, capped.Length,
-                        (match pendingColor with ValueSome c -> c | ValueNone -> "none"))
-                    match colorEvt with
-                    | Some evt -> [| streamOutputEvent capped; evt |]
-                    | None -> [| streamOutputEvent capped |]
+                    // PR #166 — sub-row suffix-diff at trailing
+                    // edge. Computed once (not per-accumulate
+                    // keystroke); uses the captured-pending
+                    // snapshot. If the snapshot is unexpectedly
+                    // absent (defensive — should always be set
+                    // when PendingDiff is set), fall back to the
+                    // pre-PR-166 verbose `ChangedText`.
+                    let payload =
+                        match pendingSnapshot with
+                        | ValueSome snap ->
+                            let p =
+                                assembleSuffixPayload snap diff state.LastEmittedRowText
+                            state.LastEmittedRowText <- renderAllRows snap
+                            p
+                        | ValueNone ->
+                            diff.ChangedText
+                    let capped = capAnnounce parameters payload
+                    if String.IsNullOrEmpty capped then
+                        logger.LogDebug(
+                            "Suppressed (suffix-diff Silent, trailing-edge). FrameHash=0x{Hash:X16} ChangedRows={Rows}",
+                            hash, diff.ChangedRows.Length)
+                        [||]
+                    else
+                        let colorEvt =
+                            match pendingColor with
+                            | ValueSome c -> colorOutputEvent c
+                            | ValueNone -> None
+                        logger.LogInformation(
+                            "Emit StreamChunk (trailing-edge). FrameHash=0x{Hash:X16} ChangedRows={Rows} TextLen={Len} Color={Color}",
+                            hash, diff.ChangedRows.Length, capped.Length,
+                            (match pendingColor with ValueSome c -> c | ValueNone -> "none"))
+                        match colorEvt with
+                        | Some evt -> [| streamOutputEvent capped; evt |]
+                        | None -> [| streamOutputEvent capped |]
             else
                 [||]
         | _ -> [||]
@@ -526,10 +752,18 @@ module StreamPathway =
         state.PendingDiff <- ValueNone
         state.PendingFrameHash <- ValueNone
         state.PendingColor <- ValueNone
+        state.PendingSnapshot <- ValueNone
         state.LastFrameHash <- ValueNone
         state.LastFlushAt <- ValueSome now
         state.LastRowHashes <- ValueNone
         state.LastEmittedRowHashes <- [||]
+        // PR #166 — clear per-row text cache so the post-
+        // barrier first emit treats every row as Initial
+        // (full text becomes the "suffix"). The barrier flush
+        // above used `diff.ChangedText` (verbose); the next
+        // emit through `processCanonicalState` will pick up
+        // suffix-diff against an empty baseline.
+        state.LastEmittedRowText <- [||]
         state.PerRowHistory.Clear()
         state.HashHistory.Clear()
         flushed
@@ -539,11 +773,13 @@ module StreamPathway =
     /// post-flush portion of `OnModeBarrier`.
     let private resetState (state: State) : unit =
         state.LastEmittedRowHashes <- [||]
+        state.LastEmittedRowText <- [||]
         state.LastFrameHash <- ValueNone
         state.LastFlushAt <- ValueNone
         state.PendingDiff <- ValueNone
         state.PendingFrameHash <- ValueNone
         state.PendingColor <- ValueNone
+        state.PendingSnapshot <- ValueNone
         state.LastRowHashes <- ValueNone
         state.PerRowHistory.Clear()
         state.HashHistory.Clear()
@@ -564,6 +800,18 @@ module StreamPathway =
         // ValueNone and accumulate spinner-history entries
         // for the seeded frame's content.
         state.LastRowHashes <- ValueSome canonical.RowHashes
+        // PR #166 — eagerly render the seeded snapshot so
+        // suffix-diff has a baseline. Without this, the first
+        // emit after a hot-switch-with-baseline would treat
+        // every row as Initial (full content as "suffix") and
+        // re-announce the entire shell screen — defeating the
+        // verbose-readback fix that hot-switch is supposed to
+        // sidestep.
+        state.LastEmittedRowText <-
+            let result = Array.zeroCreate<string> canonical.Snapshot.Length
+            for i in 0 .. canonical.Snapshot.Length - 1 do
+                result.[i] <- CanonicalState.renderRow canonical.Snapshot i
+            result
 
     /// Construct a StreamPathway. The pathway captures
     /// `parameters` in its closure; v1 ships a single

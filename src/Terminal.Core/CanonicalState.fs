@@ -52,6 +52,32 @@ module CanonicalState =
         { ChangedRows = [||]
           ChangedText = "" }
 
+    /// Render a single row to its announcement-text form:
+    /// trim trailing blank cells, walk cells to char string,
+    /// sanitise via `AnnounceSanitiser`. Identical to the
+    /// per-row block inside `renderChangedRows`; extracted so
+    /// callers (including StreamPathway's suffix-diff path)
+    /// can ask for one row at a time.
+    ///
+    /// Returns `""` for out-of-range row indices — the caller
+    /// is responsible for guarding against negative or beyond-
+    /// snapshot indices, but a defensive fallback avoids index
+    /// exceptions.
+    let internal renderRow (snapshot: Cell[][]) (rowIdx: int) : string =
+        if rowIdx < 0 || rowIdx >= snapshot.Length then
+            ""
+        else
+            let row = snapshot.[rowIdx]
+            // Trim trailing blank cells in the row so end-of-
+            // line padding doesn't leak into the announcement.
+            let mutable lastCh = -1
+            for c in 0 .. row.Length - 1 do
+                if row.[c].Ch.Value <> int ' ' then lastCh <- c
+            let rowSb = StringBuilder()
+            for c in 0 .. lastCh do
+                rowSb.Append(row.[c].Ch.ToString()) |> ignore
+            AnnounceSanitiser.sanitise (rowSb.ToString())
+
     /// Render only the rows whose indices appear in
     /// `changedRows`. Mirrors `Coalescer.renderRows`'s per-row
     /// sanitisation + trailing-blank-cell trim, but operates
@@ -71,19 +97,8 @@ module CanonicalState =
             let mutable first = true
             for rowIdx in changedRows do
                 if rowIdx >= 0 && rowIdx < snapshot.Length then
-                    let row = snapshot.[rowIdx]
-                    // Trim trailing blank cells in the row so
-                    // end-of-line padding doesn't leak into the
-                    // announcement.
-                    let mutable lastCh = -1
-                    for c in 0 .. row.Length - 1 do
-                        if row.[c].Ch.Value <> int ' ' then lastCh <- c
-                    let rowSb = StringBuilder()
-                    for c in 0 .. lastCh do
-                        rowSb.Append(row.[c].Ch.ToString()) |> ignore
-                    let sanitised = AnnounceSanitiser.sanitise (rowSb.ToString())
                     if not first then sb.Append('\n') |> ignore
-                    sb.Append(sanitised) |> ignore
+                    sb.Append(renderRow snapshot rowIdx) |> ignore
                     first <- false
             sb.ToString()
 

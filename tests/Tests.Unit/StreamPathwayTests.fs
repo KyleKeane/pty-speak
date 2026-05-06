@@ -796,3 +796,212 @@ let ``red row outside diff scope produces no ErrorLine emit`` () =
     // actually changed (row 1).
     Assert.Contains("later", r2.[0].Payload)
     Assert.DoesNotContain("Error", r2.[0].Payload)
+
+// ---- Sub-row suffix-diff (PR #166 — item 1) ---------------------
+
+[<Fact>]
+let ``longestCommonPrefixLength — empty inputs return 0`` () =
+    Assert.Equal(0, StreamPathway.longestCommonPrefixLength "" "")
+    Assert.Equal(0, StreamPathway.longestCommonPrefixLength "" "abc")
+    Assert.Equal(0, StreamPathway.longestCommonPrefixLength "abc" "")
+
+[<Fact>]
+let ``longestCommonPrefixLength — identical strings return their length`` () =
+    Assert.Equal(3, StreamPathway.longestCommonPrefixLength "abc" "abc")
+    Assert.Equal(0, StreamPathway.longestCommonPrefixLength "" "")
+    Assert.Equal(1, StreamPathway.longestCommonPrefixLength "a" "a")
+
+[<Fact>]
+let ``longestCommonPrefixLength — diverging strings`` () =
+    Assert.Equal(2, StreamPathway.longestCommonPrefixLength "abc" "abd")
+    Assert.Equal(0, StreamPathway.longestCommonPrefixLength "abc" "xyz")
+    Assert.Equal(1, StreamPathway.longestCommonPrefixLength "ab" "ax")
+
+[<Fact>]
+let ``longestCommonPrefixLength — one is prefix of the other`` () =
+    Assert.Equal(3, StreamPathway.longestCommonPrefixLength "abc" "abcdef")
+    Assert.Equal(3, StreamPathway.longestCommonPrefixLength "abcdef" "abc")
+
+[<Fact>]
+let ``computeRowSuffixDelta — identical text returns Silent`` () =
+    let result = StreamPathway.computeRowSuffixDelta "abc" "abc"
+    Assert.Equal(StreamPathway.Silent, result)
+
+[<Fact>]
+let ``computeRowSuffixDelta — empty previous returns Suffix of full current`` () =
+    let result = StreamPathway.computeRowSuffixDelta "Hello" ""
+    Assert.Equal(StreamPathway.Suffix "Hello", result)
+
+[<Fact>]
+let ``computeRowSuffixDelta — append at end returns suffix only`` () =
+    let result =
+        StreamPathway.computeRowSuffixDelta "> echo hi" "> echo h"
+    Assert.Equal(StreamPathway.Suffix "i", result)
+
+[<Fact>]
+let ``computeRowSuffixDelta — multi-character append returns full new suffix`` () =
+    let result =
+        StreamPathway.computeRowSuffixDelta "PtySpeakDiagPlain" "PtySpeak"
+    Assert.Equal(StreamPathway.Suffix "DiagPlain", result)
+
+[<Fact>]
+let ``computeRowSuffixDelta — current shorter than previous returns Silent (Shrink)`` () =
+    // Backspace case — relies on NVDA keyboard echo per Default 1.
+    let result = StreamPathway.computeRowSuffixDelta "> echo h" "> echo hi"
+    Assert.Equal(StreamPathway.Silent, result)
+
+[<Fact>]
+let ``computeRowSuffixDelta — replace case returns suffix beyond common prefix`` () =
+    // V1 over-reports mid-line edits — documents the
+    // limitation as expected behaviour. Cursor-aware diff
+    // (v2) would scope the announce to the cursor position.
+    let result = StreamPathway.computeRowSuffixDelta "abXc" "abc"
+    Assert.Equal(StreamPathway.Suffix "Xc", result)
+
+[<Fact>]
+let ``typing at prompt: suffix-diff emits only new character, not full row`` () =
+    // The everyday case PR #166 fixes. snap1 has "> echo h",
+    // snap2 has "> echo hi". Leading-edge emit on snap2
+    // (after debounce window elapsed) should emit "i", not
+    // "> echo hi".
+    let state = StreamPathway.createState ()
+    let snap1 = snapshotOf 1 20 [ "> echo h" ]
+    let snap2 = snapshotOf 1 20 [ "> echo hi" ]
+    let r1 =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0)
+            (canonicalAt snap1 0L)
+    Assert.Equal(1, r1.Length)
+    Assert.Equal("> echo h", r1.[0].Payload)
+    // Wait past debounce window so the next emit is leading-edge,
+    // not accumulate.
+    let r2 =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 500)
+            (canonicalAt snap2 1L)
+    Assert.Equal(1, r2.Length)
+    Assert.Equal(SemanticCategory.StreamChunk, r2.[0].Semantic)
+    // The fix: payload is just "i", not "> echo hi".
+    Assert.Equal("i", r2.[0].Payload)
+
+[<Fact>]
+let ``multi-keystroke debounce accumulates suffix at trailing-edge flush`` () =
+    // Three keystrokes within the 200ms debounce window.
+    // Leading-edge emits the first; the next two accumulate;
+    // trailing-edge tick should emit the cumulative suffix.
+    let state = StreamPathway.createState ()
+    let snap1 = snapshotOf 1 20 [ "> echo h" ]
+    let snap2 = snapshotOf 1 20 [ "> echo hi" ]
+    let snap3 = snapshotOf 1 20 [ "> echo hi " ]
+    let r1 =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0)
+            (canonicalAt snap1 0L)
+    Assert.Equal(1, r1.Length)
+    Assert.Equal("> echo h", r1.[0].Payload)
+    // Within debounce — accumulates.
+    let r2 =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 50)
+            (canonicalAt snap2 1L)
+    Assert.Empty(r2)
+    let r3 =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 100)
+            (canonicalAt snap3 2L)
+    Assert.Empty(r3)
+    // Trailing-edge tick after debounce window elapses.
+    let tick = StreamPathway.onTimerTick StreamPathway.defaultParameters state (at 250)
+    Assert.Equal(1, tick.Length)
+    // Cumulative suffix from the last-emitted "> echo h" to
+    // current "> echo hi ": just "i ". Note trailing space is
+    // preserved here because rowOf doesn't trim — the screen
+    // grid contains spaces beyond, but renderRow trims those.
+    // The suffix is what's beyond the common prefix in the
+    // RENDERED text.
+    Assert.Equal("i", tick.[0].Payload.TrimEnd())
+
+[<Fact>]
+let ``bulk-change fallback engages when more than 3 rows change`` () =
+    // 5 changed rows triggers bulk-change fallback. Payload
+    // should be the full ChangedText (verbose), not per-row
+    // suffixes.
+    let state = StreamPathway.createState ()
+    let snap1 = snapshotOf 5 10 [ ""; ""; ""; ""; "" ]
+    let snap2 = snapshotOf 5 10 [ "row0"; "row1"; "row2"; "row3"; "row4" ]
+    // First emit primes the cache.
+    let _ =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0)
+            (canonicalAt snap1 0L)
+    // Second emit — 5 rows change, above threshold of 3.
+    let r2 =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 500)
+            (canonicalAt snap2 1L)
+    Assert.Equal(1, r2.Length)
+    // Bulk-change fallback emits the full ChangedText, which
+    // contains every changed row joined by '\n'.
+    Assert.Contains("row0", r2.[0].Payload)
+    Assert.Contains("row1", r2.[0].Payload)
+    Assert.Contains("row4", r2.[0].Payload)
+
+[<Fact>]
+let ``backspace case (row shrinks) produces empty payload and no emit`` () =
+    // After typing "> echo hi", backspace produces
+    // "> echo h" — Shrink case, Silent, no announcement.
+    let state = StreamPathway.createState ()
+    let snap1 = snapshotOf 1 20 [ "> echo hi" ]
+    let snap2 = snapshotOf 1 20 [ "> echo h" ]
+    let r1 =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0)
+            (canonicalAt snap1 0L)
+    Assert.Equal(1, r1.Length)
+    let r2 =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 500)
+            (canonicalAt snap2 1L)
+    // No emit — empty payload short-circuits.
+    Assert.Empty(r2)
+
+[<Fact>]
+let ``first emit on a fresh pathway treats every row as Initial`` () =
+    // Empty LastEmittedRowText + first snapshot. Suffix per row
+    // = full row text. Concatenated → full snapshot text.
+    let state = StreamPathway.createState ()
+    let snap = snapshotOf 1 20 [ "Hello world" ]
+    let r =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0)
+            (canonicalAt snap 0L)
+    Assert.Equal(1, r.Length)
+    Assert.Equal("Hello world", r.[0].Payload)
+
+[<Fact>]
+let ``onModeBarrier flushes verbose, then clears LastEmittedRowText`` () =
+    // Mode barriers are discontinuities. The flushed pending
+    // diff uses ChangedText (verbose), not suffix-diff. After
+    // the barrier, LastEmittedRowText is empty so the next
+    // emit treats every row as Initial.
+    let state = StreamPathway.createState ()
+    let snap1 = snapshotOf 1 20 [ "> echo h" ]
+    let snap2 = snapshotOf 1 20 [ "> echo hi" ]
+    // Leading-edge emit primes the cache.
+    let _ =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0)
+            (canonicalAt snap1 0L)
+    // Within debounce — accumulate (PendingDiff set).
+    let _ =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 50)
+            (canonicalAt snap2 1L)
+    // Mode barrier flushes pending. Verbose payload
+    // (ChangedText) — not suffix-diff'd.
+    let flushed = StreamPathway.onModeBarrier state (at 100)
+    Assert.Equal(1, flushed.Length)
+    // Verbose flush carries the full row content.
+    Assert.Equal("> echo hi", flushed.[0].Payload)
+    // After barrier, cache is cleared.
+    Assert.Equal(0, state.LastEmittedRowText.Length)
