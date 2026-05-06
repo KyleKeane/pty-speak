@@ -836,6 +836,543 @@ expected use pattern.
   of the heartbeat cadence; only the periodic background log
   emit is affected.
 
+## Suffix-diff parameters (PR #166 follow-up)
+
+PR #166 (sub-row suffix-diff at StreamPathway emit) shipped
+2026-05-06. Maintainer release-build validation that day
+surfaced five UX observations — none of which are bugs in the
+strict sense, but all of which are sensitive to: NVDA
+configuration (e.g. "speak typed characters" on/off determines
+whether pty-speak's per-keystroke announce is redundant),
+maintainer preference (e.g. backspace silent vs. deleted-char-
+announced), or voice synthesizer behaviour (e.g. interrupt-on-
+new-notification cadence varies by voice).
+
+This section captures each observation as a future parameter
+following the catalogue's standard "Current state / Why
+hardcoded now / What configurability would look like /
+Implementation notes" pattern. The maintainer's directive
+2026-05-06: don't quick-fix any of these — each one becomes a
+parameter; design the substrate before any individual
+behaviour gets locked in by an "expedient" implementation.
+
+### Pipeline-stage glossary
+
+The 12-stage pipeline glossary proposed in PR #166's
+StreamPathway plan (and informing the future
+[`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md), item 19 in
+the strategic backlog). Used below to anchor each parameter
+to a specific stage.
+
+| # | Stage | Module | Role |
+|---|---|---|---|
+| 1 | Byte ingestion | `Terminal.Pty.ConPtyHost` | Bytes arrive from child shell's stdout |
+| 2 | Parser application | `Terminal.Parser.VtParser` + `Terminal.Core.Screen` | Bytes → SGR/CSI/text → cell-grid mutations |
+| 3 | Notification emission | `Terminal.Core.Screen` | RowsChanged, ModeChanged, Bell etc. |
+| 4 | Canonical-state synthesis | `Terminal.Core.CanonicalState` | Snapshot + sequence + row hashes |
+| 5 | Frame-dedup | `StreamPathway` (`LastFrameHash`) | Identical frames are no-ops |
+| 6 | Spinner suppression | `StreamPathway` (`isSpinnerSuppressed`) | Repeated rotating-character patterns suppressed |
+| 7 | Row-level diff | `CanonicalState.computeDiff` | Which rows changed + their concatenated text |
+| 8 | Sub-row suffix detection | `StreamPathway` (`computeRowSuffixDelta`, PR #166) | Per row, what's new beyond previous emit's text |
+| 8b | Bulk-change fallback | `StreamPathway` (heuristic, PR #166) | When too many rows changed at once, bypass suffix detection |
+| 9 | Announcement payload assembly | `StreamPathway` (`assembleSuffixPayload`, `capAnnounce`) | Combine per-row suffixes into single string; cap length |
+| 10 | Profile claim | `OutputDispatcher` | Profiles inspect events, emit ChannelDecisions |
+| 11 | Channel rendering | `OutputDispatcher` → channels | Each channel's `Send` receives event + render |
+| 12 | NVDA dispatch | `PtySpeak.Views.TerminalView.Announce` | UIA Notification fires; NVDA reads it |
+
+Auxiliary stages: **Mode-barrier handling**
+(`StreamPathway.onModeBarrier`, fired between stage 4 and 5
+on shell-switch / alt-screen transitions) and **Earcon
+synthesis** (`Terminal.Audio.EarconPlayer`, consumed at
+stage 11).
+
+### `stream.suffixDiff.bulkChangeThreshold` (currently 3)
+
+#### Current state
+
+`src/Terminal.Core/StreamPathway.fs:364` defines
+`BulkChangeThreshold` as a top-level `let private = 3`
+binding. Stage 8b applies it: when the row-level diff reports
+more than 3 changed rows in a single frame, the suffix-diff
+stage bypasses per-row LCP and emits the full
+`ChangedText` (the pre-PR-#166 verbose path).
+
+#### Why hardcoded now
+
+3 is conservative: typing produces 1 changed row; Enter
+usually produces 1-2; small pastes 2-3 — they all stay on the
+suffix-diff path. Scrolls affect ~30 rows; screen clears all
+of them — both engage the fallback. The 3 was chosen during
+PR #166 design without dogfood evidence; the maintainer may
+prefer a different value once they have lived experience.
+
+#### What configurability would look like
+
+```toml
+[stream.suffix_diff]
+bulk_change_threshold = 3
+```
+
+Lower values make verbose-fallback engage sooner (more
+announces on small bursts, less risk on shell-side prompt
+redraws); higher values keep more cases on the suffix path
+(cheaper announcements but riskier under fish autosuggestions
+or Powerline-style async prompt updates).
+
+Implementation tier: **ready to implement** (existing TOML
+loader pattern). Single field on
+`StreamPathway.Parameters` + key in `StreamParameterOverrides`
++ loader in `Config.resolveStreamParameters`. ~30 LOC + tests.
+
+#### Implementation notes
+
+- Add to `StreamPathway.Parameters` record alongside
+  `DebounceWindowMs` etc.
+- Schema validation: `1 ≤ x ≤ 30` (must fit within total
+  rows; below 1 makes no sense).
+- Default stays 3; document the trade-off in
+  `config.toml.sample`.
+- Tests: a small bulk-change PR could include a property
+  test — `assembleSuffixPayload` falls back to `ChangedText`
+  iff `diff.ChangedRows.Length > threshold`.
+
+### `stream.suffixDiff.backspacePolicy` (currently silent)
+
+#### Current state
+
+`src/Terminal.Core/StreamPathway.fs:412-413`
+(`computeRowSuffixDelta`) returns `Silent` when the row
+shrinks (`currentText.Length < previousText.Length`). Captures
+backspace + line-clear cases. The PR-#166 plan's "Default 1"
+chose this on the assumption that NVDA's "speak typed
+characters" setting would handle backspace audibility.
+
+**This assumption was wrong.** Maintainer release-build
+validation 2026-05-06 confirmed: NVDA's keyboard echo speaks
+the *key pressed* (not the screen content change), so
+"Backspace" by default is silent. Even with NVDA's speak-
+typed-characters enabled, backspace produces no audible
+feedback from either NVDA or pty-speak. **UX issue #2 from
+2026-05-06**.
+
+#### Why hardcoded now
+
+Hardcoding the behaviour was a Day-1-of-suffix-diff choice;
+the parameter substrate didn't exist. Now that the
+correctness gap is confirmed, the right shape is to expose
+the policy and change the default rather than continue
+relying on the broken assumption.
+
+#### What configurability would look like
+
+```toml
+[stream.suffix_diff]
+backspace_policy = "announce_deleted_character"
+```
+
+Values:
+
+- `"silent"` — current behaviour. Useful only if NVDA gains
+  a "speak deletions" setting in the future.
+- `"announce_deleted_character"` — the proposed new default.
+  Row shrink emits the character that disappeared (computed
+  by comparing the new row's tail to the cached previous-emit
+  text). User hears `i` after backspacing the `i` from
+  `echo hi`.
+- `"announce_deleted_word"` — coarser granularity for users
+  who use Ctrl+Backspace / equivalent. Implementation needs
+  word-boundary detection at the `previousText` tail.
+
+Implementation tier: **ready to implement**. Small enum +
+branch in `computeRowSuffixDelta`'s Shrink case. The deleted
+content is `previousText.Substring(longestCommonPrefixLength
+currentText previousText)` — already computed adjacently.
+
+#### Implementation notes
+
+- Add `BackspacePolicy = Silent | AnnounceDeletedCharacter |
+  AnnounceDeletedWord` discriminated union.
+- The `computeRowSuffixDelta` returns
+  `Suffix deletedSuffix` rather than `Silent` when policy
+  is `AnnounceDeletedCharacter`. Note this changes the
+  semantic of `Suffix` slightly: it can now mean "deleted
+  content was X" rather than "new content is X". Consider a
+  future shape `EditDelta = AppendSuffix of string |
+  DeletedSuffix of string | Silent` if telemetry / debug
+  logging needs the distinction.
+- Default ships as `AnnounceDeletedCharacter`. Default
+  `Silent` mode preserved as opt-in.
+- Tests: extend the `computeRowSuffixDelta` unit tests to
+  pin both default and silent-mode behaviour.
+
+### `stream.echoCorrelation.policy` (not yet implemented)
+
+#### Current state
+
+Not implemented. Today, every screen mutation that produces a
+suffix is announced — including the per-keystroke echo of the
+user's own typing. **UX issue #1 from 2026-05-06**: when NVDA
+has "speak typed characters" enabled, the user hears each
+character twice (once from NVDA's keypress echo, once from
+pty-speak's screen-mutation echo). Fast typing masks this via
+NVDA's interrupt-on-new-notification behaviour, but slow
+typing produces audible doubles.
+
+The right substrate doesn't exist yet: pty-speak doesn't
+track outgoing keystrokes (`KeyEncoding` produces the bytes,
+sends them to PTY stdin, then forgets). To correlate "this
+screen mutation is an echo of a keystroke I just sent" we
+need a small in-memory ring of recent keystrokes that the
+StreamPathway can consult.
+
+#### Why hardcoded now
+
+Echo correlation is one of the headline features of the
+forthcoming **Phase 2 input framework cycle** (per the May-
+2026 plan, Part 4). Implementing it as a one-off without the
+input framework would lock in a narrow design (single-char
+correlation only, no cursor awareness, no per-shell echo
+policies); the framework cycle is the right venue.
+
+#### What configurability would look like
+
+```toml
+[stream.echo_correlation]
+policy = "track_keystrokes"
+keystroke_window_ms = 500
+```
+
+Values:
+
+- `"none"` — current behaviour. Recommended only when NVDA
+  keyboard echo is OFF.
+- `"suppress_single_char_match"` — stopgap variant: when the
+  suffix is exactly one character and matches the most-recent
+  keystroke, suppress. Simple to implement (no correlation
+  ring needed; just compare suffix length 1 + last byte).
+  Doesn't handle multi-char (paste, autocomplete prefix).
+- `"track_keystrokes"` — full correlation. Track the last
+  N keystrokes (within `keystroke_window_ms`); if the
+  cumulative new content matches a prefix of recent
+  keystrokes, suppress the emit. Handles
+  single-char + multi-char + shell-side echo modifications
+  (uppercase / lowercase / autocompletion).
+
+`keystroke_window_ms = 500` is the time horizon for "recent"
+keystrokes; longer windows catch more correlations but risk
+suppressing genuine shell-output that happens to match.
+
+Implementation tier: **Phase 2 input framework prerequisite**.
+
+#### Implementation notes
+
+- New module `Terminal.Core.KeystrokeTracker` (or live in
+  the input framework substrate when it ships) maintains a
+  ring buffer of `(byte[], DateTimeOffset)` pairs.
+- `KeyEncoding` (or its successor) calls
+  `KeystrokeTracker.record` on every encoded keystroke.
+- `StreamPathway.computeRowSuffixDelta` consumes the
+  tracker (passed via Parameters) when policy is
+  `TrackKeystrokes`. Suppress when match found.
+- Per-shell consideration: some shells modify echo (e.g.
+  passwords echo as `*`, fish autosuggestions paint grey
+  text the user didn't type). The correlation needs to
+  handle these edge cases — likely as separate per-pathway
+  policies once ReplPathway / shell-aware pathways ship.
+
+### `stream.cursorAnnouncement.enabled` (not yet implemented)
+
+#### Current state
+
+Not implemented. Cursor-only mutations (arrow keys, no row
+text change) produce no `RowsChanged` notification, so the
+current pathway emits nothing. **UX issue #3 from 2026-05-06**:
+arrow-key cursor movement is silent, so the user has no
+audible feedback when navigating within a typed command.
+
+The right substrate is **cursor-aware diff**: track cursor
+position; emit on cursor-only changes (typically "the
+character at the new cursor position" — matches NVDA's
+caret-tracking model in document content). PR #166
+deliberately deferred this to v2.
+
+#### Why hardcoded now
+
+Cursor-aware diff requires threading cursor position
+(`Screen.Cursor`) through the pathway. Stream pathway today
+operates on row text only — cursor is a separate mutable
+property of `Screen` that's not part of `CanonicalState`.
+The Phase 2 ReplPathway (which is the natural consumer of
+cursor awareness for prompt-buffer editing) is the venue.
+
+#### What configurability would look like
+
+```toml
+[stream.cursor_announcement]
+enabled = false  # default false for stream pathway
+mode = "character_at_cursor"
+```
+
+Values for `mode`:
+
+- `"character_at_cursor"` — announce the character now at
+  the cursor's column. Arrow-right past `e` announces `c`
+  (the new under-cursor char).
+- `"column_position"` — announce the new column number.
+  Useful for layout-sensitive editing.
+- `"word_at_cursor"` — announce the word containing the
+  cursor — closer to NVDA's caret-tracking model.
+
+Default `enabled = false` for StreamPathway because
+shell-style typing usually doesn't need cursor announcements
+(the shell echoes back the resulting state, which the user
+hears via the suffix-diff pipeline). When ReplPathway ships,
+its default would be `enabled = true` — REPL prompts ARE
+navigable documents.
+
+Implementation tier: **Phase 2 ReplPathway prerequisite**.
+
+#### Implementation notes
+
+- Cursor data lives on `Screen.Cursor` (mutable property,
+  not in `CanonicalState`). Propagating to pathways needs
+  either: (a) including cursor in `Canonical` record, or
+  (b) per-pathway resolver function (similar to PR #165's
+  `resolveSeq` pattern in the diagnostic battery).
+- `computeRowSuffixDelta` becomes cursor-aware: when cursor
+  position changed but row content didn't, decide based on
+  `mode` what to emit.
+- Per-pathway default rather than global default (Stream
+  vs Repl have different needs).
+
+### `notification.activityIds.inputEcho` and `notification.processing.inputEcho` (not yet implemented)
+
+#### Current state
+
+All `StreamChunk` events route through a single ActivityId:
+`pty-speak.output` (defined at
+`src/Terminal.Core/Types.fs:299`,
+`src/Terminal.Core/NvdaChannel.fs:semanticToActivityId`).
+NVDA processes this ActivityId with `NotificationProcessing.ImportantAll`
+— meaning new announcements interrupt the current speech
+mid-word.
+
+**UX issue #4 from 2026-05-06**: after running `dir`, the
+DIR output is queued through `pty-speak.output`. As the
+maintainer types, each keystroke fires a new
+`pty-speak.output` event with `ImportantAll` processing,
+interrupting NVDA mid-word. The result: stuttering speech as
+typing interrupts the DIR output's read-back.
+
+#### Why hardcoded now
+
+The current single-ActivityId routing was the simplest design
+in Stage 8a — uniform processing for all stream output.
+Splitting input echo into a separate ActivityId requires
+**classifying** each emit as input-echo vs not, which depends
+on the Phase 2 echo-correlation substrate.
+
+#### What configurability would look like
+
+```toml
+[notification.activity_ids]
+output = "pty-speak.output"
+input_echo = "pty-speak.input-echo"
+
+[notification.processing]
+output = "important_all"
+input_echo = "most_recent"
+```
+
+`NotificationProcessing` values map to UIA's enum:
+
+- `"important_all"` — process all without dropping; higher
+  priority; interrupts current speech.
+- `"all"` — process all without dropping; lower priority;
+  queues behind current.
+- `"most_recent"` — drop older same-activity announcements;
+  only the latest survives.
+- `"current_then_most_recent"` — keep current playing; then
+  drop old + queue most recent.
+
+For input-echo specifically, `"most_recent"` means: while
+NVDA is busy reading something else (e.g. DIR output), per-
+keystroke echoes get superseded by the cumulative latest
+character. Smoother cadence; loses fine-grained per-keystroke
+fidelity.
+
+Implementation tier: **Phase 2 input framework prerequisite**
+(needs the input-vs-output classifier).
+
+#### Implementation notes
+
+- StreamPathway emits classify each `OutputEvent` with a
+  routing hint (e.g. `RoutingHint.InputEcho` /
+  `RoutingHint.Output`) based on echo-correlation result.
+- `NvdaChannel.semanticToActivityId` becomes
+  `eventToActivityId` (consumes routing hint).
+- WPF-side `TerminalView.Announce` reads the per-ActivityId
+  `NotificationProcessing` from a settings record (currently
+  hardcoded to `ImportantAll`).
+- This work pairs naturally with echo correlation — both
+  ship in the same framework cycle PRs.
+
+### `modeBarrier.flushPolicy` (currently verbose)
+
+#### Current state
+
+`src/Terminal.Core/StreamPathway.fs:741-742`
+(`onModeBarrier`) emits `diff.ChangedText` (the previous
+shell's full screen) on every mode barrier — shell-switch,
+alt-screen toggle, vim exit, etc. **UX issue #5 from
+2026-05-06**: switching shells with Ctrl+Shift+1/2/3 reads
+the previous shell's content as a flush before the new
+shell's startup. The maintainer's logs show ~1200-character
+flushes (entire PowerShell history including diagnostic
+commands).
+
+This is item 23 + item 24 in the strategic backlog.
+
+#### Why hardcoded now
+
+PR #166's plan deliberately preserved the verbose flush at
+mode barriers because barriers are discontinuities — full
+context felt safer than per-row suffix-diff against a
+soon-to-be-stale baseline. Confirmed unpleasant in dogfood.
+
+#### What configurability would look like
+
+```toml
+[mode_barrier]
+flush_policy = "summary_only"
+shell_switch_announce_pre = "Switching to {shell}"
+shell_switch_announce_post = "Switched to {shell}"
+```
+
+Values for `flush_policy`:
+
+- `"verbose"` — current behaviour. Emit
+  `diff.ChangedText` for the previous shell's screen on
+  barrier.
+- `"summary_only"` — proposed default. Suppress the
+  previous-shell flush; rely on the "switching to X"
+  announce + the new shell's startup output.
+- `"suppressed"` — silent on barrier; the new shell's
+  startup output is the user's only signal that anything
+  changed.
+
+`shell_switch_announce_pre/post` are the announcement
+templates with `{shell}` substituting the new shell's
+display name. Today these are hardcoded in the
+`Program.fs` shell-switch handler.
+
+Implementation tier: **ready to implement**. Small branch
+in `onModeBarrier`. Templates live in a new
+`ModeBarrierParameters` record.
+
+#### Implementation notes
+
+- The proposed `"summary_only"` default subsumes both items
+  23 and 24 from the strategic backlog (stale-red-on-flush
+  + 1200-char-flush both go away).
+- The barrier handler still clears `LastEmittedRowText`
+  and resets the row-hash baseline (existing semantics).
+- Test: extend
+  `tests/Tests.Unit/StreamPathwayTests.fs:onModeBarrier`
+  fixture to pin the `summary_only` policy emits no
+  StreamChunk.
+
+### NVDA-collaboration matrix
+
+For each of the parameters above, the NVDA setting it
+interacts with and the recommended value at each pty-speak
+default. Used to design sensible defaults and to flag user-
+config combinations that produce surprising behaviour.
+
+| pty-speak parameter | NVDA setting | Interaction | Recommended pty-speak value |
+|---|---|---|---|
+| `stream.echoCorrelation.policy` | "Speak typed characters" (Preferences → Speech → Echo) | If NVDA echoes typed chars, pty-speak's per-keystroke emit is redundant. | `"track_keystrokes"` once shipped (smart suppression), `"none"` if NVDA echo is off |
+| `stream.suffixDiff.backspacePolicy` | "Speak typed characters" (does NOT cover backspace by default) | NVDA's typed-character echo speaks the key pressed, not screen content changes. Backspace produces no NVDA announcement. | `"announce_deleted_character"` regardless of NVDA setting |
+| `notification.processing.output` | NVDA's per-ActivityId rules + voice rate | Higher voice rates handle `"important_all"` interruptions; slower voices benefit from `"all"` (queued). | `"important_all"` for fast voices; `"all"` for slow voices |
+| `notification.processing.inputEcho` | "Speak typed characters" + voice rate | When NVDA echo is on, this layer is suppressed by echo correlation; this parameter mainly matters when correlation is off. | `"most_recent"` |
+| `modeBarrier.flushPolicy` | None directly | Independent of NVDA settings. | `"summary_only"` regardless |
+| `stream.cursorAnnouncement.enabled` | NVDA's caret-tracking model | NVDA tracks the caret in document content but not in terminal content. pty-speak fills the gap when this is on. | `false` for shell typing; `true` for REPL/editor pathways |
+| `stream.suffixDiff.bulkChangeThreshold` | None directly | Indirect via cumulative-payload pacing under `notification.processing`. | Default 3; tune higher for users who prefer suffix-diff over verbose-fallback on small bursts |
+
+**Detection of NVDA settings (future)**: pty-speak does not
+currently read NVDA's config file. A future enhancement could
+detect NVDA's "speak typed characters" setting on launch and
+adjust echo-correlation defaults automatically. NVDA's
+`%APPDATA%\nvda\nvda.ini` is INI-format and pure-read; no
+NVDA-side changes needed.
+
+### Pipeline-stage cross-reference
+
+For each pipeline stage, the parameters that affect it.
+Helps a reader find "all the knobs on stage X" in one place.
+
+| Stage | Parameters affecting this stage |
+|---|---|
+| 5 (Frame-dedup) | `stream.debounceWindowMs` (existing) |
+| 6 (Spinner suppression) | `stream.spinnerWindowMs`, `stream.spinnerThreshold` (existing) |
+| 7 (Row-level diff) | (none — pure) |
+| 8 (Sub-row suffix detection) | `stream.suffixDiff.backspacePolicy`, `stream.suffixDiff.attributeOnlyPolicy`, `stream.echoCorrelation.*`, `stream.cursorAnnouncement.*` |
+| 8b (Bulk-change fallback) | `stream.suffixDiff.bulkChangeThreshold` |
+| 9 (Announcement payload assembly) | `stream.maxAnnounceChars` (existing, with stopgap status) |
+| 10 (Profile claim) | `stream.colorDetection` (existing), `parserError.priority` (today's hard-coded `Background`) |
+| 11 (Channel rendering) | `notification.activityIds.*`, `earcon.palette.*`, `earcon.muted` |
+| 12 (NVDA dispatch) | `notification.processing.*` |
+| Mode-barrier handler | `modeBarrier.flushPolicy`, `modeBarrier.shellSwitchAnnounce*` |
+| Diagnostic battery | `diagnostic.heartbeatIntervalMs` (existing), `diagnostic.pollMs`, `diagnostic.quiescenceMs`, `diagnostic.timeoutMs` |
+
+### Implementation precedence
+
+Not every parameter ships at once. Tiers below sort by
+substrate readiness so the maintainer can pick where to spend
+engineering effort.
+
+#### Tier 1 — ready to implement (existing TOML loader pattern)
+
+Need only: new field on `Parameters` record + TOML key in
+`StreamParameterOverrides` + loader logic. No new substrate.
+~30-50 LOC per parameter + tests.
+
+| Parameter | Effort |
+|---|---|
+| `stream.suffixDiff.bulkChangeThreshold` | Trivial — already a `let private` constant |
+| `stream.suffixDiff.backspacePolicy` | Small — one extra branch in `computeRowSuffixDelta` |
+| `stream.suffixDiff.attributeOnlyPolicy` | Small — bundle with backspace policy PR |
+| `modeBarrier.flushPolicy` | Small — branch in `onModeBarrier` |
+| `modeBarrier.shellSwitchAnnounce*` (templates) | Small — bundle with mode-barrier PR |
+| `notification.processing.*` (per-ActivityId enum) | Medium — needs WPF-side wire-up + UIA `NotificationProcessing` enum mapping |
+| `earcon.palette.*` overrides | Small — extends EarconPalette load path |
+| `earcon.muted` | Already planned for Stage 9 (Ctrl+Shift+M) — make persistent |
+
+#### Tier 2 — Phase 2 input framework prerequisites
+
+Need new substrate (input-byte tracking, cursor-aware diff,
+input/output event taxonomy). Phase 2 is the venue.
+
+| Parameter | Substrate needed |
+|---|---|
+| `stream.echoCorrelation.policy` | Keystroke tracking from `KeyEncoding` to StreamPathway |
+| `stream.echoCorrelation.keystrokeWindowMs` | Same |
+| `stream.cursorAnnouncement.enabled` | Cursor-aware diff (cursor-position threading) |
+| `stream.cursorAnnouncement.mode` | Same |
+| `notification.activityIds.inputEcho` | Echo classification (depends on echo correlation) |
+| `notification.processing.inputEcho` | Same |
+
+#### Tier 3 — refinement / future
+
+Lower priority; implement when need surfaces.
+
+| Parameter | Reason |
+|---|---|
+| `parserError.priority` (currently set but unused) | Depends on Profile.Priority awareness landing in Phase 2 or beyond |
+| `diagnostic.*` | Diagnostic is a tool, not user-facing; tunable via code if needed |
+| Per-shell parameter overrides (e.g. different `bulkChangeThreshold` for cmd vs PowerShell vs claude) | Atlas-only design space; not implemented in v1 era |
+| TOML hot-reload (today loader runs once at composition; future could watch the file) | Nice-to-have |
+| Per-voice notification-processing profiles (reads voice name from NVDA, picks profile) | Speculation; depends on user demand |
 ## Process for adding a new setting
 
 When the project moves from "hardcoded" to "user-configurable"
@@ -943,3 +1480,4 @@ interface sounds)" section above describes which knobs around
 them become user-configurable. The frequency / duration /
 amplitude bounds themselves are not freely overridable because
 violating them is known to interfere with TTS comprehension.
+
