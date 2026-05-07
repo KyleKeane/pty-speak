@@ -15,6 +15,85 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Audit Track F — backlog validation classification — FINAL audit-track deliverable)
+
+`docs/AUDIT-BACKLOG-VALIDATION.md` — Track F of the
+comprehensive audit phase, **closing the audit phase**.
+Backlog-layer counterpart to Tracks A (code), B (test),
+C (spec), D (atlas), E (doc currency). Walks every
+strategic backlog item (30 numbered items + 6 audit-
+track sub-items), classifies status, identifies
+dependencies, surfaces ready-to-pick-up list.
+
+Audit performed via direct read of the strategic backlog
+tables + `git log --oneline main` to verify which items
+shipped via which PRs. No backlog reorganization, no
+GitHub issue creation, no code changes.
+
+**Findings summary**:
+
+- **11 ✅ shipped** (items 1, 3, 19, 24, 26, 29 + audit
+  Tracks A-E sub-items).
+- **5 ✅+ partially shipped** (items 5, 23, 25, 28, 30
+  — research stage shipped; implementation pending).
+- **11 📋 pending** (items 2, 4, 7, 8, 9, 10, 11, 12,
+  13, 15-18, 20, 22 — most are Phase 2 / 3 work).
+- **3 ⏸ deferred** (items 14 in-app menu, 21
+  cross-platform Avalonia port, intentional historicals).
+- **2 🔄 superseded** (items 6 8d.2 re-investigation
+  moot after PR #163/#164; 27 scrollback reframed as
+  downstream of SessionModel).
+- **0 ❓ orphaned**.
+
+**Headline**: backlog is **healthy**. ~50% of items have
+shipped or are in-flight; remaining ~33% are clearly
+sequenced; ~17% are deferred or superseded with explicit
+rationale. No orphans.
+
+**Ready-to-pick-up list** surfaces tiered queue:
+
+- **Tier 1 — audit-fixup queue** (~5 small PRs):
+  - Track D atlas-side fixups (~50-100 LOC)
+  - Track E doc-currency fixups (~100-200 LOC)
+  - ARCHITECTURE.md refresh cycle (~150-300 LOC)
+  - D1 spec rename (~5 LOC; awaits maintainer ADR)
+- **Tier 2 — test extensions** (per Track B
+  recommendations; ~5 small PRs adding ~25-37 property
+  tests + ~5 diagnostic battery cases).
+- **Tier 3 — backlog refinements** (small, low-stakes;
+  items 8, 15-18).
+- **Tier 4 — substrate-implementation gates** (item 28
+  SessionModel Tier 1 implementation = FIRST POST-AUDIT
+  IMPLEMENTATION CYCLE; items 2, 4, 7 depend on it).
+
+**4 reorganization recommendations** (R1: mark items 6 +
+27 superseded; R2: promote audit-track items into main
+backlog table; R3: open GitHub issues for ready-to-pick-
+up Tier 1 items; R4: adopt audit→fixup loop as standing
+pattern).
+
+**Audit phase closing summary**: 6 audit-track docs +
+1 audit-fixup PR = ~3,800 lines of audit content; 6 ⚠
+items surfaced for Tier 1 fixup; 1 ADR candidate (D1);
+7 spec holes deferred to future spec re-authoring;
+~25 maintainer-pending open questions across SESSION-MODEL
+/ INTERACTION-MODEL / PANE-MODEL + Track C D1 ADR + Track
+E E5 PROJECT-PLAN successor; 0 ❌ structural
+contradictions across all five prior tracks.
+
+The substrate is **healthy**.
+
+**Sequencing**: Track F audit-loop closes; **audit phase
+formally closes with this PR's merge**. Next plan-mode
+cycles can pick up:
+- Tier 1 fixup PRs (~5 small PRs).
+- Tier 2 test-extension PRs.
+- Maintainer review of accumulated open questions.
+- Item 28 SessionModel Tier 1 implementation — FIRST
+  POST-AUDIT IMPLEMENTATION CYCLE.
+
+DOC-MAP.md updated.
+
 ### Added (Audit Track E — doc currency classification)
 
 `docs/AUDIT-DOC-CURRENCY.md` — Track E of the
