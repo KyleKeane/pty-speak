@@ -93,4 +93,13 @@ module TuiPathway =
                 // No baseline to seed — TuiPathway is stateless
                 // and its `Consume` always returns `[||]`
                 // regardless of the canonical state.
-                () }
+                ()
+          OnPromptBoundary =
+            // SessionModel Tier 1.A: no-op default. TuiPathway
+            // (alt-screen) doesn't yet integrate SessionModel
+            // data — alt-screen TUIs (vim, less) typically
+            // don't emit OSC 133 boundaries, and the
+            // review-cursor navigation model is orthogonal to
+            // tuple-based history. Future pathways may
+            // override.
+            fun _boundary -> [||] }

@@ -985,7 +985,13 @@ module StreamPathway =
           Reset =
             fun () -> resetState state
           SetBaseline =
-            fun canonical -> seedBaseline state canonical }
+            fun canonical -> seedBaseline state canonical
+          OnPromptBoundary =
+            // SessionModel Tier 1.A: no-op default. StreamPathway
+            // doesn't yet integrate SessionModel data; future
+            // pathways (ReplPathway, ClaudeCodePathway) override
+            // with non-trivial implementations.
+            fun _boundary -> [||] }
 
     /// Test-only — expose the state for direct manipulation in
     /// the test harness. Production code never calls this.
@@ -1018,5 +1024,9 @@ module StreamPathway =
               Reset =
                 fun () -> resetState state
               SetBaseline =
-                fun canonical -> seedBaseline state canonical }
+                fun canonical -> seedBaseline state canonical
+              OnPromptBoundary =
+                // SessionModel Tier 1.A: no-op default (mirrors
+                // the production `create` factory above).
+                fun _boundary -> [||] }
         pathway, state

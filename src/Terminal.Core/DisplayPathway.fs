@@ -90,4 +90,22 @@ module DisplayPathway =
           /// OutputEvents — it only updates internal hash state.
           /// Pathways without baseline state (TuiPathway) treat
           /// it as a no-op.
-          SetBaseline: CanonicalState.Canonical -> unit }
+          SetBaseline: CanonicalState.Canonical -> unit
+          /// **SessionModel Tier 1.A** — called when a
+          /// `ScreenNotification.PromptBoundary` event arrives
+          /// (Tier 1.B's OSC 133 producer + Tier 1.C's
+          /// heuristic fallback are the future producers; Tier
+          /// 1.A reserves the protocol method only). The
+          /// pathway responds to a boundary event by emitting
+          /// any associated OutputEvents (e.g. a future
+          /// SessionConsumer pathway might emit a
+          /// `CommandSubmitted` semantic event on
+          /// `BoundaryKind.CommandStart`).
+          ///
+          /// **Tier 1.A scope: no-op default**. Both shipping
+          /// pathways (StreamPathway, TuiPathway) return `[||]`
+          /// from `OnPromptBoundary` because neither integrates
+          /// SessionModel data yet. Future pathways (ReplPathway,
+          /// FormPathway, ClaudeCodePathway, SessionConsumer)
+          /// override with non-trivial implementations.
+          OnPromptBoundary: PromptBoundaryData -> OutputEvent[] }

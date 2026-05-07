@@ -15,6 +15,127 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 11): SessionModel Tier 1.A — substrate skeleton
+
+**FIRST POST-AUDIT IMPLEMENTATION CYCLE.** Lands the
+SessionModel substrate skeleton per
+`docs/SESSION-MODEL.md` (item 28 design).
+
+**Tier 1.A scope: data types only; zero behaviour
+change.** No producer of `PromptBoundary` events; the
+PathwayPump's notification consumer routes the new
+case to a no-op arm. Tier 1.B (next cycle) ships the
+OSC 133 producer + `CanonicalState.CursorPosition`
+field; Tier 1.C wires the SessionModel state machine +
+heuristic fallback + composition root integration;
+Tier 1.D adds diagnostic battery extension + corpus
+tests.
+
+Files modified / created:
+
+- `src/Terminal.Core/Types.fs` — adds
+  `BoundaryKind` (`PromptStart` / `CommandStart` /
+  `OutputStart` / `CommandFinished of int option`),
+  `BoundarySource` (`Osc133` /
+  `HeuristicPromptRegex of int` /
+  `HeuristicClaudeInkBox`), `PromptBoundaryData`
+  record, and `ScreenNotification.PromptBoundary of
+  PromptBoundaryData` case.
+- `src/Terminal.Core/SessionModel.fs` (NEW) — module
+  with `ActiveTupleState`, `SessionTuple`,
+  `ActiveSessionTuple`, `T` types + `create` /
+  `createDefault` factories + `apply` no-op stub.
+  String-keyed shell field per assembly-boundary
+  discipline (mirrors `Config.fs`).
+- `src/Terminal.Core/Terminal.Core.fsproj` — register
+  `SessionModel.fs` immediately after `Types.fs`.
+- `src/Terminal.Core/DisplayPathway.fs` — add
+  `OnPromptBoundary: PromptBoundaryData -> OutputEvent[]`
+  field to `T` record (protocol method; no-op default
+  in shipping pathways).
+- `src/Terminal.Core/StreamPathway.fs` — implement
+  `OnPromptBoundary = fun _ -> [||]` in both `create`
+  and `createWithExposedState` factories.
+- `src/Terminal.Core/TuiPathway.fs` — implement
+  `OnPromptBoundary = fun _ -> [||]` in `create`
+  factory.
+- `src/Terminal.Core/OutputEventBuilder.fs` — add
+  `| PromptBoundary _ ->` arm to `fromScreenNotification`
+  exhaustive match; routes to existing
+  `SemanticCategory.PromptDetected` reservation with
+  empty payload + Polite priority.
+- `src/Terminal.App/Program.fs` — add
+  `| PromptBoundary _ -> ()` no-op arm to the
+  PathwayPump notification consumer loop. Tier 1.C
+  replaces this with `SessionModel.apply` dispatch +
+  pathway `OnPromptBoundary` invocation.
+- `tests/Tests.Unit/SessionModelTests.fs` (NEW) — 18
+  tests pinning the data shapes, the
+  `ScreenNotification.PromptBoundary` round-trip, the
+  `SessionModel.create` / `createDefault` initial
+  state, the no-op `apply` contract for every
+  `BoundaryKind`, and `SessionTuple`'s multi-line
+  command + `int option` exit-code shape.
+- `tests/Tests.Unit/Tests.Unit.fsproj` — register
+  `SessionModelTests.fs` immediately after
+  `CanonicalStateTests.fs`.
+
+**SESSION-MODEL.md open-question resolutions** (per the
+2026-05-07 audit walk-through; SESSION-MODEL.md
+updated to mark resolved):
+
+- **Q1** (cursor in CanonicalState — additive or
+  breaking?): ADDITIVE; deferred to Tier 1.B (Tier 1.A
+  doesn't touch CanonicalState).
+- **Q2** (heuristic fallback default — on or off?): ON
+  for known shells (cmd, PowerShell, claude); OFF for
+  unknown. Implementation in Tier 1.C.
+- **Q3** (SessionModel reset on alt-screen entry?):
+  PAUSE; resume on exit. Implementation in Tier 1.C.
+- **Q4** (multi-line commands — per line or as one?):
+  ONE string with embedded newlines. **Implemented in
+  this PR** via `SessionTuple.CommandText: string`.
+- **Q6** (echo correlation interaction): separate
+  concerns. Echo correlation (Phase 2) and SessionModel
+  (this) share the active tuple but use it differently.
+- **Q7** (AI summarisation — at C or D?): at
+  `CommandFinished` (D); streaming summarisation
+  deferred to a future Phase 3 cycle.
+- **Q8** (exit-code semantics): NO. Substrate captures
+  value verbatim; pathways interpret. **Implemented in
+  this PR** via `SessionTuple.ExitCode: int option`.
+
+All 8 SESSION-MODEL.md questions are now resolved (Q5
+was resolved in Cycle 8, PR #182).
+
+**Pre-emptive grep for pattern-match completeness**:
+TWO existing match sites required new `PromptBoundary`
+arms (per F# 9 + TreatWarningsAsErrors):
+
+1. `src/Terminal.Core/OutputEventBuilder.fs`:
+   `fromScreenNotification` — exhaustive match; added
+   `| PromptBoundary _ -> OutputEvent.create
+   SemanticCategory.PromptDetected Priority.Polite ...`
+2. `src/Terminal.App/Program.fs`: PathwayPump consumer
+   loop — added `| PromptBoundary _ -> ()` no-op arm.
+
+`PathwaySelector.fs` has a wildcard `| _ -> Keep` so no
+change needed there.
+
+No spec changes (per CLAUDE.md spec-immutability — Track
+C audit recommended that spec/ updates for SessionModel
+ship when SessionModel implementation begins; the
+substrate audit's recommendation is to defer spec
+re-authoring to a coordinated post-Phase-2 cycle).
+
+**Sequencing**: Cycle 11 of post-audit work. **First
+post-audit implementation cycle**. Subsequent cycles
+ship Tier 1.B (OSC 133 producer + cursor field), Tier
+1.C (state machine + heuristic fallback + composition),
+Tier 1.D (diagnostic battery + corpus). After Tier 1
+ships in full, SessionModel Tier 2 (persistence) and
+Tier 3 (pathway integration) follow.
+
 ### Changed + Added (Cycle 10): pre-implementation cleanup bundle
 
 Bundles four post-audit fixup deliverables into one PR
