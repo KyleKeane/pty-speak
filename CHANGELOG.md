@@ -15,6 +15,77 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Audit Track D — atlas alignment classification)
+
+`docs/AUDIT-ATLAS-ALIGNMENT.md` — Track D of the
+comprehensive audit phase. Atlas-layer counterpart to
+Tracks A (code), B (test), C (spec). Cross-checks
+`docs/USER-SETTINGS.md` (1547-line parameter atlas)
+against actual code constants in
+`src/Terminal.Core/Config.fs`,
+`src/Terminal.Core/StreamPathway.fs`,
+`src/Terminal.Core/FileLogger.fs`,
+`src/Terminal.Audio/EarconPalette.fs`,
+`src/Terminal.Pty/ConPtyHost.fs`, and
+`src/Terminal.App/Program.fs`. No code changes; no atlas
+edits in this PR (Tier 1 fixups deferred to a small
+follow-up).
+
+Audit performed via static inspection 2026-05-07.
+
+**Findings summary**:
+
+- **17 ✅ aligned** — atlas entry matches code default +
+  status; section header current.
+- **5 ⚠ stale or missing** — 3 stale-section findings (D2,
+  D3, D4: atlas "Current state" describes pre-PR-#168
+  world for `bulkChangeThreshold`, `backspacePolicy`,
+  `modeBarrier.flushPolicy`); 2 low-priority orphans (D5:
+  `FileLoggerOptions.ChannelCapacity = 8192`; D6: ConPTY
+  buffer size 4096 — both platform-internal).
+- **0 ❌ contradictions**.
+- **11 📋 forward-looking openness** — reserved entries for
+  Phase 2/3 (echo correlation, cursor announcement,
+  ActivityId routing, earcon-palette tuning, keybindings
+  TOML, etc.).
+
+**Headline**: atlas alignment is **good**. The 3 stale-
+section findings cluster on a common root cause: PR #167
+(atlas augmentation 2026-05-06) added entries describing
+the THEN-current hardcoded state + proposed configurability
+shape; PR #168 immediately shipped that configurability
+(`bulk_change_threshold`, `backspace_policy`,
+`mode_barrier_flush_policy`) and changed the defaults to
+the proposed values. Atlas's "Current state" sections were
+NOT updated to reflect the implementation. Documentation-
+process gap, not architectural.
+
+**Triage tiers**:
+
+- **Tier 1 (doc-fix)**: 5 mechanical doc-side fixes to
+  USER-SETTINGS.md (~50-100 LOC). Suggested follow-up PR
+  title: `docs(audit): Track D — apply atlas-side fixups
+  to USER-SETTINGS`. Mirrors Track A's PR #175 pattern at
+  the atlas layer.
+- **Tier 2 (substrate-implementation-gated)**: 11 reserved
+  atlas entries close when their substrate ships (Phase 2
+  input framework / SessionModel implementation / Pane
+  Model implementation).
+- **Tier 3 (no action; forward-looking openness)**: none
+  (Track D's findings are all closable).
+
+**Sequencing**: Track D audit-loop closes with this PR.
+Next plan-mode cycles can pick up:
+- Tier 1 fixup PR — small mechanical update to
+  USER-SETTINGS.md.
+- Track E (doc currency) — verifies all docs reflect
+  current state; cross-references work; SESSION-HANDOFF
+  "where we left off" matches reality.
+- Track F (backlog validation) — last in audit phase.
+- D1 spec rename (Track C tier 2) — after maintainer ADR.
+
+DOC-MAP.md updated.
+
 ### Added (Audit Track C — spec alignment classification)
 
 `docs/AUDIT-SPEC-ALIGNMENT.md` — Track C of the
