@@ -15,6 +15,92 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Audit Track C — spec alignment classification)
+
+`docs/AUDIT-SPEC-ALIGNMENT.md` — Track C of the
+comprehensive audit phase. Cross-checks the three spec
+documents (`spec/overview.md` 119 lines,
+`spec/tech-plan.md` 1193 lines,
+`spec/event-and-output-framework.md` 1495 lines) against
+the 5 research-stage docs + current code shipped in PRs
+#160-#169.
+
+**Per CLAUDE.md spec-immutability rule, this audit
+identifies but does NOT edit spec.** Findings are tiered
+for follow-up cycles (doc-fix / spec-deviation requiring
+ADR / spec hole / forward-looking openness).
+
+Audit was performed via direct read 2026-05-07: read all
+three spec docs in full (or with focus on relevant
+sections); cross-check vocabulary against research-stage
+docs; identify drift / holes / forward-looking openness.
+No spec execution; no code changes.
+
+**Findings summary**:
+
+- **~22 ✅ aligned** — spec claims match research docs +
+  current code.
+- **7 ⚠ stale or holed** — all tech-plan.md holes
+  covering substrate shipped in PRs #160-#169:
+  suffix-diff/EditDelta, BulkChangeThreshold,
+  BackspacePolicy, ModeBarrierFlushPolicy, hot-switch
+  baseline-seed, per-pathway TOML selection,
+  color-detection earcon path. None contradict code; all
+  are temporal lag.
+- **0 ❌ contradictions** — no spec claim is contradicted
+  by current code or research docs.
+- **5 📋 forward-looking openness** — spec deliberately
+  reserves gaps for SessionModel substrate (overview.md
+  line 95), Pane Model, spatial audio / ASIO, AI
+  summarisation, per-content-type triggers. Not drift.
+
+**Headline**: spec alignment is **good-to-excellent**.
+Research-stage docs *extend* spec rather than diverge from
+it. Tech-plan.md is the doc most "behind" current code
+because it pre-dates the substrate cycle (#160-#169).
+Event-and-output-framework.md (authored 2026-05-04) is
+well aligned with shipped substrate naming.
+
+**One spec-deviation candidate (D1)** flagged for
+maintainer ADR review: `StreamProfile` (spec at
+event-and-output-framework.md:824) → `PassThroughProfile`
+(current code per Track A's PR #175 rename). 3-5 line
+mechanical edit; mirrors Track A's doc-side fix at the
+spec layer. Maintainer authorisation required per
+CLAUDE.md.
+
+**Three explicit supersession sections** in
+tech-plan.md — §8 (interactive list detection), §9
+(earcons + color), §10 (review mode + structured
+navigation) — superseded by event-and-output-framework.md
+§C.1 / §C.3 per its Part C. Recommended as part of a
+future spec re-authoring cycle (deferred until Phase 2
+input framework cycle ships, when spec re-snapshot covers
+a stable baseline).
+
+**Triage tiers**:
+
+- **Tier 1 (doc-fix)**: NONE — Track A's PR #175 already
+  closed PIPELINE-NARRATIVE drift; remaining ⚠ items are
+  spec-side.
+- **Tier 2 (spec-deviation, requires ADR)**: 1 item
+  (D1 StreamProfile rename).
+- **Tier 3 (spec hole, defer to next spec authoring
+  cycle)**: 7 tech-plan.md items + 3 supersession notes.
+- **Tier 4 (forward-looking openness, no action)**: 5
+  items.
+
+**Sequencing**: Track C audit-loop closes with this PR.
+Next plan-mode cycles can pick up:
+- Tier 2 spec-deviation (D1) — small follow-up PR after
+  maintainer ADR.
+- Track D (atlas alignment) and Track E (doc currency) —
+  parallelisable with Track C; remaining audit tracks.
+- Track F (backlog validation) — last; reflects
+  post-audit state.
+
+DOC-MAP.md updated.
+
 ### Added (Audit Track B — test inventory classification)
 
 `docs/AUDIT-TEST-INVENTORY.md` — Track B of the
