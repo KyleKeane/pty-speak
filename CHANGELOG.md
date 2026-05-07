@@ -15,6 +15,45 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (spec): rename StreamProfile → PassThroughProfile (Track C D1, ADR-authorised)
+
+`spec/event-and-output-framework.md` — apply the
+`StreamProfile` → `PassThroughProfile` rename surfaced
+by Track C audit finding D1 (per
+`docs/AUDIT-SPEC-ALIGNMENT.md`). 7 occurrences renamed
+across the spec body (module declaration at line 824,
+the Coalescer-becomes-Profile narrative in §D.4, the
+Stages 8a-8f retrofit list).
+
+The module was originally drafted in spec as
+`StreamProfile`; during the post-Phase-A substrate
+migration the module shipped under the name
+`PassThroughProfile` (better captures the pass-through
+semantics; the actual streaming logic lives in the
+StreamPathway substrate). Spec retroactively updated
+to match shipped code.
+
+A short historical-context note was added in §D.4
+(adjacent to the original "Coalescer.fs becomes …"
+line) explaining the rename + citing this audit
+finding + maintainer ADR.
+
+**ADR provenance**: maintainer authorised this spec
+edit during the 2026-05-07 audit walk-through (per
+`docs/AUDIT-SPEC-ALIGNMENT.md` Tier 2 / D1
+recommendation). CLAUDE.md spec-immutability rule
+honoured — explicit maintainer authorisation before
+editing.
+
+No code changes; no other doc changes.
+
+**Sequencing**: Cycle 9 of post-audit work. Closes
+the only ADR-required item from Track C audit. Next
+cycle bundles the remaining audit-fixup queue (Track D
+atlas-side + Track E doc-currency + ARCHITECTURE
+refresh + PROJECT-PLAN successor) into a single
+pre-implementation cleanup PR.
+
 ### Changed (Resolve Cluster 1-4 open questions in research-stage docs)
 
 Apply maintainer's audit-walk-through decisions

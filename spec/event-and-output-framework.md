@@ -821,7 +821,7 @@ type Profile = {
     Reset: unit -> unit                     // Called when shell switches
 }
 
-module StreamProfile =
+module PassThroughProfile =
     type Parameters = {
         DebounceWindowMs: int      // PR-N: was module global
         SpinnerWindowMs: int       // PR-N: was module global
@@ -1235,7 +1235,7 @@ framework. It's a function in `Terminal.Core/SemanticMapper.fs`
    have built (which already passes through `AnnounceSanitiser`).
 
 The Coalescer's debounce / spinner-suppress / max-announce-chars
-logic moves into `StreamProfile.Apply`. The drain task is replaced
+logic moves into `PassThroughProfile.Apply`. The drain task is replaced
 by the dispatcher's per-channel queue drains.
 
 ### D.2 ScreenNotification → OutputEvent mapping table
@@ -1278,21 +1278,32 @@ acceptance gate.
 
 ### D.4 The Coalescer-becomes-Profile ratification
 
+> **Naming note** (audit Cycle 9, 2026-05-07): the
+> profile module was originally drafted in this spec as
+> `StreamProfile`. During the post-Phase-A substrate
+> migration the module shipped under the name
+> `PassThroughProfile` (better captures the pass-through
+> semantics; the actual streaming logic lives in the new
+> StreamPathway substrate). This spec was retroactively
+> updated 2026-05-07 to match shipped code per Track C
+> audit finding D1; ADR-authorised by maintainer in the
+> 2026-05-07 audit walk-through.
+
 PR-N added per-shell-instance Coalescer state and a docstring
 contract. Stage 8b promotes that contract to a profile:
 
-- `Coalescer.fs` becomes `StreamProfile.fs`.
+- `Coalescer.fs` becomes `PassThroughProfile.fs`.
 - The constants (debounce window 200 ms, spinner window 1000 ms,
   spinner threshold 5, max announce chars 500) become
-  `StreamProfile.Parameters` fields.
+  `PassThroughProfile.Parameters` fields.
 - The construction site (`new Coalescer(...)` per shell session)
-  becomes `StreamProfile.create parameters`.
+  becomes `PassThroughProfile.create parameters`.
 - `Coalescer.append` becomes the producer-side translation
   (`SemanticMapper.toOutputEvent`).
 - `Coalescer.drain` becomes the dispatcher's per-channel drain.
 
 The signature change is mechanical. The behaviour change is zero
-when the v1 `StreamProfile.Parameters` defaults match the current
+when the v1 `PassThroughProfile.Parameters` defaults match the current
 constants — which is the explicit requirement of stage 8b.
 
 ## Part E — Out of scope, verification, open questions
@@ -1362,7 +1373,7 @@ PRs (one per sub-stage) will touch the file groups below.
   (NEW), `src/Terminal.Core/NvdaChannel.fs` (NEW), removal of
   direct `Announce` calls from `Program.fs` in favour of dispatcher
 - Stage 8b: `src/Terminal.Core/Coalescer.fs` →
-  `src/Terminal.Core/StreamProfile.fs` rename + per-instance
+  `src/Terminal.Core/PassThroughProfile.fs` rename + per-instance
   parameter refactor; `src/Terminal.Core/ProfileRegistry.fs`
   (NEW)
 - Stage 8c: `src/Terminal.Core/FileLogger.fs` (extend to consume
