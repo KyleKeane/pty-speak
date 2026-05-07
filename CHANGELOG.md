@@ -15,6 +15,91 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Pane Model research stage — item 30)
+
+`docs/PANE-MODEL.md` — snapshot-dated forward-looking
+**sketch** for the multi-pane workspace framework.
+Maintainer's directive 2026-05-07 framed the scope:
+
+> "Please also include a brief sketch of how we might allow
+> for additional panes to be added in the future such as a
+> file tree or custom cherry picked input output pairs or
+> language documentation or AI assistance. These are not
+> urgent to spec out in detail now, but we want to ensure
+> there's a good framework for adding more interactive panes
+> in the future."
+
+Phase 1 exploration confirmed the gap: pty-speak today is
+single-surface, monolithic. `MainWindow.xaml` holds a single
+`<TerminalView>` filling the window; `AppReservedHotkeys`
+has no pane-navigation gestures; `TerminalAutomationPeer`
+is constructed 1:1 per `TerminalView`; ActivityIds are
+app-level constants. Adding a second surface is a clean
+architectural break, not an incremental refactor.
+
+The doc is **deliberately a sketch** — concrete enough that
+implementation cycles have a framework to build on, but
+not so detailed that it locks in decisions premature to
+validate. Estimated final length: ~1100 lines (about half
+INTERACTION-MODEL's 1400+, matching the maintainer's "brief
+sketch" framing).
+
+Doc structure:
+
+1. The single-pane today — current shape; what's wired;
+   what isn't (with file:line citations to MainWindow.xaml,
+   TerminalView.cs, TerminalAutomationPeer, AppReservedHotkeys).
+2. The multi-pane vision — workspace with multiple panes;
+   shell pane is one of many.
+3. Naming — Pane, Pane Coordinator, Workspace
+   (definitions; relationship to SIM in INTERACTION-MODEL).
+4. The pane contract — six concerns every pane must
+   address (identity, content source, rendering,
+   accessibility surface, input handling, lifecycle).
+5. Pane catalog — table + per-pane paragraph sketch:
+   - **Shell pane** ✅ (today's app, owned by SIM)
+   - **File tree pane** 📋 (filesystem enumeration; OS
+     file events)
+   - **Cherry-picked I/O pairs pane** 📋 (consumes
+     SessionModel queries)
+   - **Language documentation pane** 📋 (local docset /
+     web docs / LSP-sourced)
+   - **AI assistance pane** 📋 (LLM API client;
+     SessionModel-grounded)
+6. Coordination protocols — three patterns (pane → shell
+   action; shell → pane state; pane ↔ pane).
+7. Accessibility — the hard problems — six named
+   challenges (focus routing, NVDA review cursor,
+   ActivityId scoping, pane-switch announcement, per-pane
+   UIA pattern sets, compounded caret / UIA tension).
+   Names but does not resolve.
+8. Substrate gaps — six items missing today (Pane
+   abstraction, Pane Coordinator, multi-content
+   MainWindow, per-pane UIA peers, per-pane ActivityIds,
+   pane-state TOML persistence).
+9. Composition with existing substrate — cross-references
+   to PIPELINE-NARRATIVE, SESSION-MODEL, INTERACTION-MODEL,
+   ACCESSIBILITY-INTERACTION-MODEL, USER-SETTINGS, spec.
+10. Versioning + maintenance — snapshot model.
+11. Open questions — five for maintainer (naming;
+    single-window vs. multi-window; floating vs. docked;
+    TOML schema scope; WSL2/SSH shells as parallel panes
+    vs. hot-switch within shell pane).
+
+Companion-doc updates:
+
+- `docs/INTERACTION-MODEL.md` — adds PANE-MODEL.md to
+  front-matter companion list + new row in §6 cross-
+  reference matrix as the UI-composition lens.
+- `docs/DOC-MAP.md` — table entry.
+
+**Sequencing**: PANE-MODEL is sister to INTERACTION-MODEL
+at the UI-composition layer. After this lands, audit
+Tracks B-F continue per the substrate-first sequence;
+Phase 2 implementation cycles consume all five research
+docs (PIPELINE-NARRATIVE, SESSION-MODEL, INTERACTION-MODEL,
+PANE-MODEL, AUDIT-CODE-CONSISTENCY).
+
 ### Added (Interaction Model research stage — item 29)
 
 `docs/INTERACTION-MODEL.md` — snapshot-dated architectural
