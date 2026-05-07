@@ -15,6 +15,93 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Interaction Model research stage — item 29)
+
+`docs/INTERACTION-MODEL.md` — snapshot-dated architectural
+framing doc that closes a gap surfaced by the maintainer's
+reflection 2026-05-06. Names the **Shell Interaction
+Manager (SIM)** abstraction; defines a **three-component
+model** (Input Composition Surface / Active Output /
+Historical Document); frames pty-speak's data shape as a
+**structured computational document**; specifies an
+**interactive element taxonomy** mapping every
+`SemanticCategory` placeholder to triggers, producers,
+consumers, and status.
+
+The maintainer's question that prompted this doc:
+
+> "Is [my model] making sense and matching what we
+> currently have in the repo and is this well documented?
+> I think we need to call this component of the system
+> something specific so that I can reference it, how about
+> the shell interaction manager …"
+
+Phase 1 exploration confirmed the gap: PIPELINE-NARRATIVE
++ SESSION-MODEL together didn't articulate the higher-level
+"what IS pty-speak" framing. Each focuses on its own lens
+(operational mechanics; history substrate). INTERACTION-
+MODEL sits one layer above, naming the abstraction that
+makes the operational + history layers cohere.
+
+Doc structure (~1400 lines):
+
+1. The shell interaction reality — what's actually
+   exchanged at the byte level. Honest about the
+   complexity (no "command" or "result" abstraction at
+   bytes; echo is implicit; structure has to be recovered).
+2. The Shell Interaction Manager — five responsibilities;
+   mapping to existing + future modules; rationale for
+   "manager" naming; rationale for "coordinated set" not
+   "single F# module".
+3. The three-component model — Input Composition Surface
+   (5.a; future), Active Output (5.b; partial today),
+   Historical Document (5.c; future via SessionModel).
+   Includes the canonical bidirectional-flow diagram.
+4. Structured computational document framing — Jupyter /
+   Wolfram analogy: where it transfers (linear ordering,
+   per-cell state, navigation) and where it doesn't
+   (streaming output, no re-execution, no inter-cell
+   namespace).
+5. Interactive element taxonomy — table covering every
+   `SemanticCategory` case (✅ shipping vs. 📋 reserved)
+   with triggers, producers, consumer interactions. Three
+   NEW reservations proposed: `CommandFinished`,
+   `InputCompletionMenu`, `MultiLineCommand` (deferred
+   from enum until producers ship).
+6. How this composes with existing substrates —
+   cross-reference matrix; per-question doc-routing;
+   two worked examples ("add prompt-boundary detection";
+   "why does cmd typing announce twice?").
+7. Substrate gaps — catalog of what's missing
+   (Input Composition Surface, SessionModel, echo
+   correlation, cursor-aware diff, etc.) with current
+   workarounds + architectural fixes.
+8. Versioning + maintenance — snapshot model; when to
+   re-snapshot vs. when to substantively rewrite.
+9. Open questions — six design forks awaiting maintainer
+   input (SIM naming, literal-module emergence,
+   doc-supersedence, enum reservations, notebook-analogy
+   load-bearingness, per-shell vs. unified history).
+10. Companion-doc cross-reference index.
+
+The doc is **descriptive** for parts that ship today
+(StreamPathway emit chain; mode-barrier handling; empty-
+payload semantic events) and **forward-looking** for
+parts the model RESERVES (Input Composition Surface as
+distinct module; SessionModel-driven Active-Output /
+History boundary; FormPathway for interactive elements).
+Each piece is tagged so readers distinguish "this is real"
+from "this is design intent".
+
+**Sequencing**: closes the substrate-research-doc trio
+(PIPELINE-NARRATIVE = operational; SESSION-MODEL = history;
+INTERACTION-MODEL = framing). Subsequent work has a
+shared vocabulary for "where does this live?" reasoning.
+Audit Tracks B-F continue as planned; Phase 2 / Phase B
+implementation cycles consume all three docs.
+
+DOC-MAP.md updated with the new entry.
+
 ### Added (Audit Track A — code-consistency review)
 
 `docs/AUDIT-CODE-CONSISTENCY.md` — first audit-phase
