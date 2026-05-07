@@ -15,6 +15,94 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Audit Track B — test inventory classification)
+
+`docs/AUDIT-TEST-INVENTORY.md` — Track B of the
+comprehensive audit phase. Test-layer counterpart to Track
+A's code-consistency review (PR #172). Classifies all 531
+tests across 27 meaningful test files
+(`tests/Tests.Unit/` × 24 + `tests/Tests.Ui/` × 3) by
+dominant pattern: algorithm-correctness, output-shape,
+interaction, or mixed. Identifies fragility clusters,
+substrate coverage gaps, and recommends targeted follow-up
+cycles.
+
+Audit was performed via static inspection 2026-05-07:
+project enumeration → per-file test counts via
+`grep -c "\[<Fact>\]\|\[<Theory>\]\|\[<Property>\]"` →
+sample-classification per file → substrate cross-reference.
+No code execution; no `dotnet test`.
+
+**Findings summary**:
+
+- **531 tests** total (527 `[<Fact>]` + 4 `[<Property>]` +
+  0 `[<Theory>]`).
+- **27 meaningful test files** (~7,079 LOC).
+- **0 fixture corpus files** — all test data is
+  code-defined.
+- **4 property-based tests**, all in `VtParserTests.fs`
+  (parser fuzz). Zero property tests for any other
+  substrate component.
+
+**Per-file status**: 19 ✅ healthy, 8 ⚠ fragile/stale, 0 ❌
+structural concern.
+
+The 8 ⚠ items cluster into themes:
+- Output-shape fragility in StreamPathwayTests (largest
+  file at 1431 LOC; payload-string assertions vulnerable
+  to suffix-diff / debounce semantic changes — the kind
+  that broke during PR #166).
+- ChannelDecision-shape pinning in EarconProfileTests +
+  FileLoggerChannelTests (assertions on decision count +
+  payload).
+- Record-shape pinning in OutputEventTests +
+  UpdateMessagesTests.
+- UIA-text-pattern shape pinning in TextPatternTests (Ui).
+- Reflection-based brittleness in
+  AutomationPeerReflectionTests.
+- Low coverage in ConPtyHostTests (3 tests for the
+  ConPTY surface).
+
+**Substrate coverage**: shipping components
+(StreamPathway, CanonicalState, OutputDispatcher, channels,
+profiles, Config, FileLogger, parser, screen, key-encoding)
+are well-tested. Forward-looking research-stage substrates
+(SessionModel from item 28, Pane abstraction from item 30,
+echo correlation + InputPathway from Phase 2) have **zero
+tests** — substrate not yet implemented.
+
+**4-tier recommendations** for follow-up cycles:
+
+- **Tier 1 — immediate** (small, high-value): property
+  tests for `longestCommonPrefixLength`,
+  `computeRowSuffixDelta`, `CanonicalState.computeDiff`;
+  diagnostic battery extensions for suffix-diff + bell.
+- **Tier 2 — next-cycle** (medium): property tests for
+  `Config.tryLoad`, `Coalescer.hashRowContent`; battery
+  extensions for backspace-policy + mode-barrier;
+  ConPtyHostTests expansion.
+- **Tier 3 — substrate-implementation-gated**: SessionModel
+  test suite (when item 28 implementation begins); Pane
+  abstraction test suite (when Pane Model implementation
+  begins); echo correlation tests (Phase 2); OSC 133
+  detection tests (paired with SessionModel).
+- **Tier 4 — fixture corpus + replay harness**: build
+  `tests/Fixtures/shell-sessions/`; build a fixture loader
+  module; longer-term snapshot/replay CLI binary (per
+  backlog item 4).
+
+Total recommended new property tests: ~25-37 across 5
+clusters. Total recommended battery extensions: ~5 cases.
+
+**Sequencing**: Track B audit-loop closes with this PR.
+Subsequent narrower-concern cycles ship the new tests +
+fixture corpus + diagnostic battery extensions one at a
+time. Tracks C / D / E (spec / atlas / doc currency) and
+Track F (backlog validation) continue per the audit master
+plan.
+
+DOC-MAP.md updated.
+
 ### Changed (Audit Track A — trivial doc-side fixups)
 
 `docs/PIPELINE-NARRATIVE.md` — applies the doc-side drift
