@@ -15,6 +15,57 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Audit Track A — code-consistency review)
+
+`docs/AUDIT-CODE-CONSISTENCY.md` — first audit-phase
+deliverable in the substrate-first sequence after
+PR #170 (Pipeline Narrative) and PR #171 (SessionModel
+design). Track A validates that every named entity in
+`PIPELINE-NARRATIVE.md` matches what's actually in code.
+
+The audit is performed via direct code inspection (Read +
+grep). It does not execute code or run tests.
+
+**Findings summary** (80+ entities verified across 6
+categories):
+
+- **81 ✅ matches doc** — no action needed
+- **8 ⚠ minor drift** — small fixes needed, all
+  doc-side (no code changes)
+- **0 ❌ structural drift** — substrate's named
+  structure is sound
+
+The 8 ⚠ items cluster into 5 distinct themes:
+
+1. `StreamProfile` was renamed to `PassThroughProfile`
+   (3 doc references to update).
+2. `KeyEncoding` lives in `Terminal.Core`, not
+   `Terminal.Pty` (2 doc references).
+3. Stage 1 attribution — reader thread is composed in
+   `Program.fs:startReaderLoop`, not owned by
+   ConPtyHost (clarification needed).
+4. `handleRowsChanged` line citation moved from
+   `Program.fs:1123-1131` to `Program.fs:965` due to
+   intervening PRs.
+5. Vocabulary glossary entries (KeyEncoding,
+   StreamProfile) need rename / relocate.
+
+**Recommendation**: a single small follow-up PR applies
+all 5 trivial doc-side fixes to PIPELINE-NARRATIVE.md
+(~30-50 LOC of edits). Not urgent; current doc is still
+useful with minor drift.
+
+**Sequencing**: Track A complete. Subsequent audit
+tracks can now run:
+- Track B (test inventory) — depends on Track A's "what's
+  in code" baseline.
+- Tracks C / D / E (spec / atlas / doc currency) —
+  independent surfaces, parallelisable.
+- Track F (backlog validation) — last; reflects
+  post-audit state.
+
+DOC-MAP.md updated with the new entry.
+
 ### Added (SessionModel substrate design — item 28 research stage)
 
 `docs/SESSION-MODEL.md` — a snapshot-dated forward-looking
