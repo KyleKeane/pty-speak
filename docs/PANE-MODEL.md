@@ -1001,16 +1001,29 @@ If the framing changes (e.g. the maintainer redirects to
 a different naming or split / merge of components),
 that's a substantive doc rewrite, not a re-snapshot.
 
-## Open questions
+## Open questions / Resolutions
 
-Five design forks awaiting maintainer input. Each is
-paired with a recommended position; the maintainer's
-decision selects + this doc gets updated.
+Five design forks surfaced for maintainer review. As of
+2026-05-07, all 5 questions resolved per the audit-phase
+walk-through (PR #181 plan + Cycle 8 fixup PR).
+Resolutions captured below; original framing preserved
+for historical context.
 
-### Q1. Naming — pane / workspace / Pane Coordinator?
+### Q1. Naming — pane / workspace / Pane Coordinator? — ✅ Resolved 2026-05-07
 
-The doc adopts "Pane" + "Workspace" + "Pane Coordinator".
-Alternatives:
+**Resolution**: KEEP **Pane / Workspace / Pane
+Coordinator** as proposed.
+
+**Rationale** (per maintainer agreement, audit walk-
+through Cluster 1): aligns with screen-reader users'
+familiar terminology (NVDA reads many tools as "panes");
+parallels existing INTERACTION-MODEL / SESSION-MODEL doc
+naming; distinct from WPF's existing `Panel` /
+`FrameworkElement` vocabulary so no collision.
+
+**Original question**: The doc adopts "Pane" +
+"Workspace" + "Pane Coordinator". Alternatives:
+
 - **Surface / Layout / Layout Coordinator** — closer to
   WPF idiom; "surface" is generic.
 - **Panel / Workspace / Panel Manager** — closer to VS
@@ -1020,16 +1033,19 @@ Alternatives:
 - **Tile / Window / Window Manager** — closer to tmux /
   i3wm idiom.
 
-**Recommended position**: keep **Pane / Workspace /
-Pane Coordinator**. Aligns with screen-reader users'
-familiar terminology (NVDA reads many tools as "panes"),
-parallels existing INTERACTION-MODEL / SESSION-MODEL doc
-naming, distinct from WPF's existing `Panel` /
-`FrameworkElement` vocabulary so no collision.
+### Q2. Single-window multi-pane vs. multi-window? — ✅ Resolved 2026-05-07
 
-### Q2. Single-window multi-pane vs. multi-window?
+**Resolution**: **SINGLE-WINDOW multi-pane** for v1.
+If monitor-spanning becomes a strong requirement,
+multi-window is additive (a power-user feature).
 
-Two architectural choices:
+**Rationale** (per maintainer agreement, audit walk-
+through Cluster 2): matches today's experience (one
+window); single focus tree simplifies accessibility
+design.
+
+**Original question**: Two architectural choices:
+
 - **Single-window multi-pane**: one WPF `Window`
   containing all panes (split / dock layout). Simpler
   accessibility (one focus tree); harder for
@@ -1040,15 +1056,19 @@ Two architectural choices:
   harder accessibility (multiple top-level windows
   multiply NVDA focus issues).
 
-**Recommended position**: start with **single-window
-multi-pane**. Matches today's experience (one window).
-Single focus tree simplifies accessibility design. If
-monitor-spanning becomes a strong requirement,
-multi-window is additive (a power-user feature).
+### Q3. Floating vs. docked vs. both? — ✅ Resolved 2026-05-07
 
-### Q3. Floating vs. docked vs. both?
+**Resolution**: **DOCK with optional GridSplitter
+resize**. Skip floating for v1; doesn't preclude
+floating in a later phase.
 
-Layout flexibility:
+**Rationale** (per maintainer agreement, audit walk-
+through Cluster 2): predictable; accessible; matches
+modern IDE conventions; floating-pane spatial focus
+order is harder to design accessibly.
+
+**Original question**: Layout flexibility:
+
 - **Fixed dock**: panes live in fixed positions
   (sidebar / main / inspector). Familiar from JetBrains
   IDEs. Predictable; less flexible.
@@ -1059,14 +1079,21 @@ Layout flexibility:
 - **Both**: dock by default, allow floating. Most
   flexible; most complex.
 
-**Recommended position**: **dock with optional
-GridSplitter resize**. Predictable; accessible; matches
-modern IDE conventions; doesn't preclude floating in a
-later phase. Skip floating for v1.
+### Q4. Per-pane TOML schema scope? — ✅ Resolved 2026-05-07
 
-### Q4. Per-pane TOML schema scope?
+**Resolution**: **MODERATE**. Layout / size / visibility
+are user-configurable; per-pane semantic parameters
+land in their own subsections per the existing
+USER-SETTINGS.md atlas pattern.
 
-How rich should the multi-pane TOML schema be?
+**Rationale** (per maintainer agreement, audit walk-
+through Cluster 3): avoids one mega-section that's hard
+to maintain; pairs naturally with USER-SETTINGS atlas
+discipline.
+
+**Original question**: How rich should the multi-pane
+TOML schema be?
+
 - **Minimal**: just "which panes are open" +
   "arrangement". Pane-specific params stay in code.
 - **Moderate**: which panes + arrangement + per-pane
@@ -1076,33 +1103,29 @@ How rich should the multi-pane TOML schema be?
   AI assistance's "model name", docs' "doc source
   registry").
 
-**Recommended position**: **moderate**. Layout / size /
-visibility are user-configurable; per-pane semantic
-parameters land in their own subsections per the
-existing USER-SETTINGS.md atlas pattern. Avoids one mega-
-section that's hard to maintain.
+### Q5. WSL2 / remote SSH shells — parallel panes or hot-switch? — ✅ Resolved 2026-05-07
 
-### Q5. WSL2 / remote SSH shells — parallel panes or hot-switch?
+**Resolution**: **HOT-SWITCH first** (today's
+`Ctrl+Shift+1/2/3` model extends to additional shells);
+multiple-pane power-user mode allowed later.
 
-CLAUDE.md reserves `Ctrl+Shift+4/5/6` for additional
-shells (WSL, Python REPL, etc.). Two interpretations:
+**Rationale** (per maintainer agreement, audit walk-
+through Cluster 2): hot-switch is well-understood by
+maintainer + ships today; multiple parallel shell panes
+multiplies the accessibility hard problems (focus,
+review cursor, per-pane peer collisions); power-user
+mode is additive.
+
+**Original question**: CLAUDE.md reserves
+`Ctrl+Shift+4/5/6` for additional shells (WSL, Python
+REPL, etc.). Two interpretations:
+
 - **Hot-switch within shell pane**: today's
   `Ctrl+Shift+1/2/3` model extends; the user has ONE
   shell pane, hot-switches between cmd / pwsh / claude /
   WSL / Python / etc.
 - **Multiple parallel shell panes**: each shell type is
   its own pane; user sees them simultaneously.
-
-**Recommended position**: **start with hot-switch model
-(today's behaviour extended)**; **allow multiple-pane
-power-user mode later**. Reasons:
-- Hot-switch is well-understood by maintainer + ships
-  today.
-- Multiple parallel shell panes multiplies the
-  accessibility hard problems (focus, review cursor,
-  per-pane peer collisions).
-- Power-user mode is additive (the user opts into a
-  second shell pane explicitly).
 
 ## Companion-doc cross-reference index
 
