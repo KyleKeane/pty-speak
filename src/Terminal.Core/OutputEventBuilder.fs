@@ -90,3 +90,22 @@ module OutputEventBuilder =
                 Priority.Assertive
                 producerId
                 ""
+        | PromptBoundary _ ->
+            // SessionModel Tier 1.A: route to the existing
+            // SemanticCategory.PromptDetected reservation.
+            // Empty payload (the boundary is a pure signal —
+            // no human-readable text to announce). Priority =
+            // Polite (subordinate to streaming output;
+            // boundaries are structure markers, not
+            // user-attention events). Tier 1.B's OSC 133
+            // producer + Tier 1.C's heuristic fallback are the
+            // future producers; this builder arm exists today
+            // to satisfy F#'s exhaustive-match requirement +
+            // give the FileLogger an audit trail for any
+            // PromptBoundary events that flow through the
+            // dispatcher in subsequent cycles.
+            OutputEvent.create
+                SemanticCategory.PromptDetected
+                Priority.Polite
+                producerId
+                ""

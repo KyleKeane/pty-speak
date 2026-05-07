@@ -1055,6 +1055,21 @@ module Program =
                                     | ModeChanged _ -> handleModeChanged peek
                                     | ParserError _
                                     | Bell -> handleSimpleNotification peek
+                                    | PromptBoundary _ ->
+                                        // SessionModel Tier 1.A:
+                                        // no producer + no
+                                        // consumer wired yet.
+                                        // Tier 1.B adds the OSC
+                                        // 133 producer in
+                                        // Screen.Apply; Tier 1.C
+                                        // wires SessionModel.apply
+                                        // here. For now the
+                                        // PathwayPump silently
+                                        // discards PromptBoundary
+                                        // events (none arrive
+                                        // today since no producer
+                                        // exists).
+                                        ()
                     with
                     | :? OperationCanceledException -> ()
                     | ex ->

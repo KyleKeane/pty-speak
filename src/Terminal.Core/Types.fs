@@ -1,5 +1,6 @@
 namespace Terminal.Core
 
+open System
 open System.Text
 
 // Stage 4.5 — expose `internal` types in Terminal.Core to the
@@ -190,6 +191,86 @@ type Earcon =
 type AccessibilityMarker =
     | Placeholder
 
+/// SessionModel Tier 1.A — substrate-level types describing a
+/// prompt-boundary event detected from OSC 133 markup OR a
+/// per-shell heuristic fallback. Carried on
+/// `ScreenNotification.PromptBoundary` between the
+/// parser/screen subsystem and the SessionModel state machine
+/// that consumes it.
+///
+/// **Tier 1.A scope**: types only. There is no producer (Tier
+/// 1.B will add OSC 133 detection in `Screen.Apply`'s OSC
+/// dispatch + a heuristic-fallback module). There is no
+/// consumer (Tier 1.C wires the SessionModel state machine).
+/// The `ScreenNotification.PromptBoundary` case lands today
+/// so future PRs can attach producer + consumer without DU
+/// churn.
+///
+/// See `docs/SESSION-MODEL.md` §3 (OSC 133 protocol) + §4
+/// (data model) for the canonical design.
+type BoundaryKind =
+    /// OSC 133 ;A — prompt is about to be drawn. Marks the
+    /// transition from previous output to a new editing area.
+    | PromptStart
+    /// OSC 133 ;B — user just submitted a command at the prompt
+    /// (Enter pressed). Marks the transition from EditingCommand
+    /// to OutputStreaming.
+    | CommandStart
+    /// OSC 133 ;C — output for the just-submitted command is
+    /// about to start streaming.
+    | OutputStart
+    /// OSC 133 ;D [;<exit_code>] — command finished. Optional
+    /// exit code (None when the shell didn't report one;
+    /// substrate captures the value verbatim — pathways
+    /// interpret semantically per SESSION-MODEL Q8 resolution).
+    | CommandFinished of exitCode: int option
+
+/// How a `PromptBoundary` event was detected. Recorded on the
+/// `SessionTuple.Sources` map so consumers can distinguish
+/// "the shell told us via OSC 133" from "we inferred this
+/// via a heuristic" — useful for diagnostics + future
+/// confidence-aware pathway logic.
+type BoundarySource =
+    /// Shell emitted an OSC 133 escape sequence
+    /// (`ESC ] 133 ; <kind> [; <params>] BEL`). Highest
+    /// confidence; preferred when available.
+    | Osc133
+    /// Heuristic regex-based detection on a row whose content
+    /// has been stable for `stabilityMs` milliseconds. Used for
+    /// shells that don't emit OSC 133 (cmd, PowerShell by
+    /// default, Claude). Tier 1.C ships per-shell regexes;
+    /// Tier 1.A reserves the type only.
+    | HeuristicPromptRegex of stabilityMs: int
+    /// Heuristic detection of Claude Code's Ink-rendered
+    /// prompt box (rectangular SGR region with stable border
+    /// characters). Reserved for Tier 1.C heuristic fallback
+    /// where Claude is the active shell.
+    | HeuristicClaudeInkBox
+
+/// Payload for `ScreenNotification.PromptBoundary` events.
+/// Pure data — no behaviour. Construction sites: future Tier
+/// 1.B OSC 133 dispatcher in `Screen.Apply` + future Tier 1.C
+/// heuristic fallback module.
+type PromptBoundaryData =
+    { /// Which kind of boundary this is.
+      Kind: BoundaryKind
+      /// How the boundary was detected.
+      Source: BoundarySource
+      /// When the boundary was detected (UTC). Used by
+      /// `SessionTuple` to populate `PromptStartedAt` /
+      /// `CommandStartedAt` / `OutputStartedAt` /
+      /// `CommandFinishedAt` per the kind.
+      DetectedAt: DateTime
+      /// OSC 133 `aid=<command-id>` parameter, if present.
+      /// Lets the SessionModel correlate boundaries across
+      /// shells / sessions (Phase 2 distributed-tracing
+      /// territory; Tier 1 stores but doesn't interpret).
+      CommandId: string option
+      /// Other OSC 133 parameters (`k=`, `cl=`, etc.) preserved
+      /// verbatim. Future shells / extensions may attach
+      /// custom keys. Tier 1 stores but doesn't interpret.
+      ExtraParams: Map<string, string> }
+
 /// Notifications emitted by the parser/screen subsystem onto
 /// a `Channel<ScreenNotification>` consumed by the UIA peer
 /// for `RaiseNotificationEvent`. The audit-cycle PR-B added
@@ -247,6 +328,14 @@ type ScreenNotification =
     /// release, same pattern as ModeChanged, so the channel
     /// publish doesn't extend the gate's hold.
     | Bell
+    /// SessionModel Tier 1.A — prompt-boundary event detected
+    /// from OSC 133 markup or a heuristic fallback. Tier 1.A
+    /// reserves the case (no producer + no consumer); Tier 1.B
+    /// adds the OSC 133 producer in `Screen.Apply`; Tier 1.C
+    /// wires the SessionModel consumer. Today's pathway pump
+    /// receives this case via its no-op arm and discards it.
+    /// See `docs/SESSION-MODEL.md` for the canonical design.
+    | PromptBoundary of PromptBoundaryData
 
 /// Discriminator for which `TerminalModes` bit just flipped.
 /// Mirrors the field names on the `TerminalModes` record so the

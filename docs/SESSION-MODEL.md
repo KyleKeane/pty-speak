@@ -1297,45 +1297,93 @@ defer the rest).
 These are genuine design questions; the maintainer's
 input is welcome before implementation cycles start.
 
-### Q1: Cursor in CanonicalState — additive or breaking?
+### Q1: Cursor in CanonicalState — additive or breaking? — ✅ Resolved 2026-05-07 (Tier 1.B)
 
-Adding `CursorPosition: (int * int)` to the Canonical
-record is breaking for any consumer that destructures
-it. We could add it as a `voption` field for backward
-compat, or bump the record version with a migration
-path. Recommend: add as required field; update all
-consumers (limited surface — StreamPathway, TuiPathway,
-test code).
+**Resolution**: **ADDITIVE; deferred to Tier 1.B**.
+Tier 1.A doesn't touch CanonicalState (no producer that
+needs cursor position yet). Tier 1.B adds
+`CursorPosition: (int * int)` as a required field on
+the `Canonical` record + updates the limited consumer
+surface (StreamPathway, TuiPathway, test code) in the
+same PR. Mechanical update.
 
-### Q2: Heuristic fallback default — on or off?
+**Rationale**: keeping Tier 1.A scoped to "data types
+only" means the cursor field is unnecessary in the first
+PR. Bundling it with Tier 1.B (where the OSC 133
+producer + heuristic fallback need cursor position to
+attribute boundaries to specific row positions) groups
+related changes.
 
-For shells that don't emit OSC 133, should heuristic
-fallback be on by default or off? Trade-off: on
-provides degraded service even when unconfigured; off
-requires explicit opt-in but never produces
-false-positive tuples. Recommend: ON by default for
-known shells (cmd, PowerShell, claude); OFF for
-unknown shells.
+**Original question**: Adding `CursorPosition: (int * int)`
+to the Canonical record is breaking for any consumer
+that destructures it. We could add it as a `voption`
+field for backward compat, or bump the record version
+with a migration path. Recommend: add as required
+field; update all consumers (limited surface —
+StreamPathway, TuiPathway, test code).
 
-### Q3: SessionModel reset on alt-screen entry?
+### Q2: Heuristic fallback default — on or off? — ✅ Resolved 2026-05-07 (Tier 1.C)
 
-When user enters vim (alt-screen toggle), should
-SessionModel pause / reset? The vim "session" isn't a
-command/output cycle. Recommend: pause — SessionModel
-notes "alt-screen active; no boundary detection until
-exit". On alt-screen exit, resume from where we left
-off. Don't lose tuples that were complete before vim
-opened.
+**Resolution**: **ON by default for known shells (cmd,
+PowerShell, claude); OFF for unknown shells**.
+Implementation in Tier 1.C when the heuristic-fallback
+module ships.
 
-### Q4: Multi-line commands — capture per line or as one?
+**Rationale** (per maintainer agreement, audit walk-
+through): without OSC 133, heuristic is the only signal
+for cmd / PowerShell / Claude (none emit OSC 133 by
+default); OFF means SessionModel produces nothing for
+the everyday case. Future shells gain heuristics on
+opt-in.
 
-For commands that span multiple lines (here-docs,
-multi-line strings, line-continuations), should
-SessionTuple's `CommandText` be one string with
-embedded newlines, or an array of lines? Recommend:
-one string with newlines. Easier to serialise; matches
-the original byte stream's structure. Pathways that
-want per-line iteration can split.
+**Original question**: For shells that don't emit OSC
+133, should heuristic fallback be on by default or off?
+Trade-off: on provides degraded service even when
+unconfigured; off requires explicit opt-in but never
+produces false-positive tuples. Recommend: ON by
+default for known shells (cmd, PowerShell, claude);
+OFF for unknown shells.
+
+### Q3: SessionModel reset on alt-screen entry? — ✅ Resolved 2026-05-07 (Tier 1.C)
+
+**Resolution**: **PAUSE on alt-screen entry; resume on
+exit** without losing prior tuples. Implementation in
+Tier 1.C when the SessionModel state machine ships.
+
+**Rationale** (per maintainer agreement, audit walk-
+through): vim / less / TUI sessions aren't
+command-output cycles; pausing avoids false-positive
+boundary detection during alt-screen activity.
+
+**Original question**: When user enters vim (alt-screen
+toggle), should SessionModel pause / reset? The vim
+"session" isn't a command/output cycle. Recommend:
+pause — SessionModel notes "alt-screen active; no
+boundary detection until exit". On alt-screen exit,
+resume from where we left off. Don't lose tuples that
+were complete before vim opened.
+
+### Q4: Multi-line commands — capture per line or as one? — ✅ Resolved 2026-05-07 (Tier 1.A)
+
+**Resolution**: **ONE string with embedded newlines**.
+Captured in `SessionTuple.CommandText: string` per the
+Tier 1.A type definition (PR #185 — first post-audit
+implementation cycle).
+
+**Rationale**: easier serialisation; matches the
+original byte stream's structure; pathways that want
+per-line iteration can split. Matches existing F# +
+.NET string conventions (`Split('\n')` is
+single-allocation).
+
+**Original question**: For commands that span multiple
+lines (here-docs, multi-line strings, line-
+continuations), should SessionTuple's `CommandText` be
+one string with embedded newlines, or an array of
+lines? Recommend: one string with newlines. Easier to
+serialise; matches the original byte stream's
+structure. Pathways that want per-line iteration can
+split.
 
 ### Q5: How does shell-switch interact with active tuple? — ✅ Resolved 2026-05-07
 
@@ -1370,37 +1418,76 @@ C. Error out.
 Recommend: B. Preserves user history; never silently
 loses data.
 
-### Q6: Echo correlation interaction
+### Q6: Echo correlation interaction — ✅ Resolved 2026-05-07 (Tier 1)
 
-The Phase 2 input framework's echo correlation needs
-to know "what is the user editing right now". The
-active tuple's `EditingCommand` state provides this.
-But the echo correlation also tracks per-keystroke
-timing. Open: should the echo-correlation tracker BE
-the SessionModel's command-text-capture mechanism, or
-should they be separate? Recommend: separate. Echo
-correlation is about input-to-output matching; the
-SessionModel's command capture is about
-boundary-to-boundary text accumulation. They share
-the active tuple but use it differently.
+**Resolution**: **separate concerns**. Echo correlation
+(Phase 2 input framework) tracks per-keystroke timing /
+input-to-output matching; SessionModel
+(this substrate) tracks boundary-to-boundary text
+accumulation. They share the active tuple via the
+SessionModel's exposed `Active` field but use it
+differently.
 
-### Q7: Per-output-block AI summarisation — at C or at D?
+**Rationale**: tighter coupling would prematurely
+constrain the input framework's design. Phase 2's echo-
+correlation work is its own substrate cycle; sharing
+the active tuple is sufficient integration.
 
-For AiInterpretedPathway: when does the AI summary
-fire — at OutputStart (so it can summarise as output
-streams in)? At CommandFinished (so it has the full
-output)? Recommend: at CommandFinished. Streaming
-summarisation is much harder; defer.
+**Original question**: The Phase 2 input framework's
+echo correlation needs to know "what is the user
+editing right now". The active tuple's `EditingCommand`
+state provides this. But the echo correlation also
+tracks per-keystroke timing. Open: should the
+echo-correlation tracker BE the SessionModel's
+command-text-capture mechanism, or should they be
+separate? Recommend: separate. Echo correlation is
+about input-to-output matching; the SessionModel's
+command capture is about boundary-to-boundary text
+accumulation. They share the active tuple but use it
+differently.
 
-### Q8: Should SessionModel know about exit codes' meaning?
+### Q7: Per-output-block AI summarisation — at C or at D? — ✅ Resolved 2026-05-07 (Tier 3+)
 
-A non-zero exit code typically indicates failure but
-not always (some commands use exit codes as semantic
-return values, e.g. `grep` returns 1 for "no match").
-Should SessionModel categorise exit codes? Recommend:
-no. SessionModel records the value; pathways /
-consumers interpret. Future per-shell rules could be
-added if needed.
+**Resolution**: **at CommandFinished (D)**; streaming
+summarisation deferred to a future Phase 3 cycle. Tier 1
+captures `OutputText` continuously between
+`OutputStart` and `CommandFinished`; the
+AiInterpretedPathway (when it ships) consumes the full
+`OutputText` post-finalisation.
+
+**Rationale** (per maintainer agreement, audit walk-
+through): streaming summarisation is much harder
+(requires partial-output AI prompts; risks
+hallucination at low context); the simpler "summarise
+on finish" path ships first. Streaming-summary
+revisited if the simpler version proves insufficient.
+
+**Original question**: For AiInterpretedPathway: when
+does the AI summary fire — at OutputStart (so it can
+summarise as output streams in)? At CommandFinished
+(so it has the full output)? Recommend: at
+CommandFinished. Streaming summarisation is much
+harder; defer.
+
+### Q8: Should SessionModel know about exit codes' meaning? — ✅ Resolved 2026-05-07 (Tier 1.A)
+
+**Resolution**: **NO**. SessionModel records the value
+verbatim as `int option`; pathways / consumers
+interpret semantically (e.g. "exit 0 = success",
+"exit 1 = grep no-match", per-shell idioms).
+
+**Implementation in Tier 1.A** (PR #185): `SessionTuple.ExitCode: int option`
+captures the value or `None` when not reported by the
+shell. Future per-shell or per-context rules could be
+added in CUSTOMIZATION-MODEL substrate (item 31).
+
+**Original question**: A non-zero exit code typically
+indicates failure but not always (some commands use
+exit codes as semantic return values, e.g. `grep`
+returns 1 for "no match"). Should SessionModel
+categorise exit codes? Recommend: no. SessionModel
+records the value; pathways / consumers interpret.
+Future per-shell rules could be added if needed.
 
 ## Out of scope
 
