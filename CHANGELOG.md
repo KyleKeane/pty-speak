@@ -15,6 +15,87 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Audit Track E — doc currency classification)
+
+`docs/AUDIT-DOC-CURRENCY.md` — Track E of the
+comprehensive audit phase. Doc-currency-layer counterpart
+to Tracks A (code), B (test), C (spec), D (atlas).
+Inventories all 33 docs (27 in `docs/` + 5 root-level
++ 1 research seed at `docs/research/MAY-4.md`) for
+currency markers, cross-reference health, and "Where we
+left off" accuracy.
+
+Audit performed via static inspection 2026-05-07; no doc
+edits, no code changes.
+
+**Findings summary**:
+
+- **26 ✅ aligned** — doc reflects current state OR is
+  intentionally historical / forward-looking and
+  correctly tagged.
+- **5 ⚠ stale** — developer-reference docs that
+  snapshot a Stage-3b or Stage-7-just-shipped baseline
+  and weren't refreshed when the substrate cycle
+  (#160-#178) landed:
+  - **E1**: `ROADMAP.md` line 53 — Stage 7 row marked
+    "pending"; shipped 2026-05-03.
+  - **E2-E4**: `ARCHITECTURE.md` lines 9-14, 18, 111 —
+    Currency note + section headers reference Stage 3b
+    as baseline.
+  - **E6**: `SESSION-HANDOFF.md` lines 31-34 — "Where
+    we left off" doesn't mention substrate cycle PRs
+    #160-#178, research-stage docs, or audit phase
+    Tracks A-D.
+- **0 ❌ contradictions**.
+- **2 📋 forward-looking openness** —
+  `RFC-OUTPUT-FRAMEWORK.md` / `RFC-INPUT-FRAMEWORK.md`
+  referenced in PROJECT-PLAN-2026-05.md as planned
+  future deliverables; correctly absent today.
+
+**Cross-reference health**: spot-checked 10+ markdown
+links; **zero broken links**.
+
+**DOC-MAP consistency**: 100% — every doc listed exists;
+no orphans; per-audience entry-point lists current.
+
+**Headline**: doc currency is **good**. The 5 ⚠
+findings cluster on a documentation-process gap: when a
+substantial substrate PR ships, the same PR (or an
+immediate follow-up) should refresh SESSION-HANDOFF.md
+"Where we left off" + relevant developer-reference doc
+currency notes. Going forward, this becomes the discipline.
+
+**Triage tiers**:
+
+- **Tier 1 (doc-fix)**: 4 findings (E1, E2-E4 headers,
+  E6) — small mechanical / substantive updates. Suggested
+  follow-up PR title: `docs(audit): Track E — apply
+  doc-currency fixups (ROADMAP / ARCHITECTURE /
+  SESSION-HANDOFF)`. Estimated ~100-200 LOC.
+- **Tier 2 (open question)**: 1 finding (E5: PROJECT-PLAN
+  status pointer) — Option A small status-header update
+  vs. Option B successor plan doc. Maintainer judgement.
+- **Tier 3 (no action; intentional historicals)**:
+  HISTORICAL-CONTEXT-2026-05.md, STAGE-7-ISSUES.md,
+  PROJECT-PLAN body — correctly tagged as snapshots.
+- **Tier 4 (forward-looking openness; no action)**: 2
+  RFC-* doc references that don't yet exist (planned for
+  future RFC phases).
+- **Tier 5 (ARCHITECTURE.md refresh cycle, separate)**:
+  the module table (lines 91-104) + threading-model
+  section (lines 106-138) need substantive update
+  beyond E2-E4 header fixes. Recommended as its own
+  small refresh cycle (~150-300 LOC).
+
+**Sequencing**: Track E audit-loop closes with this PR.
+Next plan-mode cycles can pick up:
+- Track F (backlog validation) — last in audit phase.
+- Tier 1 fixup PRs from Tracks D + E.
+- ARCHITECTURE.md refresh cycle.
+- D1 spec rename (after maintainer ADR).
+
+DOC-MAP.md updated.
+
 ### Added (Audit Track D — atlas alignment classification)
 
 `docs/AUDIT-ATLAS-ALIGNMENT.md` — Track D of the
