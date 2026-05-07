@@ -15,6 +15,81 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Customization Model research stage — item 31)
+
+`docs/CUSTOMIZATION-MODEL.md` — first post-audit
+research-stage doc. Captures the maintainer's
+2026-05-07 architectural directive on user-
+introspectable + user-customizable pipeline
+architecture. The directive emerged during the audit-
+phase open-questions walk-through; it is forward-
+looking ("I'm hoping the implementation will allow for
+such features down the road").
+
+The principle, named: every pipeline operation in pty-
+speak should be:
+
+1. **Named and addressable** — has a stable identifier.
+2. **Swappable** — alternative implementations exist
+   (or can be authored).
+3. **Inspectable per-output** — the user can see which
+   alternative ran for any given output (full pipeline
+   trace).
+4. **User-authorable as override rules** — picking an
+   alternative persists as a rule.
+5. **Context-keyed** — rules attach to context tuples
+   (shell, command, semantic-category, etc.) so similar
+   future outputs apply the rule automatically.
+
+Two illustrative use cases drawn from the maintainer's
+examples:
+
+- **Output-side**: command outputs a list that should
+  be a navigable selection but renders as raw text.
+  User opens the introspection panel for that output,
+  sees the trace, picks an alternative `SelectionProfile`
+  at stage 10. The choice persists as a rule keyed on
+  `(shell, command-prefix)`; future similar outputs
+  apply automatically.
+- **Input-side**: autocomplete has a configurable
+  cascade of completion sources (shell history,
+  language-server, user-curated docs, LLM). User
+  reorders or toggles individual sources.
+
+Doc structure (~903 lines):
+
+1. The customization principle (5-point definition).
+2. Two illustrative use cases.
+3. What the substrate must not preclude (per-doc-layer
+   requirements: PIPELINE-NARRATIVE, SESSION-MODEL,
+   INTERACTION-MODEL, PANE-MODEL, USER-SETTINGS, spec,
+   audit baselines).
+4. Pipeline-trace data model (sketch).
+5. Override-rule data model (sketch with TOML schema).
+6. Introspection UI sketch (Pipeline Inspector pane).
+7. Composition with existing substrates
+   (cross-reference matrix).
+8. 6 substrate gaps (all forward-looking).
+9. Versioning + maintenance.
+10. 7 open questions for maintainer review (naming;
+    alternatives registry shape; trace persistence;
+    rule-context-keying scope; UI surface; rule
+    precedence; rule-authoring UX).
+
+**This PR does NOT include**: implementation; code
+changes; spec changes; edits to existing research-
+stage docs (open-question resolution + spec rename +
+PROJECT-PLAN successor + audit fixup queue all ship
+in subsequent sequenced cycles per single-concern
+discipline).
+
+**Sequencing**: first post-audit research-stage doc.
+Cycles 8+ ship the deferred work. SessionModel Tier 1
+implementation remains the FIRST POST-AUDIT
+IMPLEMENTATION CYCLE.
+
+DOC-MAP.md updated.
+
 ### Added (Audit Track F — backlog validation classification — FINAL audit-track deliverable)
 
 `docs/AUDIT-BACKLOG-VALIDATION.md` — Track F of the
