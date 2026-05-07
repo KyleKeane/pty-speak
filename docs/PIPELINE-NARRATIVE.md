@@ -383,7 +383,7 @@ flow):
   per active profile. Each decision references a channel
   by ID + a render instruction.
 - **Active profiles today**:
-  - `StreamProfile` — pass-through. Carries the event
+  - `PassThroughProfile` — pass-through. Carries the event
     verbatim with NvdaChannel + FileLoggerChannel
     decisions.
   - `EarconProfile` — claims `ErrorLine` / `WarningLine` /
@@ -513,7 +513,7 @@ whether handling is currently complete or has gaps.
 - **Data carried**: list of row indices that changed.
 - **Pathway**: `DisplayPathway.Consume` (StreamPathway,
   TuiPathway). Today's flow: `PathwayPump.handleRowsChanged`
-  in `Program.fs:1123-1131`.
+  in `Program.fs:965`.
 - **Output produced**: `OutputEvent[]` from the active
   pathway (StreamChunk + optional ErrorLine/WarningLine).
 - **Status**: ✅ Complete for stream + TUI cases.
@@ -560,7 +560,7 @@ whether handling is currently complete or has gaps.
 - **Data carried**: a string describing the failure mode.
 - **Pathway**: bypass — direct semantic event.
 - **Status**: ✅ Functional but `Priority.Background` is
-  not honoured (StreamProfile pass-through ignores
+  not honoured (PassThroughProfile pass-through ignores
   Priority); errors announce despite intended-low priority.
 - **Future fix**: when profiles become Priority-aware
   (Phase 2), ParserError defaults to silent.
@@ -704,7 +704,7 @@ whether handling is currently complete or has gaps.
 | **TuiPathway** | `src/Terminal.Core/TuiPathway.fs` | Alt-screen pathway: emits no events while alt-screen is active |
 | **PathwaySelector** | `src/Terminal.Core/PathwaySelector.fs` | Picks pathway per shell + alt-screen state |
 | **OutputDispatcher** | `src/Terminal.Core/OutputDispatcher.fs` | Profile/Channel routing + event taps |
-| **Profile registry** | (in OutputDispatcher) | StreamProfile, EarconProfile |
+| **Profile registry** | (in OutputDispatcher) | PassThroughProfile, EarconProfile |
 | **Channel registry** | (in OutputDispatcher) | NvdaChannel, EarconChannel, FileLoggerChannel |
 | **NvdaChannel** | `src/Terminal.Core/NvdaChannel.fs` | UIA Notification bridge |
 | **EarconChannel** | `src/Terminal.Core/EarconChannel.fs` | Earcon player wrapper |
@@ -718,7 +718,7 @@ whether handling is currently complete or has gaps.
 | **ShellRegistry** | `src/Terminal.Pty/ShellRegistry.fs` | Shell-id taxonomy + resolver |
 | **TerminalView** | `src/Views/TerminalView.cs` | WPF rendering + input + UIA peer |
 | **TerminalAutomationPeer** | `src/Terminal.Accessibility/TerminalAutomationPeer.fs` | UIA Document/Text-pattern provider |
-| **KeyEncoding** | `src/Terminal.Pty/KeyEncoding.fs` | WPF Key → byte[] for PTY stdin |
+| **KeyEncoding** | `src/Terminal.Core/KeyEncoding.fs` | WPF Key → byte[] for PTY stdin |
 | **ConPtyHost** | `src/Terminal.Pty/ConPtyHost.fs` | ConPTY wrapper with stdin/stdout |
 | **AnnounceSanitiser** | `src/Terminal.Core/AnnounceSanitiser.fs` | Strip control chars from announcement payloads |
 
@@ -927,7 +927,7 @@ e.KeyboardDevice.Modifiers  →  TranslateModifiers(...)  →  KeyModifiers.None
 ```
 
 `KeyCode` and `KeyModifiers` are pty-speak's own platform-
-neutral types (`src/Terminal.Pty/KeyEncoding.fs:50`).
+neutral types (`src/Terminal.Core/KeyEncoding.fs:50`).
 
 **Data state**: the WPF input pipeline carries no terminal
 context — `_screen.Modes` is consulted separately because
@@ -936,7 +936,7 @@ mode (e.g. function keys).
 
 #### A.3 — KeyEncoding.encode
 
-**Module**: `src/Terminal.Pty/KeyEncoding.fs`
+**Module**: `src/Terminal.Core/KeyEncoding.fs`
 
 **Function**: `KeyEncoding.encodeOrNull(keyCode, keyMods,
 screenModes)` returns `byte[] | null`.
@@ -1007,7 +1007,9 @@ column.
 
 #### A.6 — Stage 1: Byte ingestion
 
-**Module**: `src/Terminal.Pty/ConPtyHost.fs` reader thread
+**Module**: `Terminal.Pty.ConPtyHost` (provides
+`readerLoop` function); composed and started in
+`Terminal.App.Program.startReaderLoop`.
 
 **Code path**: a dedicated reader thread polls the pseudo-
 console's stdout `FileStream`. When bytes arrive, they're
@@ -1153,7 +1155,7 @@ truncation.
 ... Payload = "e" }`. Calls `OutputDispatcher.dispatch
 event`.
 
-`StreamProfile.Apply event` claims it (pass-through),
+`PassThroughProfile.Apply event` claims it (pass-through),
 emits a `(event, [|{Channel = NvdaChannel.id; Render =
 RenderText "e"}; {Channel = FileLoggerChannel.id; Render
 = RenderText "e"}|])` pair.
@@ -1438,8 +1440,8 @@ it lands. Used to scope new feature design.
 ### Profile.Priority awareness (Phase 2)
 
 - **Seam**: stage 10 (profile claim) gains priority
-  consultation; today's StreamProfile pass-through ignores
-  Priority.
+  consultation; today's PassThroughProfile pass-through
+  ignores Priority.
 - **Mechanism**: profiles read `OutputEvent.Priority`;
   `Background` priority events are silently dropped at
   stage 10 (no ChannelDecision emitted). Resolves the
@@ -1568,7 +1570,7 @@ back to the relevant module.
   implemented.
 - **KeyEncoding** — translation of WPF Key + modifiers
   to PTY-stdin bytes. Module:
-  `src/Terminal.Pty/KeyEncoding.fs`.
+  `src/Terminal.Core/KeyEncoding.fs`.
 - **KeystrokeTracker** — future Phase 2 component;
   records outgoing keystrokes for echo correlation.
 - **LastEmittedRowHashes** — StreamPathway state field;
@@ -1627,7 +1629,7 @@ back to the relevant module.
   `Background | Polite | Assertive`. Today honoured
   only loosely.
 - **Profile** — module that claims OutputEvents and
-  emits ChannelDecisions. Today: StreamProfile,
+  emits ChannelDecisions. Today: PassThroughProfile,
   EarconProfile.
 - **ReplPathway** — future pathway (Phase 2) for shells
   with explicit prompt boundaries.
@@ -1664,8 +1666,10 @@ back to the relevant module.
   output events.
 - **StreamPathway** — default DisplayPathway. Module:
   `src/Terminal.Core/StreamPathway.fs`.
-- **StreamProfile** — pass-through profile that routes
-  StreamChunk to NvdaChannel + FileLoggerChannel.
+- **PassThroughProfile** — pass-through profile that routes
+  StreamChunk to NvdaChannel + FileLoggerChannel. (Renamed
+  from `StreamProfile` during the post-Phase-A substrate
+  migration.)
 - **Suffix** — `EditDelta` case carrying the new content
   beyond the longest-common-prefix.
 - **SuffixDiff** — stage 8; per-row LCP-based diff.
