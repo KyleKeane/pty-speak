@@ -8,6 +8,7 @@
 > - [`SESSION-MODEL.md`](SESSION-MODEL.md) — substrate design for structured (prompt, command, output, exit-code) history. This doc places SessionModel inside the higher-level architectural framing.
 > - [`USER-SETTINGS.md`](USER-SETTINGS.md) — parameter atlas. Knobs cited in this doc cross-reference there.
 > - [`ACCESSIBILITY-INTERACTION-MODEL.md`](ACCESSIBILITY-INTERACTION-MODEL.md) — the screen-reader-interaction layer (caret tension, modal dialogs, NVDA round-trips). Sister doc; INTERACTION-MODEL is one layer above (architectural framing); A-I-M is one layer below (per-screen-reader behaviour).
+> - [`PANE-MODEL.md`](PANE-MODEL.md) — UI composition layer (multi-pane workspace framework). The Shell Interaction Manager owns the shell pane; PANE-MODEL extends into multi-pane composition (file tree / cherry-picked I/O / language docs / AI assistance).
 > - [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md) — canonical spec. This doc proposes a higher-level framing the spec will absorb.
 > - [`spec/overview.md`](../spec/overview.md) — references OSC 133 + the five-stage architecture this doc anchors against.
 
@@ -92,6 +93,7 @@ add a feature. Surface it once; reference it forever.
 | History substrate — how is interaction recorded? | SESSION-MODEL.md | "How are commands + outputs stored + queried?" |
 | Parameter atlas — which knobs exist? | USER-SETTINGS.md | "What's tunable in stage / pathway X?" |
 | Screen-reader interaction — caret + UIA | ACCESSIBILITY-INTERACTION-MODEL.md | "How does NVDA navigate this surface?" |
+| UI composition — multi-pane workspace | PANE-MODEL.md | "Where does a new pane (file tree / AI assistance / etc.) go?" |
 | Canonical spec | spec/event-and-output-framework.md | "What did the design commit to?" |
 
 Reader picks lens by question. Per-PR referencing names a
