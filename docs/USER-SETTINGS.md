@@ -886,16 +886,20 @@ on shell-switch / alt-screen transitions) and **Earcon
 synthesis** (`Terminal.Audio.EarconPlayer`, consumed at
 stage 11).
 
-### `stream.suffixDiff.bulkChangeThreshold` (currently 3)
+### `stream.suffixDiff.bulkChangeThreshold` (currently 3) — ✅ shipping (PR #168)
 
 #### Current state
 
-`src/Terminal.Core/StreamPathway.fs:364` defines
-`BulkChangeThreshold` as a top-level `let private = 3`
-binding. Stage 8b applies it: when the row-level diff reports
-more than 3 changed rows in a single frame, the suffix-diff
-stage bypasses per-row LCP and emits the full
-`ChangedText` (the pre-PR-#166 verbose path).
+`StreamPathway.Parameters.BulkChangeThreshold`
+(`src/Terminal.Core/StreamPathway.fs:142, 160`) defaults
+to `3` per the `defaultParameters` record. PR #168 lifted
+the constant from a top-level `let private` binding into
+the `Parameters` record + exposed it as TOML key
+`[pathway.stream] bulk_change_threshold` per
+`Config.fs:102-149`. When the row-level diff reports more
+than `BulkChangeThreshold` changed rows in a single frame,
+the suffix-diff stage bypasses per-row LCP and emits the
+full `ChangedText` (the pre-PR-#166 verbose path).
 
 #### Why hardcoded now
 
@@ -936,32 +940,31 @@ loader pattern). Single field on
   test — `assembleSuffixPayload` falls back to `ChangedText`
   iff `diff.ChangedRows.Length > threshold`.
 
-### `stream.suffixDiff.backspacePolicy` (currently silent)
+### `stream.suffixDiff.backspacePolicy` (currently announce_deleted_character) — ✅ shipping (PR #168)
 
 #### Current state
 
-`src/Terminal.Core/StreamPathway.fs:412-413`
-(`computeRowSuffixDelta`) returns `Silent` when the row
-shrinks (`currentText.Length < previousText.Length`). Captures
-backspace + line-clear cases. The PR-#166 plan's "Default 1"
-chose this on the assumption that NVDA's "speak typed
-characters" setting would handle backspace audibility.
+`StreamPathway.Parameters.BackspacePolicy`
+(`src/Terminal.Core/StreamPathway.fs:161`) defaults to
+`AnnounceDeletedCharacter` per the `defaultParameters`
+record. PR #168 shipped the parameter substrate + changed
+the default from `SuppressShrink` (formerly described as
+"silent") to `AnnounceDeletedCharacter`. Exposed as TOML
+key `[pathway.stream] backspace_policy` with values
+`"silent"` / `"announce_deleted_character"` /
+`"announce_deleted_word"` per `Config.fs:109,302`.
 
-**This assumption was wrong.** Maintainer release-build
-validation 2026-05-06 confirmed: NVDA's keyboard echo speaks
-the *key pressed* (not the screen content change), so
-"Backspace" by default is silent. Even with NVDA's speak-
-typed-characters enabled, backspace produces no audible
-feedback from either NVDA or pty-speak. **UX issue #2 from
-2026-05-06**.
+#### Background
 
-#### Why hardcoded now
-
-Hardcoding the behaviour was a Day-1-of-suffix-diff choice;
-the parameter substrate didn't exist. Now that the
-correctness gap is confirmed, the right shape is to expose
-the policy and change the default rather than continue
-relying on the broken assumption.
+The original PR-#166 "Default 1" choice (silent on row
+shrink) assumed NVDA's "speak typed characters" setting
+would handle backspace audibility. Maintainer release-
+build validation 2026-05-06 confirmed this was wrong:
+NVDA's keyboard echo speaks the *key pressed* (not the
+screen content change), so "Backspace" was silent under
+the original default. **UX issue #2 from 2026-05-06**.
+PR #168 corrected the default to
+`AnnounceDeletedCharacter`.
 
 #### What configurability would look like
 
@@ -1281,28 +1284,42 @@ Implementation tier: **Phase 2 input framework prerequisite**
 - This work pairs naturally with echo correlation — both
   ship in the same framework cycle PRs.
 
-### `modeBarrier.flushPolicy` (currently verbose)
+### `modeBarrier.flushPolicy` (currently summary_only) — ✅ shipping (PR #168 + PR #169)
 
 #### Current state
 
-`src/Terminal.Core/StreamPathway.fs:741-742`
-(`onModeBarrier`) emits `diff.ChangedText` (the previous
-shell's full screen) on every mode barrier — shell-switch,
-alt-screen toggle, vim exit, etc. **UX issue #5 from
-2026-05-06**: switching shells with Ctrl+Shift+1/2/3 reads
-the previous shell's content as a flush before the new
-shell's startup. The maintainer's logs show ~1200-character
-flushes (entire PowerShell history including diagnostic
-commands).
+`StreamPathway.Parameters.ModeBarrierFlushPolicy`
+(`src/Terminal.Core/StreamPathway.fs:162`) defaults to
+`SummaryOnly` per the `defaultParameters` record. PR #168
+shipped the parameter substrate + changed the default
+from `Verbose` to `SummaryOnly`; PR #169 then preserved
+per-row baselines under `SummaryOnly` so the post-barrier
+first emit doesn't re-announce stale content. Exposed as
+TOML key `[pathway.stream] mode_barrier_flush_policy`
+with values `"verbose"` / `"summary_only"` /
+`"suppressed"` per `Config.fs:115,318`.
 
-This is item 23 + item 24 in the strategic backlog.
+`onModeBarrier` (StreamPathway.fs:843-866) honours the
+policy: under `SummaryOnly` and `Suppressed` the
+previous-shell-screen flush is suppressed, falling back
+to the "switching to X" announce + the new shell's
+startup output as the user's signal.
 
-#### Why hardcoded now
+Closes the original behaviour that surfaced as **UX
+issue #5 from 2026-05-06** (switching shells with
+Ctrl+Shift+1/2/3 reading the previous shell's
+~1200-character flush before the new shell's startup).
+Was item 23 + item 24 in the strategic backlog;
+substantially shipped via the policy default.
 
-PR #166's plan deliberately preserved the verbose flush at
-mode barriers because barriers are discontinuities — full
-context felt safer than per-row suffix-diff against a
-soon-to-be-stale baseline. Confirmed unpleasant in dogfood.
+#### Background
+
+PR #166's plan deliberately preserved the verbose flush
+at mode barriers because barriers are discontinuities —
+full context felt safer than per-row suffix-diff against
+a soon-to-be-stale baseline. Dogfood confirmed
+unpleasant; PR #168 + #169 corrected the default to
+`SummaryOnly`.
 
 #### What configurability would look like
 
@@ -1544,4 +1561,33 @@ interface sounds)" section above describes which knobs around
 them become user-configurable. The frequency / duration /
 amplitude bounds themselves are not freely overridable because
 violating them is known to interfere with TTS comprehension.
+
+### Platform-internal buffer / capacity defaults (📋 reserved)
+
+These are platform-internal tuning constants that affect
+internal queue / buffer behaviour. Listed here for
+discoverability (per Track D audit findings D5 + D6).
+Currently NOT user-configurable; could become 📋 reserved
+TOML knobs under a future `[diagnostic]` or `[platform]`
+section if user demand surfaces, but they're unlikely to
+be tunable in v1 — the defaults are well-suited to the
+expected workload.
+
+- **`FileLoggerOptions.ChannelCapacity = 8192`**
+  (`src/Terminal.Core/FileLogger.fs:88`). Backpressure
+  threshold for the bounded log-write channel. Affects
+  what happens under heavy logging load (channel-full →
+  blocking enqueue). Increasing it raises memory ceiling;
+  decreasing it raises blocking risk.
+- **ConPtyHost FileStream buffer = 4096 bytes**
+  (`src/Terminal.Pty/ConPtyHost.fs:137,138,173`).
+  Read/write buffer size for ConPTY stdin / stdout
+  FileStream wrappers + the byte-array reader buffer.
+  Standard Win32 default; rarely a performance
+  bottleneck.
+
+Both are catalogued for discoverability rather than
+configurability. If user demand surfaces (e.g. heavy-log
+workload that sees backpressure), the right move is to
+investigate the workload first, not to expose the knob.
 
