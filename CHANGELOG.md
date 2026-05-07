@@ -15,6 +15,56 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Audit Track A — trivial doc-side fixups)
+
+`docs/PIPELINE-NARRATIVE.md` — applies the doc-side drift
+fixes that Track A of the comprehensive audit
+(`docs/AUDIT-CODE-CONSISTENCY.md`, PR #172) identified.
+Closes the audit→fixup loop for Track A; no code changes;
+no semantic changes; pure mechanical drift correction so
+PIPELINE-NARRATIVE matches the codebase as of 2026-05-07.
+
+11 line edits across 5 distinct drift themes (the audit
+identified 5 themes; cross-checking turned up additional
+instances of each theme that the audit's 8 ⚠ summary
+under-counted but that fall under the same fixes):
+
+1. **`StreamProfile` → `PassThroughProfile`** rename
+   propagated to all in-text references (4 sites).
+   Module was renamed during the post-Phase-A substrate
+   migration; only the glossary entry retains a
+   historical-context note explaining the rename.
+2. **`KeyEncoding` location** — corrected from
+   `src/Terminal.Pty/KeyEncoding.fs` to
+   `src/Terminal.Core/KeyEncoding.fs` (3 sites). The
+   module was relocated; `src/Terminal.Pty/KeyEncoding.fs`
+   does not exist.
+3. **Stage 1 attribution** — clarified that the reader
+   thread is composed in
+   `Terminal.App.Program.startReaderLoop`, not "owned"
+   by `ConPtyHost`. ConPtyHost provides the `readerLoop`
+   helper; Program.fs starts the thread.
+4. **`handleRowsChanged` line citation** — corrected
+   from `Program.fs:1123-1131` to `Program.fs:965`. PRs
+   #168 + #169 added ~160 LOC between audit baseline and
+   now, shifting the handler ~158 lines up.
+5. **Glossary entries** — KeyEncoding location +
+   StreamProfile rename note (overlapping with themes
+   1-2).
+
+Verification: post-fix greps confirm zero remaining
+references to the old paths / names (except the
+intentional historical note in the glossary).
+
+The audit doc (`AUDIT-CODE-CONSISTENCY.md`) is NOT
+re-tagged; it's snapshot-dated 2026-05-06 and stays as
+the audit-of-record. Future re-audits naturally
+re-snapshot.
+
+**Sequencing**: Track A's audit→fixup loop now closes.
+Next plan-mode cycle picks up Audit Track B (test
+inventory) per the substrate-first sequence.
+
 ### Added (Pane Model research stage — item 30)
 
 `docs/PANE-MODEL.md` — snapshot-dated forward-looking
