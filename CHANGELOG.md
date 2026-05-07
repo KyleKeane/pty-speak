@@ -15,6 +15,61 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Resolve Cluster 1-4 open questions in research-stage docs)
+
+Apply maintainer's audit-walk-through decisions
+(2026-05-07) to existing research-stage docs. Marks 12
+open questions resolved across three docs:
+
+- **`docs/INTERACTION-MODEL.md`** — Q1-Q6 all resolved:
+  - Q1 SIM naming → KEEP "Shell Interaction Manager".
+  - Q2 SIM as literal F# module → KEEP CONCEPTUAL;
+    re-evaluate during Phase 2.
+  - Q3 supersede other docs → NO; complementary lenses.
+  - Q4 add three new SemanticCategory cases now → DEFER
+    until producers ship.
+  - Q5 notebook analogy → INSPIRATIONAL (not load-
+    bearing).
+  - Q6 per-shell vs. unified history →
+    per-shell-session by default; opt-in unified
+    (cross-references SESSION-MODEL.md Q5).
+- **`docs/PANE-MODEL.md`** — Q1-Q5 all resolved:
+  - Q1 Pane / Workspace / Pane Coordinator naming →
+    KEEP.
+  - Q2 single-window vs. multi-window → SINGLE-WINDOW
+    multi-pane for v1.
+  - Q3 floating vs. docked → DOCK with GridSplitter
+    resize; skip floating for v1.
+  - Q4 TOML schema scope → MODERATE (layout / size /
+    visibility user-configurable; per-pane semantic
+    parameters in own subsections).
+  - Q5 WSL2/SSH shells: parallel panes vs. hot-switch
+    → HOT-SWITCH first; multiple-pane power-user
+    mode allowed later.
+- **`docs/SESSION-MODEL.md`** — Q5 resolved:
+  - Q5 shell-switch interaction with active tuple →
+    per-shell-session SessionModel by default (option B
+    from original question — persist as incomplete);
+    opt-in unified history as TOML setting.
+
+The other 7 SESSION-MODEL questions (Q1, Q2, Q3, Q4, Q6,
+Q7, Q8) and the 7 CUSTOMIZATION-MODEL questions remain
+open, deferred to the SessionModel Tier 1 plan-mode
+cycle and the next maintainer walk-through respectively.
+
+Edit pattern: each resolved question's section gets a
+"✅ Resolved 2026-05-07" tag in its header + a
+**Resolution** + **Rationale** block at the top;
+original question text preserved verbatim below for
+historical context. Section header updated from "Open
+questions" to "Open questions / Resolutions" where
+applicable.
+
+**Sequencing**: Cycle 8 of post-audit work. Next
+plan-mode cycle picks up Cycle 9 (Track C D1 spec
+rename — `StreamProfile` → `PassThroughProfile` in
+`spec/event-and-output-framework.md`; ADR authorized).
+
 ### Added (Customization Model research stage — item 31)
 
 `docs/CUSTOMIZATION-MODEL.md` — first post-audit

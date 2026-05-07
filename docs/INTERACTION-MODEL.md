@@ -1288,16 +1288,27 @@ opportunity to refine the vocabulary; drift that lingers
 across multiple sessions is a signal that the vocabulary
 needs explicit reconciliation.
 
-## Open questions
+## Open questions / Resolutions
 
-Design forks awaiting maintainer input. Each is paired
-with a recommended position; the maintainer's decision
-selects + this doc gets updated.
+Design forks surfaced for maintainer review. As of
+2026-05-07, all 6 questions resolved per the audit-phase
+walk-through (PR #181 plan + Cycle 8 fixup PR).
+Resolutions captured below; original framing preserved
+for historical context.
 
-### Q1. Is "Shell Interaction Manager" the right name?
+### Q1. Is "Shell Interaction Manager" the right name? — ✅ Resolved 2026-05-07
 
-The maintainer proposed "Shell Interaction Manager"
-2026-05-06. Alternatives that surfaced:
+**Resolution**: KEEP **"Shell Interaction Manager" / SIM**
+as proposed.
+
+**Rationale** (per maintainer agreement, audit walk-
+through Cluster 1): clear; maintainer chose it; maps
+cleanly to the responsibilities list; changing now would
+create vocabulary churn across docs.
+
+**Original question**: The maintainer proposed "Shell
+Interaction Manager" 2026-05-06. Alternatives that
+surfaced:
 
 - **"Shell Conversation Manager"** — emphasises the
   bidirectional, multi-turn character. Slightly more
@@ -1311,17 +1322,23 @@ The maintainer proposed "Shell Interaction Manager"
   Channel substrate" naming patterns. But "substrate"
   is overloaded in this codebase already.
 
-**Recommended position**: keep **"Shell Interaction
-Manager" / SIM** as proposed. It's clear, the maintainer
-chose it, the name maps cleanly to the responsibilities
-list, and changing it now would create vocabulary
-churn across docs.
+### Q2. Should the SIM become a literal F# module? — ✅ Resolved 2026-05-07
 
-### Q2. Should the SIM become a literal F# module?
+**Resolution**: KEEP CONCEPTUAL for now. Re-evaluate
+when SessionModel implementation begins + the cross-slice
+state machine is concrete. Almost certainly happens
+during Phase 2.
 
-Today's framing is "coordinated set of modules; not a
-single F# module". Under what conditions would a literal
-`SimCoordinator` (or similar) module appear?
+**Rationale** (per maintainer agreement, audit walk-
+through Cluster 2): avoids premature abstraction;
+threading + lifetime + testability concerns differ per
+slice; "coordinated set of modules" framing serves
+current substrate well.
+
+**Original question**: Today's framing is "coordinated
+set of modules; not a single F# module". Under what
+conditions would a literal `SimCoordinator` (or similar)
+module appear?
 
 - Cross-slice state machine emerges (active prompt →
   command running → command finished → next prompt
@@ -1330,71 +1347,87 @@ single F# module". Under what conditions would a literal
 - Cross-slice diagnostics needed (an extension of the
   Ctrl+Shift+D battery).
 
-**Recommended position**: keep conceptual for now.
-Re-evaluate when SessionModel implementation begins +
-the cross-slice state machine is concrete. Almost
-certainly happens during Phase 2.
+### Q3. Should INTERACTION-MODEL supersede PIPELINE-NARRATIVE / SESSION-MODEL? — ✅ Resolved 2026-05-07
 
-### Q3. Should INTERACTION-MODEL supersede PIPELINE-NARRATIVE / SESSION-MODEL?
+**Resolution**: NO. The docs are complementary lenses,
+not redundant.
 
-Reading INTERACTION-MODEL gives a contributor a
-high-level picture. Could it replace the others?
+**Rationale** (per maintainer agreement, audit walk-
+through Cluster 2): each doc answers a different
+question. INTERACTION-MODEL is the "what is pty-speak
+architecturally" lens; PIPELINE-NARRATIVE is the "how
+does data flow" lens; SESSION-MODEL is the "how is
+history structured" lens. A reader picks the lens for
+the question they're asking. Each doc is shorter + more
+focused for staying single-lens.
 
-**Recommended position**: NO. They're complementary
-lenses, not redundant. INTERACTION-MODEL is the
-"what is pty-speak architecturally" lens;
-PIPELINE-NARRATIVE is the "how does data flow" lens;
-SESSION-MODEL is the "how is history structured" lens.
-A reader picks the lens for the question they're asking.
-Each doc is shorter + more focused for staying
-single-lens.
+**Original question**: Reading INTERACTION-MODEL gives
+a contributor a high-level picture. Could it replace
+the others?
 
-### Q4. Add the three NEW reservations to `SemanticCategory` immediately?
+### Q4. Add the three NEW reservations to `SemanticCategory` immediately? — ✅ Resolved 2026-05-07
 
-The taxonomy proposes `CommandFinished`,
-`InputCompletionMenu`, `MultiLineCommand` as reserved
-names. Should they be added to the F# enum now (with
-`(none)` producers) or deferred until producers ship?
+**Resolution**: DEFER adding to the enum. Reserve names
+in this doc. Add to enum when concrete producer logic
+exists.
 
-**Recommended position**: defer adding to the enum.
-Reserve names in this doc. Add to enum when concrete
-producer logic exists. Reasons:
+**Rationale** (per maintainer agreement, audit walk-
+through Cluster 3): adding enum cases without producers
+means every consumer's pattern-match needs a
+`| _ -> ()` arm immediately, which is noise.
+Reserved-by-doc gives future PRs a name to use without
+forcing the immediate enum churn. The enum is small
+enough that adding three cases when three implementations
+land is a clean PR.
 
-- Adding enum cases without producers means every
-  consumer's pattern-match needs a `| _ -> ()` arm
-  immediately, which is noise.
-- Reserved-by-doc gives future PRs a name to use without
-  forcing the immediate enum churn.
-- The enum is small enough that adding three cases when
-  three implementations land is a clean PR.
+**Original question**: The taxonomy proposes
+`CommandFinished`, `InputCompletionMenu`,
+`MultiLineCommand` as reserved names. Should they be
+added to the F# enum now (with `(none)` producers) or
+deferred until producers ship?
 
-### Q5. Is the notebook analogy load-bearing or just inspirational?
+### Q5. Is the notebook analogy load-bearing or just inspirational? — ✅ Resolved 2026-05-07
 
-If load-bearing (e.g. we promise users "navigate like a
-notebook"), then implementations need to deliver
-notebook-like UX (cell numbers visible, jump-to-N, etc.).
-If just inspirational, implementations have latitude.
+**Resolution**: **INSPIRATIONAL**. Pty-speak isn't a
+notebook tool — it's a screen-reader-first terminal.
+UX should optimise for terminal + screen-reader
+workflows; borrow notebook idioms where they fit;
+don't promise feature parity.
 
-**Recommended position**: **inspirational**. The
-notebook analogy is a useful design reference but
-pty-speak isn't a notebook tool — it's a screen-reader-
-first terminal. UX should optimise for terminal +
-screen-reader workflows; borrow notebook idioms where
-they fit; don't promise feature parity. Cell numbers
-might or might not be visible; jump-to-N might be a
-hotkey or a query; the doc doesn't pre-commit.
+**Rationale** (per maintainer agreement, audit walk-
+through Cluster 3): cell numbers might or might not be
+visible; jump-to-N might be a hotkey or a query; the
+doc doesn't pre-commit.
 
-### Q6. Per-shell history vs. unified history?
+**Original question**: If load-bearing (e.g. we promise
+users "navigate like a notebook"), then implementations
+need to deliver notebook-like UX (cell numbers visible,
+jump-to-N, etc.). If just inspirational, implementations
+have latitude.
 
-When the user uses Ctrl+Shift+1/2/3 to hot-switch shells,
-does the Historical Document carry over or split? E.g.
-does the "previous command" hotkey from cmd find
-PowerShell commands or only cmd commands?
+### Q6. Per-shell history vs. unified history? — ✅ Resolved 2026-05-07
 
-**Recommended position**: SESSION-MODEL.md owns this
-question (it's a SessionModel persistence + query design
-question, not an architectural-framing question). Refer
-to SESSION-MODEL.md's open questions section.
+**Resolution**: **per-shell-session SessionModel by
+default; opt-in unified history as TOML setting**.
+Each Ctrl+Shift+1/2/3 hot-switch starts a fresh
+SessionModel for the new shell. Unified history is a
+power-user opt-in.
+
+**Cross-reference**: SESSION-MODEL.md Q5 resolution
+captures the same decision at the substrate-design
+layer; this resolution applies the architectural-framing
+implication.
+
+**Rationale** (per maintainer agreement, audit walk-
+through Cluster 3): simpler default; explicit opt-in
+for power users; matches the substrate-first principle
+of not pre-committing.
+
+**Original question**: When the user uses
+Ctrl+Shift+1/2/3 to hot-switch shells, does the
+Historical Document carry over or split? E.g. does the
+"previous command" hotkey from cmd find PowerShell
+commands or only cmd commands?
 
 ## Companion-doc cross-reference index
 

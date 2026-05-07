@@ -1337,11 +1337,32 @@ one string with newlines. Easier to serialise; matches
 the original byte stream's structure. Pathways that
 want per-line iteration can split.
 
-### Q5: How does shell-switch interact with active tuple?
+### Q5: How does shell-switch interact with active tuple? — ✅ Resolved 2026-05-07
 
-If user runs `dir`, then Ctrl+Shift+1 to switch shells
-mid-output (rare but possible), the active tuple is
-incomplete. Should SessionModel:
+**Resolution**: **per-shell-session SessionModel by
+default**. Each Ctrl+Shift+1/2/3 hot-switch starts a
+fresh SessionModel for the new shell; the active tuple
+in the prior shell finalises (option B from the
+original question — persist as incomplete with
+`ExitCode = None`,
+`CommandFinishedAt = shell-switch-time`). **Opt-in
+unified history as TOML setting** for power users who
+want cross-shell tuple aggregation.
+
+**Cross-reference**: INTERACTION-MODEL.md Q6 captures
+the same decision at the architectural-framing layer
+(per-shell Historical Document by default).
+
+**Rationale** (per maintainer agreement, audit walk-
+through Cluster 3): simpler default; explicit opt-in
+for power users; matches the substrate-first principle
+of not pre-committing; preserves user history without
+silently losing data on shell switch.
+
+**Original question**: If user runs `dir`, then
+Ctrl+Shift+1 to switch shells mid-output (rare but
+possible), the active tuple is incomplete. Should
+SessionModel:
 A. Discard it.
 B. Persist it as incomplete (ExitCode = None,
    CommandFinishedAt = shell-switch-time).
