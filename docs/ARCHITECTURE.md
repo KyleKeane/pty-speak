@@ -6,126 +6,168 @@ prior-art survey, and tradeoff analysis live in
 map: how data flows, which module owns which concern, and where the
 thread boundaries are.
 
-> **Currency note.** The diagrams and module table below are the
-> *target* architecture from `spec/overview.md`. As of `main` at
-> Stage 3b, only the rows annotated **(implemented)** are in code; the
-> rest land in the stages noted in parentheses. See
+> **Currency note** (snapshot 2026-05-07). Stages 0-7 + 11 are
+> shipped on `main`; the post-Stage-7 substrate cycle (PRs
+> #146-#184) shipped Stage 8a-8d.2 + display-pathway substrate
+> (Phase A + A.1 + A.2) + Tier 1 parameters + suffix-diff +
+> shell-switch flush fix + the audit phase (Tracks A-F) + five
+> research-stage docs (PIPELINE-NARRATIVE, SESSION-MODEL,
+> INTERACTION-MODEL, PANE-MODEL, CUSTOMIZATION-MODEL). Some
+> modules originally drafted as separate projects
+> (`Terminal.Semantics`, `Terminal.EventBus`) landed inside
+> `Terminal.Core` per walking-skeleton discipline — the table
+> below describes shipped modules, not the original draft. See
 > [`docs/ROADMAP.md`](ROADMAP.md) and
-> [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) for what has actually shipped.
+> [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) for the per-stage
+> status; [`docs/PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md)
+> for the canonical 12-stage pipeline vocabulary; the audit-track
+> docs (`docs/AUDIT-CODE-CONSISTENCY.md` etc.) for cross-doc
+> alignment.
 
 ## High-level data flow
 
-### Current pipeline (Stage 3b on `main`)
+### Current pipeline (post-Stage-7 substrate; 2026-05-07)
+
+The shipped pipeline runs through the 12 stages catalogued in
+PIPELINE-NARRATIVE:
 
 ```
-cmd.exe → ConPTY → Terminal.Pty (ConPtyHost) → Terminal.Parser
-                                               → Terminal.Core.Screen
-                                               → Views.TerminalView (WPF)
+cmd.exe / pwsh.exe / claude.exe   ← Ctrl+Shift+1/2/3 hot-switch
+       │
+       │ UTF-8 VT bytes via ConPTY anonymous pipes
+       ▼
+Terminal.Pty.ConPtyHost            (Stage 1 byte ingestion;
+       │                            P/Invoke wrap; Job-Object lifecycle)
+       │ byte chunks via Channel<byte[]>
+       ▼
+Terminal.Parser.Parser             (Stage 2 parser application;
+       │                            Williams VT500 state machine)
+       │ VtEvent stream
+       ▼
+Terminal.Core.Screen.Apply         (cell-grid mutations under gate-lock)
+       │ ScreenNotification (Stage 3 notification emission)
+       ▼
+Terminal.Core.CanonicalState       (Stage 4 canonical-state synthesis;
+       │                            snapshot + row hashes + sequence)
+       │ CanonicalState
+       ▼
+Terminal.Core.StreamPathway        (Stages 5-9: frame-dedup, spinner
+       │                            suppression, row-level diff,
+       │                            sub-row suffix detection,
+       │                            payload assembly)
+       │ OutputEvent[]
+       ▼
+Terminal.Core.OutputDispatcher     (Stage 10 profile claim;
+       │                            Stage 11 channel rendering)
+       │ ChannelDecision[]
+       ├─→ NvdaChannel       → UIA Notification → NVDA (Stage 12)
+       ├─→ EarconChannel     → NAudio WASAPI playback
+       └─→ FileLoggerChannel → bounded channel + crash-safe writer
 ```
 
-Mutation happens on the WPF Dispatcher thread for now (Stage 3b);
-Stage 5 carves the parser/screen ownership onto a dedicated thread.
+Auxiliary substrate per `docs/INTERACTION-MODEL.md` (the Shell
+Interaction Manager): KeyEncoding for input transmission;
+HotkeyRegistry for app-reserved gestures; Diagnostics for
+Ctrl+Shift+D self-test battery; Config for TOML-based parameter
+loading; AnnounceSanitiser as the per-row sanitisation
+chokepoint.
 
-### Target pipeline (post-Stage 5)
+### Forward-looking substrate
 
-```
-+-----------------------------+
-|        cmd.exe / claude.exe |   child process
-+--------------+--------------+
-               |
-               | UTF-8 VT bytes
-               v
-+--------------+--------------+
-|   ConPTY (kernel)           |   Windows pseudo-console
-+--------------+--------------+
-               |
-               | anonymous pipes (separate threads in/out)
-               v
-+--------------+--------------+
-|   Terminal.Pty / .Native    |   P/Invoke + Job Object lifecycle
-+--------------+--------------+
-               |
-               | ReadOnlySequence<byte>
-               v
-+--------------+--------------+
-|   Terminal.Parser           |   Williams VT500 state machine
-+--------------+--------------+
-               |
-               | VtEvent stream
-               v
-+--------------+--------------+
-|   Terminal.Semantics        |   Screen model + SemanticEvent derivation
-+--------------+--------------+
-               |
-               | SemanticEvent
-               v
-+--------------+--------------+
-|   Terminal.EventBus         |   BroadcastBlock + bounded Channels
-+----+----------+--------+----+
-     |          |        |
-     |          |        v
-     |          |  +-----+----------+
-     |          |  | Terminal.Audio |   IAudioSink → WasapiOut (Earcons)
-     |          |  +----------------+
-     |          v
-     |   +------+---------+
-     |   | Terminal.Ui.Wpf|   Elmish.WPF host + TerminalView
-     |   +------+---------+
-     |          |
-     |          v
-     |   +------+---------------+
-     |   | Terminal.Accessibility|  WPF AutomationPeer + UIA providers
-     |   +-----------------------+
-     v
-+----+----+
-| Logger  |   Serilog (planned)
-+---------+
-```
+Future research-stage docs reserve names for substrate not yet
+implemented:
+
+- **SessionModel** (per `docs/SESSION-MODEL.md`, item 28) — OSC
+  133-sourced (prompt, command, output, exit-code) tuple history;
+  inserts at Stage 3.5 between notification emission and
+  canonical-state synthesis.
+- **InputPathway protocol** (Phase 2) — analogous to
+  DisplayPathway for input-side; ships echo correlation +
+  cursor-aware editing.
+- **Pane abstraction** (per `docs/PANE-MODEL.md`, item 30) —
+  multi-pane workspace; today's shell view is one pane in a
+  future workspace.
+- **Customization substrate** (per `docs/CUSTOMIZATION-MODEL.md`,
+  item 31) — every pipeline stage gains an alternatives registry
+  + per-output trace + override rules.
 
 ## Modules
 
-`(implemented)` rows have code on `main` today; other rows land in the
-stage shown in parentheses.
+All ✅ rows have code on `main` as of 2026-05-07. 📋 reserved
+rows are research-stage substrates not yet implemented (see
+`docs/PIPELINE-NARRATIVE.md` for the operational vocabulary +
+the linked research-stage docs for design).
 
-| Project                         | Layer        | Owns                                                                                 | Status                |
-|---------------------------------|--------------|--------------------------------------------------------------------------------------|-----------------------|
-| `Terminal.Core`                 | Domain       | Pure types: `ColorSpec`, `SgrAttrs`, `Cell`, `Cursor`, `VtEvent`, plus `Screen` (mutable buffer) | implemented (3a)      |
-| `Terminal.Pty.Native`           | Interop      | `[<DllImport>]` signatures, `SafeHandle` subclasses, struct layouts                  | implemented (1)       |
-| `Terminal.Pty`                  | Host         | `CreatePseudoConsole` lifecycle, `ConPtyHost`, stdin `FileStream`, `Channel<byte[]>` reader | implemented (1); Job Object lifecycle deferred |
-| `Terminal.Parser`               | Stateful     | Williams VT500 state machine; emits `VtEvent`                                        | implemented (2)       |
-| `Terminal.Audio`                | Audio        | Placeholder; `IAudioSink`, `WasapiSink` arrive in Stage 9                            | placeholder           |
-| `Terminal.Accessibility`        | UIA          | `TerminalAutomationPeer` (Document role + `GetPattern` override returning Text pattern), `TerminalTextProvider` (`ITextProvider`), `TerminalTextRange` (`ITextRangeProvider` with Line / Word / Character review-cursor navigation) | implemented (4) |
-| `Views` (C# WPF library)        | UI           | `MainWindow.xaml`, `App.cs : Application`, `TerminalView : FrameworkElement` (custom `OnRender` over `Screen`) | implemented (0, 3b) |
-| `Terminal.App` (F# EXE)         | Composition  | `[<EntryPoint>]`, `VelopackApp.Build().Run()`, `ConPtyHost → Parser → Screen → TerminalView` wiring | implemented (0, 3b) |
-| `Terminal.Semantics` *(future)* | Stateful     | `VtEvent → SemanticEvent` (spinner detection, list detection, OSC sanitisation)      | Stage 5+              |
-| `Terminal.EventBus` *(future)*  | Plumbing     | `BroadcastBlock<SemanticEvent>` + per-consumer `Channel<T>`                          | Stage 5+              |
-| `Terminal.Tts` *(future)*       | Audio        | Piper subprocess sink, SAPI5 sink                                                    | Phase 2               |
-| `Terminal.Osc` *(future)*       | Audio        | Rug.Osc → SuperCollider sink                                                         | Phase 3               |
-| (Velopack `UpdateManager` lives in `Terminal.App`) | Distribution | `runUpdateFlow` + `setupAutoUpdateKeybinding` in `src/Terminal.App/Program.fs`; `Ctrl+Shift+U` triggers the flow; Ed25519 manifest verification returns at v0.1.0+ per `docs/RELEASE-PROCESS.md` | implemented (11) — kept in `Terminal.App` (composition root) rather than a dedicated `Terminal.Update` project, per walking-skeleton discipline |
+### Shipped projects
+
+| Project | Layer | Owns | Status |
+|---|---|---|---|
+| `Terminal.Core` | Domain + substrate | Pure types (`ColorSpec`, `SgrAttrs`, `Cell`, `Cursor`, `VtEvent`); `Screen`; `Coalescer`; `CanonicalState`; `StreamPathway`; `TuiPathway`; `DisplayPathway`; `PathwaySelector`; `OutputDispatcher`; `ProfileRegistry`; `PassThroughProfile`; `EarconProfile`; `NvdaChannel`; `EarconChannel`; `FileLoggerChannel`; `FileLogger`; `Config`; `OutputEventTypes` (incl. `SemanticCategory`, `Priority`, `ActivityIds`); `OutputEventBuilder`; `AnnounceSanitiser`; `KeyEncoding`; `HotkeyRegistry`; `Logger` | ✅ shipped (Stages 1-3 + 5 + 8a-8d + post-Stage-7 substrate cycle) |
+| `Terminal.Pty.Native` | Interop | `[<DllImport>]` signatures, `SafeHandle` subclasses, struct layouts | ✅ shipped (Stage 1) |
+| `Terminal.Pty` | Host | `CreatePseudoConsole` lifecycle, `ConPtyHost`, `readerLoop` helper, stdin `FileStream`, `Channel<byte[]>`-based reader; `ShellRegistry` + `EnvBlock` (env-scrub PO-5) | ✅ shipped (Stage 1 + Stage 7 PR-A/PR-B/PR-K env-scrub) |
+| `Terminal.Parser` | Stateful | Williams VT500 state machine (`StateMachine.fs`, `Parser.fs`); emits `VtEvent` | ✅ shipped (Stage 2) |
+| `Terminal.Audio` | Audio | NAudio-backed `EarconPlayer` + `EarconPalette` (bell-ping 800Hz, error-tone 400Hz, warning-tone 600Hz); WASAPI playback (`WasapiOut` per-play instance) | ✅ shipped (Stage 8d.1) |
+| `Terminal.Accessibility` | UIA | `TerminalAutomationPeer` (Document role + UIA Notifications API + `GetPattern` override returning Text pattern); `TerminalTextProvider` (`ITextProvider`); `TerminalTextRange` (`ITextRangeProvider` with Line / Word / Character / Document review-cursor navigation) | ✅ shipped (Stage 4) |
+| `Views` (C# WPF library) | UI | `MainWindow.xaml`, `App.cs : Application`, `TerminalView : FrameworkElement` (custom `OnRender` over `Screen`); paste handling, focus management, app-reserved hotkey filter | ✅ shipped (Stage 0 + 3b + 6) |
+| `Terminal.App` (F# EXE) | Composition | `[<EntryPoint>]`; `VelopackApp.Build().Run()`; full pipeline wiring (`ConPtyHost → Parser → Screen → CanonicalState → StreamPathway → OutputDispatcher → channels`); `Diagnostics.fs` Ctrl+Shift+D self-test battery; heartbeat; PathwayPump; hotkey dispatch | ✅ shipped (Stages 0 + 3b + 5 + 6 + 7 + post-Stage-7 substrate) |
+| (Velopack `UpdateManager` lives in `Terminal.App`) | Distribution | `runUpdateFlow` + `setupAutoUpdateKeybinding` in `src/Terminal.App/Program.fs`; `Ctrl+Shift+U` triggers; Ed25519 manifest verification returns at v0.1.0+ per `docs/RELEASE-PROCESS.md` | ✅ shipped (Stage 11) — kept in `Terminal.App` (composition root) rather than a dedicated `Terminal.Update` project, per walking-skeleton discipline |
+
+### Reserved (forward-looking; not in code today)
+
+| Substrate | Owns | Reservation | Source doc |
+|---|---|---|---|
+| SessionModel | (prompt, command, output, exit-code) tuples sourced from OSC 133 + heuristic fallback; per-shell-session by default | item 28 (Phase 2 implementation = FIRST POST-AUDIT IMPLEMENTATION CYCLE) | `docs/SESSION-MODEL.md` |
+| InputPathway protocol | Echo correlation; cursor-aware editing; structured input pathway | Phase 2 input framework cycle | `docs/INTERACTION-MODEL.md` §5.a (Input Composition Surface) |
+| Pane abstraction + Pane Coordinator | Multi-pane workspace; today's shell view is one pane | item 30 (Phase 2/3) | `docs/PANE-MODEL.md` |
+| Customization substrate | Alternatives registry per stage; per-output trace; override rules; Pipeline Inspector pane | item 31 (Phase 2/3) | `docs/CUSTOMIZATION-MODEL.md` |
+| ClaudeCodePathway / ReplPathway / FormPathway / AiInterpretedPathway | Per-shell-class display pathways with semantic awareness | Phase 2/3 | `docs/PIPELINE-NARRATIVE.md` pathway taxonomy |
+| `Terminal.Tts` (future) | Piper subprocess sink, SAPI5 sink (alongside NVDA's existing UIA path) | Phase 2/3 | `spec/event-and-output-framework.md` Part B.4 deferred channels |
+| Spatial audio (`Terminal.Osc` originally; now `EarconAt of Earcon * Position3D`) | Rug.Osc → SuperCollider sink; ASIO output | Phase 3 | `spec/event-and-output-framework.md` Part B.4 |
+
+Note: original draft project names `Terminal.Semantics` and
+`Terminal.EventBus` (per the original tech-plan) never
+materialised as separate projects. Per walking-skeleton
+discipline, semantic-event derivation lives in
+`Terminal.Core.Coalescer` + `Terminal.Core.CanonicalState` +
+`Terminal.Core.StreamPathway`; event-bus plumbing lives in
+`Terminal.Core.OutputDispatcher` (event-tap mechanism per
+PR #165) + `Terminal.Core.ChannelRegistry`.
 
 ## Threading model
 
-The threading rules below are non-negotiable. Violations cause hangs
-(ConPTY) or silent no-ops (UIA).
+The threading rules below are non-negotiable. Violations cause
+hangs (ConPTY) or silent no-ops (UIA).
 
-### Today (Stage 3b on `main`)
+### Today (post-Stage-7 substrate; 2026-05-07)
 
-| Thread                    | Owns                                                                                         |
-|---------------------------|----------------------------------------------------------------------------------------------|
-| ConPTY read thread        | `ConPtyHost`'s dedicated reader `Task`: `ReadFile` from `outputReadSide` into a bounded `Channel<byte array>`. Synchronous I/O only — ConPTY forbids `OVERLAPPED`. |
-| WPF Dispatcher (UI)       | Reads chunks from the channel via `Dispatcher.InvokeAsync`, feeds them through the `Parser`, applies `VtEvent`s to the `Screen`, and invalidates the `TerminalView` for repaint. Mutation and rendering both run here for now. |
+| Thread | Owns |
+|---|---|
+| ConPTY read thread | `Terminal.Pty.ConPtyHost`'s dedicated reader (composed in `Terminal.App.Program.startReaderLoop`): synchronous `ReadFile` from `outputReadSide` into a bounded `Channel<byte array>`. Synchronous I/O only — ConPTY forbids `OVERLAPPED`. |
+| ConPTY write thread | `ConPtyHost.WriteBytes` — drains keystroke bytes from `KeyEncoding` into `WriteFile` on `inputWriteSide` (Stage 6). |
+| Parser / Screen mutation thread | Single thread that owns the screen buffer + parser state; reads byte chunks from the read-thread channel; runs `Parser` → `Screen.Apply`; emits `ScreenNotification` events under gate-lock. |
+| PathwayPump thread | Drains `ScreenNotification` events; calls `CanonicalState.create` → active `DisplayPathway.Consume` → `OutputDispatcher.dispatch`. Per-shell pathway swap on Ctrl+Shift+1/2/3 hot-switch + alt-screen auto-detect (PR #161). |
+| FileLogger writer thread | `FileLoggerChannel` enqueues to a bounded channel; the writer dequeues + writes through (`AutoFlush = true` + `FileShare.ReadWrite`); crash-safe per-line semantics. |
+| Earcon thread (NAudio) | NAudio's own playback thread (per-play `WasapiOut` instance per PR #158); receives earcon-id requests via `EarconChannel`. |
+| WPF Dispatcher (UI) | Renders the `TerminalView` from immutable cell snapshots; **all** UIA `RaiseNotificationEvent` and `RaiseAutomationEvent` calls. Marshals from PathwayPump via `Dispatcher.InvokeAsync`. |
+| UIA RPC thread | Microsoft-owned; calls into our `ITextRangeProvider` from outside the Dispatcher. **Snapshots only**, no mutation. |
+| Diagnostic battery thread | `Terminal.App.Diagnostics` — when Ctrl+Shift+D fires, runs the self-test battery on a worker; uses `OutputDispatcher.installEventTap` (PR #165) to capture events; writes through to a per-run diagnostic log file (crash-safe like FileLogger). |
+| Heartbeat thread | 5-second background heartbeat per `runHeartbeat` in `Program.fs`; logs `Pid={Pid} Alive={Alive}` for post-hoc liveness diagnosis. |
 
-### Target (post-Stage 5)
+### Forward-looking thread additions
 
-| Thread                    | Owns                                                                                         |
-|---------------------------|----------------------------------------------------------------------------------------------|
-| ConPTY read thread        | Unchanged — produces bytes into a channel.                                                   |
-| ConPTY write thread       | Drains a write channel into `WriteFile` on `inputWriteSide` (Stage 6).                       |
-| Parser / semantics thread | Single thread that owns the screen buffer and parser state; mutates the buffer; emits `SemanticEvent`s. |
-| Earcon thread (NAudio)    | NAudio's own playback thread; receives `AudioEvent` over a bounded channel (Stage 9).         |
-| TPL Dataflow consumers    | One `ActionBlock` per consumer with `MaxDegreeOfParallelism = 1` for FIFO order.             |
-| WPF Dispatcher (UI)       | Renders the `TerminalView` from immutable snapshots; **all** `RaiseNotificationEvent` and `RaiseAutomationEvent` calls (Stage 4+). |
-| UIA RPC thread            | Microsoft-owned; calls into our `ITextRangeProvider` from outside the Dispatcher. **Snapshots only**, no mutation (Stage 4+). |
+When **SessionModel substrate** ships (Tier 1 implementation),
+expect:
+- Per-tuple lifecycle managed on the PathwayPump thread
+  (or its successor); no new dedicated thread.
+- OSC 133 detection inline with `Screen.Apply` events.
+- Persistence (if enabled) via a separate writer thread per
+  the FileLogger pattern.
+
+When **Phase 2 input framework** ships:
+- Echo correlation lives at the keystroke / pathway-pump
+  intersection.
+- Likely no new thread — the existing PathwayPump becomes
+  bidirectional (input + output cuts).
 
 Marshalling rules:
 
@@ -165,42 +207,77 @@ rewrite. See the spec for justification.
 
 ## Where the magic lives
 
-If you only have time to read three files when you start contributing:
+If you only have time to read five files when you start
+contributing:
 
-- `Terminal.Parser/StateMachine.fs` — the Williams VT500 state machine.
-  The cleanest reference is `alacritty/vte`; the F# DU port keeps the
-  same caps (`MAX_INTERMEDIATES = 2`, `MAX_OSC_PARAMS = 16`,
+- `Terminal.Parser/StateMachine.fs` + `Parser.fs` — the
+  Williams VT500 state machine. The cleanest reference is
+  `alacritty/vte`; the F# DU port keeps the same caps
+  (`MAX_INTERMEDIATES = 2`, `MAX_OSC_PARAMS = 16`,
   `MAX_OSC_RAW = 1024`).
-- `Terminal.Core/Screen.fs` — the screen model. Mutable buffer with
-  `Apply(VtEvent)` covering Print + auto-wrap + scroll, BS/HT/LF/CR,
-  CSI cursor moves and erases, and basic-16 SGR.
-- `Views/TerminalView.cs` — the WPF custom `FrameworkElement` that
-  renders the buffer. `OnRender` coalesces same-attr cell runs into
-  single `FormattedText`s; backgrounds drawn first, text on top,
-  manual underline at baseline.
+- `Terminal.Core/Screen.fs` — the screen model. Mutable buffer
+  with `Apply(VtEvent)` covering Print + auto-wrap + scroll,
+  BS/HT/LF/CR, CSI cursor moves and erases, SGR (basic-16 +
+  256-cube + Truecolor), DECSC/DECRC, alt-screen 1049 back-
+  buffer, and the OSC 52 SECURITY-CRITICAL silent drop.
+- `Terminal.Core/StreamPathway.fs` — the streaming-output
+  pathway: frame dedup, spinner suppression, sub-row suffix-
+  diff (`computeRowSuffixDelta`), bulk-change fallback, mode-
+  barrier flush policy, colour detection. The substantive
+  emit logic for "what NVDA reads when".
+- `Terminal.Core/OutputDispatcher.fs` — Profile/Channel routing
+  + event-tap mechanism (`installEventTap` per PR #165, the
+  diagnostic battery's introspection seam).
+- `Terminal.Accessibility/TerminalAutomationPeer.fs` — the UIA
+  peer. Document role + UIA Notifications API + `GetPattern`
+  override returning Text pattern. Mimics
+  `TermControlAutomationPeer.cpp` from microsoft/terminal.
+  Snapshot-based ranges; never locks the buffer.
 
-Coming attractions worth knowing about in advance:
+Substrate research-stage docs to read alongside the code:
 
-- `Terminal.Accessibility/TerminalAutomationPeer.fs` (Stage 4) — the
-  UIA peer. Mimic `TermControlAutomationPeer.cpp` from
-  microsoft/terminal. Implementation order is documented in
-  [`SESSION-HANDOFF.md`](SESSION-HANDOFF.md#stage-4-implementation-sketch):
-  a one-shot interop spike, then PR 4a (minimal UIA surface +
-  `GetText`), PR 4b (review-cursor navigation), PR 4c (FlaUI
-  integration test).
-- `Terminal.Semantics/SpinnerDetector.fs` (Stage 5+) — the row-hash /
-  5-Hz / 1-s rule that prevents Claude Code's spinner from freezing
-  NVDA. This is the single biggest accessibility win in Phase 1.
+- [`docs/PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md) — the
+  12-stage pipeline glossary (operational vocabulary).
+- [`docs/INTERACTION-MODEL.md`](INTERACTION-MODEL.md) — the
+  Shell Interaction Manager + three-component model.
+- [`docs/SESSION-MODEL.md`](SESSION-MODEL.md) — forward-looking
+  history substrate.
+- [`docs/PANE-MODEL.md`](PANE-MODEL.md) — multi-pane workspace
+  framework.
+- [`docs/CUSTOMIZATION-MODEL.md`](CUSTOMIZATION-MODEL.md) —
+  user-introspectable + customizable pipeline principle.
 
 ## See also
 
+### Spec + strategic plans
 - Full rationale: [`spec/overview.md`](../spec/overview.md)
-- Stage plan: [`spec/tech-plan.md`](../spec/tech-plan.md)
+- Original stage plan: [`spec/tech-plan.md`](../spec/tech-plan.md)
+- Post-Stage-7 substrate spec: [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md)
 - Roadmap: [`ROADMAP.md`](ROADMAP.md)
+- Strategic plan (snapshot 2026-05-03): [`PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md)
+
+### Substrate research-stage docs
+- Pipeline vocabulary: [`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md)
+- History substrate: [`SESSION-MODEL.md`](SESSION-MODEL.md)
+- Architectural framing: [`INTERACTION-MODEL.md`](INTERACTION-MODEL.md)
+- UI composition: [`PANE-MODEL.md`](PANE-MODEL.md)
+- User-customization: [`CUSTOMIZATION-MODEL.md`](CUSTOMIZATION-MODEL.md)
+
+### Audit-track docs
+- Code consistency: [`AUDIT-CODE-CONSISTENCY.md`](AUDIT-CODE-CONSISTENCY.md)
+- Test inventory: [`AUDIT-TEST-INVENTORY.md`](AUDIT-TEST-INVENTORY.md)
+- Spec alignment: [`AUDIT-SPEC-ALIGNMENT.md`](AUDIT-SPEC-ALIGNMENT.md)
+- Atlas alignment: [`AUDIT-ATLAS-ALIGNMENT.md`](AUDIT-ATLAS-ALIGNMENT.md)
+- Doc currency: [`AUDIT-DOC-CURRENCY.md`](AUDIT-DOC-CURRENCY.md)
+- Backlog validation: [`AUDIT-BACKLOG-VALIDATION.md`](AUDIT-BACKLOG-VALIDATION.md)
+
+### Operational / release
 - Build: [`BUILD.md`](BUILD.md)
 - Release process: [`RELEASE-PROCESS.md`](RELEASE-PROCESS.md)
-- ConPTY platform notes (observed quirks): [`CONPTY-NOTES.md`](CONPTY-NOTES.md)
+- ConPTY platform notes: [`CONPTY-NOTES.md`](CONPTY-NOTES.md)
 - Stable checkpoints / rollback: [`CHECKPOINTS.md`](CHECKPOINTS.md)
 - Stage 11 update-failure NVDA reference: [`UPDATE-FAILURES.md`](UPDATE-FAILURES.md)
-- User settings catalog (current and planned): [`USER-SETTINGS.md`](USER-SETTINGS.md)
+- User settings catalog: [`USER-SETTINGS.md`](USER-SETTINGS.md)
 - Manual smoke-test matrix: [`ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
+- Logging architecture: [`LOGGING.md`](LOGGING.md)
+- Doc index: [`DOC-MAP.md`](DOC-MAP.md)

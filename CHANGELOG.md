@@ -15,6 +15,94 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed + Added (Cycle 10): pre-implementation cleanup bundle
+
+Bundles four post-audit fixup deliverables into one PR
+(per the maintainer's 2026-05-07 efficiency directive —
+"can you bundle all of the small ones into one PR before
+moving into major code changes"). All docs-only; no code
+changes; no spec changes.
+
+**Bundle contents**:
+
+1. **Track D atlas-side fixups** (per
+   `docs/AUDIT-ATLAS-ALIGNMENT.md` Tier 1 findings) —
+   `docs/USER-SETTINGS.md` updated:
+   - **D2** `bulkChangeThreshold` "Current state" body:
+     describe as `Parameters.BulkChangeThreshold` field
+     (not the pre-PR-#168 top-level `let private`).
+   - **D3** `backspacePolicy` section header + body:
+     reflect `AnnounceDeletedCharacter` default (PR #168
+     correction); preserve historical context.
+   - **D4** `modeBarrier.flushPolicy` section header +
+     body: reflect `SummaryOnly` default (PR #168 + #169);
+     preserve historical context.
+   - **D5** `FileLoggerOptions.ChannelCapacity = 8192`
+     orphan: documented as 📋 reserved under "Platform-
+     internal buffer / capacity defaults".
+   - **D6** ConPtyHost buffer-size = 4096 orphan:
+     documented as 📋 reserved alongside D5.
+2. **Track E doc-currency fixups** (per
+   `docs/AUDIT-DOC-CURRENCY.md` Tier 1 findings):
+   - **E1** `docs/ROADMAP.md` Stage 7 row: marked
+     **shipped** (2026-05-03) with citation to PRs A-K +
+     PR-L + PR-M.
+   - **E6** `docs/SESSION-HANDOFF.md` "Where we left off"
+     table: rewritten to reflect post-Stage-7 substrate
+     cycle (#146-#184); five research-stage docs; audit
+     phase; current in-flight branch (this PR);
+     "Next stage" pointer updated to SessionModel Tier 1
+     implementation.
+3. **ARCHITECTURE.md substantive refresh** (per Track E
+   E2-E4 + Track E Tier 5):
+   - Currency note updated to reflect Stages 0-7 + 11
+     shipped + post-Stage-7 substrate.
+   - Current-pipeline diagram redrawn through the 12-stage
+     pipeline (PIPELINE-NARRATIVE vocabulary).
+   - Module table refreshed: shipped projects
+     (Terminal.Core / Pty / Pty.Native / Parser / Audio /
+     Accessibility / Views / App) all marked ✅; reserved
+     substrates (SessionModel, InputPathway, Pane,
+     Customization, ClaudeCodePathway etc.) catalogued
+     under "Reserved" section. Notes clarify that
+     `Terminal.Semantics` / `Terminal.EventBus` from the
+     original draft never materialised as separate
+     projects (subsumed into `Terminal.Core`).
+   - Threading-model "Today" section rewritten for
+     post-Stage-7 substrate: PathwayPump thread,
+     FileLogger writer thread, Earcon thread, Diagnostic
+     battery thread, Heartbeat thread.
+   - "Forward-looking thread additions" section added.
+   - "Where the magic lives" expanded from 3 files to 5
+     (adds StreamPathway + OutputDispatcher) plus the 5
+     research-stage doc references.
+   - "See also" section reorganised under categories
+     (spec / research-stage / audit-track / operational).
+4. **PROJECT-PLAN successor doc** (Track E E5 Option B
+   resolution per the audit walk-through):
+   - **NEW** `docs/PROJECT-PLAN-2026-05-revision.md`
+     (~264 lines) — successor to the 2026-05-03 plan.
+     Captures substrate-first shift; enumerates shipped
+     substrate cycle + research-stage docs + audit phase
+     + post-audit cleanup; points next stage at
+     SessionModel Tier 1 implementation.
+   - Original `PROJECT-PLAN-2026-05.md` body preserved
+     verbatim per its own "Future revisions should land
+     as new dated plans" discipline.
+
+DOC-MAP.md updated with the new
+`PROJECT-PLAN-2026-05-revision.md` entry.
+
+**This PR closes the audit-fixup queue**. After merge:
+- Track D atlas-side findings ✅ closed.
+- Track E doc-currency findings ✅ closed.
+- ARCHITECTURE.md refresh ✅ shipped.
+- PROJECT-PLAN successor ✅ shipped.
+
+**Sequencing**: Cycle 10 of post-audit work. Closes the
+post-audit cleanup phase. **Next: SessionModel Tier 1
+implementation = FIRST POST-AUDIT IMPLEMENTATION CYCLE**.
+
 ### Changed (spec): rename StreamProfile → PassThroughProfile (Track C D1, ADR-authorised)
 
 `spec/event-and-output-framework.md` — apply the
