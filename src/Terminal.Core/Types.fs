@@ -269,7 +269,24 @@ type PromptBoundaryData =
       /// Other OSC 133 parameters (`k=`, `cl=`, etc.) preserved
       /// verbatim. Future shells / extensions may attach
       /// custom keys. Tier 1 stores but doesn't interpret.
-      ExtraParams: Map<string, string> }
+      ExtraParams: Map<string, string>
+      /// Tier 1.E (PromptText capture) — the rendered text
+      /// of the row that triggered detection, when known at
+      /// boundary-emission time. Populated by:
+      ///   * `HeuristicPromptDetector` — captures the matching
+      ///     row's text inline when the regex-stability check
+      ///     fires.
+      ///   * `Program.fs.handlePromptBoundary` — augments OSC
+      ///     133 boundaries by rendering the cursor's row from
+      ///     a fresh snapshot (the OSC 133 parser has no
+      ///     screen access).
+      ///   * `Osc133.tryParse` — leaves `None` (parser
+      ///     produces records pre-augmentation).
+      /// `SessionModel.apply` writes this into the active
+      /// tuple's `PromptText` on PromptStart transitions.
+      /// `None` is preserved through state transitions (the
+      /// active tuple's `PromptText` stays `""`).
+      MatchedRowText: string option }
 
 /// Notifications emitted by the parser/screen subsystem onto
 /// a `Channel<ScreenNotification>` consumed by the UIA peer

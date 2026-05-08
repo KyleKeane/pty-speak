@@ -208,7 +208,12 @@ module HeuristicPromptDetector =
                                             stabilityMs
                                       DetectedAt = now
                                       CommandId = None
-                                      ExtraParams = Map.empty }
+                                      ExtraParams = Map.empty
+                                      // Tier 1.E: capture the
+                                      // matching row's text for
+                                      // SessionModel PromptText
+                                      // population.
+                                      MatchedRowText = Some text }
                             emittedText <- Some text
                     | _ ->
                         // First time seeing this text on

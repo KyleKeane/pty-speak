@@ -1012,11 +1012,35 @@ module Program =
         // dispatch heuristic-detected boundaries (Tier 1.D) via
         // this helper. F# `let` bindings are sequential.
         let handlePromptBoundary (boundary: PromptBoundaryData) : unit =
-            currentSession <- SessionModel.apply currentSession boundary
-            let emitted = activePathway.OnPromptBoundary boundary
+            // SessionModel Tier 1.E — PromptText augmentation.
+            // Heuristic boundaries arrive with `MatchedRowText`
+            // already populated (the detector renders the row
+            // it matched). OSC 133 boundaries arrive from the
+            // notification channel without snapshot context; we
+            // capture a fresh snapshot here and render the
+            // cursor's row to populate `MatchedRowText` for
+            // SessionModel.apply's PromptText write.
+            // Augmentation is a no-op for non-PromptStart
+            // boundaries (CommandStart / OutputStart /
+            // CommandFinished don't write PromptText today;
+            // Tier 1.E2 will add CommandText / OutputText
+            // capture for those).
+            let augmented =
+                match boundary.MatchedRowText, boundary.Kind with
+                | Some _, _ -> boundary
+                | None, BoundaryKind.PromptStart ->
+                    let _, (cursorRow, _), snap =
+                        screen.SnapshotRows(0, screen.Rows)
+                    let text =
+                        CanonicalState.renderRow snap cursorRow
+                    { boundary with
+                        MatchedRowText = Some text }
+                | None, _ -> boundary
+            currentSession <- SessionModel.apply currentSession augmented
+            let emitted = activePathway.OnPromptBoundary augmented
             pumpLog.LogDebug(
                 "PathwayPump PromptBoundary {Kind} → {Pathway}.OnPromptBoundary → {Count} events.",
-                boundary.Kind,
+                augmented.Kind,
                 activePathway.Id,
                 emitted.Length)
             dispatchPathwayEvents emitted

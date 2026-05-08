@@ -48,7 +48,8 @@ let private boundary
       Source = BoundarySource.Osc133
       DetectedAt = detectedAt
       CommandId = None
-      ExtraParams = Map.empty }
+      ExtraParams = Map.empty
+      MatchedRowText = None }
 
 let private boundaryWith
         (kind: BoundaryKind)
@@ -61,7 +62,24 @@ let private boundaryWith
       Source = BoundarySource.Osc133
       DetectedAt = detectedAt
       CommandId = commandId
-      ExtraParams = Map.ofList extras }
+      ExtraParams = Map.ofList extras
+      MatchedRowText = None }
+
+/// Tier 1.E builder — boundary with explicit `MatchedRowText`.
+/// Used by PromptText-population tests that need to verify
+/// the field flows from boundary into `Active.Tuple.PromptText`.
+let private boundaryWithText
+        (kind: BoundaryKind)
+        (detectedAt: DateTime)
+        (matchedText: string)
+        : PromptBoundaryData
+        =
+    { Kind = kind
+      Source = BoundarySource.Osc133
+      DetectedAt = detectedAt
+      CommandId = None
+      ExtraParams = Map.empty
+      MatchedRowText = Some matchedText }
 
 let private t0 = DateTime(2026, 5, 8, 12, 0, 0, DateTimeKind.Utc)
 let private after (ms: int) = t0.AddMilliseconds(float ms)
@@ -137,7 +155,8 @@ let ``PromptBoundaryData record literal constructs all fields`` () =
           Source = BoundarySource.Osc133
           DetectedAt = now
           CommandId = Some "abc-123"
-          ExtraParams = Map.ofList [ "k", "v" ] }
+          ExtraParams = Map.ofList [ "k", "v" ]
+          MatchedRowText = None }
     Assert.Equal(BoundaryKind.PromptStart, data.Kind)
     Assert.Equal(BoundarySource.Osc133, data.Source)
     Assert.Equal(now, data.DetectedAt)
@@ -151,9 +170,23 @@ let ``PromptBoundaryData supports None CommandId and empty ExtraParams`` () =
           Source = BoundarySource.HeuristicPromptRegex 100
           DetectedAt = DateTime.UtcNow
           CommandId = None
-          ExtraParams = Map.empty }
+          ExtraParams = Map.empty
+          MatchedRowText = None }
     Assert.Equal(None, data.CommandId)
     Assert.True(Map.isEmpty data.ExtraParams)
+
+[<Fact>]
+let ``PromptBoundaryData carries optional MatchedRowText (Tier 1.E)`` () =
+    let withText : PromptBoundaryData =
+        { Kind = BoundaryKind.PromptStart
+          Source = BoundarySource.HeuristicPromptRegex 100
+          DetectedAt = DateTime.UtcNow
+          CommandId = None
+          ExtraParams = Map.empty
+          MatchedRowText = Some "C:\\>" }
+    Assert.Equal(Some "C:\\>", withText.MatchedRowText)
+    let withoutText = { withText with MatchedRowText = None }
+    Assert.Equal(None, withoutText.MatchedRowText)
 
 // ---------------------------------------------------------------------
 // ScreenNotification.PromptBoundary (preserved from Tier 1.A)
@@ -166,7 +199,8 @@ let ``ScreenNotification.PromptBoundary round-trips through pattern match`` () =
           Source = BoundarySource.Osc133
           DetectedAt = DateTime.UtcNow
           CommandId = None
-          ExtraParams = Map.empty }
+          ExtraParams = Map.empty
+          MatchedRowText = None }
     let notification = ScreenNotification.PromptBoundary data
     match notification with
     | ScreenNotification.PromptBoundary roundTripped ->
@@ -434,22 +468,26 @@ let ``Sources map records (Kind, Source) for each boundary`` () =
             Source = BoundarySource.Osc133
             DetectedAt = t0
             CommandId = None
-            ExtraParams = Map.empty }
+            ExtraParams = Map.empty
+            MatchedRowText = None }
           { Kind = BoundaryKind.CommandStart
             Source = BoundarySource.HeuristicPromptRegex 100
             DetectedAt = after 100
             CommandId = None
-            ExtraParams = Map.empty }
+            ExtraParams = Map.empty
+            MatchedRowText = None }
           { Kind = BoundaryKind.OutputStart
             Source = BoundarySource.HeuristicClaudeInkBox
             DetectedAt = after 200
             CommandId = None
-            ExtraParams = Map.empty }
+            ExtraParams = Map.empty
+            MatchedRowText = None }
           { Kind = BoundaryKind.CommandFinished (Some 0)
             Source = BoundarySource.Osc133
             DetectedAt = after 300
             CommandId = None
-            ExtraParams = Map.empty } ]
+            ExtraParams = Map.empty
+            MatchedRowText = None } ]
         |> List.fold SessionModel.apply initial
     let tuple = final.History.ToArray().[0]
     Assert.Equal(
@@ -785,7 +823,8 @@ let private heuristicBoundary
       Source = BoundarySource.HeuristicPromptRegex stabilityMs
       DetectedAt = detectedAt
       CommandId = None
-      ExtraParams = Map.empty }
+      ExtraParams = Map.empty
+      MatchedRowText = None }
 
 [<Fact>]
 let ``apply with HeuristicPromptRegex source populates Active`` () =
@@ -833,3 +872,76 @@ let ``Sources map records HeuristicPromptRegex stability ms verbatim`` () =
             Some (BoundarySource.HeuristicPromptRegex 100),
             Map.tryFind BoundaryKind.PromptStart active.Tuple.Sources)
     | None -> Assert.Fail("Expected Active")
+
+// =====================================================================
+// Tier 1.E — PromptText capture (boundary.MatchedRowText flows into
+// Active.Tuple.PromptText on PromptStart transitions)
+// =====================================================================
+
+[<Fact>]
+let ``PromptStart with MatchedRowText populates Active.Tuple.PromptText`` () =
+    let initial = SessionModel.create "cmd" 50
+    let updated =
+        SessionModel.apply
+            initial
+            (boundaryWithText BoundaryKind.PromptStart t0 "C:\\Users\\admin>")
+    match updated.Active with
+    | Some active ->
+        Assert.Equal("C:\\Users\\admin>", active.Tuple.PromptText)
+    | None -> Assert.Fail("Expected Active after PromptStart")
+
+[<Fact>]
+let ``PromptStart with None MatchedRowText leaves PromptText empty`` () =
+    let initial = SessionModel.create "cmd" 50
+    let updated =
+        SessionModel.apply
+            initial
+            (boundary BoundaryKind.PromptStart t0)
+    match updated.Active with
+    | Some active ->
+        Assert.Equal("", active.Tuple.PromptText)
+    | None -> Assert.Fail("Expected Active after PromptStart")
+
+[<Fact>]
+let ``Interrupt + restart writes new boundary's MatchedRowText to fresh tuple`` () =
+    // First PromptStart with text "PS C:\>"; second PromptStart
+    // (interrupt) with different text "PS C:\Projects>". The
+    // restart-state machine arm uses the NEW boundary for
+    // newTuple, so the new active tuple's PromptText should
+    // reflect the second boundary's MatchedRowText.
+    let initial = SessionModel.create "powershell" 50
+    let s1 =
+        SessionModel.apply
+            initial
+            (boundaryWithText BoundaryKind.PromptStart t0 "PS C:\\>")
+    let s2 =
+        SessionModel.apply
+            s1
+            (boundaryWithText
+                BoundaryKind.PromptStart
+                (after 100)
+                "PS C:\\Projects>")
+    match s2.Active with
+    | Some active ->
+        Assert.Equal("PS C:\\Projects>", active.Tuple.PromptText)
+    | None -> Assert.Fail("Expected Active after restart")
+    // And the prior tuple finalised with its original text.
+    Assert.Equal(1, s2.History.Count)
+    let prior = s2.History.ToArray().[0]
+    Assert.Equal("PS C:\\>", prior.PromptText)
+
+[<Fact>]
+let ``MatchedRowText preserved across A->B->C->D progression`` () =
+    // PromptText set on PromptStart; subsequent
+    // CommandStart / OutputStart / CommandFinished do not
+    // overwrite it (their MatchedRowText is None or
+    // ignored).
+    let initial = SessionModel.create "cmd" 50
+    let final =
+        [ boundaryWithText BoundaryKind.PromptStart t0 "C:\\>"
+          boundary BoundaryKind.CommandStart (after 100)
+          boundary BoundaryKind.OutputStart (after 200)
+          boundary (BoundaryKind.CommandFinished (Some 0)) (after 300) ]
+        |> List.fold SessionModel.apply initial
+    let tuple = final.History.ToArray().[0]
+    Assert.Equal("C:\\>", tuple.PromptText)
