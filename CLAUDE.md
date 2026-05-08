@@ -23,8 +23,10 @@ before deviating.
 3. **[`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)** — the
    bridge between sessions; "where we left off", in-flight branches,
    pre-digested implementation sketches for the next stage.
-4. **[`docs/PROJECT-PLAN-2026-05.md`](docs/PROJECT-PLAN-2026-05.md)**
-   — strategic plan that supersedes Stages 7-10 sequencing.
+4. **[`docs/PROJECT-PLAN-2026-05-revision.md`](docs/PROJECT-PLAN-2026-05-revision.md)**
+   — current strategic plan (2026-05-07 revision); supersedes
+   the original `PROJECT-PLAN-2026-05.md` per Track E E5
+   dated-snapshot discipline.
 5. **[`spec/tech-plan.md`](spec/tech-plan.md)** §N for the canonical
    spec of whatever stage you're working on.
 6. **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — canonical PR shape,

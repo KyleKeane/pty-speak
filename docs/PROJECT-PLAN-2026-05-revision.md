@@ -262,3 +262,4 @@ gets preserved in the same way.
 | Date | Author | Change |
 |---|---|---|
 | 2026-05-07 | Cycle 10 (Track E E5 Option B resolution) | Initial successor doc. Captures substrate-first shift; reflects shipped substrate cycle (#146-#184); enumerates audit phase (Tracks A-F); points next stage at SessionModel Tier 1 implementation. |
+| 2026-05-09 | Cycle 23 doc cleanup | Tier 1 SessionModel implementation cycle shipped end-to-end via PRs #185-#199 (Cycles 11-22b inclusive). The "Next stage" pointer in the body text dates to 2026-05-07; current state is "Tier 2 persistence OR Phase 2 input framework — maintainer's choice". The "Sequencing post-audit" block's `Cycle 11` row corresponds to the multi-PR Tier 1 implementation cycle that shipped 2026-05-07/08; `Cycle 12-15` (Tier 2-3) and `Cycle 16+` (Phase 2) remain forward-looking. Body preserved per dated-snapshot discipline; re-snapshot will land as a future successor doc when the next major phase begins. |

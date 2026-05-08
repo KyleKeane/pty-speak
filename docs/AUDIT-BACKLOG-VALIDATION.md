@@ -59,24 +59,28 @@ GitHub issues. Pure classification.
 
 ## Findings summary
 
-**Strategic backlog (snapshot 2026-05-07):**
+**Strategic backlog (original snapshot 2026-05-07; refreshed 2026-05-09 after Tier 1 closure):**
 
-| Status | Count | Meaning |
-|---|---|---|
-| ✅ shipped | 11 | Item complete; PR cited. |
-| ✅ partially shipped | 5 | Research-stage doc shipped; implementation pending (or substrate shipped; refinements pending). |
-| 📋 pending | 11 | Item open + ready-to-pick-up (no blockers, scope known). |
-| ⏸ deferred | 3 | Item explicitly deferred per maintainer or by sequencing. |
-| 🔄 superseded | 2 | Item replaced by different approach. |
-| ❓ orphaned | 0 | No items have no clear owner / next-step. |
+| Status | Count (refreshed) | Original 2026-05-07 | Meaning |
+|---|---|---|---|
+| ✅ shipped | 14 | 11 | Item complete; PR cited. |
+| ✅+ partially shipped | 3 | 5 | Research-stage doc shipped; implementation pending (or substrate shipped; refinements pending). |
+| 📋 pending | 11 | 11 | Item open + ready-to-pick-up (no blockers, scope known). |
+| ⏸ deferred | 3 | 3 | Item explicitly deferred per maintainer or by sequencing. |
+| 🔄 superseded | 2 | 2 | Item replaced by different approach. |
+| ❓ orphaned | 0 | 0 | No items have no clear owner / next-step. |
 
-**Headline**: backlog is **healthy**. ~50% of items have
-shipped or are in-flight; remaining ~33% are clearly
-sequenced; ~17% are deferred or superseded with explicit
-rationale. No orphans.
+**Headline**: backlog is **healthier post-Tier-1**.
+Item 25 (testing inventory), item 28 (SessionModel
+substrate), and items 23/24 (shell-switch flush) have
+advanced from ✅+ partial to ✅ shipped. New items 32
+(CHANNEL-ARCHITECTURE) and 33 (default-shell config)
+shipped post-snapshot. ~46% of items shipped or in-flight;
+remaining ~33% sequenced; ~17% deferred or superseded with
+explicit rationale. No orphans.
 
-**Plus 4 audit-track sub-items** (25-B, 25-D, 25-E, 25-F)
-all shipped or shipping in this cycle.
+**Plus 6 audit-track sub-items** (25-A through 25-F) all
+shipped (audit phase formally closed with PR #180).
 
 ## Per-item table
 
@@ -113,12 +117,15 @@ Compact format. Status legend:
 | 22 | Claude startup banner triggers ErrorLine | 📋 | Phase 2 ClaudeCodePathway should suppress; depends on item 9 |
 | 23 | Shell-switch barrier carries previous shell's red flag | ✅+ | partially fixed by PR #169 (`SummaryOnly` mode-barrier-flush default suppresses previous-shell flush, which removes the red-row stale-flag scenario for shell-switch); refinement still possible |
 | 24 | Shell-switch barrier-flush dumps full previous-shell screen | ✅ | PR #169 (mode-barrier flush policy default = `SummaryOnly`) |
-| 25 | Testing + validation inventory pass | ✅+ | substantially shipped via Tracks A-E (PRs #172, #176-#179); item-25 sub-items (25-B / 25-D / 25-E / 25-F) all shipped or shipping. Tier 1 test extensions per Track B recommendations remain pending. |
+| 25 | Testing + validation inventory pass | ✅ | shipped end-to-end via Tracks A-F (PRs #172, #175-#180); audit phase formally closed 2026-05-07. Track B recommendations (property-based tests, fixture corpus, diagnostic battery extensions) tracked as separate follow-up cycles per Track B recommendation tiers. |
 | 26 | Parameter Atlas research stage | ✅ | PR #167 augmented `docs/USER-SETTINGS.md` with the parameter-atlas content per the original item 26 framing; reusable atlas pattern established |
 | 27 | Screen-history / scrollback substrate | 🔄 | reframed as downstream of SessionModel (item 28); not a separate substrate |
-| 28 | SessionModel substrate | ✅+ | PR #171 shipped `docs/SESSION-MODEL.md` (design doc, 1453 lines); implementation pending. Tier 1 implementation cycle is the FIRST IMPLEMENTATION CYCLE after audit phase closes. |
-| 29 | Interaction Model research stage | ✅ | PR #173 (`docs/INTERACTION-MODEL.md`, 1429 lines) |
-| 30 | Pane Model research stage | ✅+ | PR #174 shipped `docs/PANE-MODEL.md` (sketch, 1132 lines); implementation pending (Phase 2/3) |
+| 28 | SessionModel substrate | ✅ | PR #171 shipped `docs/SESSION-MODEL.md` (design doc, 1453 lines). Tier 1 implementation cycle shipped end-to-end via PRs #185-#199 (Cycles 11-22b inclusive): substrate skeleton (#185), OSC 133 producer + cursor field (#186), state machine + composition (#187), heuristic fallback + alt-screen wiring (#189), PromptText capture (#190), diagnostic battery extension (#191), tick-driven detector via channel-driven actor model (#192), default-shell config + detector consolidation (#194), row-index-aware emission (#195) + announce-wording followup (#196), CommandText + OutputText extraction (#197), multi-match flap fix (#198), Ctrl+Shift+Y clipboard hotkey (#199). All 8 SESSION-MODEL.md questions resolved 2026-05-07/08. **Tier 2 persistence is the next SessionModel implementation cycle**. |
+| 29 | Interaction Model research stage | ✅ | PR #173 (`docs/INTERACTION-MODEL.md`, 1429 lines); 6 open questions resolved Cycle 8 (PR #182) |
+| 30 | Pane Model research stage | ✅+ | PR #174 shipped `docs/PANE-MODEL.md` (sketch, 1132 lines); 5 open questions resolved Cycle 8 (PR #182); implementation pending (Phase 2/3) |
+| 31 | Customization Model research stage | ✅+ | PR #181 shipped `docs/CUSTOMIZATION-MODEL.md` (sketch); 7 open questions (Q1-Q7) await maintainer Q&A walk-through (Cycle 23 in flight) |
+| 32 | Channel Architecture research stage | ✅ | PR #193 (Cycle 18) shipped `docs/CHANNEL-ARCHITECTURE.md` (~579 lines). Captures channel-based-communication architectural principle + inventory + decision framework + 5 forward-looking tentative-resolution open questions. |
+| 33 | Default-shell config option | ✅ | PR #194 (Cycle 19) shipped TOML `[startup] default_shell` override; resolves the long-running "opens into Claude" issue without manipulating env vars. |
 
 ### Audit-track sub-items
 
@@ -129,7 +136,7 @@ Compact format. Status legend:
 | 25-C | Audit Track C — spec alignment | ✅ | PR #177 |
 | 25-D | Audit Track D — atlas alignment | ✅ | PR #178 |
 | 25-E | Audit Track E — doc currency | ✅ | PR #179 |
-| 25-F | Audit Track F — backlog validation | ⏳ | THIS PR |
+| 25-F | Audit Track F — backlog validation | ✅ | PR #180 — closed audit phase |
 
 ## Per-item analysis (selected items)
 
@@ -455,4 +462,5 @@ IMPLEMENTATION CYCLE).
 | Date | Author | Change |
 |---|---|---|
 | 2026-05-07 | Track F audit (Cycle 6) | Initial snapshot; 30 numbered backlog items + 6 audit-track sub-items inventoried; 11 ✅ shipped, 5 ✅+ partially shipped, 11 📋 pending, 3 ⏸ deferred, 2 🔄 superseded, 0 ❓ orphaned. 4 reorganization recommendations (R1-R4). Audit phase formally closes with this PR's merge. Subsequent cycles ship the audit-fixup queue + maintainer-open-question resolution + SessionModel Tier 1 implementation. |
+| 2026-05-09 | Cycle 23 doc cleanup | Refreshed item statuses post-Tier-1 closure. Item 25 advanced ✅+ → ✅ (audit phase formally closed PR #180). Item 25-F advanced ⏳ → ✅. Item 28 advanced ✅+ → ✅ (Tier 1 SessionModel implementation cycle shipped end-to-end via PRs #185-#199, Cycles 11-22b inclusive; SESSION-MODEL.md Q1-Q8 all resolved). Item 30 noted PANE-MODEL Q1-Q5 resolved Cycle 8. Items 29 + 30 noted INTERACTION-MODEL / PANE-MODEL question resolutions per Cycle 8. **New rows**: item 31 (Customization Model research stage; ✅+ shipped PR #181, 7 open questions awaiting maintainer Q&A), item 32 (Channel Architecture research stage; ✅ shipped PR #193, Cycle 18), item 33 (Default-shell config option; ✅ shipped PR #194, Cycle 19). Findings summary recomputed: 14 ✅ (was 11), 3 ✅+ (was 5), 11 📋 (unchanged), 3 ⏸ (unchanged), 2 🔄 (unchanged), 0 ❓ (unchanged). Doc front-matter date preserved at 2026-05-07 per Track E E5 dated-snapshot discipline; this row records the refresh delta. Subsequent cycles consume the maintainer Q&A walk-through (Cycle 23 Phase 2) → Q&A resolution PR (Cycle 23 Phase 3) → Tier 2 SessionModel persistence OR Phase 2 input framework (Cycle 24+). |
 

@@ -99,8 +99,10 @@ navigation anchor.
 
 ### "I'm planning the next cycle"
 
-1. [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md) — current
-   strategic plan
+1. [`docs/PROJECT-PLAN-2026-05-revision.md`](PROJECT-PLAN-2026-05-revision.md) — current
+   strategic plan (revision); the original
+   `PROJECT-PLAN-2026-05.md` is the historical 2026-05-03
+   snapshot
 2. [`docs/ROADMAP.md`](ROADMAP.md) — high-level stage list
 3. [`docs/STAGE-7-ISSUES.md`](STAGE-7-ISSUES.md) — design input for
    Output / Input framework cycles
