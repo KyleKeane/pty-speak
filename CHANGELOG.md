@@ -15,6 +15,101 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 16): SessionModel Tier 1.F — diagnostic battery extension + cross-assembly visibility gotcha
+
+**Sixth post-audit implementation cycle. Closes the Tier 1
+substrate cycle.** The SessionModel substrate has been
+operationally complete since Cycle 15 (skeleton + OSC 133 +
+state machine + heuristic fallback + alt-screen wiring +
+PromptText capture), but the maintainer had no easy way to
+verify substrate operation without grepping FileLogger
+output post-hoc. Tier 1.F closes that loop: the existing
+`Ctrl+Shift+D` diagnostic battery now inspects SessionModel
+state and surfaces it both via the NVDA announce (brief
+fragment) and the clipboard-copied diagnostic log (full
+multi-line block).
+
+**New types in `Diagnostics.fs`**:
+- `RecentTupleView` — per-tuple capture (Index, PromptText,
+  CommandStartedAt, OutputStartedAt, CommandFinishedAt,
+  ExitCode, plus boolean `HasCommandText` /
+  `HasOutputText` indicators for Tier 1.E2 readiness).
+- `SessionModelSnapshot` — captures SessionId, ShellId,
+  SessionStartedAt, IsAltScreenActive, History counts,
+  Active state + ActivePromptText, detector
+  LastEmittedPromptText + PerRowMatches size, active
+  pathway ID, and the most-recent 3 tuples
+  (most-recent-first ordering).
+- `truncate` helper — caps long PromptTexts at 40 chars
+  with `...` suffix to keep log lines paste-friendly.
+
+**New pure helpers**:
+- `captureSessionModel session detector activePathwayId :
+  SessionModelSnapshot` — pure capture function the
+  composition-root closure invokes at battery-start time.
+- `formatSessionModelSnapshot snap : string list` —
+  renders the snapshot as a list of log lines, one per
+  field group (SessionId / Active / Detector / Pathway /
+  per-recent-tuple).
+
+**Composition wiring** (`Program.fs.runDiagnostic`):
+adds a fifth resolver closure capturing `currentSession`
++ `promptDetector` + `activePathway.Id` from the
+`compose ()` local scope. Resolves at hotkey-press time
+so a hot-switch (and the associated `currentSession`
+recreation) is picked up correctly.
+
+**Diagnostic log integration** (`runFullBattery`):
+SessionModel inspection runs AFTER T0 process snapshot,
+BEFORE the earcons + per-shell command battery, so
+substrate state contextualises any test failures that
+follow. Lines logged under the new
+`[Diagnostic.SessionModel]` category mirror the existing
+log format (`yyyy-MM-ddTHH:mm:ss.fffZ [INF] [Category]
+message`).
+
+**NVDA announce extension**: brief substrate fragment
+appended to the existing summary line:
+
+```
+Diagnostic complete. 5 of 5 passed. SessionModel: 2
+tuples, active state AwaitingCommandStart. Diagnostic
+log copied to clipboard.
+```
+
+Adds ~5-10 NVDA-spoken words; keeps the announce under
+typical 10-second NVDA read time.
+
+**Tests**: per the Track B audit's
+"diagnostic-battery is the irreducible manual layer"
+recommendation, no new unit tests. Tests.Unit doesn't
+reference `Terminal.App` (would require pulling in WPF
++ ConPty for one test file). Verification falls to
+manual NVDA validation: maintainer presses Ctrl+Shift+D
+after running a few commands and confirms the announce
++ pasted log contain the new substrate block.
+
+**Bundled doc update**: CONTRIBUTING.md's "F# gotchas
+learned in practice" section gains a new bullet for the
+F# `let internal` cross-assembly visibility lesson
+banked from Cycle 15's CI fixup (PR #190).
+`CanonicalState.renderRow` was `let internal`; Tier 1.E's
+`Program.fs.handlePromptBoundary` (in Terminal.App)
+needed to call it for OSC 133 augmentation; CI fired
+FS1094. Documented fix options ranked: (1) drop
+`internal` for stable primitives, (2) add
+`InternalsVisibleTo`, (3) replicate inline. Bundled into
+this PR rather than shipping a separate doc-only PR.
+
+**Out of scope** (deferred):
+- `CommandText` / `OutputText` content display in
+  RecentTupleView — only booleans show today; full
+  content lights up when Tier 1.E2 ships.
+- Persistence inspection (Tier 2).
+- Pathway-internal state inspection (Phase 2).
+- Diagnostic JSON output (plain-text log sufficient).
+- Spec changes (per CLAUDE.md spec-immutability).
+
 ### Added (Cycle 15): SessionModel Tier 1.E — PromptText capture (text accumulation, part 1)
 
 **Fifth post-audit implementation cycle.** Begins

@@ -1532,6 +1532,20 @@ module Program =
                 (fun () -> hostHandle)
                 (fun () -> currentShell)
                 (fun () -> screen.SequenceNumber)
+                // Tier 1.F — SessionModel substrate snapshot.
+                // Closure captures `currentSession`,
+                // `promptDetector`, and `activePathway` from the
+                // `compose ()` local scope. Resolves at
+                // hotkey-press time so a hot-switch (and the
+                // associated `currentSession` recreation) is
+                // picked up correctly. Diagnostic log + announce
+                // surfaces substrate state per Tier 1.F's
+                // observability deliverable.
+                (fun () ->
+                    Diagnostics.captureSessionModel
+                        currentSession
+                        promptDetector
+                        activePathway.Id)
 
         // Stage 7-followup PR-F — wire Ctrl+Shift+H and Ctrl+Shift+B
         // through the unified `bindHotkey` helper (PR-O). Both
