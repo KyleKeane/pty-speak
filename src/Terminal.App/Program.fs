@@ -1088,29 +1088,44 @@ module Program =
                 emitted.Length)
             dispatchPathwayEvents emitted
 
+        // SessionModel Tier 1.D-cleanup (Cycle 19) — shared
+        // detector invocation. Was duplicated across
+        // `handleRowsChanged` (frame-driven path) and
+        // `handleTick` (50ms tick-driven path; introduced in
+        // Cycle 17 to close the idle-gap hole). Both call
+        // sites had identical 4-arg shape:
+        //   shellKey + detectionTime + tryDetect + state
+        //   update + dispatch on Some.
+        // Helper closes over `currentShellId` + `promptDetector`
+        // (composition-root mutables; safe because all callers
+        // run on the single notification-consumer thread per
+        // the channel-driven actor model from Cycle 17).
+        let runDetector
+                (snapshot: Cell[][])
+                (cursorPos: int * int)
+                (now: DateTime)
+                : unit
+                =
+            let shellKey = shellIdToConfigKey currentShellId
+            let boundary, nextDetector =
+                HeuristicPromptDetector.tryDetect
+                    snapshot cursorPos shellKey now promptDetector
+            promptDetector <- nextDetector
+            match boundary with
+            | Some data -> handlePromptBoundary data
+            | None -> ()
+
         let handleRowsChanged () : unit =
             let seq, cursorPos, snapshot = screen.SnapshotRows(0, screen.Rows)
             // SessionModel Tier 1.D — heuristic prompt-
             // boundary detection. Runs BEFORE pathway
             // consumption so the SessionModel state machine
             // advances ahead of any pathway query against
-            // currentSession. Detector is per-shell-keyed;
-            // unknown shells produce no boundary (Q2:
-            // ON for cmd / PowerShell / Claude; OFF for
-            // unknown).
-            let shellKey = shellIdToConfigKey currentShellId
-            let detectionTime = DateTime.UtcNow
-            let boundary, nextDetector =
-                HeuristicPromptDetector.tryDetect
-                    snapshot
-                    cursorPos
-                    shellKey
-                    detectionTime
-                    promptDetector
-            promptDetector <- nextDetector
-            match boundary with
-            | Some data -> handlePromptBoundary data
-            | None -> ()
+            // currentSession. See `runDetector` for the
+            // shared invocation logic; Cycle 19 factored it
+            // out of `handleRowsChanged` + `handleTick` to
+            // remove duplication.
+            runDetector snapshot cursorPos (DateTime.UtcNow)
             let canonical = CanonicalState.create snapshot cursorPos seq
             let emitted = activePathway.Consume canonical
             pumpLog.LogDebug(
@@ -1226,19 +1241,11 @@ module Program =
         // promptDetector / activePathway mutations.
         let handleTick (now: DateTimeOffset) : unit =
             let _, cursorPos, snapshot = screen.SnapshotRows(0, screen.Rows)
-            let shellKey = shellIdToConfigKey currentShellId
-            let detectionTime = now.UtcDateTime
-            let boundary, nextDetector =
-                HeuristicPromptDetector.tryDetect
-                    snapshot
-                    cursorPos
-                    shellKey
-                    detectionTime
-                    promptDetector
-            promptDetector <- nextDetector
-            match boundary with
-            | Some data -> handlePromptBoundary data
-            | None -> ()
+            // Cycle 19 — shared `runDetector` helper. Cycle 17
+            // introduced this tick-driven invocation to close
+            // the idle-gap hole; the inline body has been
+            // factored out for parity with `handleRowsChanged`.
+            runDetector snapshot cursorPos now.UtcDateTime
             let emitted = activePathway.Tick now
             if emitted.Length > 0 then
                 dispatchPathwayEvents emitted
@@ -1404,6 +1411,14 @@ module Program =
         // typo. PR-C added Ctrl+Shift+1 (cmd) / Ctrl+Shift+2 hotkeys;
         // PR-J reordered: Ctrl+Shift+1 = cmd, +2 = PowerShell, +3 =
         // claude.
+        //
+        // Cycle 19 — `[startup] default_shell` TOML override.
+        // Precedence (highest → lowest): TOML config → env var
+        // → cmd built-in default. Use case: maintainer has
+        // `PTYSPEAK_SHELL=claude` set from prior testing + wants
+        // cmd as durable default without manipulating env vars.
+        // Setting `[startup] default_shell = "cmd"` in the TOML
+        // wins over the env var.
         let resolveStartupShell () : ShellRegistry.Shell * string =
             let envVar = Environment.GetEnvironmentVariable("PTYSPEAK_SHELL")
             // Distinguish "unset" from "set to garbage" so the
@@ -1423,12 +1438,38 @@ module Program =
                     log.LogWarning(
                         "PTYSPEAK_SHELL=\"{Value}\" not recognised; falling back to cmd.exe. Recognised values: cmd, claude, powershell, pwsh.",
                         v)
+            // Cycle 19 — TOML config takes precedence. When set,
+            // we use it directly without consulting the env
+            // var. The Config-side parser already validated the
+            // value against `knownShellKeys`; here we just map
+            // `string → ShellId` via `parseEnvVar`.
+            let configShell =
+                match Config.resolveDefaultShell config with
+                | Some shellKey ->
+                    match ShellRegistry.parseEnvVar shellKey with
+                    | Some id ->
+                        log.LogInformation(
+                            "Startup shell resolved from [startup] default_shell = \"{Shell}\" (overriding PTYSPEAK_SHELL).",
+                            shellKey)
+                        Some id
+                    | None ->
+                        // Defensive — Config-side parser already
+                        // filtered against `knownShellKeys`, so this
+                        // arm shouldn't fire. Log + fall through.
+                        log.LogWarning(
+                            "Config: [startup] default_shell = \"{Shell}\" passed schema validation but parseEnvVar rejected it; falling through to PTYSPEAK_SHELL.",
+                            shellKey)
+                        None
+                | None -> None
             let requested =
-                match ShellRegistry.parseEnvVar envVar with
+                match configShell with
                 | Some id -> id
                 | None ->
-                    logIfUnrecognised ()
-                    ShellRegistry.Cmd
+                    match ShellRegistry.parseEnvVar envVar with
+                    | Some id -> id
+                    | None ->
+                        logIfUnrecognised ()
+                        ShellRegistry.Cmd
             // `tryFind` only returns None for ids not registered in
             // `builtIns`; both Cmd and Claude are registered, so this
             // is unreachable for the requested id, but the cmd-fallback

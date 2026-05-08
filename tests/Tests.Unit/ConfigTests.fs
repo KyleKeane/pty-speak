@@ -424,3 +424,48 @@ let ``unknown mode_barrier_flush_policy value logs Warning and falls back to def
     let resolved = Config.resolveStreamParameters config
     Assert.Equal(StreamPathway.SummaryOnly, resolved.ModeBarrierFlushPolicy)
     Assert.True(logger.HasLevel(LogLevel.Warning))
+
+// =====================================================================
+// Cycle 19 — `[startup] default_shell` TOML override
+// =====================================================================
+
+[<Fact>]
+let ``defaultConfig resolveDefaultShell returns None`` () =
+    Assert.Equal(None, Config.resolveDefaultShell Config.defaultConfig)
+
+[<Fact>]
+let ``[startup] default_shell = "cmd" parses + resolves`` () =
+    let toml =
+        "schema_version = 1\n[startup]\ndefault_shell = \"cmd\"\n"
+    let config, _ = loadFromText toml
+    Assert.Equal(Some "cmd", Config.resolveDefaultShell config)
+
+[<Fact>]
+let ``[startup] default_shell case-insensitive (uppercase folds to lowercase)`` () =
+    let toml =
+        "schema_version = 1\n[startup]\ndefault_shell = \"PowerShell\"\n"
+    let config, _ = loadFromText toml
+    Assert.Equal(Some "powershell", Config.resolveDefaultShell config)
+
+[<Fact>]
+let ``[startup] default_shell unknown value logs Warning + drops override`` () =
+    let toml =
+        "schema_version = 1\n[startup]\ndefault_shell = \"bash\"\n"
+    let config, logger = loadFromText toml
+    Assert.Equal(None, Config.resolveDefaultShell config)
+    Assert.True(logger.HasLevel(LogLevel.Warning))
+
+[<Fact>]
+let ``[startup] missing default_shell key returns None`` () =
+    let toml = "schema_version = 1\n[startup]\n"
+    let config, _ = loadFromText toml
+    Assert.Equal(None, Config.resolveDefaultShell config)
+
+[<Fact>]
+let ``[startup] unknown key logs Warning but does not corrupt parse`` () =
+    let toml =
+        "schema_version = 1\n[startup]\ndefault_shell = \"cmd\"\nunknown_setting = 42\n"
+    let config, logger = loadFromText toml
+    Assert.Equal(Some "cmd", Config.resolveDefaultShell config)
+    Assert.True(logger.HasLevel(LogLevel.Warning))
+

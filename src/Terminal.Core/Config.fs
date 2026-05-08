@@ -114,6 +114,21 @@ module Config =
           /// fall back.
           ModeBarrierFlushPolicy: StreamPathway.ModeBarrierFlushPolicy option }
 
+    /// Cycle 19 — `[startup]` TOML section: composition-root
+    /// startup-shell override. When `DefaultShell` is `Some`,
+    /// the composition root's `resolveStartupShell` uses it
+    /// in PREFERENCE to the `PTYSPEAK_SHELL` env var. Use
+    /// case: maintainer has `PTYSPEAK_SHELL=claude` set from
+    /// prior testing + wants cmd as durable default without
+    /// manipulating env vars (per the 2026-05-08 testing
+    /// session). String-keyed (lowercase shell id) per the
+    /// existing `ShellOverrides` discipline; valid values
+    /// match `ShellRegistry.parseEnvVar`'s recognition list
+    /// (`"cmd"`, `"powershell"`, `"pwsh"`, `"claude"`).
+    /// Unknown values logged + dropped at parse time.
+    type StartupOverrides =
+        { DefaultShell: string option }
+
     /// The top-level config record. `ShellOverrides` is keyed
     /// by lowercase shell-id strings (`"cmd"`, `"claude"`,
     /// `"powershell"` — mirrors `ShellRegistry.parseEnvVar`'s
@@ -123,7 +138,8 @@ module Config =
     type Config =
         { SchemaVersion: int
           ShellOverrides: Map<string, ShellPathwayConfig>
-          StreamOverrides: StreamParameterOverrides }
+          StreamOverrides: StreamParameterOverrides
+          StartupOverrides: StartupOverrides }
 
     /// The all-defaults Config — equivalent to "no config file
     /// present". `defaultConfig` is the authoritative source
@@ -145,7 +161,9 @@ module Config =
               // parameters" section.
               BulkChangeThreshold = None
               BackspacePolicy = None
-              ModeBarrierFlushPolicy = None } }
+              ModeBarrierFlushPolicy = None }
+          StartupOverrides =
+            { DefaultShell = None } }
 
     /// The default config file path —
     /// `%LOCALAPPDATA%\PtySpeak\config.toml`. Mirrors the
@@ -374,6 +392,50 @@ module Config =
                                 |> Map.add key { PathwayId = pathwayId }
             result
 
+    /// Cycle 19 — parse `[startup]` table. Recognises only
+    /// `default_shell` today; unknown keys logged + dropped.
+    /// Validates the value against the same shell-id allowlist
+    /// `parseShellOverrides` uses (`knownShellKeys`); unknown
+    /// shell names are logged + dropped (composition root
+    /// falls through to env-var or cmd default).
+    let private parseStartupOverrides
+            (logger: ILogger)
+            (root: TomlTable)
+            : StartupOverrides
+            =
+        match tryGetTable root "startup" with
+        | None -> defaultConfig.StartupOverrides
+        | Some startupTable ->
+            // Warn on unknown keys to help typo-spotting.
+            let knownStartupKeys = Set.ofList [ "default_shell" ]
+            for key in startupTable.Keys do
+                if not (knownStartupKeys.Contains(key)) then
+                    logger.LogWarning(
+                        "Config: [startup] unknown key '{Key}'; ignored.",
+                        key)
+            let defaultShell =
+                match tryGetString startupTable "default_shell" with
+                | None -> None
+                | Some value ->
+                    let lowered = value.ToLowerInvariant()
+                    if knownShellKeys.Contains(lowered) then
+                        Some lowered
+                    else
+                        logger.LogWarning(
+                            "Config: [startup] default_shell '{Value}' is not a recognised shell id; ignored. Recognised: {Known}.",
+                            value,
+                            String.concat ", " knownShellKeys)
+                        None
+            { DefaultShell = defaultShell }
+
+    /// Cycle 19 — resolve the startup-shell preference. Returns
+    /// `Some shellKey` when `[startup] default_shell` was set
+    /// to a recognised shell id; `None` otherwise (composition
+    /// root then falls through to `PTYSPEAK_SHELL` env var or
+    /// the cmd built-in default).
+    let resolveDefaultShell (config: Config) : string option =
+        config.StartupOverrides.DefaultShell
+
     /// Internal — parse the schema_version field. Missing → 1
     /// with Warning. Newer than CurrentSchemaVersion → Error +
     /// raises so the caller can fall back to defaults. Older
@@ -474,10 +536,13 @@ module Config =
                                 | None -> defaultConfig.StreamOverrides
                                 | Some streamTable ->
                                     parseStreamOverrides logger streamTable
+                        let startupOverrides =
+                            parseStartupOverrides logger model
                         let result =
                             { SchemaVersion = version
                               ShellOverrides = shellOverrides
-                              StreamOverrides = streamOverrides }
+                              StreamOverrides = streamOverrides
+                              StartupOverrides = startupOverrides }
                         // One Information line summarising the
                         // resolved config so post-hoc diagnosis
                         // via Ctrl+Shift+; is trivial. The
@@ -491,9 +556,13 @@ module Config =
                                 |> Map.toSeq
                                 |> Seq.map (fun (k, v) -> sprintf "%s→%s" k v.PathwayId)
                                 |> String.concat ", "
+                        let startupSummary =
+                            match result.StartupOverrides.DefaultShell with
+                            | Some shell -> sprintf "default_shell=%s" shell
+                            | None -> "no startup overrides"
                         logger.LogInformation(
-                            "Config loaded from {Path}: {Overrides}.",
-                            filePath, overrideSummary)
+                            "Config loaded from {Path}: {Overrides}; {Startup}.",
+                            filePath, overrideSummary, startupSummary)
                         result
 
     /// Resolve the pathway ID for a given shell key (lowercase:
