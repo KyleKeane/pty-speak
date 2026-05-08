@@ -1308,7 +1308,7 @@ let ``formatHistoryForClipboard preserves multi-line CommandText verbatim`` () =
     // mutating via apply isn't easy — instead build a state by
     // hand for the formatter test.
     let now = DateTime(2026, 5, 8, 18, 0, 0, DateTimeKind.Utc)
-    let history = System.Collections.Generic.Queue<SessionTuple>()
+    let history = System.Collections.Generic.Queue<SessionModel.SessionTuple>()
     let multilineCmd = "echo line1\necho line2\necho line3"
     history.Enqueue(
         { Id = Guid.NewGuid()
@@ -1341,7 +1341,7 @@ let ``formatHistoryForClipboard preserves multi-line CommandText verbatim`` () =
 [<Fact>]
 let ``formatHistoryForClipboard renders empty fields as '(empty)' marker`` () =
     let now = DateTime(2026, 5, 8, 18, 0, 0, DateTimeKind.Utc)
-    let history = System.Collections.Generic.Queue<SessionTuple>()
+    let history = System.Collections.Generic.Queue<SessionModel.SessionTuple>()
     history.Enqueue(
         { Id = Guid.NewGuid()
           CommandId = None
@@ -1373,7 +1373,7 @@ let ``formatHistoryForClipboard renders empty fields as '(empty)' marker`` () =
 [<Fact>]
 let ``formatHistoryForClipboard renders Sources map with boundary-source provenance`` () =
     let now = DateTime(2026, 5, 8, 18, 0, 0, DateTimeKind.Utc)
-    let history = System.Collections.Generic.Queue<SessionTuple>()
+    let history = System.Collections.Generic.Queue<SessionModel.SessionTuple>()
     history.Enqueue(
         { Id = Guid.NewGuid()
           CommandId = None
@@ -1436,7 +1436,7 @@ let ``formatHistoryForClipboard preserves full content (no truncation)`` () =
     // truncate (unlike Diagnostics.formatTuple's 80-char cap).
     // Pin the contract — long content must survive verbatim.
     let now = DateTime(2026, 5, 8, 18, 0, 0, DateTimeKind.Utc)
-    let history = System.Collections.Generic.Queue<SessionTuple>()
+    let history = System.Collections.Generic.Queue<SessionModel.SessionTuple>()
     let longCmd = String.replicate 200 "x"
     let longOut = String.replicate 500 "y"
     history.Enqueue(
