@@ -385,6 +385,52 @@ new code.
   in CI. Future cross-language tuple changes should
   start with the broader grep.
 
+- **F# does not auto-import C# extension methods —
+  `open` the namespace explicitly.** `ILogger.LogWarning`
+  / `LogInformation` / `LogDebug` / etc. are NOT members
+  of `Microsoft.Extensions.Logging.ILogger`; they're
+  extension methods declared on
+  `Microsoft.Extensions.Logging.LoggerExtensions`. F#
+  doesn't auto-discover extension methods the way C#
+  does (where any `using` of the declaring namespace
+  brings them into scope). The consuming F# module must
+  `open Microsoft.Extensions.Logging` even if it already
+  references `ILogger` via another path (e.g. through a
+  field type from a different module).
+
+  Symptom (CI build break under
+  `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`):
+
+  ```
+  error FS0039: The type 'ILogger' does not define
+  the field, constructor or member 'LogWarning'.
+  ```
+
+  Fix is one line — add the `open` to the consuming
+  module:
+
+  ```fsharp
+  open System
+  open System.Collections.Generic
+  open Microsoft.Extensions.Logging   // ← required for LogWarning / LogInformation / LogDebug
+  ```
+
+  Same pattern applies to any C# extension method
+  surface (LINQ extensions on `IEnumerable<T>`, EF Core
+  extensions on `DbSet<T>`, etc.) — the namespace
+  declaring the static class with the
+  `[<Extension>]`-annotated methods must be opened, not
+  just the namespace declaring the receiver type.
+
+  Cycle 13 (PR #187) burned a CI cycle on this:
+  SessionModel.fs called `logger.LogWarning(...)` /
+  `LogInformation(...)` from inside the new state
+  machine; CI failed 9× FS0039. Config.fs (the working
+  precedent) had `open Microsoft.Extensions.Logging` at
+  the top; SessionModel.fs didn't. When introducing a
+  new module that calls `ILogger` extension methods,
+  copy the `open` from a known-working consumer.
+
 ### WPF gotchas learned in practice
 
 - **`FrameworkElement` does NOT have a `Background` property.** Only
