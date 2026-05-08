@@ -802,6 +802,7 @@ let ``finalizeIncomplete preserves accumulated metadata`` () =
                 t0
                 (Some "interrupt-test")
                 [ "user", "alice" ])
+            [||]
     let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
     let finalised = SessionModel.finalizeIncomplete s2 (after 200)
     let tuple = finalised.History.ToArray().[0]
@@ -943,6 +944,7 @@ let ``Interrupt + restart writes new boundary's MatchedRowText to fresh tuple`` 
                 BoundaryKind.PromptStart
                 (after 100)
                 "PS C:\\Projects>")
+            [||]
     match s2.Active with
     | Some active ->
         Assert.Equal("PS C:\\Projects>", active.Tuple.PromptText)

@@ -1310,7 +1310,16 @@ module Program =
                                         // PowerShell / Claude also
                                         // produce boundaries
                                         // without OSC 133 support.
-                                        handlePromptBoundary boundary
+                                        // Tier 1.E2.B: capture a
+                                        // fresh snapshot so apply
+                                        // can extract CommandText
+                                        // + OutputText from the
+                                        // current screen state.
+                                        let _, _, oscSnap =
+                                            screen.SnapshotRows(
+                                                0, screen.Rows)
+                                        handlePromptBoundary
+                                            boundary oscSnap
                                     | Tick now ->
                                         // SessionModel Tier 1.D-fix
                                         // (Cycle 17) — tick-driven
