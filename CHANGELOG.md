@@ -15,6 +15,59 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 23): doc currency refresh post-Tier-1 closure
+
+**Doc-only PR; no code changes.** Tier 1 SessionModel
+implementation cycle shipped end-to-end via PRs #185-#199
+(Cycles 11-22b inclusive). Six handoff / sequencing /
+architecture docs accumulated currency drift relative to
+the new state; this PR refreshes them in a single sweep.
+
+**Findings refreshed**:
+- 4 plan-doc routing fixes
+  (`docs/SESSION-HANDOFF.md`, `CLAUDE.md`, `docs/DOC-MAP.md`,
+  `README.md`) — references now point to
+  `docs/PROJECT-PLAN-2026-05-revision.md` (the 2026-05-07
+  revision) instead of the original
+  `PROJECT-PLAN-2026-05.md`. Original plan stays as
+  historical 2026-05-03 snapshot per Track E E5 dated-
+  snapshot discipline.
+- `docs/SESSION-HANDOFF.md` "Last merged stages" / "In-flight
+  branch" / "Next stage" rows refreshed to reflect Tier 1
+  closure (PR #199) + Cycle 23 doc cleanup as current work
+  + Tier 2 persistence / Phase 2 input framework as the next
+  maintainer-choice fork.
+- `docs/ARCHITECTURE.md` currency note extended with the
+  Tier 1 PR range (#185-#199) and mention of CHANNEL-
+  ARCHITECTURE as the sixth research-stage doc.
+- `docs/ROADMAP.md` Stage 7 row footnote extended to mention
+  the post-Stage-7 substrate cycle + Tier 1 SessionModel
+  implementation cycle as continuation work.
+- `docs/AUDIT-BACKLOG-VALIDATION.md` per-item statuses
+  refreshed: items 25, 25-F, 28 advanced to ✅ shipped;
+  new rows for items 31 (CUSTOMIZATION-MODEL research stage,
+  PR #181), 32 (CHANNEL-ARCHITECTURE research stage, PR #193),
+  33 (Default-shell config option, PR #194). Findings summary
+  recomputed (14 ✅ / 3 ✅+ / 11 📋 / 3 ⏸ / 2 🔄 / 0 ❓).
+  Change log appended with a 2026-05-09 refresh row; doc
+  front-matter date preserved at 2026-05-07 per snapshot
+  discipline.
+- `docs/PROJECT-PLAN-2026-05-revision.md` change log appended
+  with a 2026-05-09 row noting Tier 1 cycle shipped + body
+  preserved per snapshot discipline.
+
+**Total**: ~80 LOC across 9 doc files. CI gates: markdown
+link check + workflow lint + build (no code changes —
+no-op).
+
+**Sequencing position**: Cycle 23 Phase 1 of 4. After this
+PR merges, Phase 2 (in-session maintainer Q&A walk-through
+of the 7 still-open CUSTOMIZATION-MODEL questions) → Phase 3
+(Q&A resolution PR mirroring PR #182 Cycle 8 shape) →
+Phase 4 (maintainer chooses next coding cycle: Tier 2
+SessionModel persistence default OR Phase 2 input framework
+alternative).
+
 ### Added (Cycle 22b): Ctrl+Shift+Y — copy SessionModel history to clipboard
 
 **New hotkey.** `Ctrl+Shift+Y` (mnemonic: **Y** for histor**Y**)

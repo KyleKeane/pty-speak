@@ -9,8 +9,10 @@ CHANGELOG discipline, documentation policy, F# / WPF gotchas) live in
 [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 A new session should read this **first**, then
-[`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md) (the
-canonical strategic plan for the next ~8-12 weeks of work),
+[`docs/PROJECT-PLAN-2026-05-revision.md`](PROJECT-PLAN-2026-05-revision.md) (the
+current strategic plan revision; supersedes the original
+`PROJECT-PLAN-2026-05.md` per Track E E5 dated-snapshot
+discipline),
 [`CONTRIBUTING.md`](../CONTRIBUTING.md),
 [`spec/tech-plan.md`](../spec/tech-plan.md),
 [`docs/CHECKPOINTS.md`](CHECKPOINTS.md), and
@@ -20,7 +22,7 @@ canonical strategic plan for the next ~8-12 weeks of work),
 ## Where we left off
 
 > **Authoritative plan**:
-> [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md). The
+> [`docs/PROJECT-PLAN-2026-05-revision.md`](PROJECT-PLAN-2026-05-revision.md). The
 > "Where we left off" table below captures snapshot state; the plan
 > document captures the multi-week sequencing decisions
 > (cleanup → Stage 7 validation gate → output framework cycle →
@@ -28,10 +30,10 @@ canonical strategic plan for the next ~8-12 weeks of work),
 
 | | |
 |---|---|
-| **Last merged stages** | **Stages 0 → 7 + 11** all merged to `main`, plus the retroactively-formalized Stages 4a / 4b / 5a. Stage 7 shipped 2026-05-03 across 11 sequenced PRs (A → K, #131-#143) + PR-L #144 (doc-purpose audit + Stage 7 wrap-up) + PR-M #145 (coalescer cross-row spinner gate fix). **Post-Stage-7 substrate cycle 2026-05-04 → 2026-05-07** (PRs #146-#184) shipped: event-and-output framework spec (#151); Stages 8a/8b/8c/8d.1/8d.2 (#152-#157, #155); display-pathway substrate Phase A + Phase A.1 + Phase B subset + Phase A.2 + #166 suffix-diff + #167 atlas + #168 Tier 1 parameters + #169 shell-switch flush fix (#159-#169); five research-stage docs: PIPELINE-NARRATIVE (#170), SESSION-MODEL (#171), INTERACTION-MODEL (#173), PANE-MODEL (#174), CUSTOMIZATION-MODEL (#181); six-track audit phase (#172, #175-#180); post-audit cleanup (#181-#183 + bundle in flight). Maintainer NVDA-validation green throughout. |
-| **Last shipped release** | `v0.0.1-preview.43` was the last release noted in the original plan; cadence has advanced through subsequent previews + the substrate cycle. Maintainer cuts the next preview from `main` whenever convenient. |
-| **In-flight branch** | `claude/pre-implementation-cleanup-bundle` (THIS PR; Cycle 10) — bundles Track D atlas-side fixups + Track E doc-currency fixups + ARCHITECTURE refresh + PROJECT-PLAN successor doc. Audit phase formally closed with Track F merge (#180); CUSTOMIZATION-MODEL (#181) shipped as first post-audit research-stage doc. After this bundle merges, audit-fixup queue closes; substrate ready for SessionModel Tier 1 implementation. |
-| **Next stage** | **SessionModel Tier 1 implementation** — FIRST POST-AUDIT IMPLEMENTATION CYCLE. Substrate skeleton per `docs/SESSION-MODEL.md` (item 28 design): CanonicalState extension; new `ScreenNotification.PromptBoundary` event; OSC 133 detection + heuristic fallback; in-memory tuple list; per-shell-session model (per Cluster 1-4 walk-through resolution; Q5 in SESSION-MODEL.md). Tier 1 plan-mode cycle resolves the 7 still-open SESSION-MODEL questions (Q1-Q4 + Q6-Q8) at design time. Stage 8a-8f / 9a-9d / §10 framework cycles per `spec/event-and-output-framework.md` Part C are largely shipped (#152-#157, #161-#163) or subsumed into the SessionModel-aware pathway substrate. Open follow-ups: (a) Screen-buffer runtime resize (Phase 2 stage). (b) Stable-baseline tag pushes including `baseline/stage-7-claude-roundtrip` per [`docs/CHECKPOINTS.md`](CHECKPOINTS.md). (c) MAY-4.md Concern 3 (navigable streaming response queue) — naturally subsumed by SessionModel + ReplPathway. |
+| **Last merged stages** | **Stages 0 → 7 + 11** all merged to `main`, plus the retroactively-formalized Stages 4a / 4b / 5a. Stage 7 shipped 2026-05-03 across 11 sequenced PRs (A → K, #131-#143) + PR-L #144 (doc-purpose audit + Stage 7 wrap-up) + PR-M #145 (coalescer cross-row spinner gate fix). **Post-Stage-7 substrate cycle 2026-05-04 → 2026-05-07** (PRs #146-#184) shipped: event-and-output framework spec (#151); Stages 8a/8b/8c/8d.1/8d.2 (#152-#157, #155); display-pathway substrate Phase A + Phase A.1 + Phase B subset + Phase A.2 + #166 suffix-diff + #167 atlas + #168 Tier 1 parameters + #169 shell-switch flush fix (#159-#169); five research-stage docs: PIPELINE-NARRATIVE (#170), SESSION-MODEL (#171), INTERACTION-MODEL (#173), PANE-MODEL (#174), CUSTOMIZATION-MODEL (#181); six-track audit phase (#172, #175-#180); post-audit cleanup (#181-#184). **Tier 1 SessionModel implementation cycle 2026-05-07 → 2026-05-08** (PRs #185-#199) shipped substrate end-to-end: skeleton (#185), OSC 133 producer + cursor field (#186), state machine + composition (#187), heuristic fallback + alt-screen wiring (#189), PromptText capture (#190), diagnostic battery extension (#191), tick-driven detector via channel-driven actor model (#192), CHANNEL-ARCHITECTURE doc (#193), default-shell config + detector consolidation (#194), row-index-aware emission (#195) + announce-wording followup (#196), CommandText + OutputText extraction (#197), multi-match flap fix (#198), Ctrl+Shift+Y clipboard hotkey (#199). Maintainer NVDA-validation green throughout. |
+| **Last shipped release** | Maintainer cuts release builds from `main` whenever convenient. The last release predating Tier 1 was `v0.0.1-preview.43`; subsequent previews have shipped through the substrate + Tier 1 cycles. |
+| **In-flight branch** | (none) — Tier 1 substrate cycle closed 2026-05-08 with PR #199 (Cycle 22b clipboard hotkey). Manual NVDA validation green; default-shell TOML config resolved the long-running "opens into Claude" issue. |
+| **Next stage** | **Cycle 23 doc cleanup + maintainer Q&A** (this work) → then **Tier 2 SessionModel persistence OR Phase 2 input framework** (maintainer's choice). Tier 1 substrate is structurally + content-complete; SessionModel populates `History` end-to-end for cmd / PowerShell sessions. The 7 still-open CUSTOMIZATION-MODEL questions (Q1-Q7) await maintainer input via the Cycle 23 walk-through. SESSION-MODEL Q1-Q8, INTERACTION-MODEL Q1-Q6, PANE-MODEL Q1-Q5 all resolved 2026-05-07/08 + shipped through Tier 1. Open follow-ups: (a) Screen-buffer runtime resize (Phase 2 stage). (b) Stable-baseline tag pushes including `baseline/stage-7-claude-roundtrip` per [`docs/CHECKPOINTS.md`](CHECKPOINTS.md). (c) MAY-4.md Concern 3 (navigable streaming response queue) — naturally subsumed by SessionModel + ReplPathway (Phase 2). |
 
 The end-to-end pipeline now reaches the auto-update boundary:
 launching the app spawns `cmd.exe` under ConPTY, parses its
@@ -1302,12 +1304,17 @@ Guard against scope creep:
    stage sequencing index. Read this first; it indexes
    everything below.
 2. **This file** (SESSION-HANDOFF.md).
-3. **[`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md)** —
-   the canonical strategic plan for the next ~8-12 weeks
-   (cleanup → Stage 7 validation gate → output framework cycle
-   → input framework cycle → Stage 10). Supersedes the per-stage
-   ordering of `spec/tech-plan.md` for Stages 7-10 specifically;
-   the spec remains immutable as architectural rationale.
+3. **[`docs/PROJECT-PLAN-2026-05-revision.md`](PROJECT-PLAN-2026-05-revision.md)** —
+   the current strategic plan revision (snapshot 2026-05-07);
+   supersedes the original `PROJECT-PLAN-2026-05.md` per
+   Track E E5 dated-snapshot discipline. Captures the
+   substrate-first shift, audit phase outcome, and forward
+   sequencing through Tier 2 SessionModel persistence + Phase 2
+   input framework. Supersedes the per-stage ordering of
+   `spec/tech-plan.md` for Stages 7-10 specifically; the spec
+   remains immutable as architectural rationale. The original
+   `PROJECT-PLAN-2026-05.md` stays preserved as the 2026-05-03
+   historical snapshot.
 4. [`CONTRIBUTING.md`](../CONTRIBUTING.md) — PR shape, branching,
    CHANGELOG discipline, F# / WPF gotchas, documentation policy.
    Working conventions all live here.

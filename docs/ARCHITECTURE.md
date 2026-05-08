@@ -6,14 +6,21 @@ prior-art survey, and tradeoff analysis live in
 map: how data flows, which module owns which concern, and where the
 thread boundaries are.
 
-> **Currency note** (snapshot 2026-05-07). Stages 0-7 + 11 are
-> shipped on `main`; the post-Stage-7 substrate cycle (PRs
-> #146-#184) shipped Stage 8a-8d.2 + display-pathway substrate
-> (Phase A + A.1 + A.2) + Tier 1 parameters + suffix-diff +
-> shell-switch flush fix + the audit phase (Tracks A-F) + five
-> research-stage docs (PIPELINE-NARRATIVE, SESSION-MODEL,
-> INTERACTION-MODEL, PANE-MODEL, CUSTOMIZATION-MODEL). Some
-> modules originally drafted as separate projects
+> **Currency note** (snapshot 2026-05-07; Tier 1 cycle range
+> appended 2026-05-09). Stages 0-7 + 11 are shipped on `main`;
+> the post-Stage-7 substrate cycle (PRs #146-#184) shipped
+> Stage 8a-8d.2 + display-pathway substrate (Phase A + A.1 +
+> A.2) + Tier 1 parameters + suffix-diff + shell-switch flush
+> fix + the audit phase (Tracks A-F) + five research-stage
+> docs (PIPELINE-NARRATIVE, SESSION-MODEL, INTERACTION-MODEL,
+> PANE-MODEL, CUSTOMIZATION-MODEL). The Tier 1 SessionModel
+> implementation cycle (PRs #185-#199) shipped substrate
+> end-to-end: skeleton + OSC 133 producer + state machine +
+> heuristic fallback + alt-screen wiring + PromptText/
+> CommandText/OutputText capture + diagnostic battery
+> extension + Ctrl+Shift+Y clipboard hotkey + a sixth
+> research-stage doc (CHANNEL-ARCHITECTURE). Some modules
+> originally drafted as separate projects
 > (`Terminal.Semantics`, `Terminal.EventBus`) landed inside
 > `Terminal.Core` per walking-skeleton discipline — the table
 > below describes shipped modules, not the original draft. See
