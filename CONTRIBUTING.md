@@ -358,6 +358,33 @@ new code.
           ShellRegistry.Cmd
   ```
 
+- **F#/C# tuple-shape boundary.** F# tuples cross into
+  C# as `System.Tuple<T1, T2, T3>` — extending an F#
+  return type from `(int64 * Cell[][])` to
+  `(int64 * (int * int) * Cell[][])` shifts what was at
+  `.Item2` (a `Cell[][]`) to `.Item3` from C#'s
+  perspective; `.Item2` is now `Tuple<int, int>`. The F#
+  call sites use destructuring (`let a, b, c = ...`)
+  and surface compile errors at every site with one
+  recompile, but C# call sites with `tuple.Item2`
+  silently change meaning + produce `error CS1061` /
+  `CS0021` later in the chain.
+
+  When extending a public F# tuple return type, **grep
+  both `.fs` AND `.cs` files** for call sites:
+
+  ```
+  grep -rn "<Method>" src/ --include="*.cs" --include="*.fs"
+  ```
+
+  Cycle 12 (PR #186) hit this: `Screen.SnapshotRows`
+  return-type extension required updating
+  `Views/TerminalView.cs:1018` from `snap.Item2` to
+  `snap.Item3`. The Phase 1 audit grepped only F#
+  patterns and missed it; the C# build fail surfaced
+  in CI. Future cross-language tuple changes should
+  start with the broader grep.
+
 ### WPF gotchas learned in practice
 
 - **`FrameworkElement` does NOT have a `Background` property.** Only
