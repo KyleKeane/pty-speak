@@ -1324,15 +1324,37 @@ with a migration path. Recommend: add as required
 field; update all consumers (limited surface —
 StreamPathway, TuiPathway, test code).
 
-### Q2: Heuristic fallback default — on or off? — ✅ Resolved 2026-05-07 (Tier 1.D)
+### Q2: Heuristic fallback default — on or off? — ✅ Resolved 2026-05-08 (Tier 1.D shipped)
 
 **Resolution**: **ON by default for known shells (cmd,
-PowerShell, claude); OFF for unknown shells**.
-Implementation deferred from Tier 1.C to Tier 1.D
-(narrowed-scope split during Cycle 13 planning):
-Tier 1.C ships the SessionModel state machine + composition
-wiring; Tier 1.D ships the heuristic-fallback module that
-attaches to ScreenNotifications without OSC 133 markers.
+PowerShell, claude); OFF for unknown shells**. Shipped in
+Tier 1.D (narrowed-scope split during Cycle 13 planning):
+Tier 1.C shipped the SessionModel state machine + composition
+wiring; Tier 1.D shipped the heuristic-fallback module that
+attaches to RowsChanged notifications.
+
+**Tier 1.D scope (locked via maintainer AskUserQuestion
+2026-05-08)**:
+- **PromptStart-only emission**. Detector emits
+  `BoundaryKind.PromptStart` events only. The Cycle 13 state
+  machine's "PromptStart while Active=Some" transition
+  auto-finalises the prior tuple as incomplete; tuples carry
+  `PromptStartedAt` + `CommandFinishedAt-from-next-prompt`.
+  Defers heuristic synthesis of CommandStart / OutputStart /
+  CommandFinished (need Phase 2 input framework / cursor-aware
+  diff / OSC 133 D respectively).
+- **Regex-only Claude detection**. Single regex `^.*│\s>.*$`
+  per row, same shape as cmd / PowerShell. Source =
+  `BoundarySource.HeuristicPromptRegex 200` (200ms stability
+  for Claude's slower TUI cadence; 100ms for cmd / PowerShell).
+  Defers full Ink-box context check (multi-row `╭─╮│╰─╯`
+  scanning per §275-280) — regex catches the prompt indicator
+  without verifying the surrounding box-character context.
+- **Hardcoded defaults**. All per-shell parameters baked into
+  `HeuristicPromptDetector.fs`. No `Config.fs` schema changes;
+  no `[session_model.fallback.*]` TOML sections this cycle.
+  TOML wiring per §282-300 + USER-SETTINGS atlas entries
+  defer until a pathway makes the params user-actionable.
 
 **Rationale** (per maintainer agreement, audit walk-
 through): without OSC 133, heuristic is the only signal
@@ -1349,18 +1371,21 @@ produces false-positive tuples. Recommend: ON by
 default for known shells (cmd, PowerShell, claude);
 OFF for unknown shells.
 
-### Q3: SessionModel reset on alt-screen entry? — ✅ Resolved 2026-05-07 (Tier 1.C partial; full wiring Tier 1.D)
+### Q3: SessionModel reset on alt-screen entry? — ✅ Resolved 2026-05-08 (Tier 1.D fully shipped)
 
 **Resolution**: **PAUSE on alt-screen entry; resume on
-exit** without losing prior tuples. Tier 1.C ships the
+exit** without losing prior tuples. Tier 1.C shipped the
 `IsAltScreenActive` field on `SessionModel.T` plus
 `enterAltScreen` / `exitAltScreen` helpers + an
 `apply` guard that returns state unchanged when the
-flag is set. Composition-root wiring (toggle the flag
-from the PathwayPump's `ScreenNotification.ModeChanged`
-arm) ships in Tier 1.D alongside the heuristic-fallback
-module — both wirings touch the same dispatch seam, so
-bundling keeps the change single-concern.
+flag is set. Tier 1.D closed the wiring: composition root
+in `Program.fs:handleModeChanged` calls
+`SessionModel.enterAltScreen` on `PathwaySelector.SwapToTui`
+and `SessionModel.exitAltScreen` on `SwapToShellDefault`,
+alongside the existing pathway swap. The
+`HeuristicPromptDetector` is also reset on both transitions
+(stale per-row matches would otherwise produce phantom
+boundaries on alt-screen exit).
 
 **Rationale** (per maintainer agreement, audit walk-
 through): vim / less / TUI sessions aren't
@@ -1577,6 +1602,7 @@ This doc references / is referenced by:
 | 2026-05-06 | Initial design. OSC 133 protocol scope, heuristic fallback for cmd / PowerShell / Claude Code, data model (SessionModel + SessionTuple + ActiveSessionTuple + BoundaryKind), pipeline integration (Stage 3.5 insertion + new ScreenNotification variant + new DisplayPathway protocol method), pathway-by-pathway integration (StreamPathway, TuiPathway, ReplPathway, FormPathway, ClaudeCodePathway, AiInterpretedPathway, SessionConsumer), persistence story (memory-only / session-log / always modes; JSONL or msgpack format), query API, implementation precedence (7 tiers), 8 open questions. ~1500 lines. |
 | 2026-05-07 | Cluster 1-4 open questions resolved per audit walk-through (Q1/Q3/Q4/Q5/Q6/Q7/Q8 resolved; Q2 deferred to Tier 1.D). |
 | 2026-05-08 | Tier 1.C state machine + composition wiring shipped. `SessionModel.apply` no-op replaced with full state machine (13+ transitions covering happy path + defensive paths). `IsAltScreenActive` field + `enterAltScreen`/`exitAltScreen` helpers added (Q3 partial — full wiring deferred to Tier 1.D). `finalizeIncomplete` helper added (Q5 — finalises in-flight active tuple as incomplete on shell-switch). Composition root in `Program.fs` declares + recreates `currentSession`; replaces no-op PromptBoundary arm with `handlePromptBoundary` that advances state machine + dispatches active-pathway `OnPromptBoundary`. Q2 (heuristic fallback) deferred to Tier 1.D per narrowed-scope split. |
+| 2026-05-08 | Tier 1.D heuristic prompt-boundary fallback + alt-screen wiring shipped. New `src/Terminal.Core/HeuristicPromptDetector.fs` module: per-shell prompt regex (cmd / PowerShell / Claude) + stability window (100ms / 100ms / 200ms) + duplicate suppression. Q2 closed: ON for known shells, OFF for unknown. Q3 closed: composition root in `handleModeChanged` calls `SessionModel.enterAltScreen` / `exitAltScreen` alongside existing pathway swap; detector reset on both transitions. Maintainer-locked scope: PromptStart-only emission, regex-only Claude detection, hardcoded defaults (no TOML this cycle). ~880 LOC + ~33 tests. Behaviour change: SessionModel now populates with tuples for every shipped shell during normal use. Zero user-visible NVDA change. |
 
 
 

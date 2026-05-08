@@ -15,6 +15,150 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 14): SessionModel Tier 1.D — heuristic prompt-boundary fallback + alt-screen wiring
+
+**Fourth post-audit implementation cycle.** Ships the
+heuristic prompt-boundary fallback module that produces
+synthetic `PromptBoundary` events for shells that don't
+emit OSC 133 (cmd / PowerShell / Claude — all three by
+default). Closes the Q3 alt-screen wiring deferred from
+Tier 1.C: composition root now calls
+`SessionModel.enterAltScreen` / `exitAltScreen` alongside
+the existing pathway-swap decision.
+
+**Per Cycle 14 plan-mode locked scope** (maintainer
+AskUserQuestion responses 2026-05-08):
+- **PromptStart-only emission**. Detector emits
+  `BoundaryKind.PromptStart` events only. The Cycle 13
+  state machine's "PromptStart while Active=Some"
+  transition auto-finalises the prior tuple as incomplete
+  (`ExitCode = None`,
+  `CommandFinishedAt = next-prompt-time`).
+- **Regex-only Claude detection**. Single regex
+  `^.*│\s>.*$` per row, same shape as cmd / PowerShell.
+- **Hardcoded defaults**. All per-shell parameters baked
+  into `HeuristicPromptDetector.fs`. No TOML schema
+  changes this cycle.
+
+**New module: `src/Terminal.Core/HeuristicPromptDetector.fs`**
+(~250 LOC). Pure-function detector with stateful record:
+- `T` record: `PerRowMatches: Map<int, string * DateTime>`
+  (per-row first-match timestamps) +
+  `LastEmittedPromptText: string option` (duplicate-emit
+  suppression).
+- `create () : T` — empty initial state.
+- `tryDetect snapshot cursor shellKey now state :
+  PromptBoundaryData option * T` — pure detection
+  function.
+- `reset state : T` — clear per-row state on shell-switch
+  + alt-screen entry.
+
+**Per-shell hardcoded defaults**:
+- cmd: regex `^[A-Z]:\\.*>\s*$`, stability 100ms.
+- PowerShell: regex `^PS\s.*>\s*$`, stability 100ms.
+- Claude: regex `^.*│\s>.*$`, stability 200ms (slower
+  TUI cadence).
+- Unknown shells: detection OFF (returns `None` without
+  state mutation).
+
+**Detection algorithm (per-frame)**:
+1. Per row, render text via `CanonicalState.renderRow`
+   (sanitised + trimmed).
+2. Test against per-shell regex.
+3. If matches AND `(now - first-match-time) ≥ stabilityMs`
+   AND text differs from `LastEmittedPromptText` → emit
+   PromptStart with
+   `Source = HeuristicPromptRegex stabilityMs`.
+4. If matches but window not elapsed OR text equals
+   last-emitted → no emit, update first-match timestamp.
+5. If row stops matching → evict its `PerRowMatches` entry
+   (keeps map bounded by `screen.Rows`).
+
+**Composition wiring** (`Program.fs`):
+- `mutable promptDetector : HeuristicPromptDetector.T`
+  declared alongside `currentSession`.
+- `handleRowsChanged` calls
+  `HeuristicPromptDetector.tryDetect` AFTER snapshot
+  capture and BEFORE pathway consumption — boundary, if
+  emitted, dispatches via `handlePromptBoundary` (the
+  Cycle 13 helper) which advances `currentSession` +
+  invokes `activePathway.OnPromptBoundary`.
+- `handleModeChanged` calls
+  `SessionModel.enterAltScreen` on
+  `PathwaySelector.SwapToTui` and
+  `SessionModel.exitAltScreen` on `SwapToShellDefault`,
+  alongside the existing `swapPathwayForAltScreen` call.
+  Detector reset on both transitions (stale matches
+  would produce phantom boundaries on alt-screen exit).
+- `switchToShell`'s `Ok newHost` branch resets the
+  detector after recreating `currentSession` (fresh
+  per-row state for the new shell).
+
+**User-visible behaviour change**: zero. Stream / Tui
+pathways still return `[||]` from `OnPromptBoundary`; no
+NVDA announcements depend on SessionModel state. The
+substrate becomes operationally meaningful (tuples
+populate naturally during cmd / PowerShell / Claude use)
+but remains internally observable only — Tier 2
+(persistence) and Phase 2 pathways consume the tuples in
+user-visible ways.
+
+**Tests added**: ~30 in
+`tests/Tests.Unit/HeuristicPromptDetectorTests.fs`
+covering:
+- Per-shell regex matching (8 tests): cmd / PowerShell /
+  Claude prompt shapes match; non-prompt text doesn't;
+  ASCII pipe `|` distinct from box-drawing `│`.
+- Stability window (4 tests): first match returns None;
+  same text after `stabilityMs - 1` returns None; same
+  text at exactly `stabilityMs` returns Some; same text
+  after window emits ONCE then suppresses.
+- Duplicate suppression (3 tests): N stable frames emit
+  once; cursor movement on stable prompt suppresses;
+  new prompt text re-emits.
+- Multi-row scenarios (4 tests): prompt at non-zero row
+  detected; multiple matching rows emit one per call;
+  all-blank snapshot returns None; zero-row snapshot
+  returns None.
+- Source provenance (3 tests): cmd → 100ms; PowerShell →
+  100ms; Claude → 200ms.
+- Reset behaviour (3 tests): clears `PerRowMatches`;
+  clears `LastEmittedPromptText`; post-reset prompt
+  needs fresh stability window.
+- Unknown shell handling (3 tests): unknown / empty /
+  case-mismatched keys return None.
+- State hygiene (1 test): row that stops matching
+  evicts its entry.
+
+Plus ~3 tests in `SessionModelTests.fs` pinning that
+heuristic-source boundaries flow through the state
+machine identically to OSC 133 boundaries (same
+finalisation behaviour; Sources map records the
+stability ms).
+
+**SESSION-MODEL.md updates**: Q2 + Q3 marked shipped
+2026-05-08 with Tier 1.D scope details. Change-log
+table entry added.
+
+**Out of scope** (deferred):
+- Heuristic synthesis of CommandStart / OutputStart /
+  CommandFinished events (Phase 2 input framework /
+  cursor-aware diff).
+- Claude Ink-box context check (multi-row `╭─╮│╰─╯`
+  scanning per SESSION-MODEL.md §275-280).
+- TOML config for per-shell parameters
+  (`[session_model.fallback.*]` sections + USER-SETTINGS
+  atlas entries; defer until a pathway makes the params
+  user-actionable).
+- Cursor-position check on prompt rows (Phase 2
+  cursor-aware diff prerequisite).
+- Text accumulation for `PromptText` / `CommandText` /
+  `OutputText` (Tier 1.E).
+- Diagnostic battery extension (Tier 1.F).
+- Pathway `OnPromptBoundary` non-trivial overrides
+  (Phase 2 / Tier 3).
+- Persistence (Tier 2).
+
 ### Added (Cycle 13): SessionModel Tier 1.C — state machine + composition wiring
 
 **Third post-audit implementation cycle.** Replaces the
