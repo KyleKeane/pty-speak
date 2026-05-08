@@ -284,6 +284,11 @@ Currently shipped (orientation reference; spec section 6 is canonical):
   log level, reader staleness, queue depths (PR-F + PR-J liveness
   probe)
 - `Ctrl+Shift+B` — incident marker boundary line in the log (PR-F)
+- `Ctrl+Shift+Y` — copy SessionModel history to clipboard (Cycle 22b);
+  paste-friendly structured plain-text dump of all completed
+  tuples + any in-flight active tuple. Companion to
+  `Ctrl+Shift+D` (which announces a substrate summary);
+  `Ctrl+Shift+Y` dumps the full content for analysis.
 
 Reserved (not yet bound):
 

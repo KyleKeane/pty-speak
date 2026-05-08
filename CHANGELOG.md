@@ -15,6 +15,69 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 22b): Ctrl+Shift+Y — copy SessionModel history to clipboard
+
+**New hotkey.** `Ctrl+Shift+Y` (mnemonic: **Y** for histor**Y**)
+copies the full SessionModel — every completed tuple in
+`History` plus any in-flight active tuple — to the clipboard
+as structured plain text. Paste-friendly into chat / bug
+reports.
+
+**Companion to `Ctrl+Shift+D`** (diagnostic battery): the
+diagnostic announces a substrate summary; `Ctrl+Shift+Y`
+dumps the full content for analysis. Where the diagnostic
+log truncates `CommandText` / `OutputText` to 80 chars to
+keep log lines scannable, the clipboard format preserves
+**full content verbatim** — 100 tuples × ~500 chars ≈ 50KB,
+well within clipboard limits.
+
+**Format**: per-tuple block with labelled fields (Id,
+PromptStarted / CommandStarted / OutputStarted /
+CommandFinished timestamps, ExitCode, Source provenance,
+ExtraParams, Prompt / Command / Output text). Active tuple
+appears at the end if present. Empty history shows
+`(no entries; session has not yet captured any prompt
+boundaries)` and does NOT overwrite clipboard contents.
+
+**Files**:
+- `src/Terminal.Core/SessionModel.fs` — new
+  `formatHistoryForClipboard : DateTime -> T -> string`
+  helper. Pure function; testable in isolation. Mirrors
+  the existing `Diagnostics.captureSessionModel` pattern
+  (Cycle 16) but for full history, no truncation.
+- `src/Terminal.Core/HotkeyRegistry.fs` — new
+  `AppCommand.CopyHistoryToClipboard` case + `nameOf` arm
+  + `builtIns` row + `allCommands` entry. Bound to
+  `Ctrl+Shift+Y`.
+- `src/Terminal.App/Program.fs` — `runCopyHistoryToClipboard`
+  closure captures `currentSession` from compose-local
+  scope; resolves at hotkey-press time so a hot-switch is
+  picked up correctly. Mirrors `runCopyLatestLog`'s
+  STA-thread + 3s-timeout pattern (clipboard requires STA
+  apartment + can hang on contention with NVDA's
+  clipboard hooks).
+- `src/Views/TerminalView.cs` — `AppReservedHotkeys`
+  table entry for `Key.Y` + `Ctrl|Shift`.
+- `tests/Tests.Unit/SessionModelTests.fs` — 10 new tests
+  covering: empty session, snapshot timestamp header,
+  one-finalised-tuple history, multi-line CommandText
+  preservation, empty-field `(empty)` markers, source
+  provenance rendering, active-only no-history, shell +
+  session id + alt-screen flag rendering, full-content
+  no-truncation regression guard, oldest-first ordering.
+- `tests/Tests.Unit/HotkeyRegistryTests.fs` —
+  `allCommands contains exactly the documented commands`
+  fixture extended with the new case.
+- `CLAUDE.md` — currently shipped hotkeys list extended.
+- `docs/USER-SETTINGS.md` — hotkey table entry.
+
+**Threading**: `currentSession` is read directly on the
+WPF dispatcher at hotkey-press time. F# records are
+immutable so field-level reads are tear-free; the worst
+case is ~50ms staleness if a tick fires concurrently. Same
+pattern Cycle 16's diagnostic-snapshot capture uses
+(`Ctrl+Shift+D`).
+
 ### Fixed (Cycle 22a): HeuristicPromptDetector multi-match flapping → History flooded to 100/100
 
 **Substrate hotfix.** Manual NVDA validation 2026-05-08

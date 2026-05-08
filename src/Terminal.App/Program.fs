@@ -1742,6 +1742,104 @@ module Program =
                         promptDetector
                         activePathway.Id)
 
+        // Cycle 22b — Ctrl+Shift+Y. Closure captures
+        // `currentSession` from compose-local scope. Resolves
+        // at hotkey-press time so a hot-switch (and the
+        // associated `currentSession` recreation) is picked
+        // up correctly. Mirrors the `runCopyLatestLog`
+        // pattern (Ctrl+Shift+;): the heavy lifting runs in
+        // a Task off the dispatcher, with a dedicated STA
+        // thread for `Clipboard.SetText` (which requires
+        // STA apartment + can hang on contention with NVDA's
+        // clipboard hooks). The hotkey handler returns
+        // immediately; the dispatcher never blocks.
+        let runCopyHistoryToClipboard () : unit =
+            let log =
+                Logger.get
+                    "Terminal.App.Program.runCopyHistoryToClipboard"
+            log.LogInformation(
+                "Ctrl+Shift+Y pressed — copying SessionModel history to clipboard.")
+            // Snapshot currentSession at hotkey-press time on
+            // the dispatcher thread. F# records are immutable
+            // so field-level reads are tear-free; the worst
+            // case is ~50ms staleness if a tick fires
+            // concurrently. Same pattern Cycle 16's
+            // diagnostic-snapshot capture uses (Ctrl+Shift+D).
+            let snapshot = currentSession
+            let now = DateTime.UtcNow
+            let content =
+                SessionModel.formatHistoryForClipboard now snapshot
+            let entryCount = snapshot.History.Count
+            let activeSuffix =
+                if Option.isSome snapshot.Active then
+                    " plus active tuple"
+                else
+                    ""
+            let _ =
+                task {
+                    try
+                        // Same STA-thread + 3s-timeout pattern
+                        // as `runCopyLatestLog`. STA required
+                        // by Clipboard.SetText; bounded timeout
+                        // prevents hang on clipboard contention.
+                        let setOk = TaskCompletionSource<bool>()
+                        let staBody = ThreadStart(fun () ->
+                            try
+                                System.Windows.Clipboard.SetText(content)
+                                setOk.TrySetResult(true) |> ignore
+                            with ex ->
+                                log.LogWarning(
+                                    ex,
+                                    "Clipboard.SetText threw: {Message}",
+                                    ex.Message)
+                                setOk.TrySetResult(false) |> ignore)
+                        let staThread = new Thread(staBody)
+                        staThread.SetApartmentState(ApartmentState.STA)
+                        staThread.IsBackground <- true
+                        staThread.Start()
+                        let! winner =
+                            Task.WhenAny(
+                                setOk.Task :> Task,
+                                Task.Delay(3000))
+                        let succeeded =
+                            obj.ReferenceEquals(winner, setOk.Task)
+                            && setOk.Task.Result
+                        let bytes =
+                            System.Text.Encoding.UTF8.GetByteCount(content)
+                        let msg, activityId =
+                            if succeeded then
+                                log.LogInformation(
+                                    "Copied SessionModel history to clipboard. Entries={Count} Bytes={Bytes}",
+                                    entryCount, bytes)
+                                sprintf
+                                    "History copied to clipboard. %d of %d entries%s, %d bytes."
+                                    entryCount
+                                    snapshot.MaxHistorySize
+                                    activeSuffix
+                                    bytes,
+                                ActivityIds.diagnostic
+                            else
+                                log.LogWarning(
+                                    "Clipboard.SetText timed out or failed after 3s; clipboard may not contain history content.")
+                                "Clipboard copy timed out. Try again.",
+                                ActivityIds.error
+                        let action () =
+                            window.TerminalSurface.Announce(msg, activityId)
+                        do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                    with ex ->
+                        let safe = AnnounceSanitiser.sanitise ex.Message
+                        log.LogError(
+                            ex, "Failed to copy SessionModel history.")
+                        let action () =
+                            window.TerminalSurface.Announce(
+                                sprintf "Could not copy history: %s" safe,
+                                ActivityIds.error)
+                        try
+                            do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                        with _ -> ()
+                }
+            ()
+
         // Stage 7-followup PR-F — wire Ctrl+Shift+H and Ctrl+Shift+B
         // through the unified `bindHotkey` helper (PR-O). Both
         // closures capture compose-local state (lastReadUtc,
@@ -1751,6 +1849,10 @@ module Program =
         bindHotkey window HotkeyRegistry.HealthCheck runHealthCheck
         bindHotkey window HotkeyRegistry.IncidentMarker runIncidentMarker
         bindHotkey window HotkeyRegistry.RunDiagnostic runDiagnostic
+        bindHotkey
+            window
+            HotkeyRegistry.CopyHistoryToClipboard
+            runCopyHistoryToClipboard
 
         // Stage 7-followup PR-F — background heartbeat. Every 5
         // seconds, log a single Information-level "Heartbeat" line

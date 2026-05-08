@@ -1247,3 +1247,251 @@ let ``Cycle 20b — Active.Tuple.PromptRowIndex captured from boundary`` () =
     | Some active ->
         Assert.Equal(Some 5, active.PromptRowIndex)
     | None -> Assert.Fail("Expected Active after PromptStart")
+
+// ---------------------------------------------------------------------
+// Cycle 22b — formatHistoryForClipboard
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``formatHistoryForClipboard empty session shows '(no entries)' marker`` () =
+    let state = SessionModel.create "cmd" 100
+    let now = DateTime(2026, 5, 8, 18, 0, 0, DateTimeKind.Utc)
+    let text = SessionModel.formatHistoryForClipboard now state
+    Assert.Contains("=== pty-speak session history ===", text)
+    Assert.Contains("Shell:             cmd", text)
+    Assert.Contains("History:           0 of 100", text)
+    Assert.Contains("(no entries; session has not yet captured any prompt boundaries)", text)
+    // No entry block in empty case.
+    Assert.DoesNotContain("--- Entry", text)
+    Assert.DoesNotContain("--- Active", text)
+
+[<Fact>]
+let ``formatHistoryForClipboard renders snapshot timestamp in header`` () =
+    let state = SessionModel.create "cmd" 100
+    let now = DateTime(2026, 5, 8, 18, 30, 45, 123, DateTimeKind.Utc)
+    let text = SessionModel.formatHistoryForClipboard now state
+    Assert.Contains("Snapshot:          2026-05-08T18:30:45.123Z", text)
+
+[<Fact>]
+let ``formatHistoryForClipboard with one finalised tuple shows Entry 1`` () =
+    // Run a full A → finalize cycle so we get one history entry.
+    let initial = SessionModel.create "cmd" 100
+    let snap1 = snapshotOf 3 80 [ "C:\\>"; ""; "" ]
+    let snap2 = snapshotOf 5 80 [ "C:\\> echo hi"; "hi"; ""; "C:\\>"; "" ]
+    let s1 =
+        SessionModel.apply
+            initial
+            (boundaryWithRow BoundaryKind.PromptStart t0 0 "C:\\>")
+            snap1
+    let s2 =
+        SessionModel.apply
+            s1
+            (boundaryWithRow BoundaryKind.PromptStart (after 1000) 3 "C:\\>")
+            snap2
+    let now = DateTime(2026, 5, 8, 18, 0, 0, DateTimeKind.Utc)
+    let text = SessionModel.formatHistoryForClipboard now s2
+    Assert.Contains("History:           1 of 100", text)
+    Assert.Contains("--- Entry 1 ---", text)
+    Assert.Contains("Prompt:            C:\\>", text)
+    Assert.Contains("Command:           echo hi", text)
+    Assert.Contains("Output:            hi", text)
+    Assert.Contains("ExitCode:          (none)", text)
+    // Active block also appears since s2 has a new active
+    // tuple at the new prompt.
+    Assert.Contains("--- Active (in flight) ---", text)
+    Assert.Contains("State:             AwaitingCommandStart", text)
+
+[<Fact>]
+let ``formatHistoryForClipboard preserves multi-line CommandText verbatim`` () =
+    // Synthesise a tuple with embedded newlines in CommandText
+    // by enqueueing one directly via finalizeIncomplete, then
+    // mutating via apply isn't easy — instead build a state by
+    // hand for the formatter test.
+    let now = DateTime(2026, 5, 8, 18, 0, 0, DateTimeKind.Utc)
+    let history = System.Collections.Generic.Queue<SessionTuple>()
+    let multilineCmd = "echo line1\necho line2\necho line3"
+    history.Enqueue(
+        { Id = Guid.NewGuid()
+          CommandId = None
+          ShellId = "cmd"
+          PromptStartedAt = t0
+          CommandStartedAt = Some (after 100)
+          OutputStartedAt = Some (after 200)
+          CommandFinishedAt = Some (after 300)
+          PromptText = "C:\\>"
+          CommandText = multilineCmd
+          OutputText = "line1\nline2\nline3"
+          ExitCode = Some 0
+          Sources = Map.empty
+          ExtraParams = Map.empty })
+    let state : SessionModel.T =
+        { ShellId = "cmd"
+          SessionId = Guid.NewGuid()
+          SessionStartedAt = t0
+          History = history
+          MaxHistorySize = 100
+          Active = None
+          IsAltScreenActive = false }
+    let text = SessionModel.formatHistoryForClipboard now state
+    // Full multi-line content preserved (no truncation).
+    Assert.Contains("echo line1\necho line2\necho line3", text)
+    Assert.Contains("line1\nline2\nline3", text)
+    Assert.Contains("ExitCode:          0", text)
+
+[<Fact>]
+let ``formatHistoryForClipboard renders empty fields as '(empty)' marker`` () =
+    let now = DateTime(2026, 5, 8, 18, 0, 0, DateTimeKind.Utc)
+    let history = System.Collections.Generic.Queue<SessionTuple>()
+    history.Enqueue(
+        { Id = Guid.NewGuid()
+          CommandId = None
+          ShellId = "cmd"
+          PromptStartedAt = t0
+          CommandStartedAt = None
+          OutputStartedAt = None
+          CommandFinishedAt = Some (after 100)
+          PromptText = "C:\\>"
+          CommandText = ""
+          OutputText = ""
+          ExitCode = None
+          Sources = Map.empty
+          ExtraParams = Map.empty })
+    let state : SessionModel.T =
+        { ShellId = "cmd"
+          SessionId = Guid.NewGuid()
+          SessionStartedAt = t0
+          History = history
+          MaxHistorySize = 100
+          Active = None
+          IsAltScreenActive = false }
+    let text = SessionModel.formatHistoryForClipboard now state
+    Assert.Contains("Command:           (empty)", text)
+    Assert.Contains("Output:            (empty)", text)
+    Assert.Contains("CommandStarted:    (none)", text)
+    Assert.Contains("OutputStarted:     (none)", text)
+
+[<Fact>]
+let ``formatHistoryForClipboard renders Sources map with boundary-source provenance`` () =
+    let now = DateTime(2026, 5, 8, 18, 0, 0, DateTimeKind.Utc)
+    let history = System.Collections.Generic.Queue<SessionTuple>()
+    history.Enqueue(
+        { Id = Guid.NewGuid()
+          CommandId = None
+          ShellId = "cmd"
+          PromptStartedAt = t0
+          CommandStartedAt = None
+          OutputStartedAt = None
+          CommandFinishedAt = Some (after 100)
+          PromptText = "C:\\>"
+          CommandText = ""
+          OutputText = ""
+          ExitCode = None
+          Sources =
+            Map.ofList
+                [ BoundaryKind.PromptStart,
+                  BoundarySource.HeuristicPromptRegex 100 ]
+          ExtraParams = Map.empty })
+    let state : SessionModel.T =
+        { ShellId = "cmd"
+          SessionId = Guid.NewGuid()
+          SessionStartedAt = t0
+          History = history
+          MaxHistorySize = 100
+          Active = None
+          IsAltScreenActive = false }
+    let text = SessionModel.formatHistoryForClipboard now state
+    Assert.Contains("Source(s):         PromptStart=HeuristicPromptRegex(100ms)", text)
+
+[<Fact>]
+let ``formatHistoryForClipboard active-only (no history) renders Active block`` () =
+    let initial = SessionModel.create "cmd" 100
+    let s1 =
+        SessionModel.apply
+            initial
+            (boundaryWithRow BoundaryKind.PromptStart t0 0 "C:\\>")
+            (snapshotOf 3 80 [ "C:\\>"; ""; "" ])
+    let now = DateTime(2026, 5, 8, 18, 0, 0, DateTimeKind.Utc)
+    let text = SessionModel.formatHistoryForClipboard now s1
+    Assert.Contains("History:           0 of 100", text)
+    Assert.DoesNotContain("--- Entry", text)
+    Assert.Contains("--- Active (in flight) ---", text)
+    Assert.Contains("State:             AwaitingCommandStart", text)
+    Assert.Contains("PromptRowIndex:    0", text)
+
+[<Fact>]
+let ``formatHistoryForClipboard renders shell + session id + AltScreenActive flag`` () =
+    let state =
+        { SessionModel.create "powershell" 50 with
+            IsAltScreenActive = true }
+    let now = DateTime(2026, 5, 8, 18, 0, 0, DateTimeKind.Utc)
+    let text = SessionModel.formatHistoryForClipboard now state
+    Assert.Contains("Shell:             powershell", text)
+    Assert.Contains("History:           0 of 50", text)
+    Assert.Contains("AltScreenActive:   True", text)
+    Assert.Contains(string state.SessionId, text)
+
+[<Fact>]
+let ``formatHistoryForClipboard preserves full content (no truncation)`` () =
+    // Cycle 22b explicit decision: clipboard format does NOT
+    // truncate (unlike Diagnostics.formatTuple's 80-char cap).
+    // Pin the contract — long content must survive verbatim.
+    let now = DateTime(2026, 5, 8, 18, 0, 0, DateTimeKind.Utc)
+    let history = System.Collections.Generic.Queue<SessionTuple>()
+    let longCmd = String.replicate 200 "x"
+    let longOut = String.replicate 500 "y"
+    history.Enqueue(
+        { Id = Guid.NewGuid()
+          CommandId = None
+          ShellId = "cmd"
+          PromptStartedAt = t0
+          CommandStartedAt = Some (after 100)
+          OutputStartedAt = Some (after 200)
+          CommandFinishedAt = Some (after 300)
+          PromptText = "C:\\>"
+          CommandText = longCmd
+          OutputText = longOut
+          ExitCode = Some 0
+          Sources = Map.empty
+          ExtraParams = Map.empty })
+    let state : SessionModel.T =
+        { ShellId = "cmd"
+          SessionId = Guid.NewGuid()
+          SessionStartedAt = t0
+          History = history
+          MaxHistorySize = 100
+          Active = None
+          IsAltScreenActive = false }
+    let text = SessionModel.formatHistoryForClipboard now state
+    Assert.Contains(longCmd, text)
+    Assert.Contains(longOut, text)
+
+[<Fact>]
+let ``formatHistoryForClipboard history entries appear oldest first`` () =
+    // Three full prompt cycles → three history entries. Verify
+    // ordering: Entry 1 = oldest, Entry 3 = most recent.
+    let initial = SessionModel.create "cmd" 100
+    let s1 =
+        SessionModel.apply
+            initial
+            (boundaryWithRow BoundaryKind.PromptStart t0 0 "C:\\one>")
+            (snapshotOf 3 80 [ "C:\\one>"; ""; "" ])
+    let s2 =
+        SessionModel.apply
+            s1
+            (boundaryWithRow BoundaryKind.PromptStart (after 1000) 1 "C:\\two>")
+            (snapshotOf 3 80 [ "C:\\one>"; "C:\\two>"; "" ])
+    let s3 =
+        SessionModel.apply
+            s2
+            (boundaryWithRow BoundaryKind.PromptStart (after 2000) 2 "C:\\three>")
+            (snapshotOf 3 80 [ "C:\\one>"; "C:\\two>"; "C:\\three>" ])
+    let now = DateTime(2026, 5, 8, 18, 0, 0, DateTimeKind.Utc)
+    let text = SessionModel.formatHistoryForClipboard now s3
+    let oneIdx = text.IndexOf("C:\\one>")
+    let twoIdx = text.IndexOf("C:\\two>")
+    let threeIdx = text.IndexOf("C:\\three>")
+    Assert.True(oneIdx >= 0)
+    Assert.True(twoIdx > oneIdx)
+    Assert.True(threeIdx > twoIdx)
+    Assert.Contains("--- Entry 1 ---", text)
+    Assert.Contains("--- Entry 2 ---", text)
