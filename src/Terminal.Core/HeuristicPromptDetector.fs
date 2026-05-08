@@ -117,16 +117,31 @@ module HeuristicPromptDetector =
           /// frame when the row no longer matches.
           PerRowMatches: Map<int, string * DateTime>
           /// Most recently emitted PromptStart's row text.
-          /// Used to suppress duplicate emissions while the
-          /// same prompt remains visible (typing at the
-          /// prompt re-fires RowsChanged but the rendered
-          /// row text is unchanged).
-          LastEmittedPromptText: string option }
+          /// Used together with `LastEmittedPromptRowIndex`
+          /// to suppress duplicate emissions when the SAME
+          /// prompt remains visible at the SAME row (typing
+          /// at the prompt re-fires RowsChanged but the
+          /// rendered row text is unchanged + cursor blinks
+          /// don't move the prompt).
+          LastEmittedPromptText: string option
+          /// Tier 1.E2.A (Cycle 20a) — most recently emitted
+          /// PromptStart's row index. Combined with
+          /// `LastEmittedPromptText` for the row-index-aware
+          /// emission gate: a NEW PromptStart is emitted when
+          /// `(text, rowIdx)` differs from the last emitted
+          /// pair. Catches the cmd stable-prompt case where
+          /// the prompt text is identical across commands but
+          /// the prompt has moved to a new row after a
+          /// command cycle (output filled rows below the
+          /// previous prompt; new prompt rendered below the
+          /// output).
+          LastEmittedPromptRowIndex: int option }
 
     /// Empty initial state.
     let create () : T =
         { PerRowMatches = Map.empty
-          LastEmittedPromptText = None }
+          LastEmittedPromptText = None
+          LastEmittedPromptRowIndex = None }
 
     /// Clear all per-row state. Called on shell-switch
     /// (fresh detector for new shell) and on alt-screen
@@ -135,7 +150,8 @@ module HeuristicPromptDetector =
     /// boundaries on alt-screen exit).
     let reset (state: T) : T =
         { PerRowMatches = Map.empty
-          LastEmittedPromptText = None }
+          LastEmittedPromptText = None
+          LastEmittedPromptRowIndex = None }
 
     let private logger = Logger.get "Terminal.Core.HeuristicPromptDetector"
 
@@ -185,6 +201,7 @@ module HeuristicPromptDetector =
             let mutable nextMatches = state.PerRowMatches
             let mutable emitted : PromptBoundaryData option = None
             let mutable emittedText : string option = None
+            let mutable emittedRowIndex : int option = None
             for rowIdx in 0 .. snapshot.Length - 1 do
                 let text = CanonicalState.renderRow snapshot rowIdx
                 if regex.IsMatch(text) then
@@ -192,14 +209,34 @@ module HeuristicPromptDetector =
                     match priorMatch with
                     | Some (priorText, firstSeen) when priorText = text ->
                         let elapsed = now - firstSeen
+                        // Tier 1.E2.A — row-index-aware emission
+                        // gate. A NEW PromptStart fires when the
+                        // (text, rowIdx) pair differs from the
+                        // last emitted pair. Catches:
+                        //   * Different text (today's case): cd
+                        //     changed the prompt path.
+                        //   * Same text, different row: cmd's
+                        //     stable-prompt case where output
+                        //     pushed the prompt to a new row
+                        //     after a command cycle.
+                        // Suppresses:
+                        //   * Same text, same row: cursor blink
+                        //     / refresh / no real activity.
+                        let isNewPrompt =
+                            match
+                                state.LastEmittedPromptText,
+                                state.LastEmittedPromptRowIndex
+                                with
+                            | Some priorText, Some priorRow ->
+                                priorText <> text || priorRow <> rowIdx
+                            | _ -> true   // first emit
                         if elapsed.TotalMilliseconds >= float stabilityMs
                            && emitted.IsNone
-                           && state.LastEmittedPromptText <> Some text
+                           && isNewPrompt
                         then
-                            // Stable + new prompt text →
-                            // emit. Source stamps the
-                            // shell's stability window as
-                            // the integer payload.
+                            // Stable + new prompt → emit. Source
+                            // stamps the shell's stability window
+                            // as the integer payload.
                             emitted <-
                                 Some
                                     { Kind = BoundaryKind.PromptStart
@@ -213,8 +250,17 @@ module HeuristicPromptDetector =
                                       // matching row's text for
                                       // SessionModel PromptText
                                       // population.
-                                      MatchedRowText = Some text }
+                                      MatchedRowText = Some text
+                                      // Tier 1.E2.A: capture the
+                                      // matching row's index for
+                                      // (a) the row-index-aware
+                                      // emission gate above and
+                                      // (b) Cycle 20b's CommandText
+                                      // / OutputText extraction at
+                                      // finalize time.
+                                      MatchedRowIndex = Some rowIdx }
                             emittedText <- Some text
+                            emittedRowIndex <- Some rowIdx
                     | _ ->
                         // First time seeing this text on
                         // this row, OR text changed —
@@ -227,17 +273,22 @@ module HeuristicPromptDetector =
                     if Map.containsKey rowIdx nextMatches then
                         nextMatches <- Map.remove rowIdx nextMatches
 
-            let nextLastEmitted =
+            let nextLastEmittedText =
                 match emittedText with
                 | Some _ -> emittedText
                 | None -> state.LastEmittedPromptText
+            let nextLastEmittedRowIndex =
+                match emittedRowIndex with
+                | Some _ -> emittedRowIndex
+                | None -> state.LastEmittedPromptRowIndex
 
             if emitted.IsSome then
                 logger.LogDebug(
-                    "HeuristicPromptDetector emitted PromptStart for shell {Shell} (stability {Ms}ms).",
-                    shellKey, stabilityMs)
+                    "HeuristicPromptDetector emitted PromptStart for shell {Shell} (stability {Ms}ms; rowIdx={Row}).",
+                    shellKey, stabilityMs, emittedRowIndex)
 
             let nextState =
                 { PerRowMatches = nextMatches
-                  LastEmittedPromptText = nextLastEmitted }
+                  LastEmittedPromptText = nextLastEmittedText
+                  LastEmittedPromptRowIndex = nextLastEmittedRowIndex }
             emitted, nextState

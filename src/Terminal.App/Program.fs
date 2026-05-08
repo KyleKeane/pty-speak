@@ -1076,8 +1076,14 @@ module Program =
                         screen.SnapshotRows(0, screen.Rows)
                     let text =
                         CanonicalState.renderRow snap cursorRow
+                    // Tier 1.E2.A: also populate
+                    // MatchedRowIndex from the cursor row, so
+                    // OSC 133-emitting shells can drive the
+                    // row-index-aware emission gate identically
+                    // to heuristic-detector emissions.
                     { boundary with
-                        MatchedRowText = Some text }
+                        MatchedRowText = Some text
+                        MatchedRowIndex = Some cursorRow }
                 | None, _ -> boundary
             currentSession <- SessionModel.apply currentSession augmented
             let emitted = activePathway.OnPromptBoundary augmented
