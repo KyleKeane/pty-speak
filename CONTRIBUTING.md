@@ -431,6 +431,43 @@ new code.
   new module that calls `ILogger` extension methods,
   copy the `open` from a known-working consumer.
 
+- **F# `let internal` keeps a function inside its
+  declaring assembly.** When a Terminal.App consumer (e.g.
+  the composition root in `Program.fs`) needs a
+  Terminal.Core helper, `let internal foo` produces a CI
+  break of the form:
+
+  ```
+  error FS1094: The value 'foo' is not accessible
+  from this code location.
+  ```
+
+  Fix options ranked:
+
+  1. **Drop `internal`** if the helper is a stable
+     primitive (e.g. `(snapshot, rowIdx) → string`).
+     Conservative API extension; no plumbing churn.
+  2. **Add
+     `[<assembly: InternalsVisibleTo("Terminal.App")>]`**
+     to a Terminal.Core attribute file if the helper is
+     genuinely an implementation detail and you don't
+     want to expose it on the public API surface.
+  3. **Replicate the logic inline at the consumer.**
+     Last resort — duplicates code; only acceptable for
+     tiny helpers.
+
+  Cycle 15 (PR #190) burned a CI cycle on this:
+  `CanonicalState.renderRow` was `let internal`, used
+  in-assembly by `HeuristicPromptDetector` and
+  `renderChangedRows`. Tier 1.E's
+  `Program.fs.handlePromptBoundary` (in Terminal.App)
+  needed it for OSC 133 boundary augmentation; FS1094
+  fired. Cleanest fix: drop `internal` since the
+  function is a stable rendering primitive. When
+  introducing cross-assembly access from Terminal.App
+  to a Terminal.Core helper, audit `let internal` /
+  `let private` qualifiers on the call sites.
+
 ### WPF gotchas learned in practice
 
 - **`FrameworkElement` does NOT have a `Background` property.** Only

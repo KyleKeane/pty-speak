@@ -77,6 +77,199 @@ module Diagnostics =
         | _ -> "???"
 
     // ---------------------------------------------------------------
+    // SessionModel snapshot — Tier 1.F substrate observability
+    // ---------------------------------------------------------------
+
+    /// Truncate `text` to `maxLen` chars, appending `...` if
+    /// truncation occurred. Used for prompt-text fields in the
+    /// SessionModel snapshot — long PromptTexts (Powerline-style
+    /// shells with embedded git status etc.) would dominate the
+    /// log line otherwise.
+    let internal truncate (maxLen: int) (text: string) : string =
+        if isNull text then ""
+        elif text.Length <= maxLen then text
+        else text.Substring(0, maxLen) + "..."
+
+    /// Per-tuple view captured for the SessionModel diagnostic
+    /// snapshot. Tier 1.F surfaces only the fields most useful
+    /// for substrate verification — `PromptText` (Tier 1.E
+    /// populated this), timestamps, exit code, plus boolean
+    /// indicators for the Tier 1.E2 follow-up fields
+    /// (`HasCommandText` / `HasOutputText`) so the maintainer
+    /// can verify those fields populate when Tier 1.E2 ships.
+    type RecentTupleView =
+        { Index: int
+          PromptText: string
+          CommandStartedAt: DateTime option
+          OutputStartedAt: DateTime option
+          CommandFinishedAt: DateTime option
+          ExitCode: int option
+          HasCommandText: bool
+          HasOutputText: bool }
+
+    /// Snapshot of SessionModel + HeuristicPromptDetector +
+    /// active-pathway state, captured at diagnostic-battery
+    /// start time. Tier 1.F's primary observability deliverable.
+    /// Composed by the composition-root closure
+    /// (`Program.fs.runDiagnostic`) so the data shape stays
+    /// co-located with the formatter in `Diagnostics.fs`.
+    type SessionModelSnapshot =
+        { SessionId: Guid
+          ShellId: string
+          SessionStartedAt: DateTime
+          IsAltScreenActive: bool
+          HistoryCount: int
+          MaxHistorySize: int
+          ActiveState: string option
+          ActivePromptText: string option
+          LastEmittedPromptText: string option
+          PerRowMatchesSize: int
+          ActivePathwayId: string
+          /// Most recent up to 3 tuples; ordered most-recent-first.
+          RecentTuples: RecentTupleView[] }
+
+    /// Pure helper: capture a `SessionModelSnapshot` from the
+    /// composition-root state. Caller passes the live values;
+    /// this function reads fields without mutation.
+    ///
+    /// **Most-recent-first ordering**: `History` is FIFO (oldest
+    /// dequeued on cap; newest enqueued at tail). Reverse the
+    /// `ToArray()` slice so the snapshot's index 0 is the most
+    /// recent tuple.
+    let captureSessionModel
+            (session: SessionModel.T)
+            (detector: HeuristicPromptDetector.T)
+            (activePathwayId: string)
+            : SessionModelSnapshot
+            =
+        let activeState, activePromptText =
+            match session.Active with
+            | Some active ->
+                let stateName =
+                    match active.State with
+                    | SessionModel.ActiveTupleState.AwaitingPromptStart ->
+                        "AwaitingPromptStart"
+                    | SessionModel.ActiveTupleState.AwaitingCommandStart ->
+                        "AwaitingCommandStart"
+                    | SessionModel.ActiveTupleState.EditingCommand ->
+                        "EditingCommand"
+                    | SessionModel.ActiveTupleState.OutputStreaming ->
+                        "OutputStreaming"
+                Some stateName, Some active.Tuple.PromptText
+            | None -> None, None
+        let historyArr = session.History.ToArray()
+        let recentCount = min 3 historyArr.Length
+        let recentTuples =
+            Array.init
+                recentCount
+                (fun i ->
+                    let idx = historyArr.Length - 1 - i
+                    let t = historyArr.[idx]
+                    { Index = i
+                      PromptText = t.PromptText
+                      CommandStartedAt = t.CommandStartedAt
+                      OutputStartedAt = t.OutputStartedAt
+                      CommandFinishedAt = t.CommandFinishedAt
+                      ExitCode = t.ExitCode
+                      HasCommandText = not (String.IsNullOrEmpty t.CommandText)
+                      HasOutputText = not (String.IsNullOrEmpty t.OutputText) })
+        { SessionId = session.SessionId
+          ShellId = session.ShellId
+          SessionStartedAt = session.SessionStartedAt
+          IsAltScreenActive = session.IsAltScreenActive
+          HistoryCount = session.History.Count
+          MaxHistorySize = session.MaxHistorySize
+          ActiveState = activeState
+          ActivePromptText = activePromptText
+          LastEmittedPromptText = detector.LastEmittedPromptText
+          PerRowMatchesSize = detector.PerRowMatches.Count
+          ActivePathwayId = activePathwayId
+          RecentTuples = recentTuples }
+
+    /// Render a `SessionModelSnapshot` as a list of log lines.
+    /// Each line is logged separately (multi-line block in the
+    /// diagnostic log) so a paste-into-chat preserves grep-
+    /// friendly format.
+    ///
+    /// Long PromptTexts truncate at 40 chars (`truncate` helper)
+    /// to keep log lines paste-friendly. The truncation
+    /// boundary is unit-tested.
+    let formatSessionModelSnapshot
+            (snap: SessionModelSnapshot)
+            : string list
+            =
+        let altLabel =
+            if snap.IsAltScreenActive then "true" else "false"
+        let activeLine =
+            match snap.ActiveState, snap.ActivePromptText with
+            | Some state, Some prompt ->
+                sprintf
+                    "History=%d/%d, Active=%s, ActivePromptText=\"%s\""
+                    snap.HistoryCount
+                    snap.MaxHistorySize
+                    state
+                    (truncate 40 prompt)
+            | _ ->
+                sprintf
+                    "History=%d/%d, Active=none"
+                    snap.HistoryCount
+                    snap.MaxHistorySize
+        let lastEmittedLine =
+            match snap.LastEmittedPromptText with
+            | Some text ->
+                sprintf
+                    "Detector LastEmittedPromptText=\"%s\" PerRowMatches=%d"
+                    (truncate 40 text)
+                    snap.PerRowMatchesSize
+            | None ->
+                sprintf
+                    "Detector LastEmittedPromptText=none PerRowMatches=%d"
+                    snap.PerRowMatchesSize
+        let formatTuple (v: RecentTupleView) : string =
+            let cs =
+                match v.CommandStartedAt with
+                | Some t -> t.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+                | None -> "none"
+            let os =
+                match v.OutputStartedAt with
+                | Some t -> t.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+                | None -> "none"
+            let cf =
+                match v.CommandFinishedAt with
+                | Some t -> t.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+                | None -> "none"
+            let exit =
+                match v.ExitCode with
+                | Some c -> string c
+                | None -> "none"
+            sprintf
+                "RecentTuple[%d]: Prompt=\"%s\" CmdStarted=%s OutStarted=%s Finished=%s Exit=%s CmdText=%s OutText=%s"
+                v.Index
+                (truncate 40 v.PromptText)
+                cs os cf exit
+                (if v.HasCommandText then "yes" else "no")
+                (if v.HasOutputText then "yes" else "no")
+        let header =
+            [ "BEGIN substrate inspection."
+              sprintf
+                  "SessionId=%s, Shell=%s, AltScreen=%s"
+                  (string snap.SessionId)
+                  snap.ShellId
+                  altLabel
+              sprintf
+                  "StartedAt=%s"
+                  (snap.SessionStartedAt.ToString(
+                      "yyyy-MM-ddTHH:mm:ss.fffZ"))
+              activeLine
+              lastEmittedLine
+              sprintf "ActivePathway=%s" snap.ActivePathwayId ]
+        let tupleLines =
+            snap.RecentTuples
+            |> Array.map formatTuple
+            |> Array.toList
+        header @ tupleLines @ [ "END substrate inspection." ]
+
+    // ---------------------------------------------------------------
     // DiagnosticLogWriter — short-lived per-run file writer.
     // ---------------------------------------------------------------
 
@@ -547,6 +740,7 @@ module Diagnostics =
             (resolveHost: unit -> ConPtyHost option)
             (resolveShell: unit -> ShellRegistry.Shell)
             (resolveSeq: unit -> int64)
+            (resolveSessionSnapshot: unit -> SessionModelSnapshot)
             : unit =
         let log = Logger.get "Terminal.App.Diagnostics.runFullBattery"
         let _ =
@@ -582,6 +776,27 @@ module Diagnostics =
                     writer.WriteLine LogLevel.Information "Diagnostic.T0.Snapshot" snapshot
                     log.LogInformation(
                         "Diagnostic snapshot. ProcessCounts={Snapshot}", snapshot)
+                    // Tier 1.F — SessionModel substrate inspection.
+                    // Captured at battery-start (closure resolves
+                    // composition-root mutables); rendered into the
+                    // log as a multi-line block. Inserted BEFORE
+                    // the per-shell command battery so substrate
+                    // state contextualises any test failures that
+                    // follow.
+                    let sessionSnapshot = resolveSessionSnapshot ()
+                    let sessionLines =
+                        formatSessionModelSnapshot sessionSnapshot
+                    for line in sessionLines do
+                        writer.WriteLine
+                            LogLevel.Information
+                            "Diagnostic.SessionModel"
+                            line
+                    log.LogInformation(
+                        "Diagnostic SessionModel inspection logged. History={Count} Active={Active}",
+                        sessionSnapshot.HistoryCount,
+                        match sessionSnapshot.ActiveState with
+                        | Some s -> s
+                        | None -> "none")
                     // T_Earcons — replay the three earcons.
                     do! runEarconReplay window writer
                     // Per-shell command battery.
@@ -630,15 +845,33 @@ module Diagnostics =
                                 "Failed to read diagnostic log for clipboard: {Message}",
                                 ex.Message)
                             ""
+                    // Tier 1.F — brief substrate fragment in the
+                    // NVDA announce. Adds ~5-10 spoken words so the
+                    // maintainer hears substrate state alongside
+                    // the battery summary; full multi-line state
+                    // is in the (clipboard-copied) log.
+                    let substrateFragment =
+                        match sessionSnapshot.ActiveState with
+                        | Some state ->
+                            sprintf
+                                " SessionModel: %d tuples, active state %s."
+                                sessionSnapshot.HistoryCount
+                                state
+                        | None ->
+                            sprintf
+                                " SessionModel: %d tuples, no active state."
+                                sessionSnapshot.HistoryCount
                     let summaryLine =
                         if total = 0 then
                             sprintf
-                                "Diagnostic complete. Snapshot and earcons logged. Shell %s skipped command battery."
+                                "Diagnostic complete. Snapshot and earcons logged. Shell %s skipped command battery.%s"
                                 shell.DisplayName
+                                substrateFragment
                         else
                             sprintf
-                                "Diagnostic complete. %d of %d passed."
+                                "Diagnostic complete. %d of %d passed.%s"
                                 pass total
+                                substrateFragment
                     if String.IsNullOrEmpty content then
                         let msg = sprintf "%s Could not read diagnostic log." summaryLine
                         do! announce msg
