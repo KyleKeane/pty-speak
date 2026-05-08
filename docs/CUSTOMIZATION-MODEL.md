@@ -10,6 +10,7 @@
 > - [`PANE-MODEL.md`](PANE-MODEL.md) — UI composition; introduces "Pipeline Inspector" pane (or extends an existing reserved pane) under this principle
 > - [`USER-SETTINGS.md`](USER-SETTINGS.md) — parameter atlas; override-rule TOML schema lands here when substrate ships
 > - [`AUDIT-CODE-CONSISTENCY.md`](AUDIT-CODE-CONSISTENCY.md), [`AUDIT-TEST-INVENTORY.md`](AUDIT-TEST-INVENTORY.md), [`AUDIT-SPEC-ALIGNMENT.md`](AUDIT-SPEC-ALIGNMENT.md), [`AUDIT-ATLAS-ALIGNMENT.md`](AUDIT-ATLAS-ALIGNMENT.md), [`AUDIT-DOC-CURRENCY.md`](AUDIT-DOC-CURRENCY.md), [`AUDIT-BACKLOG-VALIDATION.md`](AUDIT-BACKLOG-VALIDATION.md) — audit baselines
+> - [`CHANNEL-ARCHITECTURE.md`](CHANNEL-ARCHITECTURE.md) — channel-based-communication principle. Channels are the seams the user inspects + customises; the Customization principle's per-stage swapping maps to per-consumer swapping behind a channel.
 
 ## What this document is
 

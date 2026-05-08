@@ -15,6 +15,79 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 18): Channel Architecture research-stage doc
+
+**Sixth research-stage doc.** Formalises the maintainer's
+2026-05-08 architectural principle — channels as the
+canonical inter-thread communication primitive in pty-speak —
+applied concretely in Cycle 17 / PR #192 (channel-driven
+actor model that closed the Tier 1.D idle-gap hole). The
+doc captures the principle in writing so future
+implementation cycles (Phase 2 input framework, Tier 2
+persistence, Tier 3 AI-summarisation) align with it by
+construction rather than by chance.
+
+**New doc** `docs/CHANNEL-ARCHITECTURE.md` (~750 LOC)
+covers:
+
+- **The principle stated** — channels at thread
+  boundaries, single-threaded consumption, explicit
+  backpressure, lifecycle via `TryComplete`.
+- **Channel inventory (current state)** — 3 production
+  channels: `pumpChannel : BoundedChannel<PumpInput>`
+  (Cycle 17), `ConPtyHost.Stdout : ChannelReader<byte array>`
+  (PTY → reader thread), `FileLogger.channel : BoundedChannel<LogEntry>`
+  (any thread → drain writer). Per-channel rows: payload,
+  producer, consumer, backpressure mode, lifecycle, file:line.
+- **F# Events — when channels DON'T apply** — 3 events:
+  `screen.ModeChanged`, `screen.Bell`,
+  `screen.PromptBoundary`. The "Event → Channel bridge"
+  pattern + the buffer-then-fire-after-lock idiom in
+  `Screen.Apply` documented as load-bearing.
+- **Decision framework** — 3-question heuristic
+  (cross-thread? backpressure? fixed cardinality?) +
+  4-bucket categorisation (Channel / Event / direct call /
+  mutable-plus-lock).
+- **5 anti-patterns** — don't channelise pure functions;
+  don't use channels to avoid passing parameters; don't
+  pick `Wait` blindly; don't forget `TryComplete`; don't
+  bridge synchronously while holding a lock.
+- **3 future channel candidates** — input-keystroke
+  (Phase 2 input framework; `Wait` backpressure),
+  persistence-flush (Tier 2; `Wait`), AI-summarisation
+  (Tier 3; `DropOldest`). Each anchors a future cycle's
+  design.
+- **Pipeline Inspector pane preview** — cross-references
+  PANE-MODEL.md's reserved pane; this doc establishes the
+  schema the pane will query.
+- **5 open questions** — `screen.PromptBoundary`
+  channelise vs event; `FileLogger.channel` capacity TOML;
+  input-keystroke batching vs per-keystroke; Pipeline
+  Inspector subscription model; unbounded-channels policy.
+
+**Companion doc updates** — front-matter cross-references
+added to the 5 prior research-stage docs (PIPELINE-NARRATIVE,
+INTERACTION-MODEL, SESSION-MODEL, PANE-MODEL,
+CUSTOMIZATION-MODEL) plus a new entry in DOC-MAP.md.
+
+**Substrate-first principle**: per the maintainer's
+"moving slowly and intentionally" guidance, this doc lands
+BEFORE Phase 2 / Tier 2 / Tier 3 implementation cycles
+consume the principle. Constrains drift; makes the
+architectural decision visible + reviewable.
+
+**User-visible behaviour change**: zero (docs-only).
+
+**Out of scope**:
+- Channel-pool / rate-limiter patterns.
+- Unbounded channels (explicitly avoided per Q5).
+- Broadcast channels (multi-consumer).
+- Refactoring existing channels (descriptive, not
+  prescriptive).
+- Spec changes (per CLAUDE.md spec-immutability).
+- Channel-API tutorial content (defer to Microsoft
+  `System.Threading.Channels` docs).
+
 ### Changed (Cycle 17): SessionModel Tier 1.D-fix — tick-driven detector via channel-driven actor model
 
 **First post-Tier-1 architectural correction.** Maintainer's

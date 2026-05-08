@@ -11,6 +11,7 @@
 > - [`PANE-MODEL.md`](PANE-MODEL.md) — UI composition layer (multi-pane workspace framework). The Shell Interaction Manager owns the shell pane; PANE-MODEL extends into multi-pane composition (file tree / cherry-picked I/O / language docs / AI assistance).
 > - [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md) — canonical spec. This doc proposes a higher-level framing the spec will absorb.
 > - [`spec/overview.md`](../spec/overview.md) — references OSC 133 + the five-stage architecture this doc anchors against.
+> - [`CHANNEL-ARCHITECTURE.md`](CHANNEL-ARCHITECTURE.md) — channel-based-communication principle. The Shell Interaction Manager's inter-thread boundaries map to the channels documented there.
 
 ## What this document is
 

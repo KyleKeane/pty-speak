@@ -9,6 +9,7 @@
 > - [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md) — canonical spec; this doc proposes substrate changes the spec will need to absorb
 > - [`spec/overview.md`](../spec/overview.md) — references OSC 133 as recommended authoritative source; this doc operationalises that recommendation
 > - [`SECURITY.md`](../SECURITY.md) — threat model; SessionModel persistence has security implications
+> - [`CHANNEL-ARCHITECTURE.md`](CHANNEL-ARCHITECTURE.md) — channel-based-communication principle. SessionModel mutations happen on the `pumpChannel` consumer thread; future Tier 2 persistence will use a dedicated flush-to-disk channel.
 
 ## What this document is
 
