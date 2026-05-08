@@ -1007,8 +1007,16 @@ public class TerminalView : FrameworkElement
         // calling _screen.GetCell(...) per cell, which would re-acquire
         // the screen gate up to Rows*Cols times and race with the
         // parser thread between cells.
+        //
+        // SessionModel Tier 1.B (Cycle 12): SnapshotRows return type
+        // extended from `int64 * Cell[][]` to
+        // `int64 * (int * int) * Cell[][]` (cursor position captured
+        // atomically with the snapshot). From C#'s perspective the
+        // F# 3-tuple becomes `Tuple<long, Tuple<int, int>, Cell[][]>`
+        // — the Cell[][] moves from `.Item2` to `.Item3`. UI rendering
+        // doesn't need cursor position, so `.Item2` is discarded.
         var snap = _screen.SnapshotRows(0, _screen.Rows);
-        var rows = snap.Item2;
+        var rows = snap.Item3;
         var cols = _screen.Cols;
 
         for (int row = 0; row < rows.Length; row++)
