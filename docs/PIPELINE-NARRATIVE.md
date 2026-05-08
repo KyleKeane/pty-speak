@@ -9,6 +9,7 @@
 > - [`docs/SESSION-MODEL.md`](SESSION-MODEL.md) — forward-looking design for the SessionModel substrate (item 28; future, not yet authored)
 > - [`CONTRIBUTING.md`](../CONTRIBUTING.md) — F# / .NET 9 / WPF gotchas; testing conventions
 > - [`spec/tech-plan.md`](../spec/tech-plan.md) — stage-by-stage implementation plan
+> - [`docs/CHANNEL-ARCHITECTURE.md`](CHANNEL-ARCHITECTURE.md) — channel-based-communication architectural principle; concrete inventory of cross-thread boundaries the 12 stages cross
 
 This document is the **shared vocabulary** for how data flows
 through pty-speak. Every UI event (keypress, screen mutation,

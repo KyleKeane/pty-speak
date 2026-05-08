@@ -9,6 +9,7 @@
 > - [`SESSION-MODEL.md`](SESSION-MODEL.md) — history substrate. The cherry-picked I/O pairs pane consumes SessionModel queries.
 > - [`ACCESSIBILITY-INTERACTION-MODEL.md`](ACCESSIBILITY-INTERACTION-MODEL.md) — caret / focus / UIA tension at the screen-reader-interface layer. Multi-pane multiplies that tension.
 > - [`USER-SETTINGS.md`](USER-SETTINGS.md) — parameter atlas. Pane-state TOML schema + pane-switch hotkeys land here.
+> - [`CHANNEL-ARCHITECTURE.md`](CHANNEL-ARCHITECTURE.md) — channel-based-communication principle. The reserved Pipeline Inspector pane will visualise the channel boundaries this doc inventories.
 
 ## What this document is
 
