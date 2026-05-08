@@ -46,17 +46,35 @@ open Microsoft.Extensions.Logging
 ///    §282-300 + USER-SETTINGS atlas entries defer to a
 ///    later cycle.
 ///
-/// **Detection algorithm (per-frame)**:
+/// **Detection algorithm (per-frame, two-pass)**:
 ///
+/// PASS 1 — walk every row:
 /// 1. Render row text via `CanonicalState.renderRow`
 ///    (sanitised + trailing-blank-trimmed).
 /// 2. Test against per-shell regex (compiled, module-level
 ///    singleton).
 /// 3. If matches AND `(now - first-match-time) ≥
-///    stabilityMs` AND text differs from
-///    `LastEmittedPromptText` → emit PromptStart.
-/// 4. If matches but window not elapsed OR text equals
-///    last-emitted → no emit, update state.
+///    stabilityMs` → record as a stable match candidate.
+/// 4. If matches but window not yet elapsed OR text changed
+///    → reset the per-row stability timer.
+/// 5. If no longer matches → evict stale per-row entry.
+///
+/// PASS 2 — among all stable matches, pick the highest
+/// rowIdx (the newest prompt — output flows downward in
+/// every supported shell, so the bottommost matching row is
+/// the active prompt). Apply the (text, rowIdx) emission
+/// gate: emit if the pair differs from the last emitted
+/// pair; suppress otherwise.
+///
+/// **Why two-pass** (Cycle 22a fix). A one-pass
+/// "first-match-wins" loop produced infinite emission
+/// flapping when two rows matched the regex with identical
+/// text (e.g. cmd's screen with a prior prompt still
+/// visible above the current one): each tick alternated
+/// which row emitted because the gate `(text, rowIdx) !=
+/// last-emitted` kept satisfying. Picking max-rowIdx among
+/// stable matches eliminates the alternation by
+/// construction.
 ///
 /// **Threading**: detector is mutated only on the
 /// PathwayPump worker thread (single-threaded for
@@ -194,14 +212,28 @@ module HeuristicPromptDetector =
             // Unknown shell — no detection per Q2 resolution.
             None, state
         | Some (regex, stabilityMs) ->
-            // Walk every row; find the first row whose text
-            // matches the regex AND has been stable for the
-            // shell's window. Drop per-row entries for rows
-            // that no longer match (state hygiene).
+            // Cycle 22a — two-pass detection. Pass 1 walks every
+            // row, updates per-row stability state, and collects
+            // every row that's currently stable + matching. Pass
+            // 2 picks the highest-rowIdx among them (the newest
+            // prompt — cmd / PowerShell / Claude all emit output
+            // downward, so the bottommost matching row is the
+            // active one) and applies the (text, rowIdx) gate.
+            //
+            // Cycle 20a's first-match-wins loop produced infinite
+            // flapping when two rows matched the regex with
+            // identical text (e.g. cmd's screen with a prior
+            // prompt still visible above the active one): each
+            // tick alternated which row emitted because the gate
+            // `(text, rowIdx) != LastEmitted` kept satisfying.
+            // Within ~5 seconds, History flooded to 100/100.
+            // Picking max-rowIdx among stable matches eliminates
+            // the alternation by construction — there's exactly
+            // one "current prompt" per tick.
             let mutable nextMatches = state.PerRowMatches
-            let mutable emitted : PromptBoundaryData option = None
-            let mutable emittedText : string option = None
-            let mutable emittedRowIndex : int option = None
+            // PASS 1 — walk rows, update stability state,
+            // collect every stable+matching row.
+            let stableMatches = ResizeArray<int * string>()
             for rowIdx in 0 .. snapshot.Length - 1 do
                 let text = CanonicalState.renderRow snapshot rowIdx
                 if regex.IsMatch(text) then
@@ -209,69 +241,78 @@ module HeuristicPromptDetector =
                     match priorMatch with
                     | Some (priorText, firstSeen) when priorText = text ->
                         let elapsed = now - firstSeen
-                        // Tier 1.E2.A — row-index-aware emission
-                        // gate. A NEW PromptStart fires when the
-                        // (text, rowIdx) pair differs from the
-                        // last emitted pair. Catches:
-                        //   * Different text (today's case): cd
-                        //     changed the prompt path.
-                        //   * Same text, different row: cmd's
-                        //     stable-prompt case where output
-                        //     pushed the prompt to a new row
-                        //     after a command cycle.
-                        // Suppresses:
-                        //   * Same text, same row: cursor blink
-                        //     / refresh / no real activity.
-                        let isNewPrompt =
-                            match
-                                state.LastEmittedPromptText,
-                                state.LastEmittedPromptRowIndex
-                                with
-                            | Some priorText, Some priorRow ->
-                                priorText <> text || priorRow <> rowIdx
-                            | _ -> true   // first emit
-                        if elapsed.TotalMilliseconds >= float stabilityMs
-                           && emitted.IsNone
-                           && isNewPrompt
-                        then
-                            // Stable + new prompt → emit. Source
-                            // stamps the shell's stability window
-                            // as the integer payload.
-                            emitted <-
-                                Some
-                                    { Kind = BoundaryKind.PromptStart
-                                      Source =
-                                        BoundarySource.HeuristicPromptRegex
-                                            stabilityMs
-                                      DetectedAt = now
-                                      CommandId = None
-                                      ExtraParams = Map.empty
-                                      // Tier 1.E: capture the
-                                      // matching row's text for
-                                      // SessionModel PromptText
-                                      // population.
-                                      MatchedRowText = Some text
-                                      // Tier 1.E2.A: capture the
-                                      // matching row's index for
-                                      // (a) the row-index-aware
-                                      // emission gate above and
-                                      // (b) Cycle 20b's CommandText
-                                      // / OutputText extraction at
-                                      // finalize time.
-                                      MatchedRowIndex = Some rowIdx }
-                            emittedText <- Some text
-                            emittedRowIndex <- Some rowIdx
+                        if elapsed.TotalMilliseconds >= float stabilityMs then
+                            stableMatches.Add((rowIdx, text))
                     | _ ->
-                        // First time seeing this text on
-                        // this row, OR text changed —
-                        // restart the stability timer.
+                        // First time seeing this text on this
+                        // row, OR text changed — restart the
+                        // stability timer.
                         nextMatches <-
                             Map.add rowIdx (text, now) nextMatches
                 else
-                    // Row no longer matches; evict stale
-                    // entry to keep the map bounded.
+                    // Row no longer matches; evict stale entry
+                    // to keep the map bounded.
                     if Map.containsKey rowIdx nextMatches then
                         nextMatches <- Map.remove rowIdx nextMatches
+
+            // PASS 2 — pick highest-rowIdx among stable matches,
+            // apply the row-index-aware emission gate.
+            let mutable emitted : PromptBoundaryData option = None
+            let mutable emittedText : string option = None
+            let mutable emittedRowIndex : int option = None
+            if stableMatches.Count > 0 then
+                let firstRow, firstText = stableMatches.[0]
+                let mutable bestRow = firstRow
+                let mutable bestText = firstText
+                for i in 1 .. stableMatches.Count - 1 do
+                    let candidateRow, candidateText = stableMatches.[i]
+                    if candidateRow > bestRow then
+                        bestRow <- candidateRow
+                        bestText <- candidateText
+                // Tier 1.E2.A — row-index-aware emission gate.
+                // A NEW PromptStart fires when the (text, rowIdx)
+                // pair differs from the last emitted pair.
+                // Catches:
+                //   * Different text: `cd` changed the prompt
+                //     path.
+                //   * Same text, different row: cmd's
+                //     stable-prompt case where output pushed
+                //     the prompt to a new row after a command
+                //     cycle.
+                // Suppresses:
+                //   * Same text, same row: cursor blink /
+                //     refresh / no real activity.
+                let isNewPrompt =
+                    match
+                        state.LastEmittedPromptText,
+                        state.LastEmittedPromptRowIndex
+                        with
+                    | Some priorText, Some priorRow ->
+                        priorText <> bestText || priorRow <> bestRow
+                    | _ -> true   // first emit
+                if isNewPrompt then
+                    emitted <-
+                        Some
+                            { Kind = BoundaryKind.PromptStart
+                              Source =
+                                BoundarySource.HeuristicPromptRegex
+                                    stabilityMs
+                              DetectedAt = now
+                              CommandId = None
+                              ExtraParams = Map.empty
+                              // Tier 1.E: capture the matching
+                              // row's text for SessionModel
+                              // PromptText population.
+                              MatchedRowText = Some bestText
+                              // Tier 1.E2.A: capture the matching
+                              // row's index for (a) the
+                              // row-index-aware emission gate
+                              // above and (b) Cycle 20b's
+                              // CommandText / OutputText
+                              // extraction at finalize time.
+                              MatchedRowIndex = Some bestRow }
+                    emittedText <- Some bestText
+                    emittedRowIndex <- Some bestRow
 
             let nextLastEmittedText =
                 match emittedText with

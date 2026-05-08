@@ -15,6 +15,61 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed (Cycle 22a): HeuristicPromptDetector multi-match flapping → History flooded to 100/100
+
+**Substrate hotfix.** Manual NVDA validation 2026-05-08
+exposed a regression introduced by Cycle 20a (PR #195): in
+cmd sessions where a prior prompt was still visible above
+the current prompt (i.e. essentially every cmd session
+after the first command), the `HeuristicPromptDetector`
+emitted PromptStart events at ~20Hz, alternating between
+two row indices (e.g. row 6 and row 13). Each emission
+fired the SessionModel state machine's
+"`PromptStart while Active=Some` → finalise prior as
+incomplete" arm, flooding `History` to its 100-tuple cap
+within ~5 seconds.
+
+**Root cause.** Cycle 20a's emission gate was
+`(text, rowIdx) != LastEmitted`, with first-match-wins
+loop semantics. When two rows matched the regex with
+identical text:
+- Tick N: walks rows ascending, emits at row 6.
+  `LastEmitted = ("C:\\Users\\admin>", 6)`.
+- Tick N+1: walks again. Row 6's pair equals last-emitted →
+  skip. Row 13's pair differs → emit. `LastEmitted = (..., 13)`.
+- Tick N+2: row 6's pair now differs from last-emitted →
+  emit. `LastEmitted = (..., 6)`.
+- Forever flap at the tick rate.
+
+**The fix** (this PR). Replace the first-match-wins loop
+with two-pass detection. Pass 1 collects every
+stable+matching row. Pass 2 picks the highest row index
+(the newest prompt — output flows downward in every
+supported shell, so the bottommost match is the active
+prompt) and applies the (text, rowIdx) emission gate to
+that one candidate. Earlier matches are scrollback noise
+and get suppressed by construction.
+
+**Files**:
+- `src/Terminal.Core/HeuristicPromptDetector.fs` —
+  refactored detection loop to two-pass.
+- `tests/Tests.Unit/HeuristicPromptDetectorTests.fs` —
+  updated existing `multiple rows match regex; first
+  stable one emits` test (renamed to `highest-rowIdx
+  stable one emits` with stronger assertion); added 4 new
+  tests covering: identical-text two-row flap suppression
+  (the headline regression guard); three stable rows;
+  scroll-off transition (highest-row content disappears,
+  lower remaining match emits); different-text two-row
+  highest-wins.
+
+**Behaviour change**: the substrate's idle behaviour for
+cmd / PowerShell sessions with prior prompts visible no
+longer floods History. Verifiable by maintainer: cut
+release, type a few commands in cmd, wait, press
+Ctrl+Shift+D — expect History grows by 1 per command (was:
+fills to 100/100 within seconds at idle).
+
 ### Added (Cycle 20b): Tier 1.E2.B — CommandText + OutputText extraction (closes Tier 1)
 
 **Second half of the Tier 1.E2 split** per maintainer
