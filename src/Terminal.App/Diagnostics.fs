@@ -97,12 +97,12 @@ module Diagnostics =
         else text.Substring(0, maxLen) + "..."
 
     /// Per-tuple view captured for the SessionModel diagnostic
-    /// snapshot. Tier 1.F surfaces only the fields most useful
-    /// for substrate verification — `PromptText` (Tier 1.E
-    /// populated this), timestamps, exit code, plus boolean
-    /// indicators for the Tier 1.E2 follow-up fields
-    /// (`HasCommandText` / `HasOutputText`) so the maintainer
-    /// can verify those fields populate when Tier 1.E2 ships.
+    /// snapshot. Tier 1.F surfaces the fields most useful for
+    /// substrate verification — PromptText / timestamps / exit
+    /// code — plus the Tier 1.E2.B content fields (CommandText
+    /// + OutputText) once they populate. The boolean
+    /// `HasCommandText` / `HasOutputText` fields remain for
+    /// quick "did extraction fire?" inspection at a glance.
     type RecentTupleView =
         { Index: int
           PromptText: string
@@ -111,7 +111,19 @@ module Diagnostics =
           CommandFinishedAt: DateTime option
           ExitCode: int option
           HasCommandText: bool
-          HasOutputText: bool }
+          HasOutputText: bool
+          /// Tier 1.E2.B (Cycle 20b) — the extracted command
+          /// text from the old prompt's row at finalize time.
+          /// Empty when extraction skipped (no
+          /// MatchedRowIndex, scroll-mid-cycle defensive
+          /// skip, etc.).
+          CommandText: string
+          /// Tier 1.E2.B (Cycle 20b) — the extracted output
+          /// text from rows between old + new prompts at
+          /// finalize time. Empty when no rows between (e.g.
+          /// clear-screen, OSC 133 CommandFinished without
+          /// next-prompt context, etc.).
+          OutputText: string }
 
     /// Snapshot of SessionModel + HeuristicPromptDetector +
     /// active-pathway state, captured at diagnostic-battery
@@ -178,7 +190,14 @@ module Diagnostics =
                       CommandFinishedAt = t.CommandFinishedAt
                       ExitCode = t.ExitCode
                       HasCommandText = not (String.IsNullOrEmpty t.CommandText)
-                      HasOutputText = not (String.IsNullOrEmpty t.OutputText) })
+                      HasOutputText = not (String.IsNullOrEmpty t.OutputText)
+                      // Tier 1.E2.B: full content for log-line
+                      // display. Truncation happens in
+                      // `formatTuple` (cap 80 chars) so the
+                      // record carries the full text for
+                      // future query-API consumers.
+                      CommandText = t.CommandText
+                      OutputText = t.OutputText })
         { SessionId = session.SessionId
           ShellId = session.ShellId
           SessionStartedAt = session.SessionStartedAt
@@ -248,13 +267,25 @@ module Diagnostics =
                 match v.ExitCode with
                 | Some c -> string c
                 | None -> "none"
+            // Tier 1.E2.B: surface truncated content fields
+            // (cap 80 chars; longer than PromptText's 40
+            // since command outputs typically run longer
+            // than prompts). Empty content renders as `""`
+            // which is paste-friendly + lets the maintainer
+            // verify "extraction did not fire" at a glance.
+            let cmdText =
+                if System.String.IsNullOrEmpty v.CommandText then "\"\""
+                else sprintf "\"%s\"" (truncate 80 v.CommandText)
+            let outText =
+                if System.String.IsNullOrEmpty v.OutputText then "\"\""
+                else sprintf "\"%s\"" (truncate 80 v.OutputText)
             sprintf
                 "RecentTuple[%d]: Prompt=\"%s\" CmdStarted=%s OutStarted=%s Finished=%s Exit=%s CmdText=%s OutText=%s"
                 v.Index
                 (truncate 40 v.PromptText)
                 cs os cf exit
-                (if v.HasCommandText then "yes" else "no")
-                (if v.HasOutputText then "yes" else "no")
+                cmdText
+                outText
         let header =
             [ "BEGIN substrate inspection."
               sprintf

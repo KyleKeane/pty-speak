@@ -1054,7 +1054,11 @@ module Program =
         // Defined BEFORE `handleRowsChanged` so the latter can
         // dispatch heuristic-detected boundaries (Tier 1.D) via
         // this helper. F# `let` bindings are sequential.
-        let handlePromptBoundary (boundary: PromptBoundaryData) : unit =
+        let handlePromptBoundary
+                (boundary: PromptBoundaryData)
+                (snapshot: Cell[][])
+                : unit
+                =
             // SessionModel Tier 1.E — PromptText augmentation.
             // Heuristic boundaries arrive with `MatchedRowText`
             // already populated (the detector renders the row
@@ -1063,14 +1067,18 @@ module Program =
             // capture a fresh snapshot here and render the
             // cursor's row to populate `MatchedRowText` for
             // SessionModel.apply's PromptText write.
-            // Augmentation is a no-op for non-PromptStart
-            // boundaries (CommandStart / OutputStart /
-            // CommandFinished don't write PromptText today;
-            // Tier 1.E2 will add CommandText / OutputText
-            // capture for those).
-            let augmented =
+            //
+            // Tier 1.E2.B (Cycle 20b): caller-supplied
+            // `snapshot` parameter is forwarded to
+            // `SessionModel.apply` for finalize-time
+            // CommandText + OutputText extraction. The
+            // heuristic path passes the snapshot it captured
+            // for `tryDetect`; the OSC 133 path captures a
+            // fresh snapshot for augmentation + reuses it
+            // for the apply call.
+            let augmented, snapshotForApply =
                 match boundary.MatchedRowText, boundary.Kind with
-                | Some _, _ -> boundary
+                | Some _, _ -> boundary, snapshot
                 | None, BoundaryKind.PromptStart ->
                     let _, (cursorRow, _), snap =
                         screen.SnapshotRows(0, screen.Rows)
@@ -1081,11 +1089,15 @@ module Program =
                     // OSC 133-emitting shells can drive the
                     // row-index-aware emission gate identically
                     // to heuristic-detector emissions.
-                    { boundary with
-                        MatchedRowText = Some text
-                        MatchedRowIndex = Some cursorRow }
-                | None, _ -> boundary
-            currentSession <- SessionModel.apply currentSession augmented
+                    let aug =
+                        { boundary with
+                            MatchedRowText = Some text
+                            MatchedRowIndex = Some cursorRow }
+                    aug, snap
+                | None, _ -> boundary, snapshot
+            currentSession <-
+                SessionModel.apply
+                    currentSession augmented snapshotForApply
             let emitted = activePathway.OnPromptBoundary augmented
             pumpLog.LogDebug(
                 "PathwayPump PromptBoundary {Kind} → {Pathway}.OnPromptBoundary → {Count} events.",
@@ -1117,8 +1129,12 @@ module Program =
                 HeuristicPromptDetector.tryDetect
                     snapshot cursorPos shellKey now promptDetector
             promptDetector <- nextDetector
+            // Tier 1.E2.B: forward the snapshot so
+            // handlePromptBoundary can pass it through to
+            // SessionModel.apply for finalize-time content
+            // extraction.
             match boundary with
-            | Some data -> handlePromptBoundary data
+            | Some data -> handlePromptBoundary data snapshot
             | None -> ()
 
         let handleRowsChanged () : unit =
@@ -1294,7 +1310,16 @@ module Program =
                                         // PowerShell / Claude also
                                         // produce boundaries
                                         // without OSC 133 support.
-                                        handlePromptBoundary boundary
+                                        // Tier 1.E2.B: capture a
+                                        // fresh snapshot so apply
+                                        // can extract CommandText
+                                        // + OutputText from the
+                                        // current screen state.
+                                        let _, _, oscSnap =
+                                            screen.SnapshotRows(
+                                                0, screen.Rows)
+                                        handlePromptBoundary
+                                            boundary oscSnap
                                     | Tick now ->
                                         // SessionModel Tier 1.D-fix
                                         // (Cycle 17) — tick-driven

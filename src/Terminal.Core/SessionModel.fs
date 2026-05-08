@@ -141,7 +141,20 @@ module SessionModel =
           /// be unset).
           Tuple: SessionTuple
           /// State machine cursor.
-          State: ActiveTupleState }
+          State: ActiveTupleState
+          /// **Tier 1.E2.B (Cycle 20b)** — row index where
+          /// the prompt was matched at PromptStart time.
+          /// Captured from the boundary's `MatchedRowIndex`
+          /// field (populated by `HeuristicPromptDetector` at
+          /// emit time, or by `Program.fs.handlePromptBoundary`
+          /// OSC 133 augmentation from the cursor row).
+          /// Used at finalize-time by `finalizeAndEnqueue`
+          /// to bracket the rows-between-old-and-new-prompt
+          /// range for OutputText extraction + to locate the
+          /// old-prompt row for CommandText extraction.
+          /// `None` when boundary lacked `MatchedRowIndex`
+          /// (defensive — extraction gracefully skips).
+          PromptRowIndex: int option }
 
     /// SessionModel state for a single shell session. One
     /// instance per Ctrl+Shift+1/2/3 hot-switch (per Q5
@@ -299,21 +312,110 @@ module SessionModel =
 
     /// Move an active tuple to the History ring buffer with
     /// the supplied finalisation timestamp. Enforces
+    /// **Tier 1.E2.B (Cycle 20b)** — extract `CommandText` +
+    /// `OutputText` from screen state at finalize time.
+    ///
+    /// **CommandText**: the row at `oldPromptRowIndex` in
+    /// the current snapshot likely contains the prompt + the
+    /// user's typed command (e.g. `C:\> echo hi`). Strip the
+    /// captured `oldPromptText` prefix; what remains is the
+    /// command. Defensive: returns `""` when the row index
+    /// is missing / out of bounds, the captured PromptText
+    /// is empty, or the rendered row doesn't start with the
+    /// captured prompt (scroll happened mid-cycle).
+    ///
+    /// **OutputText**: rows between `oldPromptRowIndex + 1`
+    /// and `newPromptRowIndex - 1` (inclusive) joined with
+    /// newlines. Empty rows filtered out (typical shell
+    /// output has trailing-blank rows that aren't
+    /// meaningful). Defensive: returns `""` when row indices
+    /// are missing, when newRow ≤ oldRow + 1 (no rows
+    /// between), or when row indices are out of snapshot
+    /// bounds.
+    ///
+    /// Returns `(commandText, outputText)`. Pure function;
+    /// no side effects.
+    let private extractContent
+            (oldPromptText: string)
+            (oldPromptRowIndex: int option)
+            (newPromptRowIndex: int option)
+            (snapshot: Cell[][])
+            : string * string
+            =
+        let commandText =
+            match oldPromptText, oldPromptRowIndex with
+            | "", _ -> ""
+            | _, None -> ""
+            | _, Some rowIdx when rowIdx < 0 || rowIdx >= snapshot.Length ->
+                ""
+            | promptText, Some rowIdx ->
+                let rendered = CanonicalState.renderRow snapshot rowIdx
+                if rendered.StartsWith(promptText) then
+                    rendered.Substring(promptText.Length).TrimStart()
+                else
+                    // Row content doesn't start with the prompt
+                    // we captured (scroll happened mid-cycle);
+                    // skip rather than producing garbage.
+                    ""
+        let outputText =
+            match oldPromptRowIndex, newPromptRowIndex with
+            | Some oldRow, Some newRow when
+                oldRow >= 0
+                && newRow > oldRow + 1
+                && newRow <= snapshot.Length
+                ->
+                let lines = ResizeArray<string>()
+                for rowIdx in oldRow + 1 .. newRow - 1 do
+                    if rowIdx < snapshot.Length then
+                        let line = CanonicalState.renderRow snapshot rowIdx
+                        if not (System.String.IsNullOrEmpty line) then
+                            lines.Add(line)
+                String.concat "\n" lines
+            | _ -> ""
+        commandText, outputText
+
     /// `MaxHistorySize` by dequeueing the oldest tuple
     /// before enqueueing the new one. When `MaxHistorySize`
     /// is `0`, the tuple is dropped silently (no history
     /// retained).
+    ///
+    /// **Tier 1.E2.B (Cycle 20b)** — extracts `CommandText`
+    /// + `OutputText` from snapshot when the extraction
+    /// context is supplied (heuristic interrupt-arm or OSC
+    /// 133 CommandFinished arm):
+    ///   * `oldPromptRowIndex`: row where the active
+    ///     tuple's prompt was emitted (from
+    ///     `ActiveSessionTuple.PromptRowIndex`).
+    ///   * `newPromptRowIndex`: row where the NEW prompt is
+    ///     (from the incoming boundary's `MatchedRowIndex`;
+    ///     `None` for `CommandFinished` arms).
+    ///   * `snapshot`: current screen state at finalize
+    ///     time.
+    /// `finalizeIncomplete` (shell-switch) passes `None /
+    /// None / [||]` so extraction gracefully returns empty
+    /// strings.
     let private finalizeAndEnqueue
             (state: T)
             (tuple: SessionTuple)
             (finishedAt: DateTime)
             (exitCode: int option)
+            (oldPromptRowIndex: int option)
+            (newPromptRowIndex: int option)
+            (snapshot: Cell[][])
             : T
             =
+        let commandText, outputText =
+            extractContent
+                tuple.PromptText
+                oldPromptRowIndex
+                newPromptRowIndex
+                snapshot
         let finalised =
             { tuple with
                 CommandFinishedAt = Some finishedAt
-                ExitCode = exitCode }
+                ExitCode = exitCode
+                CommandText = commandText
+                OutputText = outputText }
         if state.MaxHistorySize <= 0 then
             { state with Active = None }
         else
@@ -332,11 +434,18 @@ module SessionModel =
     /// SessionModel; shell-switch finalises prior shell's
     /// active tuple as interrupted before recreating a
     /// fresh SessionModel).
+    ///
+    /// **Tier 1.E2.B**: passes `None / None / [||]` for the
+    /// extraction context (no new prompt or snapshot at
+    /// shell-switch time); CommandText / OutputText stay
+    /// empty for incomplete tuples.
     let finalizeIncomplete (state: T) (finishedAt: DateTime) : T =
         match state.Active with
         | None -> state
         | Some active ->
-            finalizeAndEnqueue state active.Tuple finishedAt None
+            finalizeAndEnqueue
+                state active.Tuple finishedAt None
+                None None [||]
 
     /// **Tier 1.C — real state machine.** Applies a
     /// `PromptBoundaryData` event to the SessionModel,
@@ -356,7 +465,19 @@ module SessionModel =
     /// returns state unchanged. The composition root is
     /// expected to toggle `enterAltScreen` / `exitAltScreen`
     /// (Tier 1.D wiring).
-    let apply (state: T) (boundary: PromptBoundaryData) : T =
+    ///
+    /// **Tier 1.E2.B (Cycle 20b)** — `snapshot` parameter
+    /// added. Forwarded to `finalizeAndEnqueue` for content
+    /// extraction at finalize time. Callers without
+    /// snapshot context (legacy / tests) pass `[||]`;
+    /// extraction gracefully skips because row-bounds checks
+    /// fail.
+    let apply
+            (state: T)
+            (boundary: PromptBoundaryData)
+            (snapshot: Cell[][])
+            : T
+            =
         if state.IsAltScreenActive then
             // Q3 — boundaries ignored during alt-screen.
             state
@@ -369,7 +490,10 @@ module SessionModel =
                 let tuple = newTuple state.ShellId boundary
                 let active =
                     { Tuple = tuple
-                      State = ActiveTupleState.AwaitingCommandStart }
+                      State = ActiveTupleState.AwaitingCommandStart
+                      // Tier 1.E2.B: capture the row index for
+                      // future finalize-time output extraction.
+                      PromptRowIndex = boundary.MatchedRowIndex }
                 { state with Active = Some active }
             | None, BoundaryKind.CommandStart ->
                 logger.LogWarning(
@@ -390,12 +514,23 @@ module SessionModel =
                 logger.LogInformation(
                     "SessionModel PromptStart while Active={State}; finalising prior as incomplete.",
                     active.State)
+                // Tier 1.E2.B: pass extraction context so
+                // CommandText + OutputText are extracted from
+                // snapshot using the prior tuple's
+                // PromptRowIndex (where the old prompt sat)
+                // and the incoming boundary's MatchedRowIndex
+                // (where the new prompt is).
                 let withPrior =
-                    finalizeAndEnqueue state active.Tuple detectedAt None
+                    finalizeAndEnqueue
+                        state active.Tuple detectedAt None
+                        active.PromptRowIndex
+                        boundary.MatchedRowIndex
+                        snapshot
                 let tuple = newTuple state.ShellId boundary
                 let nextActive =
                     { Tuple = tuple
-                      State = ActiveTupleState.AwaitingCommandStart }
+                      State = ActiveTupleState.AwaitingCommandStart
+                      PromptRowIndex = boundary.MatchedRowIndex }
                 { withPrior with Active = Some nextActive }
             | Some active, BoundaryKind.CommandStart ->
                 let merged = mergeBoundary active boundary
@@ -460,4 +595,15 @@ module SessionModel =
                     state
             | Some active, BoundaryKind.CommandFinished exitCode ->
                 let merged = mergeBoundary active boundary
-                finalizeAndEnqueue state merged.Tuple detectedAt exitCode
+                // Tier 1.E2.B: OSC 133 CommandFinished arm
+                // can extract CommandText (the prior prompt
+                // row's content minus PromptText prefix) but
+                // not OutputText (no new prompt yet to
+                // bracket the output range against). Passes
+                // `None` for newPromptRowIndex; extraction
+                // produces ("cmd", "") in this path.
+                finalizeAndEnqueue
+                    state merged.Tuple detectedAt exitCode
+                    active.PromptRowIndex
+                    None
+                    snapshot

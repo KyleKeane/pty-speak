@@ -15,6 +15,102 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 20b): Tier 1.E2.B — CommandText + OutputText extraction (closes Tier 1)
+
+**Second half of the Tier 1.E2 split** per maintainer
+AskUserQuestion 2026-05-08. After Cycle 20a (PR #195) made
+SessionModel `History` visibly grow on every cmd / PowerShell
+command cycle, the tuples were still empty
+(`CmdText=no OutText=no`). Cycle 20b extracts CommandText +
+OutputText from screen state at finalize time, populating
+the substrate end-to-end for the typical cmd / PowerShell
+case.
+
+**Closes Tier 1 substrate cycle**: the SessionModel
+substrate is now structurally complete (skeleton through
+state machine) AND content-complete (text fields populate
+during normal use). Ready for Tier 2 persistence + Phase 2
+input framework cycles.
+
+**Behaviour change**: SessionModel tuples carry actual
+command + output content. After Cycle 20b: maintainer types
+`echo hi` in cmd, presses Ctrl+Shift+D, pastes log; sees
+`RecentTuple[0]: ... CmdText="echo hi" OutText="hi"` (was
+`CmdText=no OutText=no` pre-Cycle-20b).
+
+**Mechanism**:
+
+1. New `ActiveSessionTuple.PromptRowIndex: int option`
+   field, recorded from `boundary.MatchedRowIndex` at
+   PromptStart-arm transitions (Cycle 20a's forward-compat
+   plumbing finally consumed).
+2. `SessionModel.apply` signature extended:
+   `T → PromptBoundaryData → Cell[][] → T`. Snapshot threads
+   through `Program.fs.handlePromptBoundary` from the
+   detector's existing snapshot context (heuristic path) or
+   fresh capture (OSC 133 path).
+3. New private `extractContent` helper computes:
+   - **CommandText**: row at `oldPromptRowIndex` rendered
+     via `CanonicalState.renderRow`, with `PromptText`
+     prefix stripped + leading whitespace trimmed.
+   - **OutputText**: rows between `oldRow + 1` and
+     `newRow - 1` (inclusive) joined with newlines; empty
+     rows filtered out.
+4. Defensive skip when row indices are missing, out of
+   bounds, or the rendered row doesn't start with the
+   captured PromptText (scroll-mid-cycle).
+5. `finalizeAndEnqueue` signature extended with extraction
+   context params; `finalizeIncomplete` (shell-switch path)
+   passes `None / None / [||]` so content stays empty for
+   incomplete tuples.
+
+**Tier 1.F diagnostic log line extension**: each
+RecentTuple line now displays truncated CmdText + OutText
+(cap 80 chars; longer than PromptText's 40 since outputs
+typically run longer). Empty content renders as `""`.
+
+**Files modified**:
+- `src/Terminal.Core/SessionModel.fs` — `ActiveSessionTuple.PromptRowIndex`
+  + `extractContent` helper + `apply` signature extension +
+  `finalizeAndEnqueue` extraction params + interrupt-arm /
+  CommandFinished-arm extraction-context wiring.
+- `src/Terminal.App/Program.fs` — `handlePromptBoundary`
+  signature extended with snapshot; `runDetector` forwards
+  snapshot; OSC 133 augmentation reuses captured snapshot
+  for the apply call.
+- `src/Terminal.App/Diagnostics.fs` — `RecentTupleView`
+  gains `CommandText` / `OutputText` fields;
+  `captureSessionModel` populates from tuple; `formatTuple`
+  displays truncated content (cap 80 chars).
+- `tests/Tests.Unit/SessionModelTests.fs` — ~45 existing
+  `apply` call sites updated mechanically with `[||]`
+  snapshot arg (or `(fun s b -> apply s b [||])` lambda for
+  `List.fold` callers); ~10 new tests covering extraction
+  across edge cases (basic single-row / multi-row /
+  empty-rows-filtered / clear-screen / scroll-mid-cycle /
+  missing-row-index / out-of-bounds-row / spacing-preserved
+  / shell-switch-skip-extraction / Active.PromptRowIndex
+  capture).
+
+**Out of scope** (deferred indefinitely):
+- Cursor-aware command detection (Phase 2 input framework).
+- Multi-line command capture (continuation, here-doc).
+- Continuous OutputText accumulation during OutputStreaming
+  state (current finalize-time-only extraction works for
+  on-screen output; off-screen scrollback is not captured).
+- ANSI-attribute preservation in extracted text.
+- Spec changes (per CLAUDE.md spec-immutability).
+- Spoken-announce extension to include CmdText/OutText
+  (announce stays focused on count + state; log paste
+  carries content).
+
+**Stabilisation expected post-merge**: maintainer cuts
+release; runs `echo hi` in cmd; presses Ctrl+Shift+D;
+pastes log. Expected: `RecentTuple[0]: Prompt="C:\..." ...
+CmdText="echo hi" OutText="hi"`. Substrate now produces
+queryable command-cycle content for future pathway
+integrations + Tier 2 persistence.
+
 ### Changed (Cycle 20a-followup): Diagnostic announce wording — "command history entries"
 
 **Tiny accessibility-clarity follow-up** to Cycle 20a per
