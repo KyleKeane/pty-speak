@@ -15,6 +15,113 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added + Changed (Cycle 19): Tier 1.D-cleanup + default-shell TOML override (bundled)
+
+**Two small named follow-ups bundled per maintainer
+direction 2026-05-08.** Both items sat on the strategic
+backlog after Cycle 17 / 18; combining them into a single
+PR avoids two near-identical doc-+-test churn cycles.
+
+#### Part 1 — Tier 1.D-cleanup: consolidate detector invocation sites
+
+**Refactor only; zero behaviour change.**
+
+Cycle 17 (PR #192) introduced the channel-driven actor
+model + tick-driven `handleTick` helper to close the
+detector idle-gap hole. That cycle left detector-invocation
+logic duplicated across `handleRowsChanged` (frame-driven)
+and `handleTick` (tick-driven) — same 4-arg shape (shell key
++ detection time + `tryDetect` + state update + dispatch on
+`Some`).
+
+Cycle 19 factors the duplication into a shared `runDetector`
+helper inside the consumer task body. Both call sites
+become 1-line invocations:
+
+```fsharp
+let runDetector
+        (snapshot: Cell[][])
+        (cursorPos: int * int)
+        (now: DateTime)
+        : unit
+        =
+    let shellKey = shellIdToConfigKey currentShellId
+    let boundary, nextDetector =
+        HeuristicPromptDetector.tryDetect
+            snapshot cursorPos shellKey now promptDetector
+    promptDetector <- nextDetector
+    match boundary with
+    | Some data -> handlePromptBoundary data
+    | None -> ()
+```
+
+Helper closes over `currentShellId` + `promptDetector`
+(composition-root mutables). Safe because all callers run
+on the single notification-consumer thread per the
+channel-driven actor model. Net diff: ~+25 LOC helper /
+~-30 LOC removed from the two call sites.
+
+#### Part 2 — Default-shell TOML override (item 33)
+
+**New TOML configuration option for startup-shell selection.**
+
+User-visible behaviour change: `[startup] default_shell`
+in `%LOCALAPPDATA%\PtySpeak\config.toml` now overrides the
+`PTYSPEAK_SHELL` environment variable. Use case
+(maintainer's 2026-05-08 NVDA validation): after running
+`setx PTYSPEAK_SHELL claude` for prior testing, every
+launch defaulted to Claude Code. Clearing the env var
+required a fresh shell + relaunch dance. With Cycle 19,
+setting `[startup] default_shell = "cmd"` in the TOML
+overrides the env var — no `setx` choreography needed.
+
+**Precedence (highest → lowest)**:
+1. **`[startup] default_shell` TOML override** (NEW).
+2. `PTYSPEAK_SHELL` environment variable.
+3. Built-in `cmd` default.
+
+**Recognised values**: `cmd` / `powershell` / `pwsh` /
+`claude` (case-insensitive). Validated at parse time
+against `Config.knownShellKeys`; unknown values produce a
+`LogWarning` and the override falls through to env var.
+
+**Files modified**:
+
+- `src/Terminal.Core/Config.fs` — adds
+  `StartupOverrides` record + `DefaultShell: string option`
+  field; `parseStartupOverrides` parser; `resolveDefaultShell`
+  helper. The "Config loaded from..." log line now includes
+  startup-override summary.
+- `src/Terminal.App/Program.fs` — `resolveStartupShell`
+  consults `Config.resolveDefaultShell config` BEFORE the
+  env var. Logs at Information when the override fires
+  (so post-hoc diagnosis via Ctrl+Shift+; is trivial).
+- `tests/Tests.Unit/ConfigTests.fs` — 6 new tests
+  covering: `defaultConfig.resolveDefaultShell = None`;
+  `[startup] default_shell = "cmd"` parses + resolves;
+  case-insensitive (`"PowerShell"` → `Some "powershell"`);
+  unknown value (`"bash"`) logs Warning + drops; missing
+  key returns None; unknown subkey logs Warning but
+  doesn't corrupt parse.
+- `docs/USER-SETTINGS.md` — Default-shell parameter atlas
+  section gains the new TOML resolution step + use case +
+  schema snippet.
+
+**Architectural alignment**: matches the
+[`docs/CHANNEL-ARCHITECTURE.md`](docs/CHANNEL-ARCHITECTURE.md)
++ [`docs/CUSTOMIZATION-MODEL.md`](docs/CUSTOMIZATION-MODEL.md)
+principle of user-introspectable + user-customizable
+substrate seams. The startup-shell choice is one such seam;
+exposing it via TOML is the natural application of the
+principle at this layer.
+
+**Out of scope**:
+- TOML hot-reload (changes still require restart).
+- Default-shell preference UI (palette / menu — Phase 2).
+- Per-shell override (`[shell.cmd] default = true` style)
+  — single global default suffices for v1.
+- Spec changes (per CLAUDE.md spec-immutability).
+
 ### Added (Cycle 18): Channel Architecture research-stage doc
 
 **Sixth research-stage doc.** Formalises the maintainer's

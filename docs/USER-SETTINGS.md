@@ -305,15 +305,35 @@ shipped set:
 
 Resolution lives in `compose ()` (`src/Terminal.App/Program.fs`):
 
-1. Read `PTYSPEAK_SHELL` env var. Recognised values: `cmd`,
+1. **Cycle 19** — Read `[startup] default_shell` from
+   `%LOCALAPPDATA%\PtySpeak\config.toml`. When set to a
+   recognised shell id (`cmd` / `claude` / `powershell` /
+   `pwsh`; case-insensitive; validated against
+   `knownShellKeys`), this override wins over the env var.
+   Unrecognised values produce a `LogWarning` at parse time
+   and the override falls through.
+2. Read `PTYSPEAK_SHELL` env var. Recognised values: `cmd`,
    `claude`, `powershell`, `pwsh` (after trim, case-insensitive).
    Unrecognised non-empty values produce a `LogWarning` and fall
    back to the default.
-2. Default: `Cmd`.
-3. Resolve via `ShellRegistry.tryFind`. If the resolver returns
+3. Default: `Cmd`.
+4. Resolve via `ShellRegistry.tryFind`. If the resolver returns
    `Error` (e.g. Claude Code not installed), log a warning at
    `Information`-adjacent severity and fall back to `Cmd`.
-4. Log the chosen shell + resolved command line at `Information`.
+5. Log the chosen shell + resolved command line at `Information`.
+
+**Cycle 19 use case**: maintainer has `PTYSPEAK_SHELL=claude`
+set from prior testing + wants `cmd` as the durable default
+without manipulating env vars. Setting
+`[startup] default_shell = "cmd"` in the TOML solves this
+without changing system state.
+
+**Schema snippet**:
+
+```toml
+[startup]
+default_shell = "cmd"   # cmd / powershell / pwsh / claude
+```
 
 The Stage 7 PR-A env-scrub block from `Terminal.Pty.Native.EnvBlock`
 is applied uniformly to whichever shell is selected — adding new
