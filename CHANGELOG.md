@@ -15,6 +15,71 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 23 Phase 3): resolve CUSTOMIZATION-MODEL open questions in research-stage doc
+
+**Doc-only PR; no code changes.** Apply maintainer's
+agreed answers from the Cycle 23 Phase 2 walk-through
+(2026-05-08) to `docs/CUSTOMIZATION-MODEL.md`.
+**All 7 open questions resolved.**
+
+Small mechanical PR following the audit→fixup loop
+pattern established by Track A (PR #175) and previously
+applied to research-stage doc question-resolution by
+PR #182 (Cycle 8).
+
+**Resolutions**:
+
+- **Q1 Naming** → KEEP `CUSTOMIZATION-MODEL.md`.
+- **Q2 Alternatives registry shape** → both compile-time
+  built-ins + runtime `.fsx` extensions
+  (`%LOCALAPPDATA%\PtySpeak\extensions\`); reuses spec
+  A.5 phase-2 input-side extension plumbing for outputs.
+- **Q3 Trace persistence** → in-memory per SessionTuple
+  by default; opt-in persistent ring buffer for forensic
+  debugging.
+- **Q4 Rule-context-keying scope** → full `ContextTuple`
+  enumeration at substrate level; rule-authoring UX
+  defaults to subset (shell + command-prefix +
+  semantic-category).
+- **Q5 UI surface** → Pipeline Inspector pane as new
+  PANE-MODEL catalog entry; modal panel as fallback.
+- **Q6 Rule precedence** → explicit user-priority field;
+  default priority computed from context-specificity at
+  rule-creation time.
+- **Q7 Rule-authoring UX** → start with dropdowns +
+  automatic context-tuple suggestion; DSL + visual
+  editor later as power-user tooling.
+
+**Edit pattern** (matches PR #182 Cycle 8):
+- Section header `## Open questions` →
+  `## Open questions / Resolutions`.
+- Each Q1-Q7 section heading gets ` — ✅ Resolved
+  2026-05-08` appended.
+- **Resolution** + **Rationale** + (where applicable)
+  **Cross-reference** + **Original question** blocks
+  per question.
+- Original question prose + alternatives preserved
+  verbatim for historical context.
+- Doc change-log row appended for 2026-05-08.
+
+**Companion-doc work deferred** (per #181/#182 audit→
+fixup loop precedent — companion-doc edits land in
+their own follow-up cycle when downstream
+implementation needs them):
+- `docs/PANE-MODEL.md` Pipeline Inspector pane catalog
+  entry (Q5).
+- `docs/USER-SETTINGS.md` override-rule schema notes
+  (Q2/Q4/Q6/Q7).
+- `docs/SESSION-MODEL.md` trace-metadata persistence
+  paragraph (Q3).
+- `docs/AUDIT-BACKLOG-VALIDATION.md` item 31 status
+  advance.
+
+**Sequencing position**: Cycle 23 Phase 3 of 4. Phase 4
+is the maintainer's choice of next coding cycle:
+Tier 2 SessionModel persistence (default) or Phase 2
+input framework cycle.
+
 ### Changed (Cycle 23): doc currency refresh post-Tier-1 closure
 
 **Doc-only PR; no code changes.** Tier 1 SessionModel

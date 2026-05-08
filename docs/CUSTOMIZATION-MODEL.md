@@ -755,13 +755,30 @@ data-model sketches will firm up; the UI sketch will
 crystallize. The **principle itself** doesn't change
 just because a piece was implemented.
 
-## Open questions
+## Open questions / Resolutions
 
-Seven questions surface for maintainer review.
+Seven questions surfaced for maintainer review. As of
+2026-05-08, all 7 questions resolved per the Cycle 23
+Phase 2 walk-through. Resolutions captured below;
+original framing preserved for historical context.
 
-### Q1 — Naming
+### Q1 — Naming — ✅ Resolved 2026-05-08
 
-The doc adopts `CUSTOMIZATION-MODEL.md`. Alternatives:
+**Resolution**: KEEP `CUSTOMIZATION-MODEL.md`.
+
+**Rationale** (per maintainer agreement, Cycle 23
+Phase 2 walk-through): names the user's relationship
+to the pipeline as a first-class concern; parallels
+other research-stage doc names (`SESSION-MODEL.md`,
+`INTERACTION-MODEL.md`, `PANE-MODEL.md`); distinct
+from `PIPELINE-NARRATIVE.md`. Renaming now would
+create vocabulary churn across docs that already
+cross-reference this name (PR #181 introduced the
+doc; PR #200 cross-referenced it from the audit
+backlog).
+
+**Original question**: The doc adopts
+`CUSTOMIZATION-MODEL.md`. Alternatives:
 - `INTROSPECTION-MODEL.md` — emphasises the see-what's-
   happening capability.
 - `USER-AUTHORSHIP-MODEL.md` — emphasises rule
@@ -769,14 +786,33 @@ The doc adopts `CUSTOMIZATION-MODEL.md`. Alternatives:
 - `PIPELINE-CUSTOMIZATION.md` — more specific.
 - `EDITABLE-PIPELINE.md` — terse.
 
-**Recommended**: keep `CUSTOMIZATION-MODEL.md`. Names
-the user's relationship to the pipeline as a
-first-class concern; parallels other research-stage
-doc names; distinct from `PIPELINE-NARRATIVE.md`.
+### Q2 — Alternatives registry shape — ✅ Resolved 2026-05-08
 
-### Q2 — Alternatives registry shape
+**Resolution**: **BOTH** compile-time built-ins +
+runtime extensions. Built-in alternatives ship in code
+(well-tested + accessible); user-authored alternatives
+load from a future `%LOCALAPPDATA%\PtySpeak\extensions\`
+directory as `.fsx` scripts.
 
-How do alternative implementations register?
+**Cross-reference**: same plumbing as the input-side
+extension loading planned in
+`spec/event-and-output-framework.md` §A.5 phase 2;
+this resolution applies that pattern to outputs too.
+Spec is not edited here per CLAUDE.md spec-immutability
+rule — implementation cycle that ships the registry
+will land an ADR if spec extension is needed.
+
+**Rationale** (per maintainer agreement, Cycle 23
+Phase 2 walk-through): built-in alternatives give users
+a tested baseline that is keyboard- and screen-reader-
+accessible by construction; runtime `.fsx` loading lets
+power users add new alternatives without recompiling
+pty-speak. Reusing the planned A.5-phase-2 plumbing
+avoids inventing a parallel extension mechanism for
+the output side.
+
+**Original question**: How do alternative
+implementations register?
 - **Compile-time** — alternatives ship with pty-speak;
   user enables/disables but can't add new.
 - **Runtime via TOML extension** — alternatives load
@@ -786,16 +822,29 @@ How do alternative implementations register?
   user-authored alternatives load from extension
   directory.
 
-**Recommended**: **both**. Built-in alternatives ship
-in code (well-tested + accessible); user-authored
-alternatives load from a future
-`%LOCALAPPDATA%\PtySpeak\extensions\` directory as
-.fsx scripts (per spec A.5 phase 2 plan for the input
-side; same plumbing for outputs).
+### Q3 — Trace persistence — ✅ Resolved 2026-05-08
 
-### Q3 — Trace persistence
+**Resolution**: **in-memory per SessionTuple by
+default**; **separate persistent ring buffer as opt-in
+power-user feature** for forensic debugging.
 
-Per-output traces stored where?
+**Cross-reference**: aligns with SessionModel's
+three-tier persistence model
+(`memory_only` / `session_log` / `always`) per
+[`SESSION-MODEL.md`](SESSION-MODEL.md) §5. The trace
+ring buffer is independent of tuple persistence — a
+user can persist tuples without persisting traces and
+vice versa.
+
+**Rationale** (per maintainer agreement, Cycle 23
+Phase 2 walk-through): default minimises memory + disk
+footprint; opt-in ring buffer satisfies the rare
+forensic-debugging need without forcing always-on disk
+writes. Mirrors the established pattern for
+SessionModel persistence — substrate exposes the
+capability, user opts in via TOML.
+
+**Original question**: Per-output traces stored where?
 - **In-memory per SessionTuple** — survives during the
   tuple's lifetime; lost on session end.
 - **Persisted with SessionTuple to disk** — if
@@ -803,16 +852,32 @@ Per-output traces stored where?
 - **Separate trace ring buffer** — opt-in, bounded
   size, persists for forensic debugging.
 
-**Recommended**: **in-memory per SessionTuple by
-default**; **separate persistent ring buffer as opt-in
-power-user feature**. Aligns with SessionModel's
-current persistence design (memory-only / session-log /
-always per SESSION-MODEL.md §5).
+### Q4 — Rule-context-keying scope — ✅ Resolved 2026-05-08
 
-### Q4 — Rule-context-keying scope
+**Resolution**: **full enumeration at substrate level**
+(all `ContextTuple` fields available — shell,
+command-prefix, semantic-category, output-pattern,
+exit-code, timing); **rule-authoring UX defaults to
+recommended subset** (shell + command-prefix +
+semantic-category — covers most cases without
+overwhelming the user).
 
-Which context fields qualify as "similar" for
-rule-context-keying?
+**Cross-reference**: rule-authoring UX shape lives with
+[`USER-SETTINGS.md`](USER-SETTINGS.md) (override-rule
+schema, lands when override-rule implementation cycle
+begins).
+
+**Rationale** (per maintainer agreement, Cycle 23
+Phase 2 walk-through): substrate-level full enumeration
+future-proofs power-user rules without changing the
+data model later; UX-level subset default keeps the
+dropdown-driven authoring experience focused on the
+cases users actually reach for. Same substrate-versus-
+UX layering as Q3 (substrate exposes; UX surfaces a
+sensible default).
+
+**Original question**: Which context fields qualify as
+"similar" for rule-context-keying?
 - **Minimal** — shell only.
 - **Recommended** — shell + command-prefix + semantic-
   category.
@@ -821,14 +886,34 @@ rule-context-keying?
 - **User-extensible** — user can add custom context
   fields via tags / annotations.
 
-**Recommended**: **full enumeration** at substrate
-level (all fields available); **rule authoring UX
-defaults to recommended subset** (shell + command-
-prefix + semantic-category — covers most cases without
-overwhelming the user).
+### Q5 — UI surface for introspection — ✅ Resolved 2026-05-08
 
-### Q5 — UI surface for introspection
+**Resolution**: **Pipeline Inspector pane** as a new
+entry in the [`PANE-MODEL.md`](PANE-MODEL.md) pane
+catalog. **Modal panel** retained as a fallback for
+users who want ephemeral inspection without committing
+pane real estate.
 
+**Cross-reference**: PANE-MODEL.md catalog will grow a
+new row for "Pipeline Inspector pane" + a dedicated
+subsection covering producer, content source, hotkey,
+navigation, and cross-pane coordination — that edit
+lands in its own follow-up cycle when Pipeline
+Inspector implementation begins (per audit→fixup-loop
+precedent: companion-doc edits defer until the
+implementation that backs them lands).
+
+**Rationale** (per maintainer agreement, Cycle 23
+Phase 2 walk-through): the multi-pane workspace
+already supports adding new pane types (PANE-MODEL.md
+Q1 + Q4 resolved 2026-05-07 confirm the catalog model
++ moderate per-pane TOML-schema scope). Pipeline
+Inspector slots in cleanly. Modal panel remains as a
+fallback — useful for one-off "what just happened to
+this output?" queries where dedicating pane real
+estate isn't warranted.
+
+**Original question**:
 - **Pipeline Inspector pane** (new pane in PANE-MODEL
   catalog).
 - **Modal panel** triggered by hotkey (no new pane).
@@ -836,16 +921,29 @@ overwhelming the user).
 - **Extension to Cherry-picked I/O pairs pane** (per
   the catalog).
 
-**Recommended**: **Pipeline Inspector pane** as new
-catalog entry. Multi-pane workspace already supports
-adding new pane types per PANE-MODEL. Modal panel is a
-fallback if the user wants ephemeral inspection
-without committing pane real estate.
+### Q6 — Rule precedence when multiple match — ✅ Resolved 2026-05-08
 
-### Q6 — Rule precedence when multiple match
+**Resolution**: **explicit user-priority field**
+(`priority = N` per rule); **default priority computed
+from context-specificity at rule-creation time** so
+the user doesn't have to think about it for simple
+cases.
 
-When multiple rules match the same context + target the
-same stage:
+**Cross-reference**: TOML rule-schema example
+(`priority = N` field placement) lands with
+[`USER-SETTINGS.md`](USER-SETTINGS.md) override-rule
+section in a follow-up cycle.
+
+**Rationale** (per maintainer agreement, Cycle 23
+Phase 2 walk-through): simplest implementation; user
+always has agency when intent diverges from what
+specificity would compute; sensible defaults keep
+simple cases simple. Avoids the "why didn't my rule
+fire?" surprise mode of pure most-specific-wins or
+pure most-recent-wins.
+
+**Original question**: When multiple rules match the
+same context + target the same stage:
 - **Most-specific context wins** — implementation needs
   to compare predicate specificity; complex but
   intuitive.
@@ -856,15 +954,26 @@ same stage:
 - **Hybrid** — explicit priority is the tie-breaker;
   default priority computed from context-specificity.
 
-**Recommended**: **explicit user-priority field**
-(simplest; user has agency); compute a sensible
-default priority based on context-specificity at
-rule-creation time (so the user doesn't have to think
-about it for simple cases).
+### Q7 — Rule-authoring UX — ✅ Resolved 2026-05-08
 
-### Q7 — Rule-authoring UX
+**Resolution**: **start with dropdowns + automatic
+context-tuple suggestion**; add Recipe DSL + visual
+conditional-logic editor later as power-user tooling.
 
-How does the user author rules?
+**Cross-reference**: dropdown UI lives inside the
+Pipeline Inspector pane (per Q5 resolution above). DSL
++ visual-editor surfaces deferred until first-use
+authoring is shipped + pain points surface.
+
+**Rationale** (per maintainer agreement, Cycle 23
+Phase 2 walk-through): the maintainer's original
+example explicitly described dropdowns as the primary
+UX; ship that first. DSL and visual-editor surfaces
+are additive — they don't conflict with dropdown-
+authored rules and can be added when power-user demand
+emerges. Avoids upfront over-engineering.
+
+**Original question**: How does the user author rules?
 - **Dropdown at each step** (per maintainer's example) —
   inline in the inspector; pick alternative + confirm
   context.
@@ -874,11 +983,6 @@ How does the user author rules?
   predicates.
 - **All three** — dropdowns for inline edits; DSL for
   power-users; visual editor for complex predicates.
-
-**Recommended**: **start with dropdowns + automatic
-context-tuple suggestion**; add DSL + visual editor
-later as power-user tooling. Maintainer's example
-explicitly described dropdowns; that's the primary UX.
 
 ## Companion-doc cross-reference index
 
@@ -901,4 +1005,5 @@ Quick reference:
 | Date | Author | Change |
 |---|---|---|
 | 2026-05-07 | Cycle 7 (item 31) | Initial snapshot. Captures maintainer's 2026-05-07 directive on user-introspectable + user-customizable pipeline architecture. Names the 5-point principle. Two illustrative use cases (output-side display correction; input-side autocomplete sources). Specifies what existing + future substrate must NOT preclude. Sketches pipeline-trace data model + override-rule data model + Pipeline Inspector UI. 6 substrate gaps. 7 open questions surfaced for maintainer. |
+| 2026-05-08 | Cycle 23 Phase 3 | Q1-Q7 resolutions captured per maintainer's Cycle 23 Phase 2 walk-through. All 7 doc-recommended answers selected. Section header updated to "Open questions / Resolutions"; per-question Resolution + Rationale + (where applicable) Cross-reference + Original question blocks added; original question prose preserved verbatim. |
 
