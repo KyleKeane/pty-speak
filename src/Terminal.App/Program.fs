@@ -34,6 +34,35 @@ module Program =
     /// from the keybinding handler which runs on the UI thread.
     let mutable private updateInProgress = false
 
+    /// SessionModel Tier 1.D-fix (Cycle 17) — channel-driven
+    /// actor model. The notification consumer task becomes the
+    /// SOLE owner of composition-root mutable state
+    /// (`currentSession`, `promptDetector`, `activePathway`).
+    /// Producers (parser reader thread, screen-event subscribers,
+    /// tick-pump) enqueue `PumpInput` values into a single
+    /// `BoundedChannel<PumpInput>`; the consumer reads serially.
+    /// Eliminates the race introduced by Tier 1.F's diagnostic-
+    /// snapshot capture + the new tick-driven detector
+    /// invocation that closes Cycle 14's idle-gap hole.
+    ///
+    /// **Architectural alignment** (maintainer principle
+    /// 2026-05-08): channels are the canonical inter-thread
+    /// communication primitive in pty-speak. Code-level limits
+    /// (where pure functions / Event<T> / direct mutables stay
+    /// idiomatic) are documented in the Cycle 32 research-stage
+    /// doc `docs/CHANNEL-ARCHITECTURE.md` (deferred backlog
+    /// item; not yet shipped).
+    type PumpInput =
+        /// A `ScreenNotification` produced by the parser reader
+        /// thread or a `Screen.fs` event subscriber.
+        | Notification of ScreenNotification
+        /// A 50ms tick produced by the existing PathwayTickPump
+        /// (now simplified to a pure channel producer). Drives
+        /// the heuristic detector + `activePathway.Tick` +
+        /// `OutputDispatcher.dispatchTick` from the consumer
+        /// thread.
+        | Tick of DateTimeOffset
+
     /// Wire a freshly-spawned ConPtyHost into the screen + view. Spawns
     /// a single background task that pulls byte chunks off the host's
     /// stdout channel, feeds them through the parser, applies the
@@ -57,7 +86,7 @@ module Program =
             (parser: Parser)
             (screen: Screen)
             (view: TerminalView)
-            (notifications: System.Threading.Channels.ChannelWriter<ScreenNotification>)
+            (notifications: System.Threading.Channels.ChannelWriter<PumpInput>)
             (onChunkRead: int -> unit)
             (ct: CancellationToken) : Task =
         Task.Run(fun () ->
@@ -91,7 +120,9 @@ module Program =
                                 // to read"). A future revision can
                                 // compute the row-set from screen
                                 // sequence number deltas.
-                                let written = notifications.TryWrite(RowsChanged [])
+                                let written =
+                                    notifications.TryWrite(
+                                        Notification (RowsChanged []))
                                 // Streaming-path instrumentation at
                                 // Debug — production default
                                 // (Information) is silent; flip the
@@ -143,7 +174,9 @@ module Program =
                     let safe = AnnounceSanitiser.sanitise ex.Message
                     let _ =
                         notifications.TryWrite(
-                            ParserError(sprintf "Parser/reader loop: %s" safe))
+                            Notification
+                                (ParserError(
+                                    sprintf "Parser/reader loop: %s" safe)))
                     ()
             } :> Task)
 
@@ -729,7 +762,7 @@ module Program =
 
         // Phase A — display-pathway pipeline:
         //
-        //   parser thread → notificationChannel (256, DropOldest)
+        //   parser thread → pumpChannel (256, DropOldest)
         //                       ↓
         //                 PathwayPump (one Task)
         //                       ↓
@@ -770,12 +803,19 @@ module Program =
         // shell wired to TuiPathway (no built-in mapping ships
         // for vim/less yet — TuiPathway is wired but only
         // selectable when a future shell entry uses it).
-        let notificationChannel =
+        // SessionModel Tier 1.D-fix (Cycle 17) — channel-driven
+        // actor model. Single `BoundedChannel<PumpInput>` carries
+        // BOTH ScreenNotification events (RowsChanged / Bell /
+        // ModeChanged / ParserError / PromptBoundary) AND
+        // synthetic Tick events from the simplified
+        // PathwayTickPump. Notification consumer (sole owner of
+        // composition-root state) reads serially.
+        let pumpChannel =
             let opts =
                 System.Threading.Channels.BoundedChannelOptions(256,
                     FullMode =
                         System.Threading.Channels.BoundedChannelFullMode.DropOldest)
-            System.Threading.Channels.Channel.CreateBounded<ScreenNotification>(opts)
+            System.Threading.Channels.Channel.CreateBounded<PumpInput>(opts)
 
         // Bridge Screen.ModeChanged events into the parser-side
         // channel so the Stream profile can use them as flush
@@ -783,12 +823,14 @@ module Program =
         // this AFTER releasing its internal lock, so pushing to
         // a Channel here is non-blocking and deadlock-free.
         screen.ModeChanged.Add(fun (flag, value) ->
-            notificationChannel.Writer.TryWrite(ModeChanged (flag, value)) |> ignore)
+            pumpChannel.Writer.TryWrite(
+                Notification (ModeChanged (flag, value))) |> ignore)
         // Stage 8d.1 — bridge screen.Bell events into the
         // notification channel so the PathwayPump produces
         // OutputEvent.BellRang for the Earcon profile.
         screen.Bell.Add(fun () ->
-            notificationChannel.Writer.TryWrite(ScreenNotification.Bell) |> ignore)
+            pumpChannel.Writer.TryWrite(
+                Notification ScreenNotification.Bell) |> ignore)
         // SessionModel Tier 1.B — bridge screen.PromptBoundary
         // events (parsed OSC 133 sequences) into the
         // notification channel. The PathwayPump's no-op
@@ -799,8 +841,9 @@ module Program =
         // lock (mirrors the Bell + ModeChanged pattern), so
         // TryWrite is non-blocking and deadlock-free.
         screen.PromptBoundary.Add(fun boundary ->
-            notificationChannel.Writer.TryWrite(
-                ScreenNotification.PromptBoundary boundary) |> ignore)
+            pumpChannel.Writer.TryWrite(
+                Notification (ScreenNotification.PromptBoundary boundary))
+            |> ignore)
 
         // Stage 8b — output framework substrate composition.
         //
@@ -1160,11 +1203,52 @@ module Program =
                 event.Semantic, event.Priority)
             OutputDispatcher.dispatch event
 
+        // SessionModel Tier 1.D-fix (Cycle 17) — tick handler.
+        // Runs every 50ms inside the notification-consumer task
+        // (driven by the simplified PathwayTickPump producer).
+        // Three responsibilities:
+        //   1. Heuristic detector invocation. Closes Cycle 14's
+        //      idle-gap hole — at idle no RowsChanged events
+        //      arrive, so the Cycle 14-shape frame-driven-only
+        //      detector never got the second tryDetect call to
+        //      check stability and emit. Tick-driven invocation
+        //      runs every 50ms regardless of frame activity.
+        //   2. activePathway.Tick. Moved here from the standalone
+        //      PathwayTickPump task body so all composition-root
+        //      state mutations happen on this single consumer
+        //      thread (per the channel-driven actor model).
+        //   3. OutputDispatcher.dispatchTick. Same rationale.
+        //
+        // Single-threaded with handleRowsChanged /
+        // handlePromptBoundary / handleModeChanged because all
+        // PumpInput cases are processed serially by this same
+        // consumer task. No race on currentSession /
+        // promptDetector / activePathway mutations.
+        let handleTick (now: DateTimeOffset) : unit =
+            let _, cursorPos, snapshot = screen.SnapshotRows(0, screen.Rows)
+            let shellKey = shellIdToConfigKey currentShellId
+            let detectionTime = now.UtcDateTime
+            let boundary, nextDetector =
+                HeuristicPromptDetector.tryDetect
+                    snapshot
+                    cursorPos
+                    shellKey
+                    detectionTime
+                    promptDetector
+            promptDetector <- nextDetector
+            match boundary with
+            | Some data -> handlePromptBoundary data
+            | None -> ()
+            let emitted = activePathway.Tick now
+            if emitted.Length > 0 then
+                dispatchPathwayEvents emitted
+            OutputDispatcher.dispatchTick now
+
         let _ =
             Task.Run(fun () ->
                 task {
                     try
-                        let reader = notificationChannel.Reader
+                        let reader = pumpChannel.Reader
                         let mutable keepGoing = true
                         while keepGoing && not cts.Token.IsCancellationRequested do
                             let! got = reader.WaitToReadAsync(cts.Token).AsTask()
@@ -1172,14 +1256,18 @@ module Program =
                                 keepGoing <- false
                             else
                                 let mutable peek =
-                                    Unchecked.defaultof<ScreenNotification>
+                                    Unchecked.defaultof<PumpInput>
                                 while reader.TryRead(&peek) do
                                     match peek with
-                                    | RowsChanged _ -> handleRowsChanged ()
-                                    | ModeChanged _ -> handleModeChanged peek
-                                    | ParserError _
-                                    | Bell -> handleSimpleNotification peek
-                                    | PromptBoundary boundary ->
+                                    | Notification (RowsChanged _) ->
+                                        handleRowsChanged ()
+                                    | Notification ((ModeChanged _) as n) ->
+                                        handleModeChanged n
+                                    | Notification ((ParserError _) as n) ->
+                                        handleSimpleNotification n
+                                    | Notification (Bell as n) ->
+                                        handleSimpleNotification n
+                                    | Notification (PromptBoundary boundary) ->
                                         // SessionModel Tier 1.C —
                                         // advance the state
                                         // machine + dispatch to
@@ -1187,14 +1275,42 @@ module Program =
                                         // OnPromptBoundary. Tier
                                         // 1.B's OSC 133 producer
                                         // emits these from
-                                        // shells that opt in;
-                                        // Tier 1.D will add the
-                                        // heuristic-fallback
-                                        // module so cmd /
-                                        // PowerShell / Claude
-                                        // also produce boundaries
+                                        // shells that opt in; Tier
+                                        // 1.D added the heuristic-
+                                        // fallback module so cmd /
+                                        // PowerShell / Claude also
+                                        // produce boundaries
                                         // without OSC 133 support.
                                         handlePromptBoundary boundary
+                                    | Tick now ->
+                                        // SessionModel Tier 1.D-fix
+                                        // (Cycle 17) — tick-driven
+                                        // detector invocation.
+                                        // Cycle 14's frame-driven-
+                                        // only approach left a hole:
+                                        // at idle (no RowsChanged
+                                        // events), the detector
+                                        // recorded a per-row match
+                                        // but never got called again
+                                        // to check the stability
+                                        // window. Maintainer's
+                                        // manual NVDA validation
+                                        // 2026-05-08 demonstrated
+                                        // 0 tuples + LastEmitted
+                                        // PromptText=none after
+                                        // typing + idle. Driving
+                                        // tryDetect from the existing
+                                        // 50ms tick (now arriving
+                                        // here as a Tick PumpInput
+                                        // case) closes the gap. The
+                                        // tick also drives
+                                        // activePathway.Tick +
+                                        // OutputDispatcher.dispatchTick
+                                        // (moved here from the
+                                        // separate tick-pump task,
+                                        // which is now a pure
+                                        // channel producer).
+                                        handleTick now
                     with
                     | :? OperationCanceledException -> ()
                     | ex ->
@@ -1224,15 +1340,27 @@ module Program =
                         with _ -> ()
                 } :> Task)
 
-        // PathwayTickPump — periodic timer for the active
-        // pathway's trailing-edge flush. Replaces Stage 8b's
-        // TickPump (which drove `OutputDispatcher.dispatchTick`
-        // for the StreamProfile.Tick trailing-edge flush). The
-        // 50ms cadence is the timer rate, NOT the debounce
+        // PathwayTickPump — Cycle 17 simplification. Was a
+        // standalone task that called `activePathway.Tick now` +
+        // `OutputDispatcher.dispatchTick now` directly; now a
+        // pure channel producer enqueueing `Tick now` into the
+        // shared `pumpChannel`. The notification-consumer task
+        // owns the actual tick handling (`handleTick` above),
+        // which also runs the heuristic detector to close
+        // Cycle 14's idle-gap hole. Single-threaded mutation
+        // contract restored.
+        //
+        // The 50ms cadence is the timer rate, NOT the debounce
         // window (200ms inside StreamPathway). Faster ticks =
         // lower worst-case latency on trailing-edge flush; the
-        // cost is negligible (each Tick that returns [||] is
-        // a pure-function call).
+        // cost is negligible (each Tick that handleTick
+        // processes is a pure-function call when no work is
+        // pending).
+        //
+        // If the channel is full (256 capacity; very unlikely
+        // for 50ms ticks + sparse notifications), `TryWrite`
+        // returns false silently — the next tick fires 50ms
+        // later. Acceptable backpressure.
         let _ =
             Task.Run(fun () ->
                 task {
@@ -1242,20 +1370,14 @@ module Program =
                                 TimeSpan.FromMilliseconds 50.0)
                         let mutable keepGoing = true
                         while keepGoing && not cts.Token.IsCancellationRequested do
-                            let! tickFired = tickTimer.WaitForNextTickAsync(cts.Token).AsTask()
+                            let! tickFired =
+                                tickTimer.WaitForNextTickAsync(cts.Token).AsTask()
                             if not tickFired then
                                 keepGoing <- false
                             else
                                 let now = DateTimeOffset.UtcNow
-                                let emitted = activePathway.Tick now
-                                if emitted.Length > 0 then
-                                    dispatchPathwayEvents emitted
-                                // Layer 4 also still receives Tick
-                                // for any profile that uses it (no
-                                // v1 profile does today, but the
-                                // contract is preserved for forward-
-                                // compat).
-                                OutputDispatcher.dispatchTick now
+                                pumpChannel.Writer.TryWrite(Tick now)
+                                |> ignore
                     with
                     | :? OperationCanceledException -> ()
                     | ex ->
@@ -1266,10 +1388,11 @@ module Program =
                             // No user-facing announce here —
                             // PathwayTickPump failure is silent
                             // degradation (Consume still fires
-                            // for every event; only the trailing-
-                            // edge flush stops). The error is
-                            // logged for `Ctrl+Shift+;` post-hoc
-                            // diagnosis.
+                            // for every event via handleRowsChanged;
+                            // only the trailing-edge flush +
+                            // tick-driven detector stop). The
+                            // error is logged for `Ctrl+Shift+;`
+                            // post-hoc diagnosis.
                         with _ -> ()
                 } :> Task)
 
@@ -1466,7 +1589,7 @@ module Program =
                     match loggerSink with
                     | Some s -> s.MinLevel.ToString()
                     | None -> "Unknown"
-                let notifDepth = notificationChannel.Reader.Count
+                let notifDepth = pumpChannel.Reader.Count
                 // Verdict heuristic, in priority order:
                 //   1. Child PID dead → "Child shell process has
                 //      exited." (highest signal — explains every
@@ -1590,7 +1713,7 @@ module Program =
                     match loggerSink with
                     | Some s -> s.MinLevel
                     | None -> LogLevel.Information
-                let notifDepth = notificationChannel.Reader.Count
+                let notifDepth = pumpChannel.Reader.Count
                 log.LogInformation(
                     "Heartbeat. Shell={Shell} Pid={Pid} Alive={Alive} Level={Level} LastReadAgoMs={Staleness:F0} NotifQueue={Notif}/{NotifCap}",
                     currentShell.DisplayName,
@@ -1664,7 +1787,7 @@ module Program =
                     parser
                     screen
                     window.TerminalSurface
-                    notificationChannel.Writer
+                    pumpChannel.Writer
                     (fun _ -> lastReadUtc <- DateTimeOffset.UtcNow)
                     cts.Token
             window.TerminalSurface.SetPtyHost(
@@ -1696,8 +1819,9 @@ module Program =
                 // ConPTY spawn failures via NVDA rather than
                 // staring at a silent empty terminal.
                 let _ =
-                    notificationChannel.Writer.TryWrite(
-                        ParserError "ConPTY child process failed to start.")
+                    pumpChannel.Writer.TryWrite(
+                        Notification
+                            (ParserError "ConPTY child process failed to start."))
                 ()
             | Ok host ->
                 hostHandle <- Some host
@@ -1977,7 +2101,7 @@ module Program =
             // `cts.Token.IsCancellationRequested` for shutdown
             // and the channel completion is the additional
             // backstop for the read-loop.
-            try notificationChannel.Writer.TryComplete() |> ignore with _ -> ()
+            try pumpChannel.Writer.TryComplete() |> ignore with _ -> ()
             match hostHandle with
             | Some h -> (h :> IDisposable).Dispose()
             | None -> ()

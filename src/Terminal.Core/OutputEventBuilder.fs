@@ -3,8 +3,9 @@ namespace Terminal.Core
 /// Stage 8b — translation from raw `ScreenNotification` to raw
 /// `OutputEvent`. The `TranslatorPump` task in
 /// `src/Terminal.App/Program.fs` reads ScreenNotifications from
-/// the parser-side `notificationChannel` and calls into this
-/// module to build the OutputEvents the dispatcher routes.
+/// the parser-side `pumpChannel` (Cycle 17 rename of the former
+/// `notificationChannel`) and calls into this module to build
+/// the OutputEvents the dispatcher routes.
 ///
 /// **Pre-coalesce, post-translation.** Stage 8a's translator
 /// ran AFTER the Coalescer (`fromCoalescedNotification`); the
