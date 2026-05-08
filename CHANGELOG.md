@@ -15,6 +15,137 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 17): SessionModel Tier 1.D-fix — tick-driven detector via channel-driven actor model
+
+**First post-Tier-1 architectural correction.** Maintainer's
+manual NVDA validation 2026-05-08 against the Cycle 16 release
+build exposed a Cycle 14 design hole: SessionModel diagnostic
+showed `Active=none, LastEmittedPromptText=none, PerRowMatches=1`
+after the maintainer typed in PowerShell + waited 6+ seconds
+to press Ctrl+Shift+D. Trace analysis: Cycle 14's
+frame-driven-only `tryDetect` invocation requires TWO calls
+(first records the per-row match timestamp; second checks
+stability + emits). At idle, no `RowsChanged` events fire,
+so the second call never happens, and the detector silently
+holds a recorded match without emitting.
+
+The Cycle 14 plan explicitly named tick-driven detection as
+the alternative + chose frame-driven with the note "Overkill
+for Tier 1.D; the frame-based poll is sufficient." That
+assumption was wrong. Cycle 17 corrects the choice.
+
+**Per Cycle 17 plan-mode locked scope** (maintainer
+AskUserQuestion 2026-05-08): **channel-driven actor model**
+(option 3 of three offered). The notification-consumer task
+becomes the SOLE owner of composition-root mutable state
+(`currentSession`, `promptDetector`, `activePathway`); the
+tick-pump no longer mutates state directly but enqueues a
+synthetic `Tick` event into a unified channel. Eliminates
+the race by construction; no shared mutables across threads.
+
+**Architectural alignment** (maintainer principle 2026-05-08):
+channels are the canonical inter-thread communication
+primitive in pty-speak. The Pipeline Inspector pane envisioned
+in `docs/PANE-MODEL.md` will eventually visualise message
+flow across channel boundaries; Cycle 17 honours the
+principle at the right boundary (thread-to-thread). A future
+research-stage doc `docs/CHANNEL-ARCHITECTURE.md` (item 32 in
+strategic backlog) will formalise where the principle applies
++ where pure functions / `Event<T>` / direct mutables remain
+idiomatic.
+
+**Mechanism**: introduces `PumpInput` discriminated union at
+`Program` module scope:
+
+```fsharp
+type PumpInput =
+    | Notification of ScreenNotification
+    | Tick of DateTimeOffset
+```
+
+Renames `notificationChannel : BoundedChannel<ScreenNotification>`
+to `pumpChannel : BoundedChannel<PumpInput>`. All existing
+producers (parser reader thread; `screen.Bell` /
+`screen.ModeChanged` / `screen.PromptBoundary` event
+subscribers; ConPTY-spawn-failure path) wrap their writes
+in `Notification (...)`. Tick-pump body simplifies to a
+single line: `pumpChannel.Writer.TryWrite(Tick now)`.
+
+**New `handleTick` helper** in the notification consumer
+(`src/Terminal.App/Program.fs`) absorbs three responsibilities
+formerly split across two threads:
+1. Heuristic detector invocation. Captures fresh
+   `screen.SnapshotRows` + cursor; calls
+   `HeuristicPromptDetector.tryDetect`; dispatches any emitted
+   `PromptBoundary` via the existing `handlePromptBoundary`
+   helper. Closes the idle-gap hole — detector now runs every
+   50ms regardless of `RowsChanged` activity.
+2. `activePathway.Tick now`. Moved here from the standalone
+   PathwayTickPump task body.
+3. `OutputDispatcher.dispatchTick now`. Same.
+
+Single-threaded with `handleRowsChanged` /
+`handlePromptBoundary` / `handleModeChanged` because all
+`PumpInput` cases are processed serially by this same
+consumer task — no race on `currentSession` / `promptDetector` /
+`activePathway` mutations.
+
+**Consumer match block** extends with the `Notification`
+wrapper + the new `Tick` case:
+
+```fsharp
+match peek with
+| Notification (RowsChanged _) -> handleRowsChanged ()
+| Notification ((ModeChanged _) as n) -> handleModeChanged n
+| Notification ((ParserError _) as n) -> handleSimpleNotification n
+| Notification (Bell as n) -> handleSimpleNotification n
+| Notification (PromptBoundary boundary) -> handlePromptBoundary boundary
+| Tick now -> handleTick now
+```
+
+**Tests**: per Track B audit pattern (composition-root
+refactors aren't unit-tested). All ~673 existing tests stay
+green via the mechanical channel rename + producer wrap.
+
+**User-visible behaviour change**: SessionModel `Active`
+populates correctly within 100-200ms of any prompt becoming
+stable, regardless of subsequent idle. `Ctrl+Shift+D`
+diagnostic now shows `Active=AwaitingCommandStart`,
+`ActivePromptText="..."`, `LastEmittedPromptText="..."` for
+shells with a stable matching prompt. History likely still 0
+during idle (Tier 1.D's PromptStart-only emission means
+History only grows when prompt text changes — e.g. `cd ..`,
+or when Tier 1.E2 ships CommandFinished synthesis). Zero NVDA
+behaviour change in foreground announce flow; substrate
+populates correctly in the background.
+
+**Files modified**:
+- `src/Terminal.App/Program.fs` — `PumpInput` DU; channel
+  rename; producer wraps; `handleTick` helper; consumer match
+  extension; tick-pump simplification.
+- `docs/SESSION-MODEL.md` — change-log table entry for
+  Tier 1.D-fix.
+
+**Known minor debt** (named follow-ups in strategic
+backlog):
+- **Tier 1.D-cleanup**: `tryDetect` is now called from
+  `handleRowsChanged` AND `handleTick` with near-identical
+  4-arg shape. Factor into a `runDetector` helper. Low
+  priority; bundles naturally with Tier 1.E2 which extends
+  the detector's outputs.
+- **Channel Architecture research doc** (item 32):
+  `docs/CHANNEL-ARCHITECTURE.md` formalising the where-applies
+  / where-doesn't taxonomy for the channel principle. Forward-
+  looking; informs Phase 2 input-framework cycle's channel
+  decisions.
+
+**Out of scope**:
+- Detector invocation consolidation (Tier 1.D-cleanup).
+- Channel architecture research doc (item 32).
+- Persistence (Tier 2).
+- CommandText / OutputText capture (Tier 1.E2).
+- Spec changes (per CLAUDE.md spec-immutability).
+
 ### Added (Cycle 16): SessionModel Tier 1.F — diagnostic battery extension + cross-assembly visibility gotcha
 
 **Sixth post-audit implementation cycle. Closes the Tier 1
