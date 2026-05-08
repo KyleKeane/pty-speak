@@ -293,7 +293,12 @@ let ``prompt at row 5 (not last) detected correctly`` () =
     Assert.True(r.IsSome)
 
 [<Fact>]
-let ``multiple rows match regex; first stable one emits`` () =
+let ``multiple rows match regex; highest-rowIdx stable one emits`` () =
+    // Cycle 22a: among multiple simultaneously-stable matches,
+    // the detector picks the highest row index (the newest
+    // prompt — output flows downward, so the bottommost match
+    // is the active prompt). Earlier matches are scrollback
+    // noise.
     let snap = snapshotOf 3 80 [ "C:\\>"; ""; "D:\\>" ]
     let detector = HeuristicPromptDetector.create ()
     let _, s1 =
@@ -301,9 +306,122 @@ let ``multiple rows match regex; first stable one emits`` () =
     let r, _ =
         HeuristicPromptDetector.tryDetect snap noCursor "cmd" (after 100) s1
     Assert.True(r.IsSome)
-    // (Implementation detail: emits the first row's match;
-    // duplicate suppression then prevents subsequent rows
-    // from emitting on this frame.)
+    let boundary = r.Value
+    // Highest-rowIdx wins: row 2 ("D:\\>") not row 0 ("C:\\>").
+    Assert.Equal(Some 2, boundary.MatchedRowIndex)
+    Assert.Equal(Some "D:\\>", boundary.MatchedRowText)
+
+[<Fact>]
+let ``two stable rows with IDENTICAL text emits once; subsequent ticks do not flap`` () =
+    // Cycle 22a regression guard. The release log 2026-05-08
+    // showed the detector alternating between rowIdx=6 and
+    // rowIdx=13 every ~50ms when cmd had a prior prompt
+    // visible above the current one — both rows passed the
+    // regex with identical text, so the (text, rowIdx) gate
+    // kept satisfying as the row choice flipped. This test
+    // pins the fix: among multiple stable matches with
+    // identical text, the detector emits ONCE (for the
+    // highest row), then suppresses on subsequent ticks.
+    let snap = snapshotOf 14 80
+                [ ""; ""; ""; ""; ""; ""
+                  "C:\\Users\\admin>"  // row 6 — old prompt
+                  ""; ""; ""; ""; ""; ""
+                  "C:\\Users\\admin>"  // row 13 — current prompt
+                ]
+    let detector = HeuristicPromptDetector.create ()
+    // Tick 1: rows seen for the first time; no emit.
+    let r1, s1 =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" t0 detector
+    Assert.True(r1.IsNone)
+    // Tick 2: stability window elapsed; both rows stable.
+    // Highest row 13 emits.
+    let r2, s2 =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" (after 100) s1
+    Assert.True(r2.IsSome)
+    Assert.Equal(Some 13, r2.Value.MatchedRowIndex)
+    // Tick 3: same snapshot, both rows still stable. Highest
+    // row 13 still equals last-emitted (text, rowIdx) → no
+    // emit. The alternation bug would have emitted row 6 here.
+    let r3, s3 =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" (after 150) s2
+    Assert.True(r3.IsNone)
+    // Tick 4: still no emit. Pin the no-flap invariant across
+    // multiple ticks.
+    let r4, _ =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" (after 200) s3
+    Assert.True(r4.IsNone)
+
+[<Fact>]
+let ``three stable rows; highest emits`` () =
+    let snap = snapshotOf 16 80
+                [ ""; ""; ""
+                  "C:\\>"  // row 3
+                  ""; ""; ""
+                  "C:\\>"  // row 7
+                  ""; ""; ""; ""; ""; ""; ""
+                  "C:\\>"  // row 15
+                ]
+    let detector = HeuristicPromptDetector.create ()
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" t0 detector
+    let r, _ =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" (after 100) s1
+    Assert.True(r.IsSome)
+    Assert.Equal(Some 15, r.Value.MatchedRowIndex)
+
+[<Fact>]
+let ``highest-row prompt scrolls off; lower remaining match emits`` () =
+    // Two stable matches at rows 5 and 13; highest (13) emits.
+    // Then row 13 scrolls off (becomes blank); only row 5
+    // matches now. Row 5's content is identical to what was
+    // at row 13, so (text, rowIdx) gate fires (different row).
+    let snapBoth = snapshotOf 14 80
+                    [ ""; ""; ""; ""; ""
+                      "C:\\>"  // row 5
+                      ""; ""; ""; ""; ""; ""; ""
+                      "C:\\>"  // row 13
+                    ]
+    let snapOneScrolledOff = snapshotOf 14 80
+                              [ ""; ""; ""; ""; ""
+                                "C:\\>"  // row 5
+                                ""; ""; ""; ""; ""; ""; ""; ""
+                              ]
+    let detector = HeuristicPromptDetector.create ()
+    // Tick 1: first sighting, no emit.
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect snapBoth noCursor "cmd" t0 detector
+    // Tick 2: stable, highest (13) emits.
+    let r2, s2 =
+        HeuristicPromptDetector.tryDetect snapBoth noCursor "cmd" (after 100) s1
+    Assert.True(r2.IsSome)
+    Assert.Equal(Some 13, r2.Value.MatchedRowIndex)
+    // Tick 3: row 13 scrolls off. Row 5 was already stable
+    // (carried over from prior snap). Now row 5 is the only
+    // stable match → emit row 5.
+    let r3, _ =
+        HeuristicPromptDetector.tryDetect snapOneScrolledOff noCursor "cmd" (after 200) s2
+    Assert.True(r3.IsSome)
+    Assert.Equal(Some 5, r3.Value.MatchedRowIndex)
+
+[<Fact>]
+let ``two stable rows with DIFFERENT text emits highest`` () =
+    // Variant of the cycle 22a regression test, but text
+    // differs across the rows. Confirms highest-rowIdx wins
+    // regardless of text similarity.
+    let snap = snapshotOf 8 80
+                [ ""
+                  "C:\\>"  // row 1
+                  ""; ""; ""; ""; ""
+                  "D:\\Projects>"  // row 7
+                ]
+    let detector = HeuristicPromptDetector.create ()
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" t0 detector
+    let r, _ =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" (after 100) s1
+    Assert.True(r.IsSome)
+    Assert.Equal(Some 7, r.Value.MatchedRowIndex)
+    Assert.Equal(Some "D:\\Projects>", r.Value.MatchedRowText)
 
 [<Fact>]
 let ``all-blank snapshot returns None`` () =
