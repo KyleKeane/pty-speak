@@ -15,6 +15,43 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 20a-followup): Diagnostic announce wording — "command history entries"
+
+**Tiny accessibility-clarity follow-up** to Cycle 20a per
+maintainer feedback 2026-05-08: after Cycle 20a's headline
+behaviour change made the SessionModel `History.Count`
+visibly grow on every command, the maintainer reported the
+spoken announce wording felt opaque ("tuples" reads as
+jargon; the cap wasn't audible). One-line change in
+`Diagnostics.fs`:
+
+Before:
+> "Diagnostic complete. 1 of 1 passed. SessionModel: 2
+> tuples, active state AwaitingCommandStart. Diagnostic log
+> copied to clipboard."
+
+After:
+> "Diagnostic complete. 1 of 1 passed. SessionModel: 2 of
+> 100 command history entries, active state
+> AwaitingCommandStart. Diagnostic log copied to clipboard."
+
+Adds ~3 spoken words. The "K of N" phrasing surfaces the
+`MaxHistorySize` cap (default 100) so the maintainer can
+hear "approaching cap" pressure without paste-into-chat
+log inspection. "Command history entries" replaces "tuples"
+as the user-facing term.
+
+**Files modified**: `src/Terminal.App/Diagnostics.fs` (one
+substrate-fragment template, two arms — Some-state +
+None-state — updated symmetrically).
+
+**No code-test changes**: the diagnostic battery's pure
+helpers (`captureSessionModel`, `formatSessionModelSnapshot`)
+are unchanged; only the announce-formatting template
+inside `runFullBattery`'s body shifted. Per the Track B
+audit pattern, composition-root announce strings aren't
+unit-tested; verification is the maintainer's NVDA-listen.
+
 ### Changed (Cycle 20a): Tier 1.E2.A — row-index-aware detector emission
 
 **First half of the Tier 1.E2 split** per maintainer

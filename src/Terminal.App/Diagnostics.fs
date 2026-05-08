@@ -856,17 +856,27 @@ module Diagnostics =
                     // maintainer hears substrate state alongside
                     // the battery summary; full multi-line state
                     // is in the (clipboard-copied) log.
+                    //
+                    // Cycle 20a-followup: announce "K of N command
+                    // history entries" rather than the older "K
+                    // tuples". Replaces jargon with a phrase that
+                    // matches the substrate's user-facing meaning
+                    // (history length) + reports the cap so the
+                    // maintainer can hear "approaching cap"
+                    // pressure without paste-into-chat.
                     let substrateFragment =
                         match sessionSnapshot.ActiveState with
                         | Some state ->
                             sprintf
-                                " SessionModel: %d tuples, active state %s."
+                                " SessionModel: %d of %d command history entries, active state %s."
                                 sessionSnapshot.HistoryCount
+                                sessionSnapshot.MaxHistorySize
                                 state
                         | None ->
                             sprintf
-                                " SessionModel: %d tuples, no active state."
+                                " SessionModel: %d of %d command history entries, no active state."
                                 sessionSnapshot.HistoryCount
+                                sessionSnapshot.MaxHistorySize
                     let summaryLine =
                         if total = 0 then
                             sprintf
