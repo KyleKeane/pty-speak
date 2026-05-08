@@ -321,7 +321,7 @@ let ``SessionTuple.ExitCode is int option (Q8 — substrate captures verbatim)``
 [<Fact>]
 let ``apply PromptStart from AwaitingPromptStart populates Active + advances state`` () =
     let initial = SessionModel.create "cmd" 50
-    let updated = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0)
+    let updated = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0) [||]
     match updated.Active with
     | Some active ->
         Assert.Equal(
@@ -335,8 +335,8 @@ let ``apply PromptStart from AwaitingPromptStart populates Active + advances sta
 [<Fact>]
 let ``apply CommandStart after PromptStart advances to EditingCommand`` () =
     let initial = SessionModel.create "cmd" 50
-    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0)
-    let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100))
+    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0) [||]
+    let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
     match s2.Active with
     | Some active ->
         Assert.Equal(
@@ -348,9 +348,9 @@ let ``apply CommandStart after PromptStart advances to EditingCommand`` () =
 [<Fact>]
 let ``apply OutputStart after CommandStart advances to OutputStreaming`` () =
     let initial = SessionModel.create "cmd" 50
-    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0)
-    let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100))
-    let s3 = SessionModel.apply s2 (boundary BoundaryKind.OutputStart (after 200))
+    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0) [||]
+    let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
+    let s3 = SessionModel.apply s2 (boundary BoundaryKind.OutputStart (after 200)) [||]
     match s3.Active with
     | Some active ->
         Assert.Equal(
@@ -362,13 +362,14 @@ let ``apply OutputStart after CommandStart advances to OutputStreaming`` () =
 [<Fact>]
 let ``apply CommandFinished moves Active to History + resets to AwaitingPromptStart`` () =
     let initial = SessionModel.create "cmd" 50
-    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0)
-    let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100))
-    let s3 = SessionModel.apply s2 (boundary BoundaryKind.OutputStart (after 200))
+    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0) [||]
+    let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
+    let s3 = SessionModel.apply s2 (boundary BoundaryKind.OutputStart (after 200)) [||]
     let s4 =
         SessionModel.apply
             s3
             (boundary (BoundaryKind.CommandFinished (Some 0)) (after 300))
+            [||]
     Assert.Equal(None, s4.Active)
     Assert.Equal(1, s4.History.Count)
     let finalised = s4.History.ToArray().[0]
@@ -387,7 +388,7 @@ let ``Full A->B->C->D sequence yields one complete tuple in History`` () =
           boundary BoundaryKind.CommandStart (after 100)
           boundary BoundaryKind.OutputStart (after 200)
           boundary (BoundaryKind.CommandFinished (Some 0)) (after 300) ]
-        |> List.fold SessionModel.apply initial
+        |> List.fold (fun s b -> SessionModel.apply s b [||]) initial
     Assert.Equal(None, final.Active)
     Assert.Equal(1, final.History.Count)
     let tuple = final.History.ToArray().[0]
@@ -412,7 +413,7 @@ let ``Two full sequences yield 2 tuples in order`` () =
           boundary (BoundaryKind.CommandFinished (Some 1)) (after 700) ]
     let final =
         firstSeq @ secondSeq
-        |> List.fold SessionModel.apply initial
+        |> List.fold (fun s b -> SessionModel.apply s b [||]) initial
     Assert.Equal(2, final.History.Count)
     let arr = final.History.ToArray()
     Assert.Equal(t0, arr.[0].PromptStartedAt)
@@ -432,7 +433,7 @@ let ``History preserves DetectedAt timestamps in order`` () =
                 boundary
                     (BoundaryKind.CommandFinished (Some 0))
                     (after (offsetMs + 300)) ]
-    let final = seqs |> List.fold SessionModel.apply initial
+    let final = seqs |> List.fold (fun s b -> SessionModel.apply s b [||]) initial
     Assert.Equal(3, final.History.Count)
     let arr = final.History.ToArray()
     Assert.True(arr.[0].PromptStartedAt < arr.[1].PromptStartedAt)
@@ -446,7 +447,7 @@ let ``CommandId from boundaries lands on the tuple`` () =
           boundary BoundaryKind.CommandStart (after 100)
           boundary BoundaryKind.OutputStart (after 200)
           boundary (BoundaryKind.CommandFinished (Some 0)) (after 300) ]
-        |> List.fold SessionModel.apply initial
+        |> List.fold (fun s b -> SessionModel.apply s b [||]) initial
     let tuple = final.History.ToArray().[0]
     Assert.Equal(Some "id-1", tuple.CommandId)
 
@@ -462,7 +463,7 @@ let ``ExtraParams from boundaries merge onto the tuple (later wins)`` () =
               None
               [ "k1", "overwrite" ]
           boundary (BoundaryKind.CommandFinished (Some 0)) (after 300) ]
-        |> List.fold SessionModel.apply initial
+        |> List.fold (fun s b -> SessionModel.apply s b [||]) initial
     let tuple = final.History.ToArray().[0]
     Assert.Equal(Some "overwrite", Map.tryFind "k1" tuple.ExtraParams)
     Assert.Equal(Some "v2", Map.tryFind "k2" tuple.ExtraParams)
@@ -499,7 +500,7 @@ let ``Sources map records (Kind, Source) for each boundary`` () =
             ExtraParams = Map.empty
             MatchedRowText = None
             MatchedRowIndex = None } ]
-        |> List.fold SessionModel.apply initial
+        |> List.fold (fun s b -> SessionModel.apply s b [||]) initial
     let tuple = final.History.ToArray().[0]
     Assert.Equal(
         Some BoundarySource.Osc133,
@@ -521,11 +522,11 @@ let ``Sources map records (Kind, Source) for each boundary`` () =
 [<Fact>]
 let ``PromptStart while Active finalises prior as incomplete + starts new`` () =
     let initial = SessionModel.create "cmd" 50
-    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0)
-    let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100))
+    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0) [||]
+    let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
     // Second PromptStart while EditingCommand — interrupt + restart.
     let s3 =
-        SessionModel.apply s2 (boundary BoundaryKind.PromptStart (after 200))
+        SessionModel.apply s2 (boundary BoundaryKind.PromptStart (after 200)) [||]
     Assert.Equal(1, s3.History.Count)
     let prior = s3.History.ToArray().[0]
     Assert.Equal(Some (after 200), prior.CommandFinishedAt)
@@ -545,6 +546,7 @@ let ``CommandStart from AwaitingPromptStart (no Active) is logged + ignored`` ()
         SessionModel.apply
             initial
             (boundary BoundaryKind.CommandStart t0)
+            [||]
     Assert.Equal(None, updated.Active)
     Assert.Equal(0, updated.History.Count)
 
@@ -552,7 +554,7 @@ let ``CommandStart from AwaitingPromptStart (no Active) is logged + ignored`` ()
 let ``OutputStart from AwaitingPromptStart (no Active) is logged + ignored`` () =
     let initial = SessionModel.create "cmd" 50
     let updated =
-        SessionModel.apply initial (boundary BoundaryKind.OutputStart t0)
+        SessionModel.apply initial (boundary BoundaryKind.OutputStart t0) [||]
     Assert.Equal(None, updated.Active)
     Assert.Equal(0, updated.History.Count)
 
@@ -563,15 +565,16 @@ let ``CommandFinished from AwaitingPromptStart (no Active) is logged + ignored``
         SessionModel.apply
             initial
             (boundary (BoundaryKind.CommandFinished (Some 0)) t0)
+            [||]
     Assert.Equal(None, updated.Active)
     Assert.Equal(0, updated.History.Count)
 
 [<Fact>]
 let ``OutputStart in AwaitingCommandStart tolerates skipped CommandStart`` () =
     let initial = SessionModel.create "cmd" 50
-    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0)
+    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0) [||]
     // Skip CommandStart; jump straight to OutputStart.
-    let s2 = SessionModel.apply s1 (boundary BoundaryKind.OutputStart (after 100))
+    let s2 = SessionModel.apply s1 (boundary BoundaryKind.OutputStart (after 100)) [||]
     match s2.Active with
     | Some active ->
         Assert.Equal(
@@ -584,9 +587,9 @@ let ``OutputStart in AwaitingCommandStart tolerates skipped CommandStart`` () =
 [<Fact>]
 let ``Duplicate CommandStart in EditingCommand refreshes CommandStartedAt`` () =
     let initial = SessionModel.create "cmd" 50
-    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0)
-    let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100))
-    let s3 = SessionModel.apply s2 (boundary BoundaryKind.CommandStart (after 200))
+    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0) [||]
+    let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
+    let s3 = SessionModel.apply s2 (boundary BoundaryKind.CommandStart (after 200)) [||]
     match s3.Active with
     | Some active ->
         Assert.Equal(
@@ -598,10 +601,10 @@ let ``Duplicate CommandStart in EditingCommand refreshes CommandStartedAt`` () =
 [<Fact>]
 let ``Duplicate OutputStart in OutputStreaming refreshes OutputStartedAt`` () =
     let initial = SessionModel.create "cmd" 50
-    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0)
-    let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100))
-    let s3 = SessionModel.apply s2 (boundary BoundaryKind.OutputStart (after 200))
-    let s4 = SessionModel.apply s3 (boundary BoundaryKind.OutputStart (after 250))
+    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0) [||]
+    let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
+    let s3 = SessionModel.apply s2 (boundary BoundaryKind.OutputStart (after 200)) [||]
+    let s4 = SessionModel.apply s3 (boundary BoundaryKind.OutputStart (after 250)) [||]
     match s4.Active with
     | Some active ->
         Assert.Equal(
@@ -613,10 +616,10 @@ let ``Duplicate OutputStart in OutputStreaming refreshes OutputStartedAt`` () =
 [<Fact>]
 let ``CommandStart while OutputStreaming is logged + ignored (Active preserved)`` () =
     let initial = SessionModel.create "cmd" 50
-    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0)
-    let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100))
-    let s3 = SessionModel.apply s2 (boundary BoundaryKind.OutputStart (after 200))
-    let s4 = SessionModel.apply s3 (boundary BoundaryKind.CommandStart (after 250))
+    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0) [||]
+    let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
+    let s3 = SessionModel.apply s2 (boundary BoundaryKind.OutputStart (after 200)) [||]
+    let s4 = SessionModel.apply s3 (boundary BoundaryKind.CommandStart (after 250)) [||]
     match s4.Active with
     | Some active ->
         Assert.Equal(
@@ -635,7 +638,7 @@ let ``CommandFinished with exit code populates ExitCode`` () =
           boundary BoundaryKind.CommandStart (after 100)
           boundary BoundaryKind.OutputStart (after 200)
           boundary (BoundaryKind.CommandFinished (Some 127)) (after 300) ]
-        |> List.fold SessionModel.apply initial
+        |> List.fold (fun s b -> SessionModel.apply s b [||]) initial
     let tuple = final.History.ToArray().[0]
     Assert.Equal(Some 127, tuple.ExitCode)
 
@@ -647,7 +650,7 @@ let ``CommandFinished with no exit code yields None ExitCode`` () =
           boundary BoundaryKind.CommandStart (after 100)
           boundary BoundaryKind.OutputStart (after 200)
           boundary (BoundaryKind.CommandFinished None) (after 300) ]
-        |> List.fold SessionModel.apply initial
+        |> List.fold (fun s b -> SessionModel.apply s b [||]) initial
     let tuple = final.History.ToArray().[0]
     Assert.Equal(None, tuple.ExitCode)
 
@@ -660,7 +663,7 @@ let ``CommandFinished from EditingCommand finalises without OutputStartedAt`` ()
         [ boundary BoundaryKind.PromptStart t0
           boundary BoundaryKind.CommandStart (after 100)
           boundary (BoundaryKind.CommandFinished (Some 0)) (after 200) ]
-        |> List.fold SessionModel.apply initial
+        |> List.fold (fun s b -> SessionModel.apply s b [||]) initial
     Assert.Equal(1, final.History.Count)
     let tuple = final.History.ToArray().[0]
     Assert.Equal(None, tuple.OutputStartedAt)
@@ -674,7 +677,7 @@ let ``CommandId conflict on later boundary preserves earlier value`` () =
           boundaryWith BoundaryKind.CommandStart (after 100) (Some "second") []
           boundary BoundaryKind.OutputStart (after 200)
           boundary (BoundaryKind.CommandFinished (Some 0)) (after 300) ]
-        |> List.fold SessionModel.apply initial
+        |> List.fold (fun s b -> SessionModel.apply s b [||]) initial
     let tuple = final.History.ToArray().[0]
     Assert.Equal(Some "first", tuple.CommandId)
 
@@ -689,7 +692,7 @@ let private fullSequence (initial: SessionModel.T) (offsetMs: int) =
       boundary
           (BoundaryKind.CommandFinished (Some 0))
           (after (offsetMs + 150)) ]
-    |> List.fold SessionModel.apply initial
+    |> List.fold (fun s b -> SessionModel.apply s b [||]) initial
 
 [<Fact>]
 let ``History bounded at MaxHistorySize`` () =
@@ -737,7 +740,7 @@ let ``apply with IsAltScreenActive=true returns state unchanged`` () =
     let initial =
         SessionModel.enterAltScreen (SessionModel.create "cmd" 50)
     let updated =
-        SessionModel.apply initial (boundary BoundaryKind.PromptStart t0)
+        SessionModel.apply initial (boundary BoundaryKind.PromptStart t0) [||]
     Assert.True(obj.ReferenceEquals(initial, updated))
     Assert.Equal(None, updated.Active)
     Assert.Equal(0, updated.History.Count)
@@ -758,12 +761,12 @@ let ``exitAltScreen toggles flag false`` () =
 let ``apply resumes after exitAltScreen`` () =
     let initial = SessionModel.enterAltScreen (SessionModel.create "cmd" 50)
     // Boundary while alt-screen — ignored.
-    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0)
+    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0) [||]
     Assert.Equal(None, s1.Active)
     // Exit alt-screen + send PromptStart again.
     let s2 = SessionModel.exitAltScreen s1
     let s3 =
-        SessionModel.apply s2 (boundary BoundaryKind.PromptStart (after 100))
+        SessionModel.apply s2 (boundary BoundaryKind.PromptStart (after 100)) [||]
     Assert.True(s3.Active.IsSome)
 
 // =====================================================================
@@ -773,8 +776,8 @@ let ``apply resumes after exitAltScreen`` () =
 [<Fact>]
 let ``finalizeIncomplete with Active=Some moves to History with CommandFinishedAt set`` () =
     let initial = SessionModel.create "cmd" 50
-    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0)
-    let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100))
+    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0) [||]
+    let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
     let finalised = SessionModel.finalizeIncomplete s2 (after 200)
     Assert.Equal(None, finalised.Active)
     Assert.Equal(1, finalised.History.Count)
@@ -799,7 +802,7 @@ let ``finalizeIncomplete preserves accumulated metadata`` () =
                 t0
                 (Some "interrupt-test")
                 [ "user", "alice" ])
-    let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100))
+    let s2 = SessionModel.apply s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
     let finalised = SessionModel.finalizeIncomplete s2 (after 200)
     let tuple = finalised.History.ToArray().[0]
     Assert.Equal(Some "interrupt-test", tuple.CommandId)
@@ -809,7 +812,7 @@ let ``finalizeIncomplete preserves accumulated metadata`` () =
 [<Fact>]
 let ``finalizeIncomplete sets ExitCode=None`` () =
     let initial = SessionModel.create "cmd" 50
-    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0)
+    let s1 = SessionModel.apply initial (boundary BoundaryKind.PromptStart t0) [||]
     let finalised = SessionModel.finalizeIncomplete s1 (after 100)
     let tuple = finalised.History.ToArray().[0]
     Assert.Equal(None, tuple.ExitCode)
@@ -845,6 +848,7 @@ let ``apply with HeuristicPromptRegex source populates Active`` () =
         SessionModel.apply
             initial
             (heuristicBoundary BoundaryKind.PromptStart t0 100)
+            [||]
     match updated.Active with
     | Some active ->
         Assert.Equal(
@@ -862,10 +866,12 @@ let ``heuristic boundaries finalise tuples the same as OSC 133 boundaries`` () =
         SessionModel.apply
             initial
             (heuristicBoundary BoundaryKind.PromptStart t0 100)
+            [||]
     let s2 =
         SessionModel.apply
             s1
             (heuristicBoundary BoundaryKind.PromptStart (after 1000) 100)
+            [||]
     Assert.Equal(1, s2.History.Count)
     let priorTuple = s2.History.ToArray().[0]
     Assert.Equal(Some (after 1000), priorTuple.CommandFinishedAt)
@@ -878,6 +884,7 @@ let ``Sources map records HeuristicPromptRegex stability ms verbatim`` () =
         SessionModel.apply
             initial
             (heuristicBoundary BoundaryKind.PromptStart t0 100)
+            [||]
     match s1.Active with
     | Some active ->
         Assert.Equal(
@@ -897,6 +904,7 @@ let ``PromptStart with MatchedRowText populates Active.Tuple.PromptText`` () =
         SessionModel.apply
             initial
             (boundaryWithText BoundaryKind.PromptStart t0 "C:\\Users\\admin>")
+            [||]
     match updated.Active with
     | Some active ->
         Assert.Equal("C:\\Users\\admin>", active.Tuple.PromptText)
@@ -909,6 +917,7 @@ let ``PromptStart with None MatchedRowText leaves PromptText empty`` () =
         SessionModel.apply
             initial
             (boundary BoundaryKind.PromptStart t0)
+            [||]
     match updated.Active with
     | Some active ->
         Assert.Equal("", active.Tuple.PromptText)
@@ -926,6 +935,7 @@ let ``Interrupt + restart writes new boundary's MatchedRowText to fresh tuple`` 
         SessionModel.apply
             initial
             (boundaryWithText BoundaryKind.PromptStart t0 "PS C:\\>")
+            [||]
     let s2 =
         SessionModel.apply
             s1
@@ -954,6 +964,284 @@ let ``MatchedRowText preserved across A->B->C->D progression`` () =
           boundary BoundaryKind.CommandStart (after 100)
           boundary BoundaryKind.OutputStart (after 200)
           boundary (BoundaryKind.CommandFinished (Some 0)) (after 300) ]
-        |> List.fold SessionModel.apply initial
+        |> List.fold (fun s b -> SessionModel.apply s b [||]) initial
     let tuple = final.History.ToArray().[0]
     Assert.Equal("C:\\>", tuple.PromptText)
+
+// =====================================================================
+// Tier 1.E2.B — CommandText + OutputText extraction at finalize time
+// =====================================================================
+//
+// Cycle 20b's headline behaviour. When `apply` finalises a
+// tuple (PromptStart-while-Active interrupt arm or OSC 133
+// CommandFinished arm), it extracts:
+//   * CommandText: the row at the prior tuple's
+//     PromptRowIndex, minus the captured PromptText prefix.
+//   * OutputText: rows between (oldPromptRow + 1) and
+//     (newPromptRow - 1) joined with newlines.
+// Defensive checks ensure extraction skips gracefully when
+// row indices are missing / out of bounds / scrolled.
+
+let private blankCell : Cell = Cell.blank
+
+let private cellOf (ch: char) : Cell =
+    { Ch = System.Text.Rune ch; Attrs = SgrAttrs.defaults }
+
+let private blankRow (cols: int) : Cell[] =
+    Array.create cols blankCell
+
+let private rowOf (cols: int) (s: string) : Cell[] =
+    let row = blankRow cols
+    for i in 0 .. min (s.Length - 1) (cols - 1) do
+        row.[i] <- cellOf s.[i]
+    row
+
+let private snapshotOf
+        (rows: int)
+        (cols: int)
+        (lines: string list)
+        : Cell[][]
+        =
+    let arr = Array.init rows (fun _ -> blankRow cols)
+    lines
+    |> List.iteri (fun i line ->
+        if i < rows then arr.[i] <- rowOf cols line)
+    arr
+
+let private boundaryWithRow
+        (kind: BoundaryKind)
+        (detectedAt: DateTime)
+        (rowIndex: int)
+        (matchedText: string)
+        : PromptBoundaryData
+        =
+    { Kind = kind
+      Source = BoundarySource.HeuristicPromptRegex 100
+      DetectedAt = detectedAt
+      CommandId = None
+      ExtraParams = Map.empty
+      MatchedRowText = Some matchedText
+      MatchedRowIndex = Some rowIndex }
+
+[<Fact>]
+let ``Cycle 20b — CommandText extracted from old prompt row at finalize time`` () =
+    // Frame 1: prompt at row 0 with text "C:\>". Detector
+    // emits PromptStart with MatchedRowIndex=0.
+    // Frame 2: snapshot now has "C:\> echo hi" at row 0,
+    //          "hi" at row 1, "C:\>" at row 2 (new prompt).
+    //          Detector emits PromptStart with MatchedRowIndex=2.
+    // Apply's interrupt arm finalises the prior tuple +
+    // extracts CommandText="echo hi" + OutputText="hi".
+    let initial = SessionModel.create "cmd" 50
+    let snap1 = snapshotOf 5 80 [ "C:\\>"; ""; ""; ""; "" ]
+    let snap2 =
+        snapshotOf 5 80
+            [ "C:\\> echo hi"; "hi"; "C:\\>"; ""; "" ]
+    let s1 =
+        SessionModel.apply
+            initial
+            (boundaryWithRow BoundaryKind.PromptStart t0 0 "C:\\>")
+            snap1
+    let s2 =
+        SessionModel.apply
+            s1
+            (boundaryWithRow BoundaryKind.PromptStart (after 1000) 2 "C:\\>")
+            snap2
+    Assert.Equal(1, s2.History.Count)
+    let priorTuple = s2.History.ToArray().[0]
+    Assert.Equal("echo hi", priorTuple.CommandText)
+    Assert.Equal("hi", priorTuple.OutputText)
+
+[<Fact>]
+let ``Cycle 20b — multi-line OutputText joined with newlines`` () =
+    // dir-style output: 3 rows of output between two prompts.
+    let initial = SessionModel.create "cmd" 50
+    let snap1 = snapshotOf 6 80 [ "C:\\>"; ""; ""; ""; ""; "" ]
+    let snap2 =
+        snapshotOf 6 80
+            [ "C:\\> dir"
+              "file1.txt"
+              "file2.txt"
+              "file3.txt"
+              "C:\\>"
+              "" ]
+    let s1 =
+        SessionModel.apply
+            initial
+            (boundaryWithRow BoundaryKind.PromptStart t0 0 "C:\\>")
+            snap1
+    let s2 =
+        SessionModel.apply
+            s1
+            (boundaryWithRow BoundaryKind.PromptStart (after 1000) 4 "C:\\>")
+            snap2
+    let priorTuple = s2.History.ToArray().[0]
+    Assert.Equal("dir", priorTuple.CommandText)
+    Assert.Equal("file1.txt\nfile2.txt\nfile3.txt", priorTuple.OutputText)
+
+[<Fact>]
+let ``Cycle 20b — empty OutputText when no rows between prompts`` () =
+    // Adjacent prompts (clear-screen scenario). New prompt
+    // at oldRow + 1; no output rows between.
+    let initial = SessionModel.create "cmd" 50
+    let snap1 = snapshotOf 3 80 [ "C:\\>"; ""; "" ]
+    let snap2 = snapshotOf 3 80 [ "C:\\>"; "C:\\>"; "" ]
+    let s1 =
+        SessionModel.apply
+            initial
+            (boundaryWithRow BoundaryKind.PromptStart t0 0 "C:\\>")
+            snap1
+    let s2 =
+        SessionModel.apply
+            s1
+            (boundaryWithRow BoundaryKind.PromptStart (after 1000) 1 "C:\\>")
+            snap2
+    let priorTuple = s2.History.ToArray().[0]
+    Assert.Equal("", priorTuple.OutputText)
+
+[<Fact>]
+let ``Cycle 20b — empty CommandText when old prompt row content doesn't start with PromptText`` () =
+    // Defensive: scroll happened mid-cycle; row at
+    // oldPromptRowIndex no longer contains the prompt.
+    let initial = SessionModel.create "cmd" 50
+    let snap1 = snapshotOf 3 80 [ "C:\\>"; ""; "" ]
+    // Snap2's row 0 is now "stuff that doesn't start with the prompt"
+    let snap2 =
+        snapshotOf 3 80
+            [ "scrolled output"; "more output"; "C:\\>" ]
+    let s1 =
+        SessionModel.apply
+            initial
+            (boundaryWithRow BoundaryKind.PromptStart t0 0 "C:\\>")
+            snap1
+    let s2 =
+        SessionModel.apply
+            s1
+            (boundaryWithRow BoundaryKind.PromptStart (after 1000) 2 "C:\\>")
+            snap2
+    let priorTuple = s2.History.ToArray().[0]
+    Assert.Equal("", priorTuple.CommandText)
+    // OutputText extraction still works for rows between.
+    Assert.Equal("more output", priorTuple.OutputText)
+
+[<Fact>]
+let ``Cycle 20b — empty CommandText + OutputText when old PromptRowIndex is None`` () =
+    // Boundary without MatchedRowIndex (e.g. legacy / OSC
+    // 133 unaugmented). Active.PromptRowIndex stays None;
+    // extraction skips both fields.
+    let initial = SessionModel.create "cmd" 50
+    let s1 =
+        SessionModel.apply
+            initial
+            (boundary BoundaryKind.PromptStart t0)   // no row index
+            [||]
+    let s2 =
+        SessionModel.apply
+            s1
+            (boundary BoundaryKind.PromptStart (after 1000))
+            [||]
+    let priorTuple = s2.History.ToArray().[0]
+    Assert.Equal("", priorTuple.CommandText)
+    Assert.Equal("", priorTuple.OutputText)
+
+[<Fact>]
+let ``Cycle 20b — empty CommandText when old PromptRowIndex out of snapshot bounds`` () =
+    // Defensive: old row index points beyond snapshot.
+    // Could happen if screen resized between frames. Skip
+    // extraction.
+    let initial = SessionModel.create "cmd" 50
+    let snap1 = snapshotOf 5 80 [ ""; ""; ""; ""; "C:\\>" ]
+    let snap2 = snapshotOf 3 80 [ "C:\\>"; ""; "" ]   // smaller
+    let s1 =
+        SessionModel.apply
+            initial
+            (boundaryWithRow BoundaryKind.PromptStart t0 4 "C:\\>")
+            snap1
+    let s2 =
+        SessionModel.apply
+            s1
+            (boundaryWithRow BoundaryKind.PromptStart (after 1000) 0 "C:\\>")
+            snap2
+    let priorTuple = s2.History.ToArray().[0]
+    // Old prompt row 4 is OOB in snap2 (snap2.Length = 3).
+    Assert.Equal("", priorTuple.CommandText)
+
+[<Fact>]
+let ``Cycle 20b — CommandText preserves spacing after prompt prefix`` () =
+    // The TrimStart() inside extractContent drops leading
+    // spaces; verify command text is captured cleanly.
+    let initial = SessionModel.create "cmd" 50
+    let snap1 = snapshotOf 4 80 [ "C:\\>"; ""; ""; "" ]
+    let snap2 =
+        snapshotOf 4 80
+            [ "C:\\>   echo   hi"; "hi"; "C:\\>"; "" ]
+    let s1 =
+        SessionModel.apply
+            initial
+            (boundaryWithRow BoundaryKind.PromptStart t0 0 "C:\\>")
+            snap1
+    let s2 =
+        SessionModel.apply
+            s1
+            (boundaryWithRow BoundaryKind.PromptStart (after 1000) 2 "C:\\>")
+            snap2
+    let priorTuple = s2.History.ToArray().[0]
+    // Leading spaces stripped; intra-command spacing preserved.
+    Assert.Equal("echo   hi", priorTuple.CommandText)
+
+[<Fact>]
+let ``Cycle 20b — empty rows in OutputText filtered out`` () =
+    // Output with trailing blank rows — typical shell
+    // padding. Empty rows shouldn't appear in OutputText.
+    let initial = SessionModel.create "cmd" 50
+    let snap1 = snapshotOf 6 80 [ "C:\\>"; ""; ""; ""; ""; "" ]
+    let snap2 =
+        snapshotOf 6 80
+            [ "C:\\> echo hi"; "hi"; ""; ""; "C:\\>"; "" ]
+    let s1 =
+        SessionModel.apply
+            initial
+            (boundaryWithRow BoundaryKind.PromptStart t0 0 "C:\\>")
+            snap1
+    let s2 =
+        SessionModel.apply
+            s1
+            (boundaryWithRow BoundaryKind.PromptStart (after 1000) 4 "C:\\>")
+            snap2
+    let priorTuple = s2.History.ToArray().[0]
+    // Empty rows 2 + 3 dropped; only "hi" remains.
+    Assert.Equal("hi", priorTuple.OutputText)
+
+[<Fact>]
+let ``Cycle 20b — finalizeIncomplete (shell-switch) leaves CmdText + OutText empty`` () =
+    // Shell-switch path: finalizeIncomplete passes None /
+    // None / [||] for extraction context. Tuple should
+    // finalise without content extraction.
+    let initial = SessionModel.create "cmd" 50
+    let s1 =
+        SessionModel.apply
+            initial
+            (boundaryWithRow BoundaryKind.PromptStart t0 0 "C:\\>")
+            (snapshotOf 3 80 [ "C:\\>"; ""; "" ])
+    // Now finalize-incomplete (mimics shell-switch).
+    let finalised =
+        SessionModel.finalizeIncomplete s1 (after 100)
+    Assert.Equal(1, finalised.History.Count)
+    let tuple = finalised.History.ToArray().[0]
+    Assert.Equal("", tuple.CommandText)
+    Assert.Equal("", tuple.OutputText)
+
+[<Fact>]
+let ``Cycle 20b — Active.Tuple.PromptRowIndex captured from boundary`` () =
+    // Verify the row index threads from boundary.MatchedRowIndex
+    // → Active.PromptRowIndex on PromptStart.
+    let initial = SessionModel.create "cmd" 50
+    let s1 =
+        SessionModel.apply
+            initial
+            (boundaryWithRow BoundaryKind.PromptStart t0 5 "C:\\>")
+            (snapshotOf 10 80 [ ""; ""; ""; ""; ""; "C:\\>"; ""; ""; ""; "" ])
+    match s1.Active with
+    | Some active ->
+        Assert.Equal(Some 5, active.PromptRowIndex)
+    | None -> Assert.Fail("Expected Active after PromptStart")
