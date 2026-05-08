@@ -286,7 +286,27 @@ type PromptBoundaryData =
       /// tuple's `PromptText` on PromptStart transitions.
       /// `None` is preserved through state transitions (the
       /// active tuple's `PromptText` stays `""`).
-      MatchedRowText: string option }
+      MatchedRowText: string option
+      /// Tier 1.E2.A (Cycle 20a) — the row index where the
+      /// boundary was detected. Populated by:
+      ///   * `HeuristicPromptDetector` — captures the row
+      ///     that triggered detection at emit time.
+      ///   * `Program.fs.handlePromptBoundary` — augments
+      ///     OSC 133 boundaries with the cursor's row index
+      ///     from a fresh snapshot (mirrors the
+      ///     `MatchedRowText` augmentation pattern).
+      ///   * `Osc133.tryParse` — leaves `None` (parser
+      ///     produces records pre-augmentation).
+      /// Cycle 20a uses this for the detector's
+      /// row-index-aware emission gate: a NEW PromptStart is
+      /// emitted when `(text, rowIdx)` differs from the last
+      /// emitted pair (catches cmd's stable-prompt case where
+      /// text is identical but the prompt has moved to a new
+      /// row after a command cycle). Cycle 20b (CommandText +
+      /// OutputText extraction) uses this to compute the
+      /// row-range between consecutive prompts for output
+      /// rendering.
+      MatchedRowIndex: int option }
 
 /// Notifications emitted by the parser/screen subsystem onto
 /// a `Channel<ScreenNotification>` consumed by the UIA peer

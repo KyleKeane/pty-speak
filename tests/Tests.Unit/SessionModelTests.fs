@@ -49,7 +49,8 @@ let private boundary
       DetectedAt = detectedAt
       CommandId = None
       ExtraParams = Map.empty
-      MatchedRowText = None }
+      MatchedRowText = None
+      MatchedRowIndex = None }
 
 let private boundaryWith
         (kind: BoundaryKind)
@@ -63,7 +64,8 @@ let private boundaryWith
       DetectedAt = detectedAt
       CommandId = commandId
       ExtraParams = Map.ofList extras
-      MatchedRowText = None }
+      MatchedRowText = None
+      MatchedRowIndex = None }
 
 /// Tier 1.E builder — boundary with explicit `MatchedRowText`.
 /// Used by PromptText-population tests that need to verify
@@ -79,7 +81,8 @@ let private boundaryWithText
       DetectedAt = detectedAt
       CommandId = None
       ExtraParams = Map.empty
-      MatchedRowText = Some matchedText }
+      MatchedRowText = Some matchedText
+      MatchedRowIndex = None }
 
 let private t0 = DateTime(2026, 5, 8, 12, 0, 0, DateTimeKind.Utc)
 let private after (ms: int) = t0.AddMilliseconds(float ms)
@@ -156,7 +159,8 @@ let ``PromptBoundaryData record literal constructs all fields`` () =
           DetectedAt = now
           CommandId = Some "abc-123"
           ExtraParams = Map.ofList [ "k", "v" ]
-          MatchedRowText = None }
+          MatchedRowText = None
+          MatchedRowIndex = None }
     Assert.Equal(BoundaryKind.PromptStart, data.Kind)
     Assert.Equal(BoundarySource.Osc133, data.Source)
     Assert.Equal(now, data.DetectedAt)
@@ -171,7 +175,8 @@ let ``PromptBoundaryData supports None CommandId and empty ExtraParams`` () =
           DetectedAt = DateTime.UtcNow
           CommandId = None
           ExtraParams = Map.empty
-          MatchedRowText = None }
+          MatchedRowText = None
+          MatchedRowIndex = None }
     Assert.Equal(None, data.CommandId)
     Assert.True(Map.isEmpty data.ExtraParams)
 
@@ -183,7 +188,8 @@ let ``PromptBoundaryData carries optional MatchedRowText (Tier 1.E)`` () =
           DetectedAt = DateTime.UtcNow
           CommandId = None
           ExtraParams = Map.empty
-          MatchedRowText = Some "C:\\>" }
+          MatchedRowText = Some "C:\\>"
+          MatchedRowIndex = None }
     Assert.Equal(Some "C:\\>", withText.MatchedRowText)
     let withoutText = { withText with MatchedRowText = None }
     Assert.Equal(None, withoutText.MatchedRowText)
@@ -200,7 +206,8 @@ let ``ScreenNotification.PromptBoundary round-trips through pattern match`` () =
           DetectedAt = DateTime.UtcNow
           CommandId = None
           ExtraParams = Map.empty
-          MatchedRowText = None }
+          MatchedRowText = None
+          MatchedRowIndex = None }
     let notification = ScreenNotification.PromptBoundary data
     match notification with
     | ScreenNotification.PromptBoundary roundTripped ->
@@ -469,25 +476,29 @@ let ``Sources map records (Kind, Source) for each boundary`` () =
             DetectedAt = t0
             CommandId = None
             ExtraParams = Map.empty
-            MatchedRowText = None }
+            MatchedRowText = None
+            MatchedRowIndex = None }
           { Kind = BoundaryKind.CommandStart
             Source = BoundarySource.HeuristicPromptRegex 100
             DetectedAt = after 100
             CommandId = None
             ExtraParams = Map.empty
-            MatchedRowText = None }
+            MatchedRowText = None
+            MatchedRowIndex = None }
           { Kind = BoundaryKind.OutputStart
             Source = BoundarySource.HeuristicClaudeInkBox
             DetectedAt = after 200
             CommandId = None
             ExtraParams = Map.empty
-            MatchedRowText = None }
+            MatchedRowText = None
+            MatchedRowIndex = None }
           { Kind = BoundaryKind.CommandFinished (Some 0)
             Source = BoundarySource.Osc133
             DetectedAt = after 300
             CommandId = None
             ExtraParams = Map.empty
-            MatchedRowText = None } ]
+            MatchedRowText = None
+            MatchedRowIndex = None } ]
         |> List.fold SessionModel.apply initial
     let tuple = final.History.ToArray().[0]
     Assert.Equal(
@@ -824,7 +835,8 @@ let private heuristicBoundary
       DetectedAt = detectedAt
       CommandId = None
       ExtraParams = Map.empty
-      MatchedRowText = None }
+      MatchedRowText = None
+      MatchedRowIndex = None }
 
 [<Fact>]
 let ``apply with HeuristicPromptRegex source populates Active`` () =

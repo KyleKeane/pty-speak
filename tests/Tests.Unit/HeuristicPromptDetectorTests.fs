@@ -514,3 +514,172 @@ let ``Claude emit carries MatchedRowText from Ink-box prompt row`` () =
     | Some data ->
         Assert.Equal(Some "│ >", data.MatchedRowText)
     | None -> Assert.Fail("Expected emit")
+
+// ---------------------------------------------------------------------
+// Tier 1.E2.A — row-index-aware emission gate
+// ---------------------------------------------------------------------
+//
+// Cycle 20a's headline behaviour change. The detector now
+// emits when (text, rowIdx) differs from the last emitted
+// pair, not just when text differs. Catches cmd's stable-
+// prompt case where text is identical across commands but
+// the prompt has moved to a new row after a command cycle.
+
+[<Fact>]
+let ``emitted boundary carries MatchedRowIndex = Some (matching row)`` () =
+    // Prompt at row 0; verify the emitted boundary stamps
+    // MatchedRowIndex = Some 0.
+    let snap = snapshotOf 1 80 [ "C:\\>" ]
+    let detector = HeuristicPromptDetector.create ()
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" t0 detector
+    let r, _ =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" (after 100) s1
+    match r with
+    | Some data ->
+        Assert.Equal(Some 0, data.MatchedRowIndex)
+    | None -> Assert.Fail("Expected emit")
+
+[<Fact>]
+let ``emitted boundary's MatchedRowIndex matches non-zero matching row`` () =
+    // Prompt at row 5; verify MatchedRowIndex = Some 5.
+    let snap =
+        snapshotOf 10 80 [ ""; ""; ""; ""; ""; "C:\\>"; ""; ""; ""; "" ]
+    let detector = HeuristicPromptDetector.create ()
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" t0 detector
+    let r, _ =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" (after 100) s1
+    match r with
+    | Some data ->
+        Assert.Equal(Some 5, data.MatchedRowIndex)
+    | None -> Assert.Fail("Expected emit")
+
+[<Fact>]
+let ``same prompt text at SAME row suppresses re-emit (regression guard)`` () =
+    // Pre-Cycle-20a behaviour: identical text + identical
+    // row → suppress. Verify still suppressed.
+    let snap = snapshotOf 1 80 [ "C:\\>" ]
+    let detector = HeuristicPromptDetector.create ()
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" t0 detector
+    let _, s2 =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" (after 100) s1
+    // Same snapshot, same row, same text — should NOT re-emit.
+    let r, _ =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" (after 200) s2
+    Assert.True(r.IsNone)
+
+[<Fact>]
+let ``same prompt text at DIFFERENT row emits new PromptStart (Cycle 20a headline)`` () =
+    // Frame 1: prompt at row 0. Detector emits.
+    // Frame 2: same prompt text at row 5 (output filled rows
+    // 1-4; new prompt rendered below). Detector should emit
+    // a NEW PromptStart even though the text is identical.
+    let snap1 = snapshotOf 10 80 [ "C:\\>" ]
+    let snap2 =
+        snapshotOf 10 80
+            [ "C:\\>"; "echo hi"; "hi"; ""; ""; "C:\\>"; ""; ""; ""; "" ]
+    let detector = HeuristicPromptDetector.create ()
+    // First emit at row 0.
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect snap1 noCursor "cmd" t0 detector
+    let r1, s2 =
+        HeuristicPromptDetector.tryDetect snap1 noCursor "cmd" (after 100) s1
+    Assert.True(r1.IsSome)
+    Assert.Equal(Some 0, r1.Value.MatchedRowIndex)
+    // Second snapshot: prompt at row 5. Detector should
+    // see a new (text, rowIdx) pair and emit.
+    let _, s3 =
+        HeuristicPromptDetector.tryDetect
+            snap2 noCursor "cmd" (after 200) s2
+    let r2, _ =
+        HeuristicPromptDetector.tryDetect
+            snap2 noCursor "cmd" (after 300) s3
+    Assert.True(r2.IsSome)
+    Assert.Equal(Some 5, r2.Value.MatchedRowIndex)
+
+[<Fact>]
+let ``different prompt text at SAME row emits (Cycle 20a regression guard)`` () =
+    // Pre-Cycle-20a behaviour: text changed → emit. Verify
+    // still works under the new (text, rowIdx) gate.
+    let snap1 = snapshotOf 1 80 [ "C:\\>" ]
+    let snap2 = snapshotOf 1 80 [ "D:\\>" ]
+    let detector = HeuristicPromptDetector.create ()
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect snap1 noCursor "cmd" t0 detector
+    let r1, s2 =
+        HeuristicPromptDetector.tryDetect snap1 noCursor "cmd" (after 100) s1
+    Assert.True(r1.IsSome)
+    let _, s3 =
+        HeuristicPromptDetector.tryDetect snap2 noCursor "cmd" (after 200) s2
+    let r2, _ =
+        HeuristicPromptDetector.tryDetect snap2 noCursor "cmd" (after 300) s3
+    Assert.True(r2.IsSome)
+
+[<Fact>]
+let ``different text at DIFFERENT row emits (both signals fire)`` () =
+    // cd .. + scroll: text AND row change. Sanity check.
+    let snap1 = snapshotOf 5 80 [ "C:\\>"; ""; ""; ""; "" ]
+    let snap2 =
+        snapshotOf 5 80
+            [ "C:\\>"; "cd .."; ""; "C:\\Users>"; "" ]
+    let detector = HeuristicPromptDetector.create ()
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect snap1 noCursor "cmd" t0 detector
+    let r1, s2 =
+        HeuristicPromptDetector.tryDetect snap1 noCursor "cmd" (after 100) s1
+    Assert.True(r1.IsSome)
+    Assert.Equal(Some 0, r1.Value.MatchedRowIndex)
+    let _, s3 =
+        HeuristicPromptDetector.tryDetect snap2 noCursor "cmd" (after 200) s2
+    let r2, _ =
+        HeuristicPromptDetector.tryDetect snap2 noCursor "cmd" (after 300) s3
+    Assert.True(r2.IsSome)
+    Assert.Equal(Some 3, r2.Value.MatchedRowIndex)
+
+[<Fact>]
+let ``reset clears LastEmittedPromptRowIndex (post-reset re-emits identical (text, row))`` () =
+    let snap = snapshotOf 1 80 [ "C:\\>" ]
+    let detector = HeuristicPromptDetector.create ()
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" t0 detector
+    let _, s2 =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" (after 100) s1
+    Assert.True(s2.LastEmittedPromptRowIndex.IsSome)
+    // Reset clears the row-index tracker.
+    let resetState = HeuristicPromptDetector.reset s2
+    Assert.True(resetState.LastEmittedPromptRowIndex.IsNone)
+    // Post-reset, the same (text, rowIdx) pair re-emits with
+    // a fresh stability window.
+    let _, s3 =
+        HeuristicPromptDetector.tryDetect
+            snap noCursor "cmd" (after 200) resetState
+    let r, _ =
+        HeuristicPromptDetector.tryDetect
+            snap noCursor "cmd" (after 300) s3
+    Assert.True(r.IsSome)
+
+[<Fact>]
+let ``initial state has LastEmittedPromptRowIndex = None`` () =
+    let detector = HeuristicPromptDetector.create ()
+    Assert.True(detector.LastEmittedPromptRowIndex.IsNone)
+
+[<Fact>]
+let ``stable prompt at row 0 then prompt scrolled to row 1 emits twice`` () =
+    // Sanity: prompt scrolled UP (e.g. due to history-pop) is
+    // also a (text, rowIdx) change → emit.
+    let snap1 = snapshotOf 5 80 [ "C:\\>"; ""; ""; ""; "" ]
+    let snap2 = snapshotOf 5 80 [ ""; "C:\\>"; ""; ""; "" ]
+    let detector = HeuristicPromptDetector.create ()
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect snap1 noCursor "cmd" t0 detector
+    let r1, s2 =
+        HeuristicPromptDetector.tryDetect snap1 noCursor "cmd" (after 100) s1
+    Assert.True(r1.IsSome)
+    let _, s3 =
+        HeuristicPromptDetector.tryDetect snap2 noCursor "cmd" (after 200) s2
+    let r2, _ =
+        HeuristicPromptDetector.tryDetect snap2 noCursor "cmd" (after 300) s3
+    Assert.True(r2.IsSome)
+    Assert.Equal(Some 1, r2.Value.MatchedRowIndex)

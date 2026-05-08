@@ -222,3 +222,14 @@ let ``tryParse leaves MatchedRowText = None (parser has no screen access)`` () =
     match Osc133.tryParse parms fixedTime with
     | Some data -> Assert.Equal(None, data.MatchedRowText)
     | None -> Assert.Fail("Expected boundary")
+
+[<Fact>]
+let ``tryParse leaves MatchedRowIndex = None (parser has no screen access)`` () =
+    // Tier 1.E2.A: same shape as MatchedRowText. Parser has no
+    // screen access; `Program.fs.handlePromptBoundary` augments
+    // parsed boundaries with the cursor row index via a fresh
+    // snapshot capture before passing to SessionModel.apply.
+    let parms = parmsOf [ "133"; "A" ]
+    match Osc133.tryParse parms fixedTime with
+    | Some data -> Assert.Equal(None, data.MatchedRowIndex)
+    | None -> Assert.Fail("Expected boundary")

@@ -15,6 +15,112 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 20a): Tier 1.E2.A — row-index-aware detector emission
+
+**First half of the Tier 1.E2 split** per maintainer
+AskUserQuestion 2026-05-08 (Cycle 20b ships content
+extraction; Cycle 20a ships the detector extension that
+makes Cycle 20b's content extraction observable for stable-
+prompt cmd usage). Substrate-first ordering: detector
+emission gate fixed first; content extraction follows after
+maintainer validation.
+
+**Behaviour change**: SessionModel `History` now grows on
+every command cycle in cmd / PowerShell, not just on
+prompt-text changes. Closes the "stable-prompt cmd usage
+produces zero tuples" gap surfaced by the maintainer's
+2026-05-08 manual NVDA validation.
+
+**Mechanism**: extends the heuristic detector's emission
+gate from "text differs" to "(text, rowIdx) differs":
+
+```fsharp
+let isNewPrompt =
+    match state.LastEmittedPromptText, state.LastEmittedPromptRowIndex with
+    | Some priorText, Some priorRow ->
+        priorText <> text || priorRow <> rowIdx
+    | _ -> true   // first emit
+```
+
+The `(text, rowIdx)` pair captures both signals:
+- **Different text** (today's case): `cd` changed the
+  prompt path. Emit.
+- **Same text, different row** (NEW): cmd's stable-prompt
+  case where output pushed the prompt to a new row after a
+  command cycle. Emit.
+- **Same text, same row**: cursor blink / refresh / no real
+  activity. Suppress.
+
+**New plumbing**:
+
+- `PromptBoundaryData.MatchedRowIndex: int option` —
+  populated by `HeuristicPromptDetector` at emit time; by
+  `Program.fs.handlePromptBoundary` OSC 133 augmentation
+  from cursor row; left `None` by `Osc133.tryParse` (parser
+  has no screen access). Forward-compat shipping in 20a (Cycle
+  20b's CommandText/OutputText extraction will use this
+  field).
+- `HeuristicPromptDetector.T.LastEmittedPromptRowIndex: int option` —
+  detector-state extension. Updated alongside
+  `LastEmittedPromptText` on every emit; cleared by
+  `reset` / `create`.
+
+**Files modified**:
+
+- `src/Terminal.Core/Types.fs` — adds `MatchedRowIndex`
+  field to `PromptBoundaryData`.
+- `src/Terminal.Core/Osc133.fs` — emits `MatchedRowIndex = None`.
+- `src/Terminal.Core/HeuristicPromptDetector.fs` —
+  `LastEmittedPromptRowIndex` field; row-index-aware emission
+  gate; populates `MatchedRowIndex` on emit; `create` /
+  `reset` updates.
+- `src/Terminal.App/Program.fs` — OSC 133 augmentation
+  populates `MatchedRowIndex` from cursor row alongside
+  `MatchedRowText`.
+
+**Tests added**: ~10 in
+`tests/Tests.Unit/HeuristicPromptDetectorTests.fs`:
+
+- Emitted boundary carries `MatchedRowIndex = Some` matching
+  row (row 0 + non-zero row variants).
+- Same prompt text at SAME row suppresses re-emit (regression
+  guard for the cursor-blink / refresh case).
+- Same prompt text at DIFFERENT row emits new PromptStart
+  (Cycle 20a headline behaviour).
+- Different text at SAME row emits (regression guard for
+  pre-Cycle-20a behaviour).
+- Different text at DIFFERENT row emits (both signals).
+- `reset` clears `LastEmittedPromptRowIndex`; post-reset
+  identical pair re-emits.
+- Initial state has `LastEmittedPromptRowIndex = None`.
+- Prompt scrolled UP between frames also emits (any row-index
+  change is a valid signal of activity).
+
+Plus 1 new test in `tests/Tests.Unit/Osc133Tests.fs` confirming
+`tryParse` leaves `MatchedRowIndex = None` (mirrors the Tier
+1.E `MatchedRowText = None` test).
+
+Plus mechanical updates to ~14 existing record-literal sites
+across `SessionModelTests.fs` to add the `MatchedRowIndex = None`
+default (matching the Tier 1.E `MatchedRowText` rollout
+pattern).
+
+**Out of scope (deferred to Cycle 20b)**:
+
+- CommandText extraction at finalize time.
+- OutputText extraction at finalize time.
+- Snapshot threading through `handlePromptBoundary` →
+  `apply`.
+- `ActiveSessionTuple.PromptRowIndex` field.
+- Diagnostic log line extension to show truncated
+  CmdText / OutText (Tier 1.F formatTuple cosmetic).
+
+**Stabilisation expected post-merge**: maintainer cuts
+release; runs `echo hi` in cmd; Ctrl+Shift+D shows
+`History=1/100`. Substrate progresses through tuple cycles
+even when prompt text stays stable. Cycle 20b ships content
+extraction once Cycle 20a is validated.
+
 ### Added + Changed (Cycle 19): Tier 1.D-cleanup + default-shell TOML override (bundled)
 
 **Two small named follow-ups bundled per maintainer

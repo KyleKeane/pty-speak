@@ -168,4 +168,9 @@ module Osc133 =
                       // augments OSC 133 boundaries with the
                       // cursor row's text via fresh
                       // `screen.SnapshotRows` capture.
-                      MatchedRowText = None }
+                      MatchedRowText = None
+                      // Tier 1.E2.A: parser has no screen
+                      // access; `Program.fs.handlePromptBoundary`
+                      // augments OSC 133 boundaries with the
+                      // cursor row index alongside MatchedRowText.
+                      MatchedRowIndex = None }
