@@ -943,6 +943,19 @@ module Program =
         let mutable currentShellId : ShellRegistry.ShellId =
             ShellRegistry.Cmd
 
+        // SessionModel Tier 1.C — structured-history substrate.
+        // One instance per shell session; replaced on
+        // Ctrl+Shift+1/2/3 hot-switch (per Q5 resolution
+        // 2026-05-07: per-shell-session model). Initialised
+        // with a `cmd` placeholder; the startup-shell alignment
+        // block (~30 lines below) re-creates with the resolved
+        // shell key alongside `currentShellId`. Mutated on the
+        // PathwayPump worker thread (single-threaded for
+        // notification consumption); composition root reads
+        // it only via the pump.
+        let mutable currentSession : SessionModel.T =
+            SessionModel.createDefault (shellIdToConfigKey ShellRegistry.Cmd)
+
         // PathwayPump — Phase A replacement for TranslatorPump.
         // Reads raw ScreenNotifications and routes by case:
         //   - RowsChanged: snapshot the screen → build a
@@ -980,6 +993,23 @@ module Program =
             let emitted = activePathway.Consume canonical
             pumpLog.LogDebug(
                 "PathwayPump RowsChanged → {Pathway}.Consume → {Count} events.",
+                activePathway.Id,
+                emitted.Length)
+            dispatchPathwayEvents emitted
+
+        // SessionModel Tier 1.C — PromptBoundary handler. Advances
+        // the SessionModel state machine with the boundary, then
+        // dispatches to the active pathway's `OnPromptBoundary`.
+        // Stream / Tui pathways currently return `[||]` (no-op
+        // overrides from Tier 1.A); Phase 2 pathways
+        // (ReplPathway, ClaudeCodePathway, FormPathway) will
+        // override with non-trivial logic.
+        let handlePromptBoundary (boundary: PromptBoundaryData) : unit =
+            currentSession <- SessionModel.apply currentSession boundary
+            let emitted = activePathway.OnPromptBoundary boundary
+            pumpLog.LogDebug(
+                "PathwayPump PromptBoundary {Kind} → {Pathway}.OnPromptBoundary → {Count} events.",
+                boundary.Kind,
                 activePathway.Id,
                 emitted.Length)
             dispatchPathwayEvents emitted
@@ -1067,21 +1097,22 @@ module Program =
                                     | ModeChanged _ -> handleModeChanged peek
                                     | ParserError _
                                     | Bell -> handleSimpleNotification peek
-                                    | PromptBoundary _ ->
-                                        // SessionModel Tier 1.A:
-                                        // no producer + no
-                                        // consumer wired yet.
-                                        // Tier 1.B adds the OSC
-                                        // 133 producer in
-                                        // Screen.Apply; Tier 1.C
-                                        // wires SessionModel.apply
-                                        // here. For now the
-                                        // PathwayPump silently
-                                        // discards PromptBoundary
-                                        // events (none arrive
-                                        // today since no producer
-                                        // exists).
-                                        ()
+                                    | PromptBoundary boundary ->
+                                        // SessionModel Tier 1.C —
+                                        // advance the state
+                                        // machine + dispatch to
+                                        // active pathway's
+                                        // OnPromptBoundary. Tier
+                                        // 1.B's OSC 133 producer
+                                        // emits these from
+                                        // shells that opt in;
+                                        // Tier 1.D will add the
+                                        // heuristic-fallback
+                                        // module so cmd /
+                                        // PowerShell / Claude
+                                        // also produce boundaries
+                                        // without OSC 133 support.
+                                        handlePromptBoundary boundary
                     with
                     | :? OperationCanceledException -> ()
                     | ex ->
@@ -1241,6 +1272,15 @@ module Program =
         // resolves to the correct pathway for the running
         // shell.
         currentShellId <- chosenShell.Id
+
+        // SessionModel Tier 1.C — re-create with the resolved
+        // startup shell key. The placeholder declared above
+        // (with `cmd` key) is replaced here once `chosenShell`
+        // is known; no boundaries can have arrived yet (the
+        // ConPty isn't spawned until `wirePostSpawn`), so
+        // recreating discards no observable state.
+        currentSession <-
+            SessionModel.createDefault (shellIdToConfigKey chosenShell.Id)
 
         // Stage 7-followup PR-I — `chosenShell` is the value chosen
         // at startup and never changes. Hot-switching shells
@@ -1694,6 +1734,39 @@ module Program =
                                         // pathway, not the
                                         // pre-switch shell's.
                                         currentShellId <- shell.Id
+                                        // SessionModel Tier 1.C —
+                                        // per-shell-session
+                                        // recreation (per Q5
+                                        // resolution 2026-05-07).
+                                        // Finalise the prior
+                                        // shell's in-flight active
+                                        // tuple as incomplete
+                                        // (CommandFinishedAt =
+                                        // shell-switch-time;
+                                        // ExitCode = None) before
+                                        // recreating. Tier 1.C has
+                                        // no persistence so the
+                                        // finalised tuple is
+                                        // structurally
+                                        // discarded with the prior
+                                        // SessionModel; Tier 2's
+                                        // persistence will use
+                                        // this seam to flush
+                                        // History before
+                                        // recreation. The
+                                        // finalize-then-recreate
+                                        // ordering preserves the
+                                        // invariant that no tuple
+                                        // ever leaves the
+                                        // substrate without a
+                                        // CommandFinishedAt.
+                                        currentSession <-
+                                            SessionModel.finalizeIncomplete
+                                                currentSession
+                                                DateTime.UtcNow
+                                        currentSession <-
+                                            SessionModel.createDefault
+                                                (shellIdToConfigKey shell.Id)
                                         // Phase A — swap the active
                                         // pathway for the new shell.
                                         // `Reset` clears any pending

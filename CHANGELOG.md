@@ -15,6 +15,130 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 13): SessionModel Tier 1.C — state machine + composition wiring
+
+**Third post-audit implementation cycle.** Replaces the
+Tier 1.A no-op `SessionModel.apply` stub with the real
+state-machine; wires `currentSession` into
+`Program.fs`'s composition root + PathwayPump; recreates
+on Ctrl+Shift+1/2/3 hot-switch with `finalizeIncomplete`
+beforehand per Q5 resolution.
+
+**Per Cycle 13 plan-mode narrowed scope**: state machine
++ composition only. Heuristic-fallback module (Tier
+1.D), text accumulation (Tier 1.E), and diagnostic-
+battery extension (Tier 1.F) ship in subsequent cycles.
+
+**State machine behaviour**:
+- `apply` now advances the active tuple's state through
+  `AwaitingPromptStart → AwaitingCommandStart →
+  EditingCommand → OutputStreaming → finalised`
+  transitions per the SESSION-MODEL.md §4 specification.
+- Defensive transitions (orphan boundaries, repeated
+  boundaries, out-of-order boundaries) log at Warning
+  level + soft-fail to preserve substrate health; never
+  crash.
+- `MaxHistorySize` ring-buffer eviction enforces the cap
+  on `History` enqueue (FIFO; oldest-first eviction).
+- Sources map records the `(BoundaryKind, BoundarySource)`
+  pair for each boundary that touched the tuple.
+- `CommandId` + `ExtraParams` from boundary metadata
+  hoist onto the active tuple; `CommandId` conflicts log
+  Warning + preserve the existing value.
+
+**New Tier 1.C surface**:
+- `SessionModel.IsAltScreenActive: bool` field on `T`
+  (Q3 partial — when `true`, `apply` returns state
+  unchanged; full PathwayPump-side wiring deferred to
+  Tier 1.D alongside heuristic-fallback wiring).
+- `SessionModel.enterAltScreen` / `exitAltScreen`
+  helpers (Q3 partial).
+- `SessionModel.finalizeIncomplete: T -> DateTime -> T`
+  helper (Q5 — moves any in-flight active tuple to
+  History with `ExitCode = None` + supplied
+  `CommandFinishedAt`).
+
+**Composition wiring** (`Program.fs`):
+- `mutable currentSession : SessionModel.T` declared
+  alongside `currentShellId`. Initialised with a `cmd`
+  placeholder; re-created at the startup-shell alignment
+  block once `chosenShell` resolves; re-created again on
+  Ctrl+Shift+1/2/3 hot-switch.
+- New `handlePromptBoundary` PathwayPump helper
+  advances `currentSession` via `SessionModel.apply` +
+  dispatches to `activePathway.OnPromptBoundary`. Stream
+  / Tui pathways currently return `[||]` (no-op
+  overrides from Tier 1.A); Phase 2 pathways
+  (ReplPathway, ClaudeCodePathway, FormPathway) will
+  override with non-trivial logic.
+- The PromptBoundary arm in the PathwayPump notification
+  consumer (added in Tier 1.A as `()`) now calls
+  `handlePromptBoundary boundary`.
+- `switchToShell`'s `Ok newHost` branch calls
+  `SessionModel.finalizeIncomplete currentSession
+  DateTime.UtcNow` BEFORE recreating with the new
+  shell's key. Tier 1.C has no persistence so the
+  finalised tuple is structurally discarded with the
+  prior SessionModel; Tier 2 (persistence) will use this
+  seam to flush History before recreation.
+
+**User-visible behaviour change**: zero. Stream / Tui
+pathways still return `[||]` from `OnPromptBoundary`;
+no NVDA announcements depend on SessionModel state. The
+substrate is structurally complete + observable via the
+diagnostic battery (Tier 1.F territory) + future
+pathway overrides. Internal observability arrives with
+Tier 1.D (heuristic fallback produces boundaries for
+cmd / PowerShell / Claude).
+
+**Tests added**: ~30 new tests in
+`tests/Tests.Unit/SessionModelTests.fs` covering the
+state machine across categories:
+- Happy path (4 tests): PromptStart → CommandStart →
+  OutputStart → CommandFinished progression.
+- Sequence pinning (5 tests): full A→B→C→D yields one
+  tuple; two sequences yield two; CommandId hoists;
+  ExtraParams merge with later-wins; Sources map
+  records each boundary.
+- Defensive transitions (10 tests): orphan boundaries
+  ignored; PromptStart while Active interrupts +
+  restarts; OutputStart after PromptStart tolerates
+  skipped CommandStart; duplicate boundaries refresh
+  timestamps; CommandFinished from EditingCommand
+  finalises without OutputStartedAt; CommandId conflict
+  preserves earlier value.
+- Ring buffer (4 tests): bounded at MaxHistorySize;
+  FIFO eviction on overflow; order preserved;
+  MaxHistorySize=0 is no-op-without-crash.
+- Alt-screen guard (4 tests): apply returns unchanged
+  when IsAltScreenActive; enterAltScreen / exitAltScreen
+  toggle the flag; apply resumes after exitAltScreen.
+- finalizeIncomplete (4 tests): moves Active to History
+  with CommandFinishedAt; no-op when Active=None;
+  preserves accumulated metadata; sets ExitCode=None.
+
+**SESSION-MODEL.md updates**: Q3 marked as Tier 1.C
+partial (field + helpers shipped; PathwayPump wiring
+deferred to Tier 1.D). Q5 marked as Tier 1.C shipped
+(per-shell-session model + finalizeIncomplete helper).
+Q2 (heuristic fallback) marked as deferred from Tier
+1.C to Tier 1.D per the narrowed-scope split. Change-log
+table entry added for 2026-05-08.
+
+**Out of scope** (deferred to subsequent Tier 1
+sub-cycles):
+- Heuristic prompt-boundary fallback for shells without
+  OSC 133 support (Tier 1.D).
+- Text accumulation (`PromptText` / `CommandText` /
+  `OutputText` populated from screen content; Tier 1.E).
+- PathwayPump-side `enterAltScreen` / `exitAltScreen`
+  wiring (Tier 1.D — bundled with heuristic-fallback
+  composition).
+- Diagnostic battery extension (Tier 1.F).
+- Pathway `OnPromptBoundary` non-trivial overrides
+  (Phase 2 / Tier 3).
+- Persistence (Tier 2).
+
 ### Added (Cycle 12): SessionModel Tier 1.B — OSC 133 producer + cursor field
 
 **Second post-audit implementation cycle.** Lands the OSC
