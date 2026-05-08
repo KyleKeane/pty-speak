@@ -764,3 +764,72 @@ let ``finalizeIncomplete sets ExitCode=None`` () =
     let finalised = SessionModel.finalizeIncomplete s1 (after 100)
     let tuple = finalised.History.ToArray().[0]
     Assert.Equal(None, tuple.ExitCode)
+
+// =====================================================================
+// Tier 1.D — heuristic-source boundary compatibility
+// =====================================================================
+//
+// Tier 1.D's HeuristicPromptDetector emits boundaries with
+// `Source = BoundarySource.HeuristicPromptRegex stabilityMs`.
+// Pin that the SessionModel state machine treats them
+// identically to OSC 133 boundaries — no special-casing,
+// source recorded in the Sources map verbatim.
+
+let private heuristicBoundary
+        (kind: BoundaryKind)
+        (detectedAt: DateTime)
+        (stabilityMs: int)
+        : PromptBoundaryData
+        =
+    { Kind = kind
+      Source = BoundarySource.HeuristicPromptRegex stabilityMs
+      DetectedAt = detectedAt
+      CommandId = None
+      ExtraParams = Map.empty }
+
+[<Fact>]
+let ``apply with HeuristicPromptRegex source populates Active`` () =
+    let initial = SessionModel.create "cmd" 50
+    let updated =
+        SessionModel.apply
+            initial
+            (heuristicBoundary BoundaryKind.PromptStart t0 100)
+    match updated.Active with
+    | Some active ->
+        Assert.Equal(
+            SessionModel.ActiveTupleState.AwaitingCommandStart,
+            active.State)
+        Assert.Equal(t0, active.Tuple.PromptStartedAt)
+    | None -> Assert.Fail("Expected Active after heuristic PromptStart")
+
+[<Fact>]
+let ``heuristic boundaries finalise tuples the same as OSC 133 boundaries`` () =
+    // Two consecutive heuristic PromptStarts: prior tuple
+    // finalises as incomplete with ExitCode=None.
+    let initial = SessionModel.create "cmd" 50
+    let s1 =
+        SessionModel.apply
+            initial
+            (heuristicBoundary BoundaryKind.PromptStart t0 100)
+    let s2 =
+        SessionModel.apply
+            s1
+            (heuristicBoundary BoundaryKind.PromptStart (after 1000) 100)
+    Assert.Equal(1, s2.History.Count)
+    let priorTuple = s2.History.ToArray().[0]
+    Assert.Equal(Some (after 1000), priorTuple.CommandFinishedAt)
+    Assert.Equal(None, priorTuple.ExitCode)
+
+[<Fact>]
+let ``Sources map records HeuristicPromptRegex stability ms verbatim`` () =
+    let initial = SessionModel.create "powershell" 50
+    let s1 =
+        SessionModel.apply
+            initial
+            (heuristicBoundary BoundaryKind.PromptStart t0 100)
+    match s1.Active with
+    | Some active ->
+        Assert.Equal(
+            Some (BoundarySource.HeuristicPromptRegex 100),
+            Map.tryFind BoundaryKind.PromptStart active.Tuple.Sources)
+    | None -> Assert.Fail("Expected Active")

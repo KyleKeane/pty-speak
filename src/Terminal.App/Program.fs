@@ -956,6 +956,18 @@ module Program =
         let mutable currentSession : SessionModel.T =
             SessionModel.createDefault (shellIdToConfigKey ShellRegistry.Cmd)
 
+        // SessionModel Tier 1.D — heuristic prompt-boundary
+        // detector. Per-shell regex + stability window
+        // produces synthetic PromptBoundary events for shells
+        // that don't emit OSC 133 (cmd / PowerShell / Claude
+        // — all three by default). Reset on shell-switch +
+        // alt-screen entry (stale per-row matches would
+        // produce phantom boundaries on alt-screen exit).
+        // Mutated on the PathwayPump worker thread alongside
+        // `currentSession`.
+        let mutable promptDetector : HeuristicPromptDetector.T =
+            HeuristicPromptDetector.create ()
+
         // PathwayPump — Phase A replacement for TranslatorPump.
         // Reads raw ScreenNotifications and routes by case:
         //   - RowsChanged: snapshot the screen → build a
@@ -987,15 +999,6 @@ module Program =
         // 'F# 9 gotchas' + bit PR #132); pulling each arm to a
         // named helper keeps the match body single-expression.
         let pumpLog = Logger.get "Terminal.App.Program.pathwayPump"
-        let handleRowsChanged () : unit =
-            let seq, cursorPos, snapshot = screen.SnapshotRows(0, screen.Rows)
-            let canonical = CanonicalState.create snapshot cursorPos seq
-            let emitted = activePathway.Consume canonical
-            pumpLog.LogDebug(
-                "PathwayPump RowsChanged → {Pathway}.Consume → {Count} events.",
-                activePathway.Id,
-                emitted.Length)
-            dispatchPathwayEvents emitted
 
         // SessionModel Tier 1.C — PromptBoundary handler. Advances
         // the SessionModel state machine with the boundary, then
@@ -1004,12 +1007,47 @@ module Program =
         // overrides from Tier 1.A); Phase 2 pathways
         // (ReplPathway, ClaudeCodePathway, FormPathway) will
         // override with non-trivial logic.
+        //
+        // Defined BEFORE `handleRowsChanged` so the latter can
+        // dispatch heuristic-detected boundaries (Tier 1.D) via
+        // this helper. F# `let` bindings are sequential.
         let handlePromptBoundary (boundary: PromptBoundaryData) : unit =
             currentSession <- SessionModel.apply currentSession boundary
             let emitted = activePathway.OnPromptBoundary boundary
             pumpLog.LogDebug(
                 "PathwayPump PromptBoundary {Kind} → {Pathway}.OnPromptBoundary → {Count} events.",
                 boundary.Kind,
+                activePathway.Id,
+                emitted.Length)
+            dispatchPathwayEvents emitted
+
+        let handleRowsChanged () : unit =
+            let seq, cursorPos, snapshot = screen.SnapshotRows(0, screen.Rows)
+            // SessionModel Tier 1.D — heuristic prompt-
+            // boundary detection. Runs BEFORE pathway
+            // consumption so the SessionModel state machine
+            // advances ahead of any pathway query against
+            // currentSession. Detector is per-shell-keyed;
+            // unknown shells produce no boundary (Q2:
+            // ON for cmd / PowerShell / Claude; OFF for
+            // unknown).
+            let shellKey = shellIdToConfigKey currentShellId
+            let detectionTime = DateTime.UtcNow
+            let boundary, nextDetector =
+                HeuristicPromptDetector.tryDetect
+                    snapshot
+                    cursorPos
+                    shellKey
+                    detectionTime
+                    promptDetector
+            promptDetector <- nextDetector
+            match boundary with
+            | Some data -> handlePromptBoundary data
+            | None -> ()
+            let canonical = CanonicalState.create snapshot cursorPos seq
+            let emitted = activePathway.Consume canonical
+            pumpLog.LogDebug(
+                "PathwayPump RowsChanged → {Pathway}.Consume → {Count} events.",
                 activePathway.Id,
                 emitted.Length)
             dispatchPathwayEvents emitted
@@ -1060,8 +1098,28 @@ module Program =
             | PathwaySelector.Keep ->
                 ()
             | PathwaySelector.SwapToTui ->
+                // SessionModel Tier 1.D — Q3 wiring
+                // closure. Mark the session as alt-screen-
+                // active so subsequent boundaries are
+                // ignored by `SessionModel.apply`. Reset
+                // the heuristic detector so stale per-row
+                // matches don't produce phantom boundaries
+                // on alt-screen exit.
+                currentSession <-
+                    SessionModel.enterAltScreen currentSession
+                promptDetector <-
+                    HeuristicPromptDetector.reset promptDetector
                 swapPathwayForAltScreen (TuiPathway.create ())
             | PathwaySelector.SwapToShellDefault ->
+                // SessionModel Tier 1.D — Q3 wiring
+                // closure. Clear the alt-screen flag so
+                // subsequent boundaries advance the state
+                // machine again. Reset the detector for a
+                // fresh stability window post-exit.
+                currentSession <-
+                    SessionModel.exitAltScreen currentSession
+                promptDetector <-
+                    HeuristicPromptDetector.reset promptDetector
                 swapPathwayForAltScreen (selectPathwayForShell currentShellId)
             // Step 3 — dispatch the barrier OutputEvent so the
             // FileLogger captures the mode transition in the
@@ -1767,6 +1825,19 @@ module Program =
                                         currentSession <-
                                             SessionModel.createDefault
                                                 (shellIdToConfigKey shell.Id)
+                                        // SessionModel Tier 1.D —
+                                        // reset heuristic
+                                        // detector for the new
+                                        // shell. Stale per-row
+                                        // matches from the
+                                        // outgoing shell would
+                                        // otherwise produce
+                                        // phantom boundaries on
+                                        // the new shell's first
+                                        // frame.
+                                        promptDetector <-
+                                            HeuristicPromptDetector.reset
+                                                promptDetector
                                         // Phase A — swap the active
                                         // pathway for the new shell.
                                         // `Reset` clears any pending
