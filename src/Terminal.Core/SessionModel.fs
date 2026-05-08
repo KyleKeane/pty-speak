@@ -235,6 +235,15 @@ module SessionModel =
     /// set + the supplied boundary's CommandId / ExtraParams /
     /// Sources captured. Other timestamps are `None` until
     /// later boundaries advance the active tuple.
+    ///
+    /// **Tier 1.E** — PromptText capture: the boundary's
+    /// `MatchedRowText` (when populated by
+    /// `HeuristicPromptDetector` or
+    /// `Program.fs.handlePromptBoundary`'s OSC 133
+    /// augmentation) populates the new tuple's
+    /// `PromptText`. `None` falls back to `""` (matches
+    /// pre-Tier-1.E behaviour for boundaries lacking
+    /// snapshot context).
     let private newTuple
             (shellId: string)
             (boundary: PromptBoundaryData)
@@ -247,7 +256,8 @@ module SessionModel =
           CommandStartedAt = None
           OutputStartedAt = None
           CommandFinishedAt = None
-          PromptText = ""
+          PromptText =
+              boundary.MatchedRowText |> Option.defaultValue ""
           CommandText = ""
           OutputText = ""
           ExitCode = None

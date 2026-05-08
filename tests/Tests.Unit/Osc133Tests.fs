@@ -211,3 +211,14 @@ let ``tryParse stamps DetectedAt from the supplied parameter`` () =
     match Osc133.tryParse parms customTime with
     | Some data -> Assert.Equal(customTime, data.DetectedAt)
     | None -> Assert.Fail("Expected boundary")
+
+[<Fact>]
+let ``tryParse leaves MatchedRowText = None (parser has no screen access)`` () =
+    // Tier 1.E: the OSC 133 parser doesn't see screen state.
+    // `Program.fs.handlePromptBoundary` augments parsed
+    // boundaries with cursor-row text via a fresh snapshot
+    // capture before passing to SessionModel.apply.
+    let parms = parmsOf [ "133"; "A" ]
+    match Osc133.tryParse parms fixedTime with
+    | Some data -> Assert.Equal(None, data.MatchedRowText)
+    | None -> Assert.Fail("Expected boundary")

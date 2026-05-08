@@ -63,7 +63,15 @@ module CanonicalState =
     /// is responsible for guarding against negative or beyond-
     /// snapshot indices, but a defensive fallback avoids index
     /// exceptions.
-    let internal renderRow (snapshot: Cell[][]) (rowIdx: int) : string =
+    ///
+    /// **Visibility**: public (no `internal` qualifier).
+    /// Tier 1.E (PR #190 fixup) promoted from `internal` so
+    /// `Program.fs.handlePromptBoundary` (in Terminal.App)
+    /// can render the cursor's row when augmenting OSC 133
+    /// boundaries with `MatchedRowText`. The function's
+    /// shape (snapshot + rowIdx → sanitised string) is a
+    /// stable primitive; conservative API extension.
+    let renderRow (snapshot: Cell[][]) (rowIdx: int) : string =
         if rowIdx < 0 || rowIdx >= snapshot.Length then
             ""
         else

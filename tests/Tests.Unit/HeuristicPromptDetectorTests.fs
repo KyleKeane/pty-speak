@@ -464,3 +464,53 @@ let ``row that stops matching evicts its PerRowMatches entry`` () =
         HeuristicPromptDetector.tryDetect
             outputSnap noCursor "cmd" (after 50) s1
     Assert.True(Map.isEmpty s2.PerRowMatches)
+
+// ---------------------------------------------------------------------
+// Tier 1.E — MatchedRowText population (detector captures the
+// matching row's text inline so SessionModel can populate
+// PromptText without a separate snapshot capture)
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``emitted boundary carries MatchedRowText = Some matching row text (cmd)`` () =
+    let snap = snapshotOf 1 80 [ "C:\\Users\\admin>" ]
+    let detector = HeuristicPromptDetector.create ()
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" t0 detector
+    let r, _ =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" (after 100) s1
+    match r with
+    | Some data ->
+        Assert.Equal(Some "C:\\Users\\admin>", data.MatchedRowText)
+    | None -> Assert.Fail("Expected emit")
+
+[<Fact>]
+let ``emitted boundary's MatchedRowText matches CanonicalState.renderRow output`` () =
+    // The detector should render the row identically to
+    // CanonicalState.renderRow — that's the canonical
+    // sanitised + trimmed contract.
+    let snap = snapshotOf 3 80 [ ""; "PS C:\\Projects>"; "" ]
+    let detector = HeuristicPromptDetector.create ()
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect
+            snap noCursor "powershell" t0 detector
+    let r, _ =
+        HeuristicPromptDetector.tryDetect
+            snap noCursor "powershell" (after 100) s1
+    match r with
+    | Some data ->
+        Assert.Equal(Some "PS C:\\Projects>", data.MatchedRowText)
+    | None -> Assert.Fail("Expected emit")
+
+[<Fact>]
+let ``Claude emit carries MatchedRowText from Ink-box prompt row`` () =
+    let snap = snapshotOf 1 80 [ "│ > " ]
+    let detector = HeuristicPromptDetector.create ()
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect snap noCursor "claude" t0 detector
+    let r, _ =
+        HeuristicPromptDetector.tryDetect snap noCursor "claude" (after 200) s1
+    match r with
+    | Some data ->
+        Assert.Equal(Some "│ >", data.MatchedRowText)
+    | None -> Assert.Fail("Expected emit")

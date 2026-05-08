@@ -162,4 +162,10 @@ module Osc133 =
                       Source = BoundarySource.Osc133
                       DetectedAt = detectedAt
                       CommandId = commandId
-                      ExtraParams = extras }
+                      ExtraParams = extras
+                      // Tier 1.E: parser has no screen access;
+                      // `Program.fs.handlePromptBoundary`
+                      // augments OSC 133 boundaries with the
+                      // cursor row's text via fresh
+                      // `screen.SnapshotRows` capture.
+                      MatchedRowText = None }

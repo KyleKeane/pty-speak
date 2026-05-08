@@ -15,6 +15,92 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 15): SessionModel Tier 1.E — PromptText capture (text accumulation, part 1)
+
+**Fifth post-audit implementation cycle.** Begins
+populating the previously-empty
+`SessionTuple.PromptText` field with the actual prompt-row
+text from each shell session. Tuples in `History` now carry
+meaningful content for each captured boundary.
+
+**Per Cycle 15 plan-mode locked scope** (maintainer
+AskUserQuestion 2026-05-08): **PromptText only** this
+cycle; CommandText / OutputText named follow-up cycle
+**Tier 1.E2** (deferred until either OSC 133 shells become
+a current scenario or Phase 2's input framework provides
+cursor primitives).
+
+**Mechanism**: extends `PromptBoundaryData` with an
+optional `MatchedRowText: string option` field. Both
+producers populate it:
+
+- **HeuristicPromptDetector** (Tier 1.D's detector)
+  captures the matching row's text inline when the
+  regex-stability check fires. Row text is rendered via
+  the existing `CanonicalState.renderRow` (sanitised +
+  trailing-blank-trimmed).
+- **OSC 133 path** (`Program.fs.handlePromptBoundary`)
+  augments parsed boundaries — the OSC 133 parser has no
+  screen access, so the composition root captures a fresh
+  `screen.SnapshotRows` snapshot and renders the cursor's
+  row to populate `MatchedRowText` before passing to
+  `SessionModel.apply`.
+
+`SessionModel.apply`'s `newTuple` helper writes
+`MatchedRowText` into `Active.Tuple.PromptText` on
+PromptStart transitions (both `None, PromptStart` and
+`Some active, PromptStart` interrupt-and-restart arms).
+`None` falls back to `""` (matches pre-Tier-1.E
+behaviour).
+
+**No `apply` signature change**: extending the boundary
+payload preserves the existing pure-function shape;
+existing 30+ state-machine tests stay green via
+backward-compat `MatchedRowText = None` defaults in test
+builders.
+
+**User-visible behaviour change**: zero. Pathways still
+no-op `OnPromptBoundary`; no NVDA announcements depend on
+SessionModel state. The substrate carries richer content
+internally — observable via Tier 1.F's diagnostic battery
+(future cycle) and consumable by Phase 2 pathways
+(ReplPathway, ClaudeCodePathway, FormPathway).
+
+**Files modified**:
+- `src/Terminal.Core/Types.fs` — adds `MatchedRowText:
+  string option` to `PromptBoundaryData`.
+- `src/Terminal.Core/Osc133.fs` — emits
+  `MatchedRowText = None` (parser augmentation deferred
+  to composition root).
+- `src/Terminal.Core/HeuristicPromptDetector.fs` —
+  populates `MatchedRowText = Some text` in the emit
+  branch.
+- `src/Terminal.Core/SessionModel.fs` — `newTuple`
+  reads `MatchedRowText` to populate `PromptText`.
+- `src/Terminal.App/Program.fs` —
+  `handlePromptBoundary` augments OSC 133 boundaries
+  with cursor-row text via fresh snapshot capture.
+
+**Tests**: ~7 new tests covering
+`PromptBoundaryData.MatchedRowText` construction,
+`SessionModel.apply`'s PromptText population (with /
+without MatchedRowText, interrupt-and-restart, full
+A→B→C→D progression preserves text), heuristic detector
+populates inline (cmd / PowerShell / Claude row variants),
+and Osc133 parser leaves field None. All ~666 existing
+tests stay green via backward-compat builders.
+
+**Out of scope** (deferred to Tier 1.E2 or later):
+- CommandText capture (needs CommandStart events from OSC
+  133 OR cursor-aware diff from Phase 2).
+- OutputText capture (continuous frame-by-frame
+  accumulation; substantial new state-machine surface).
+- Multi-line prompt support (Powerline / Starship
+  spanning rows captures only the cursor's row today).
+- Cell-attribute preservation (defer until rendering
+  consumers need attribute-aware text).
+- Per-character timestamps within OutputText.
+
 ### Added (Cycle 14): SessionModel Tier 1.D — heuristic prompt-boundary fallback + alt-screen wiring
 
 **Fourth post-audit implementation cycle.** Ships the
