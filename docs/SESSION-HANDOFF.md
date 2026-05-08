@@ -33,7 +33,154 @@ discipline),
 | **Last merged stages** | **Stages 0 → 7 + 11** all merged to `main`, plus the retroactively-formalized Stages 4a / 4b / 5a. Stage 7 shipped 2026-05-03 across 11 sequenced PRs (A → K, #131-#143) + PR-L #144 (doc-purpose audit + Stage 7 wrap-up) + PR-M #145 (coalescer cross-row spinner gate fix). **Post-Stage-7 substrate cycle 2026-05-04 → 2026-05-07** (PRs #146-#184) shipped: event-and-output framework spec (#151); Stages 8a/8b/8c/8d.1/8d.2 (#152-#157, #155); display-pathway substrate Phase A + Phase A.1 + Phase B subset + Phase A.2 + #166 suffix-diff + #167 atlas + #168 Tier 1 parameters + #169 shell-switch flush fix (#159-#169); five research-stage docs: PIPELINE-NARRATIVE (#170), SESSION-MODEL (#171), INTERACTION-MODEL (#173), PANE-MODEL (#174), CUSTOMIZATION-MODEL (#181); six-track audit phase (#172, #175-#180); post-audit cleanup (#181-#184). **Tier 1 SessionModel implementation cycle 2026-05-07 → 2026-05-08** (PRs #185-#199) shipped substrate end-to-end: skeleton (#185), OSC 133 producer + cursor field (#186), state machine + composition (#187), heuristic fallback + alt-screen wiring (#189), PromptText capture (#190), diagnostic battery extension (#191), tick-driven detector via channel-driven actor model (#192), CHANNEL-ARCHITECTURE doc (#193), default-shell config + detector consolidation (#194), row-index-aware emission (#195) + announce-wording followup (#196), CommandText + OutputText extraction (#197), multi-match flap fix (#198), Ctrl+Shift+Y clipboard hotkey (#199). Maintainer NVDA-validation green throughout. |
 | **Last shipped release** | Maintainer cuts release builds from `main` whenever convenient. The last release predating Tier 1 was `v0.0.1-preview.43`; subsequent previews have shipped through the substrate + Tier 1 cycles. |
 | **In-flight branch** | (none) — Tier 1 substrate cycle closed 2026-05-08 with PR #199 (Cycle 22b clipboard hotkey). Manual NVDA validation green; default-shell TOML config resolved the long-running "opens into Claude" issue. |
-| **Next stage** | **Cycle 23 doc cleanup + maintainer Q&A** (this work) → then **Tier 2 SessionModel persistence OR Phase 2 input framework** (maintainer's choice). Tier 1 substrate is structurally + content-complete; SessionModel populates `History` end-to-end for cmd / PowerShell sessions. The 7 still-open CUSTOMIZATION-MODEL questions (Q1-Q7) await maintainer input via the Cycle 23 walk-through. SESSION-MODEL Q1-Q8, INTERACTION-MODEL Q1-Q6, PANE-MODEL Q1-Q5 all resolved 2026-05-07/08 + shipped through Tier 1. Open follow-ups: (a) Screen-buffer runtime resize (Phase 2 stage). (b) Stable-baseline tag pushes including `baseline/stage-7-claude-roundtrip` per [`docs/CHECKPOINTS.md`](CHECKPOINTS.md). (c) MAY-4.md Concern 3 (navigable streaming response queue) — naturally subsumed by SessionModel + ReplPathway (Phase 2). |
+| **Next stage** | **Cycle 23 doc cleanup + maintainer Q&A** (in flight; this work) → then **Tier 2 SessionModel persistence OR Phase 2 input framework** (maintainer's choice). Tier 1 substrate is structurally + content-complete; SessionModel populates `History` end-to-end for cmd / PowerShell sessions. The 7 still-open CUSTOMIZATION-MODEL questions (Q1-Q7) await maintainer input via the Cycle 23 walk-through (see "**Cycle 23 in-flight handoff**" section below for the verbatim questions + tentative recommendations a new agent can pick up directly). SESSION-MODEL Q1-Q8, INTERACTION-MODEL Q1-Q6, PANE-MODEL Q1-Q5 all resolved 2026-05-07/08 + shipped through Tier 1. Open follow-ups: (a) Screen-buffer runtime resize (Phase 2 stage). (b) Stable-baseline tag pushes including `baseline/stage-7-claude-roundtrip` per [`docs/CHECKPOINTS.md`](CHECKPOINTS.md). (c) MAY-4.md Concern 3 (navigable streaming response queue) — naturally subsumed by SessionModel + ReplPathway (Phase 2). |
+
+## Cycle 23 in-flight handoff (for new-agent pickup)
+
+> This section is the cross-session bridge for Cycle 23. The
+> previous Claude session shipped Phase 1 (this PR — doc
+> cleanup) and captured Phase 2-4 details here so a new agent
+> can resume without reconstruction.
+
+### Cycle 23 phase status
+
+- **Phase 1** — doc cleanup PR (this PR; awaiting CI green +
+  merge as of 2026-05-09).
+- **Phase 2** — in-session maintainer Q&A walk-through of the
+  7 CUSTOMIZATION-MODEL questions (Q1-Q7). **PENDING.**
+- **Phase 3** — Q&A resolution PR. Mirrors PR #182 (Cycle 8)
+  shape: edit `docs/CUSTOMIZATION-MODEL.md` Q1-Q7 sections to
+  append `— ✅ Resolved 2026-05-09` (or current date) to each
+  heading + a "**Resolution**: ..." block + brief rationale +
+  preserved-for-history "Original question / alternatives"
+  block. ~150-250 LOC; single-concern PR.
+- **Phase 4** — maintainer chooses next coding cycle: **Tier 2
+  SessionModel persistence** (default, per
+  `PROJECT-PLAN-2026-05-revision.md` sequencing block) OR
+  **Phase 2 input framework cycle** (alternative; unblocks
+  history navigation + echo correlation + ReplPathway).
+
+### Phase 2 walk-through prep — 7 CUSTOMIZATION-MODEL questions
+
+Reference: `docs/CUSTOMIZATION-MODEL.md` lines 762-880. Each
+question's full prompt + tentative recommendation is captured
+here so the maintainer Q&A can happen with any agent + any
+session length. Maintainer can answer inline or redirect; a
+new agent should walk through Q1-Q7 in order, capturing
+answers, then ship Phase 3 PR.
+
+**Q1 — Naming** (line 762)
+- Should the doc be named `CUSTOMIZATION-MODEL.md`?
+- Alternatives: `INTROSPECTION-MODEL.md`,
+  `USER-AUTHORSHIP-MODEL.md`, `PIPELINE-CUSTOMIZATION.md`,
+  `EDITABLE-PIPELINE.md`.
+- **Tentative**: keep `CUSTOMIZATION-MODEL.md` — parallels
+  PIPELINE-NARRATIVE / SESSION-MODEL / INTERACTION-MODEL /
+  PANE-MODEL / CHANNEL-ARCHITECTURE; names the user's
+  relationship to the pipeline.
+
+**Q2 — Alternatives registry shape** (line 777)
+- How do alternative implementations register? Compile-time
+  only (user enables/disables built-ins)? Runtime via TOML
+  extension? Both?
+- **Tentative**: BOTH. Built-in alternatives compiled in;
+  user-authored alternatives load from
+  `%LOCALAPPDATA%\PtySpeak\extensions\` as `.fsx` scripts (per
+  spec A.5 phase 2 plan).
+
+**Q3 — Trace persistence** (line 796)
+- Where do per-output traces live? In-memory per
+  SessionTuple? Persisted with SessionTuple to disk? Separate
+  trace ring buffer (opt-in, bounded)?
+- **Tentative**: in-memory per SessionTuple by default;
+  separate persistent ring buffer as opt-in power-user
+  feature. Aligns with SessionModel's memory-only / session-
+  log / always design.
+
+**Q4 — Rule-context-keying scope** (line 812)
+- Which context fields qualify rules as "similar"? Minimal
+  (shell only)? Recommended (shell + command-prefix +
+  semantic-category)? Full (all fields)? User-extensible?
+- **Tentative**: full enumeration at substrate level (all
+  fields available); rule authoring UX defaults to recommended
+  subset (shell + command-prefix + semantic-category).
+
+**Q5 — UI surface for introspection** (line 830)
+- Where does introspection UI live? Pipeline Inspector pane
+  (new, per PANE-MODEL catalog)? Modal panel? Companion app?
+  Extension to Cherry-picked I/O pane?
+- **Tentative**: Pipeline Inspector pane as new entry in
+  PANE-MODEL pane catalog. Modal-panel fallback for ephemeral
+  inspection.
+
+**Q6 — Rule precedence when multiple match** (line 845)
+- When multiple rules match the same context + target same
+  stage, which wins? Most-specific context? Most-recent
+  authored? Explicit user-priority field? Hybrid?
+- **Tentative**: explicit user-priority field (simplest; user
+  has agency); compute sensible default priority based on
+  context-specificity at creation time.
+
+**Q7 — Rule-authoring UX** (line 865)
+- How does the user author rules? Dropdown at each step
+  (inline)? Recipe DSL (text-based for power users)?
+  Conditional-logic editor (visual)? All three?
+- **Tentative**: start with dropdowns + automatic
+  context-tuple suggestion (matches the maintainer's
+  2026-05-07 example framing); add DSL + visual editor later
+  as power-user tooling.
+
+### CHANNEL-ARCHITECTURE.md tentative-resolutions (Q1-Q5; optional Phase 2 add-on)
+
+Reference: `docs/CHANNEL-ARCHITECTURE.md` (PR #193, Cycle 18).
+The doc shipped with 5 forward-looking design questions; all
+flagged "tentative" already. Worth confirming or redirecting
+since they shape Phase 2 / Tier 2 / Tier 3 substrate
+decisions. Maintainer can opt to lock these in during the
+Cycle 23 Phase 2 walk-through, or leave as tentative.
+
+- Q1: PromptBoundary — keep as F# Event vs. dedicated Channel?
+  Tentative: leave as Event.
+- Q2: FileLogger capacity TOML-configurable? Tentative: defer
+  until demand surfaces.
+- Q3: Input-keystroke channel — batch or per-keystroke?
+  Tentative: per-keystroke (Phase 2 will firm up).
+- Q4: Pipeline Inspector subscription mechanism? Tentative:
+  design alongside the pane in a future cycle.
+- Q5: Unbounded channels ever? Tentative: NO; BoundedChannel
+  only.
+
+### Spec E.5.1-E.5.7 (informational only — NOT in Cycle 23 Q&A)
+
+`spec/event-and-output-framework.md` §E.5 carries 7 open
+questions explicitly marked "do not block the spec from
+landing now". They pin at Stages 9b/9c/9d as those substrate
+cycles approach. Surfaced here only so a new agent knows they
+exist; not addressed this cycle.
+
+### Phase 4 next-cycle pre-digest
+
+When maintainer chooses Phase 4 direction, the new agent picks
+up from one of:
+
+**Default — Tier 2 SessionModel persistence**:
+- Persistence model per Q4 (already resolved 2026-05-07 →
+  "Memory" default; TOML opt-in adds SessionLog / Always
+  modes).
+- Serialise `SessionModel.T` to disk (JSON or compact binary).
+- Restore across launches per shell session.
+- Designed in `docs/SESSION-MODEL.md` §"Persistence modes".
+- Estimated: 4-6 PRs over 2-3 weeks.
+
+**Alternative — Phase 2 input framework cycle**:
+- Echo correlation; cursor-aware editing; InputPathway
+  protocol; ReplPathway.
+- Unblocks Up/Down history navigation (replay past commands)
+  + history-paste workflows.
+- Substantial multi-cycle work.
+
+Maintainer chooses; new agent plans the chosen direction in a
+fresh plan-mode cycle.
 
 The end-to-end pipeline now reaches the auto-update boundary:
 launching the app spawns `cmd.exe` under ConPTY, parses its
