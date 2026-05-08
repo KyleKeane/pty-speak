@@ -607,3 +607,209 @@ module SessionModel =
                     active.PromptRowIndex
                     None
                     snapshot
+
+    // -----------------------------------------------------------------
+    // Cycle 22b — Ctrl+Shift+Y clipboard formatter.
+    // -----------------------------------------------------------------
+
+    /// Render an ISO-8601 UTC timestamp suitable for log /
+    /// clipboard inspection. Mirrors the format
+    /// `Diagnostics.formatTimestamp` uses but lives here so
+    /// the formatter is self-contained inside Terminal.Core.
+    let private formatTimestamp (dt: DateTime) : string =
+        dt.ToUniversalTime().ToString(
+            "yyyy-MM-ddTHH:mm:ss.fffZ",
+            System.Globalization.CultureInfo.InvariantCulture)
+
+    let private formatTimestampOpt (dt: DateTime option) : string =
+        match dt with
+        | Some t -> formatTimestamp t
+        | None -> "(none)"
+
+    let private formatExitCode (code: int option) : string =
+        match code with
+        | Some c -> string c
+        | None -> "(none)"
+
+    let private formatBoundarySource (src: BoundarySource) : string =
+        match src with
+        | BoundarySource.Osc133 -> "Osc133"
+        | BoundarySource.HeuristicPromptRegex stabilityMs ->
+            sprintf "HeuristicPromptRegex(%dms)" stabilityMs
+        | BoundarySource.HeuristicClaudeInkBox ->
+            "HeuristicClaudeInkBox"
+
+    let private formatBoundaryKind (kind: BoundaryKind) : string =
+        match kind with
+        | BoundaryKind.PromptStart -> "PromptStart"
+        | BoundaryKind.CommandStart -> "CommandStart"
+        | BoundaryKind.OutputStart -> "OutputStart"
+        | BoundaryKind.CommandFinished _ -> "CommandFinished"
+
+    let private formatSources
+            (sources: Map<BoundaryKind, BoundarySource>)
+            : string
+            =
+        if Map.isEmpty sources then
+            "(none)"
+        else
+            sources
+            |> Map.toList
+            |> List.map (fun (k, v) ->
+                sprintf "%s=%s" (formatBoundaryKind k) (formatBoundarySource v))
+            |> String.concat ", "
+
+    let private formatExtraParams (extra: Map<string, string>) : string =
+        if Map.isEmpty extra then
+            "(none)"
+        else
+            extra
+            |> Map.toList
+            |> List.map (fun (k, v) -> sprintf "%s=%s" k v)
+            |> String.concat ", "
+
+    let private formatActiveState (state: ActiveTupleState) : string =
+        match state with
+        | AwaitingPromptStart -> "AwaitingPromptStart"
+        | AwaitingCommandStart -> "AwaitingCommandStart"
+        | EditingCommand -> "EditingCommand"
+        | OutputStreaming -> "OutputStreaming"
+
+    /// Render an empty-string field as a parenthesised marker
+    /// rather than a blank line, so the clipboard output is
+    /// unambiguous when fields are unpopulated (typical for
+    /// in-progress active tuples or finalize-as-incomplete
+    /// finalisations).
+    let private formatEmptyAware (text: string) : string =
+        if System.String.IsNullOrEmpty text then "(empty)" else text
+
+    let private appendTuple
+            (sb: System.Text.StringBuilder)
+            (index: int)
+            (tuple: SessionTuple)
+            : unit
+            =
+        sb.AppendFormat("--- Entry {0} ---\n", index) |> ignore
+        sb.AppendFormat("Id:                {0}\n", tuple.Id) |> ignore
+        sb.AppendFormat(
+            "PromptStarted:     {0}\n",
+            formatTimestamp tuple.PromptStartedAt) |> ignore
+        sb.AppendFormat(
+            "CommandStarted:    {0}\n",
+            formatTimestampOpt tuple.CommandStartedAt) |> ignore
+        sb.AppendFormat(
+            "OutputStarted:     {0}\n",
+            formatTimestampOpt tuple.OutputStartedAt) |> ignore
+        sb.AppendFormat(
+            "CommandFinished:   {0}\n",
+            formatTimestampOpt tuple.CommandFinishedAt) |> ignore
+        sb.AppendFormat(
+            "ExitCode:          {0}\n",
+            formatExitCode tuple.ExitCode) |> ignore
+        sb.AppendFormat(
+            "Source(s):         {0}\n",
+            formatSources tuple.Sources) |> ignore
+        sb.AppendFormat(
+            "ExtraParams:       {0}\n",
+            formatExtraParams tuple.ExtraParams) |> ignore
+        sb.AppendFormat(
+            "Prompt:            {0}\n",
+            formatEmptyAware tuple.PromptText) |> ignore
+        sb.AppendFormat(
+            "Command:           {0}\n",
+            formatEmptyAware tuple.CommandText) |> ignore
+        sb.AppendFormat(
+            "Output:            {0}\n",
+            formatEmptyAware tuple.OutputText) |> ignore
+        sb.Append('\n') |> ignore
+
+    let private appendActive
+            (sb: System.Text.StringBuilder)
+            (active: ActiveSessionTuple)
+            : unit
+            =
+        let tuple = active.Tuple
+        sb.Append("--- Active (in flight) ---\n") |> ignore
+        sb.AppendFormat(
+            "State:             {0}\n",
+            formatActiveState active.State) |> ignore
+        sb.AppendFormat("Id:                {0}\n", tuple.Id) |> ignore
+        sb.AppendFormat(
+            "PromptRowIndex:    {0}\n",
+            (match active.PromptRowIndex with
+             | Some r -> string r
+             | None -> "(none)")) |> ignore
+        sb.AppendFormat(
+            "PromptStarted:     {0}\n",
+            formatTimestamp tuple.PromptStartedAt) |> ignore
+        sb.AppendFormat(
+            "CommandStarted:    {0}\n",
+            formatTimestampOpt tuple.CommandStartedAt) |> ignore
+        sb.AppendFormat(
+            "OutputStarted:     {0}\n",
+            formatTimestampOpt tuple.OutputStartedAt) |> ignore
+        sb.AppendFormat(
+            "Source(s):         {0}\n",
+            formatSources tuple.Sources) |> ignore
+        sb.AppendFormat(
+            "ExtraParams:       {0}\n",
+            formatExtraParams tuple.ExtraParams) |> ignore
+        sb.AppendFormat(
+            "Prompt:            {0}\n",
+            formatEmptyAware tuple.PromptText) |> ignore
+        sb.AppendFormat(
+            "Command:           {0}\n",
+            formatEmptyAware tuple.CommandText) |> ignore
+        sb.AppendFormat(
+            "Output:            {0}\n",
+            formatEmptyAware tuple.OutputText) |> ignore
+        sb.Append('\n') |> ignore
+
+    /// Render a `SessionModel.T` to clipboard-friendly
+    /// structured plain text. Used by Ctrl+Shift+Y to dump
+    /// the full session history (plus any in-flight active
+    /// tuple) for paste-into-chat workflows.
+    ///
+    /// **No truncation**. Unlike `Diagnostics.formatTuple`
+    /// (which caps PromptText at 40 chars + CmdText/OutText
+    /// at 80 chars to keep the diagnostic log line
+    /// scannable), this formatter preserves full content.
+    /// 100 tuples × ~500 chars ≈ 50KB clipboard payload —
+    /// well within Windows clipboard limits.
+    ///
+    /// The `now` parameter is the snapshot timestamp shown
+    /// in the header. Caller passes `DateTime.UtcNow` at
+    /// hotkey-press time; tests pass a fixed value for
+    /// determinism.
+    let formatHistoryForClipboard (now: DateTime) (state: T) : string =
+        let sb = System.Text.StringBuilder()
+        sb.Append("=== pty-speak session history ===\n") |> ignore
+        sb.AppendFormat(
+            "Snapshot:          {0}\n", formatTimestamp now) |> ignore
+        sb.AppendFormat(
+            "Session:           {0}\n", state.SessionId) |> ignore
+        sb.AppendFormat(
+            "Shell:             {0}\n", state.ShellId) |> ignore
+        sb.AppendFormat(
+            "SessionStarted:    {0}\n",
+            formatTimestamp state.SessionStartedAt) |> ignore
+        sb.AppendFormat(
+            "History:           {0} of {1}\n",
+            state.History.Count, state.MaxHistorySize) |> ignore
+        sb.AppendFormat(
+            "AltScreenActive:   {0}\n", state.IsAltScreenActive) |> ignore
+        sb.Append('\n') |> ignore
+        if state.History.Count = 0 && Option.isNone state.Active then
+            sb.Append(
+                "(no entries; session has not yet captured any prompt boundaries)\n") |> ignore
+        else
+            // History first (oldest → newest), then active.
+            // Queue.ToArray() preserves enqueue order; index
+            // 0 = oldest, last = most recent.
+            let entries = state.History.ToArray()
+            for i in 0 .. entries.Length - 1 do
+                appendTuple sb (i + 1) entries.[i]
+            match state.Active with
+            | Some active -> appendActive sb active
+            | None -> ()
+        sb.ToString()

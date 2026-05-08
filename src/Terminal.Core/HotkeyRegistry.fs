@@ -92,6 +92,8 @@ module HotkeyRegistry =
         | SwitchToClaude
         // Stage 8d.1 — toggle WASAPI Earcons mute on/off.
         | MuteEarcons
+        // Cycle 22b — copy SessionModel history to clipboard.
+        | CopyHistoryToClipboard
 
     /// Stable string name for a command, used as the
     /// `RoutedCommand` name passed to WPF and as a TOML key
@@ -112,6 +114,7 @@ module HotkeyRegistry =
         | SwitchToPowerShell -> "SwitchToPowerShell"
         | SwitchToClaude -> "SwitchToClaude"
         | MuteEarcons -> "MuteEarcons"
+        | CopyHistoryToClipboard -> "CopyHistoryToClipboard"
 
     /// Default key binding for a command. Mirrors the
     /// `AppReservedHotkeys` table in
@@ -181,7 +184,11 @@ module HotkeyRegistry =
           { Command = MuteEarcons
             Key = Letter 'M'
             Modifiers = ctrlShift
-            Description = "Mute / unmute WASAPI earcons (Stage 8d.1)" } ]
+            Description = "Mute / unmute WASAPI earcons (Stage 8d.1)" }
+          { Command = CopyHistoryToClipboard
+            Key = Letter 'Y'
+            Modifiers = ctrlShift
+            Description = "Copy SessionModel history to clipboard (Cycle 22b)" } ]
 
     /// Look up the default Hotkey for a command. Throws
     /// `KeyNotFoundException` if the registry is incomplete —
@@ -225,4 +232,5 @@ module HotkeyRegistry =
           SwitchToCmd
           SwitchToPowerShell
           SwitchToClaude
-          MuteEarcons ]
+          MuteEarcons
+          CopyHistoryToClipboard ]

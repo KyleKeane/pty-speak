@@ -69,7 +69,9 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               HotkeyRegistry.SwitchToPowerShell
               HotkeyRegistry.SwitchToClaude
               // Stage 8d.1 — earcon mute toggle.
-              HotkeyRegistry.MuteEarcons ]
+              HotkeyRegistry.MuteEarcons
+              // Cycle 22b — copy SessionModel history to clipboard.
+              HotkeyRegistry.CopyHistoryToClipboard ]
     let actual = Set.ofList HotkeyRegistry.allCommands
     Assert.Equal<Set<HotkeyRegistry.AppCommand>>(expected, actual)
 

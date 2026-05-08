@@ -556,6 +556,19 @@ for future stages — listed inline below):
   `setupCopyLatestLogKeybinding`.
 - (planned) **`Ctrl+Shift+M`** — earcon mute toggle (Stage 9).
 - (planned) **`Alt+Shift+R`** — review-mode toggle (Stage 10).
+- **`Ctrl+Shift+Y`** — copy SessionModel history to clipboard
+  (Cycle 22b). Dumps all completed tuples + any in-flight
+  active tuple as structured plain text, suitable for paste
+  into chat / bug reports. Mnemonic: Y for histor**Y**.
+  Companion to `Ctrl+Shift+D` (which announces a substrate
+  summary); `Ctrl+Shift+Y` dumps full content for analysis.
+  Format includes per-tuple block (PromptText / CommandText /
+  OutputText / timestamps / exit code / source provenance);
+  no truncation (clipboard limits dwarf realistic sessions).
+  NVDA announces the byte count + entry count on success
+  ("History copied to clipboard. K of 100 entries, N bytes.").
+  Wired via `bindHotkey` against
+  `HotkeyRegistry.CopyHistoryToClipboard`.
 
 NVDA's own keybindings (NVDA+T, NVDA+arrow keys for review
 cursor, NVDA+Space for browse mode, etc.) are reserved

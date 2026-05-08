@@ -487,6 +487,16 @@ public class TerminalView : FrameworkElement
             // bound)" list); 8d.1 is the first claim.
             (Key.M, ModifierKeys.Control | ModifierKeys.Shift, "Mute earcons"),
 
+            // Cycle 22b — copy SessionModel history to clipboard.
+            // Mnemonic: Y for histor*Y*. Dumps the full session
+            // history (all completed tuples + any in-flight active
+            // tuple) as structured plain text, paste-friendly into
+            // chat / bug reports. Companion to Ctrl+Shift+D
+            // (diagnostic battery) which announces a substrate
+            // summary; Ctrl+Shift+Y dumps the full content for
+            // analysis.
+            (Key.Y, ModifierKeys.Control | ModifierKeys.Shift, "Copy SessionModel history to clipboard"),
+
             // Future entries (NOT yet bound; commented for
             // forward-planning):
             //   (Key.R, ModifierKeys.Alt | ModifierKeys.Shift,
