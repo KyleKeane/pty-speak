@@ -2,6 +2,7 @@ namespace Terminal.Core
 
 open System
 open System.Collections.Generic
+open Microsoft.Extensions.Logging
 
 /// Tier 1.A — SessionModel substrate skeleton.
 ///
