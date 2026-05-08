@@ -1324,12 +1324,15 @@ with a migration path. Recommend: add as required
 field; update all consumers (limited surface —
 StreamPathway, TuiPathway, test code).
 
-### Q2: Heuristic fallback default — on or off? — ✅ Resolved 2026-05-07 (Tier 1.C)
+### Q2: Heuristic fallback default — on or off? — ✅ Resolved 2026-05-07 (Tier 1.D)
 
 **Resolution**: **ON by default for known shells (cmd,
 PowerShell, claude); OFF for unknown shells**.
-Implementation in Tier 1.C when the heuristic-fallback
-module ships.
+Implementation deferred from Tier 1.C to Tier 1.D
+(narrowed-scope split during Cycle 13 planning):
+Tier 1.C ships the SessionModel state machine + composition
+wiring; Tier 1.D ships the heuristic-fallback module that
+attaches to ScreenNotifications without OSC 133 markers.
 
 **Rationale** (per maintainer agreement, audit walk-
 through): without OSC 133, heuristic is the only signal
@@ -1346,11 +1349,18 @@ produces false-positive tuples. Recommend: ON by
 default for known shells (cmd, PowerShell, claude);
 OFF for unknown shells.
 
-### Q3: SessionModel reset on alt-screen entry? — ✅ Resolved 2026-05-07 (Tier 1.C)
+### Q3: SessionModel reset on alt-screen entry? — ✅ Resolved 2026-05-07 (Tier 1.C partial; full wiring Tier 1.D)
 
 **Resolution**: **PAUSE on alt-screen entry; resume on
-exit** without losing prior tuples. Implementation in
-Tier 1.C when the SessionModel state machine ships.
+exit** without losing prior tuples. Tier 1.C ships the
+`IsAltScreenActive` field on `SessionModel.T` plus
+`enterAltScreen` / `exitAltScreen` helpers + an
+`apply` guard that returns state unchanged when the
+flag is set. Composition-root wiring (toggle the flag
+from the PathwayPump's `ScreenNotification.ModeChanged`
+arm) ships in Tier 1.D alongside the heuristic-fallback
+module — both wirings touch the same dispatch seam, so
+bundling keeps the change single-concern.
 
 **Rationale** (per maintainer agreement, audit walk-
 through): vim / less / TUI sessions aren't
@@ -1387,7 +1397,7 @@ serialise; matches the original byte stream's
 structure. Pathways that want per-line iteration can
 split.
 
-### Q5: How does shell-switch interact with active tuple? — ✅ Resolved 2026-05-07
+### Q5: How does shell-switch interact with active tuple? — ✅ Resolved 2026-05-07 (Tier 1.C shipped)
 
 **Resolution**: **per-shell-session SessionModel by
 default**. Each Ctrl+Shift+1/2/3 hot-switch starts a
@@ -1398,6 +1408,16 @@ original question — persist as incomplete with
 `CommandFinishedAt = shell-switch-time`). **Opt-in
 unified history as TOML setting** for power users who
 want cross-shell tuple aggregation.
+
+**Tier 1.C implementation**: `SessionModel.finalizeIncomplete:
+T -> DateTime -> T` helper moves any active tuple to
+History with `ExitCode = None`. Composition root in
+`switchToShell` calls `finalizeIncomplete` BEFORE
+recreating `currentSession` with the new shell's key.
+Tier 1.C has no persistence so the finalised tuple is
+structurally discarded with the prior SessionModel; Tier
+2 (persistence) will use the same finalize seam to flush
+History to disk before recreation.
 
 **Cross-reference**: INTERACTION-MODEL.md Q6 captures
 the same decision at the architectural-framing layer
@@ -1555,6 +1575,8 @@ This doc references / is referenced by:
 | Date | Change |
 |---|---|
 | 2026-05-06 | Initial design. OSC 133 protocol scope, heuristic fallback for cmd / PowerShell / Claude Code, data model (SessionModel + SessionTuple + ActiveSessionTuple + BoundaryKind), pipeline integration (Stage 3.5 insertion + new ScreenNotification variant + new DisplayPathway protocol method), pathway-by-pathway integration (StreamPathway, TuiPathway, ReplPathway, FormPathway, ClaudeCodePathway, AiInterpretedPathway, SessionConsumer), persistence story (memory-only / session-log / always modes; JSONL or msgpack format), query API, implementation precedence (7 tiers), 8 open questions. ~1500 lines. |
+| 2026-05-07 | Cluster 1-4 open questions resolved per audit walk-through (Q1/Q3/Q4/Q5/Q6/Q7/Q8 resolved; Q2 deferred to Tier 1.D). |
+| 2026-05-08 | Tier 1.C state machine + composition wiring shipped. `SessionModel.apply` no-op replaced with full state machine (13+ transitions covering happy path + defensive paths). `IsAltScreenActive` field + `enterAltScreen`/`exitAltScreen` helpers added (Q3 partial — full wiring deferred to Tier 1.D). `finalizeIncomplete` helper added (Q5 — finalises in-flight active tuple as incomplete on shell-switch). Composition root in `Program.fs` declares + recreates `currentSession`; replaces no-op PromptBoundary arm with `handlePromptBoundary` that advances state machine + dispatches active-pathway `OnPromptBoundary`. Q2 (heuristic fallback) deferred to Tier 1.D per narrowed-scope split. |
 
 
 
