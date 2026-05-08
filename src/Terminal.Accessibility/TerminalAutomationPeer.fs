@@ -736,7 +736,10 @@ type internal TerminalTextProvider(screenSource: Func<Screen | null>) =
                 0, 0, 0, 0)
             :> ITextRangeProvider
         | screen ->
-            let seqNum, rows = screen.SnapshotRows(0, screen.Rows)
+            // SessionModel Tier 1.B added cursor position to the
+            // SnapshotRows tuple; UIA peer doesn't need cursor
+            // position for ITextRangeProvider, so discard with `_`.
+            let seqNum, _, rows = screen.SnapshotRows(0, screen.Rows)
             // Document range: start = (0, 0), end = (rows, 0)
             // i.e. one-past-last-row, matching UIA's
             // half-open range convention.

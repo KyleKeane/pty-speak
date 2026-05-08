@@ -45,7 +45,7 @@ let private now : DateTimeOffset =
 [<Fact>]
 let ``Consume on first canonical state emits no events`` () =
     let pathway = TuiPathway.create ()
-    let canonical = CanonicalState.create (snapshotOf 5 10 [ "vim"; "buffer"; "rows" ]) 0L
+    let canonical = CanonicalState.create (snapshotOf 5 10 [ "vim"; "buffer"; "rows" ]) (0, 0) 0L
     let result = pathway.Consume canonical
     Assert.Equal(0, result.Length)
 
@@ -54,8 +54,8 @@ let ``Consume on changed canonical state still emits no events`` () =
     let pathway = TuiPathway.create ()
     let snap1 = snapshotOf 3 10 [ "buffer line 1" ]
     let snap2 = snapshotOf 3 10 [ "buffer line 2" ]
-    let _ = pathway.Consume (CanonicalState.create snap1 0L)
-    let result = pathway.Consume (CanonicalState.create snap2 1L)
+    let _ = pathway.Consume (CanonicalState.create snap1 (0, 0) 0L)
+    let result = pathway.Consume (CanonicalState.create snap2 (0, 0) 1L)
     Assert.Equal(0, result.Length)
 
 [<Fact>]
@@ -77,7 +77,7 @@ let ``OnModeBarrier emits one ModeBarrier OutputEvent`` () =
 let ``Reset is a no-op (no exception, no state change)`` () =
     let pathway = TuiPathway.create ()
     pathway.Reset ()
-    let result = pathway.Consume (CanonicalState.create (snapshotOf 1 5 [ "x" ]) 0L)
+    let result = pathway.Consume (CanonicalState.create (snapshotOf 1 5 [ "x" ]) (0, 0) 0L)
     Assert.Equal(0, result.Length)
 
 [<Fact>]
@@ -92,10 +92,10 @@ let ``SetBaseline is a no-op (no exception, no state change)`` () =
     // no-op so the hot-switch path can call it uniformly
     // across pathway types.
     let pathway = TuiPathway.create ()
-    let canonical = CanonicalState.create (snapshotOf 3 10 [ "vim"; "buffer" ]) 0L
+    let canonical = CanonicalState.create (snapshotOf 3 10 [ "vim"; "buffer" ]) (0, 0) 0L
     pathway.SetBaseline canonical
     // Subsequent Consume still emits nothing.
-    let result = pathway.Consume (CanonicalState.create (snapshotOf 3 10 [ "vim"; "different" ]) 1L)
+    let result = pathway.Consume (CanonicalState.create (snapshotOf 3 10 [ "vim"; "different" ]) (0, 0) 1L)
     Assert.Equal(0, result.Length)
 
 [<Fact>]

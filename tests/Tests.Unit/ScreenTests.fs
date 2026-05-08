@@ -223,7 +223,7 @@ let ``Apply increments SequenceNumber once per event`` () =
 let ``SnapshotRows returns an immutable copy of the requested rows`` () =
     let screen = Screen(rows = 3, cols = 4)
     feed screen (ascii "ab\ncd")
-    let _seq, rows = screen.SnapshotRows(0, 2)
+    let _seq, _, rows = screen.SnapshotRows(0, 2)
     Assert.Equal(2, rows.Length)
     Assert.Equal(4, rows.[0].Length)
     Assert.Equal('a', rows.[0].[0].Ch.ToString().[0])
@@ -242,9 +242,9 @@ let ``SnapshotRows returns an immutable copy of the requested rows`` () =
 let ``SnapshotRows pairs the snapshot with the sequence number at capture time`` () =
     let screen = Screen(rows = 2, cols = 3)
     feed screen (ascii "ab")
-    let seq1, _ = screen.SnapshotRows(0, screen.Rows)
+    let seq1, _, _ = screen.SnapshotRows(0, screen.Rows)
     feed screen (ascii "c")
-    let seq2, _ = screen.SnapshotRows(0, screen.Rows)
+    let seq2, _, _ = screen.SnapshotRows(0, screen.Rows)
     Assert.True(seq2 > seq1, sprintf "expected %d > %d" seq2 seq1)
 
 [<Fact>]
@@ -264,7 +264,7 @@ let ``SnapshotRows with count=0 returns an empty array without affecting the seq
     let screen = Screen(rows = 3, cols = 3)
     feed screen (ascii "ab")
     let before = screen.SequenceNumber
-    let _seq, rows = screen.SnapshotRows(1, 0)
+    let _seq, _, rows = screen.SnapshotRows(1, 0)
     Assert.Empty(rows)
     Assert.Equal(before, screen.SequenceNumber)
 
@@ -283,11 +283,11 @@ let ``concurrent snapshots and applies never tear`` () =
             for e in events do screen.Apply(e))
     // At least one snapshot before the producer's exit so the test
     // can't degenerate to zero iterations on a fast machine.
-    let firstSeq, firstRows = screen.SnapshotRows(0, screen.Rows)
+    let firstSeq, _, firstRows = screen.SnapshotRows(0, screen.Rows)
     Assert.Equal(4, firstRows.Length)
     let mutable lastSeq = firstSeq
     while not producer.IsCompleted do
-        let seq, rows = screen.SnapshotRows(0, screen.Rows)
+        let seq, _, rows = screen.SnapshotRows(0, screen.Rows)
         Assert.True(seq >= lastSeq, sprintf "sequence regressed: %d < %d" seq lastSeq)
         lastSeq <- seq
         Assert.Equal(4, rows.Length)
@@ -299,7 +299,7 @@ let ``concurrent snapshots and applies never tear`` () =
         // uncontested.
         System.Threading.Thread.Yield() |> ignore
     producer.Wait()
-    let finalSeq, _ = screen.SnapshotRows(0, screen.Rows)
+    let finalSeq, _, _ = screen.SnapshotRows(0, screen.Rows)
     Assert.True(finalSeq >= lastSeq)
 
 // ---------------------------------------------------------------------
@@ -473,11 +473,11 @@ let ``OSC 52 sequence increments SequenceNumber but does not mutate cells`` () =
     // buffer must be unchanged.
     let screen = Screen(rows = 1, cols = 5)
     feed screen (ascii "Hello")
-    let before, snap0 = screen.SnapshotRows(0, 1)
+    let before, _, snap0 = screen.SnapshotRows(0, 1)
     // Feed an OSC 52 set-clipboard sequence (BEL-terminated):
     //   ESC ] 52 ; c ; <base64> BEL
     feed screen (ascii "\x1b]52;c;ZXZpbA==\x07")
-    let after, snap1 = screen.SnapshotRows(0, 1)
+    let after, _, snap1 = screen.SnapshotRows(0, 1)
     Assert.True(after > before, "SequenceNumber should bump on OSC")
     // Cells unchanged.
     for c in 0 .. snap0.[0].Length - 1 do
@@ -589,14 +589,14 @@ let ``SnapshotRows during alt-screen returns alt content; post-exit returns prim
     feed screen (ascii "primary!")
     feed screen (ascii "\x1b[?1049h")
     feed screen (ascii "altscrn!")
-    let _, snapDuring = screen.SnapshotRows(0, 1)
+    let _, _, snapDuring = screen.SnapshotRows(0, 1)
     let cellChars =
         snapDuring.[0]
         |> Array.map (fun c -> c.Ch.ToString())
         |> String.concat ""
     Assert.Equal("altscrn!", cellChars)
     feed screen (ascii "\x1b[?1049l")
-    let _, snapAfter = screen.SnapshotRows(0, 1)
+    let _, _, snapAfter = screen.SnapshotRows(0, 1)
     let cellCharsAfter =
         snapAfter.[0]
         |> Array.map (fun c -> c.Ch.ToString())
@@ -683,7 +683,7 @@ let ``ModeChanged subscriber can call SnapshotRows without deadlock`` () =
     let screen = Screen(rows = 1, cols = 5)
     let mutable observedSeq = -1L
     screen.ModeChanged.Add(fun _ ->
-        let seq, _ = screen.SnapshotRows(0, 1)
+        let seq, _, _ = screen.SnapshotRows(0, 1)
         observedSeq <- seq)
     feed screen (ascii "\x1b[?1049h")
     Assert.True(observedSeq > 0L)
@@ -870,3 +870,80 @@ let ``FocusReporting toggle does not affect DECCKM or BracketedPaste`` () =
     Assert.False(screen.Modes.DECCKM)
     Assert.False(screen.Modes.BracketedPaste)
     Assert.True(screen.Modes.FocusReporting)
+
+// ---------------------------------------------------------------------
+// SessionModel Tier 1.B — OSC 133 detection in Apply's OscDispatch arm
+// ---------------------------------------------------------------------
+
+/// Subscribe to a screen's PromptBoundary event and return a
+/// list-collecting helper. The returned `getCollected` fn
+/// snapshots the events captured so far.
+let private subscribePromptBoundary (screen: Screen) =
+    let collected = ResizeArray<PromptBoundaryData>()
+    screen.PromptBoundary.Add(fun b -> collected.Add(b))
+    fun () -> collected.ToArray()
+
+[<Fact>]
+let ``OSC 133;A fires PromptBoundary with PromptStart`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    let getEvents = subscribePromptBoundary screen
+    feed screen (ascii "\x1b]133;A\x07")
+    let events = getEvents ()
+    Assert.Equal(1, events.Length)
+    Assert.Equal(BoundaryKind.PromptStart, events.[0].Kind)
+    Assert.Equal(BoundarySource.Osc133, events.[0].Source)
+
+[<Fact>]
+let ``OSC 133;D;0 fires PromptBoundary with CommandFinished Some 0`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    let getEvents = subscribePromptBoundary screen
+    feed screen (ascii "\x1b]133;D;0\x07")
+    let events = getEvents ()
+    Assert.Equal(1, events.Length)
+    Assert.Equal(BoundaryKind.CommandFinished (Some 0), events.[0].Kind)
+
+[<Fact>]
+let ``OSC 133 with aid= captures CommandId`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    let getEvents = subscribePromptBoundary screen
+    feed screen (ascii "\x1b]133;A;aid=cmd-7\x07")
+    let events = getEvents ()
+    Assert.Equal(1, events.Length)
+    Assert.Equal(Some "cmd-7", events.[0].CommandId)
+
+[<Fact>]
+let ``Malformed OSC 133 does NOT fire PromptBoundary`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    let getEvents = subscribePromptBoundary screen
+    // Unknown kind letter "Z"; tryParse returns None; silent drop.
+    feed screen (ascii "\x1b]133;Z\x07")
+    Assert.Equal(0, (getEvents ()).Length)
+
+[<Fact>]
+let ``OSC 52 still silently dropped (no PromptBoundary)`` () =
+    // Defence: OSC 52 (clipboard) must NOT be misclassified as
+    // OSC 133 by the new dispatch logic.
+    let screen = Screen(rows = 3, cols = 5)
+    let getEvents = subscribePromptBoundary screen
+    feed screen (ascii "\x1b]52;c;ZXZpbA==\x07")
+    Assert.Equal(0, (getEvents ()).Length)
+    // Sequence number still advanced (OSC was processed; just not as 133).
+    Assert.True(screen.SequenceNumber > 0L)
+
+[<Fact>]
+let ``OSC 133 sequence increments SequenceNumber`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    let before = screen.SequenceNumber
+    feed screen (ascii "\x1b]133;B\x07")
+    Assert.True(screen.SequenceNumber > before)
+
+[<Fact>]
+let ``Multiple OSC 133 sequences fire one PromptBoundary each, in order`` () =
+    let screen = Screen(rows = 3, cols = 5)
+    let getEvents = subscribePromptBoundary screen
+    feed screen (ascii "\x1b]133;A\x07\x1b]133;B\x07\x1b]133;C\x07")
+    let events = getEvents ()
+    Assert.Equal(3, events.Length)
+    Assert.Equal(BoundaryKind.PromptStart, events.[0].Kind)
+    Assert.Equal(BoundaryKind.CommandStart, events.[1].Kind)
+    Assert.Equal(BoundaryKind.OutputStart, events.[2].Kind)

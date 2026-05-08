@@ -165,13 +165,33 @@ module CanonicalState =
           SequenceNumber: int64
           RowHashes: uint64[]
           ContentHashes: uint64[]
+          /// SessionModel Tier 1.B — cursor position
+          /// `(row, col)` captured atomically with the
+          /// snapshot under the gate lock in
+          /// `Screen.SnapshotRows`. Required for future
+          /// Tier 1.C heuristic prompt-boundary detection
+          /// (the heuristic anchors on the row containing
+          /// the cursor at prompt-stable time). Tier 1.B
+          /// captures the field; consumers don't read it
+          /// yet.
+          CursorPosition: int * int
           computeDiff: uint64[] -> CanonicalDiff }
 
     /// Build a canonical state from a Screen snapshot. The
     /// row hashes are computed eagerly (cheap — FNV-1a per
     /// row) and cached in the record so `computeDiff` reuses
     /// them rather than re-walking the snapshot each call.
-    let create (snapshot: Cell[][]) (sequenceNumber: int64) : Canonical =
+    ///
+    /// `cursorPosition` is captured atomically with
+    /// `snapshot` inside `Screen.SnapshotRows` (under the
+    /// gate lock) — callers should never re-read
+    /// `screen.Cursor` to construct this value off-thread.
+    let create
+            (snapshot: Cell[][])
+            (cursorPosition: int * int)
+            (sequenceNumber: int64)
+            : Canonical
+            =
         let rowHashes =
             Array.init snapshot.Length (fun i -> Coalescer.hashRow i snapshot.[i])
         let contentHashes =
@@ -180,6 +200,7 @@ module CanonicalState =
           SequenceNumber = sequenceNumber
           RowHashes = rowHashes
           ContentHashes = contentHashes
+          CursorPosition = cursorPosition
           computeDiff =
             fun previousRowHashes ->
                 computeDiffFromHashes snapshot rowHashes previousRowHashes }

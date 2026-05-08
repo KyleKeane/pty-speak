@@ -58,7 +58,7 @@ let private at (msFromEpoch: int) : DateTimeOffset =
     epoch + TimeSpan.FromMilliseconds(float msFromEpoch)
 
 let private canonicalAt (snapshot: Cell[][]) (seq: int64) : CanonicalState.Canonical =
-    CanonicalState.create snapshot seq
+    CanonicalState.create snapshot (0, 0) seq
 
 // PR #168 — many existing tests were written against PR #166's
 // verbose-flush mode-barrier default. Tier 1 parameters change
@@ -489,7 +489,7 @@ let ``onModeBarrier under SummaryOnly emits new content when post-barrier screen
 let ``Consume emits the first canonical frame in full`` () =
     let pathway = StreamPathway.create StreamPathway.defaultParameters
     let snap = snapshotOf 2 10 [ "row1"; "row2" ]
-    let canonical = CanonicalState.create snap 0L
+    let canonical = CanonicalState.create snap (0, 0) 0L
     let result = pathway.Consume canonical
     Assert.Equal(1, result.Length)
     Assert.Contains("row1", result.[0].Payload)
@@ -499,12 +499,12 @@ let ``Consume emits the first canonical frame in full`` () =
 let ``Reset clears state so next Consume re-emits in full`` () =
     let pathway, state = StreamPathway.createWithExposedState StreamPathway.defaultParameters
     let snap = snapshotOf 1 5 [ "hello" ]
-    let _ = pathway.Consume (CanonicalState.create snap 0L)
+    let _ = pathway.Consume (CanonicalState.create snap (0, 0) 0L)
     Assert.True(state.LastRowHashes.IsSome)
     pathway.Reset ()
     Assert.True(state.LastRowHashes.IsNone)
     Assert.Equal<uint64[]>([||], state.LastEmittedRowHashes)
-    let result = pathway.Consume (CanonicalState.create snap 1L)
+    let result = pathway.Consume (CanonicalState.create snap (0, 0) 1L)
     Assert.Equal(1, result.Length)
     Assert.Contains("hello", result.[0].Payload)
 
@@ -522,7 +522,7 @@ let ``SetBaseline seeds LastEmittedRowHashes from the supplied canonical state``
     // closure, not through any observable return value.
     let pathway, state = StreamPathway.createWithExposedState StreamPathway.defaultParameters
     let snap = snapshotOf 3 10 [ "claude prompt"; "row two"; "row three" ]
-    let canonical = CanonicalState.create snap 0L
+    let canonical = CanonicalState.create snap (0, 0) 0L
     pathway.SetBaseline canonical
     Assert.Equal<uint64[]>(canonical.RowHashes, state.LastEmittedRowHashes)
     Assert.True(state.LastRowHashes.IsSome)
@@ -536,7 +536,7 @@ let ``SetBaseline emits no events`` () =
     // path.
     let pathway = StreamPathway.create StreamPathway.defaultParameters
     let snap = snapshotOf 2 10 [ "stale claude content" ]
-    let canonical = CanonicalState.create snap 0L
+    let canonical = CanonicalState.create snap (0, 0) 0L
     pathway.SetBaseline canonical  // returns unit; no events to inspect
     // A subsequent Consume of the SAME snapshot should now
     // return zero events because the baseline matches.
@@ -557,7 +557,7 @@ let ``SetBaseline + Consume of changed frame emits diff-only`` () =
               "blah blah blah"
               ""
               "" ]
-    pathway.SetBaseline (CanonicalState.create preSwitch 100L)
+    pathway.SetBaseline (CanonicalState.create preSwitch (0, 0) 100L)
     // New cmd shell paints its prompt at row 4 (assume cmd
     // overwrites only that row); rows 0-3 still hold claude
     // content because the screen buffer isn't cleared.
@@ -568,7 +568,7 @@ let ``SetBaseline + Consume of changed frame emits diff-only`` () =
               "blah blah blah"
               ""
               "C:\\>" ]
-    let result = pathway.Consume (CanonicalState.create postSwitch 101L)
+    let result = pathway.Consume (CanonicalState.create postSwitch (0, 0) 101L)
     Assert.Equal(1, result.Length)
     // The user should hear "C:\>" — NOT the claude content.
     Assert.Contains("C:\\>", result.[0].Payload)
@@ -583,8 +583,8 @@ let ``SetBaseline overrides a prior baseline`` () =
     let pathway, state = StreamPathway.createWithExposedState StreamPathway.defaultParameters
     let snap1 = snapshotOf 1 5 [ "first" ]
     let snap2 = snapshotOf 1 5 [ "second" ]
-    let canonical1 = CanonicalState.create snap1 0L
-    let canonical2 = CanonicalState.create snap2 1L
+    let canonical1 = CanonicalState.create snap1 (0, 0) 0L
+    let canonical2 = CanonicalState.create snap2 (0, 0) 1L
     pathway.SetBaseline canonical1
     pathway.SetBaseline canonical2
     Assert.Equal<uint64[]>(canonical2.RowHashes, state.LastEmittedRowHashes)
