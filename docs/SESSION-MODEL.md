@@ -1297,15 +1297,17 @@ defer the rest).
 These are genuine design questions; the maintainer's
 input is welcome before implementation cycles start.
 
-### Q1: Cursor in CanonicalState — additive or breaking? — ✅ Resolved 2026-05-07 (Tier 1.B)
+### Q1: Cursor in CanonicalState — additive or breaking? — ✅ Resolved 2026-05-07 (shipped Tier 1.B)
 
-**Resolution**: **ADDITIVE; deferred to Tier 1.B**.
-Tier 1.A doesn't touch CanonicalState (no producer that
-needs cursor position yet). Tier 1.B adds
-`CursorPosition: (int * int)` as a required field on
-the `Canonical` record + updates the limited consumer
-surface (StreamPathway, TuiPathway, test code) in the
-same PR. Mechanical update.
+**Resolution**: **ADDITIVE; shipped in Tier 1.B**.
+`Canonical` record gained a required field
+`CursorPosition: (int * int)` per the SESSION-MODEL.md
+sketch. `Screen.SnapshotRows` was extended to return
+`(seq, cursor, snapshot)` — atomic capture under the
+gate lock. 4 production call sites updated; 32 test call
+sites updated mechanically. No record-destructuring
+patterns existed in production code so the migration
+was purely mechanical.
 
 **Rationale**: keeping Tier 1.A scoped to "data types
 only" means the cursor field is unnecessary in the first

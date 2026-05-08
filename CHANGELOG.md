@@ -15,6 +15,99 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 12): SessionModel Tier 1.B — OSC 133 producer + cursor field
+
+**Second post-audit implementation cycle.** Lands the OSC
+133 detection producer per `docs/SESSION-MODEL.md` §3 +
+the `CanonicalState.CursorPosition` field per the Q1
+resolution.
+
+**Behaviour change**: when the active shell emits an OSC
+133 escape sequence (`ESC ] 133 ; <kind> [; <params>] BEL`),
+pty-speak now produces a
+`ScreenNotification.PromptBoundary` event flowing through
+the PathwayPump's no-op consumer arm (added in Tier 1.A).
+Today no shell that ships with pty-speak (cmd /
+PowerShell / Claude) emits OSC 133 by default, so
+**user-visible behaviour change is zero**. Tier 1.C will
+wire the SessionModel state machine + heuristic fallback
++ active-pathway dispatch.
+
+Files modified / created:
+
+- `src/Terminal.Core/Osc133.fs` (NEW) — pure parser
+  module. `tryParse: byte[][] -> DateTime ->
+  PromptBoundaryData option` handles the four kind
+  discriminators (A/B/C/D) + optional exit code for D
+  + `aid=` hoisting + key=value `ExtraParams`. Malformed
+  inputs return `None` (silent drop per the OSC
+  silent-drop convention).
+- `src/Terminal.Core/Terminal.Core.fsproj` — register
+  `Osc133.fs` between `SessionModel.fs` and `Screen.fs`.
+- `src/Terminal.Core/CanonicalState.fs` — add
+  `CursorPosition: (int * int)` required field to
+  `Canonical` record; `CanonicalState.create` signature
+  now takes `(snapshot, cursorPosition, sequenceNumber)`
+  with cursor captured atomically by the upstream
+  `SnapshotRows` call.
+- `src/Terminal.Core/Screen.fs`:
+  - `SnapshotRows` return type extended from
+    `int64 * Cell[][]` to
+    `int64 * (int * int) * Cell[][]` — cursor `(row,
+    col)` captured under the same gate lock as the
+    snapshot.
+  - New `Event<PromptBoundaryData>` + pending list +
+    post-lock-release firing pattern (mirrors the Bell
+    + ModeChanged pattern from Stage 5 + Stage 8d.1).
+  - `Apply`'s `OscDispatch` arm now detects
+    `parms.[0] = "133"B` and calls `Osc133.tryParse`;
+    successful parses queue into
+    `pendingPromptBoundaries` and fire post-lock as
+    `PromptBoundary` events. Other OSC types continue
+    to silent-drop per the existing security policy.
+- `src/Terminal.App/Program.fs`:
+  - 3 `SnapshotRows` call sites updated to 3-tuple
+    unpacking (`let seq, cursorPos, snapshot = ...`)
+    + pass `cursorPos` through `CanonicalState.create`.
+  - New `screen.PromptBoundary.Add(...)` subscriber
+    bridges parsed boundaries into `notificationChannel`
+    (mirrors the existing Bell + ModeChanged bridges).
+- `src/Terminal.Accessibility/TerminalAutomationPeer.fs`:
+  - 1 `SnapshotRows` call site updated; cursor
+    discarded with `_` (UIA peer's `ITextRangeProvider`
+    doesn't need cursor position).
+- `tests/Tests.Unit/Osc133Tests.fs` (NEW) — 17 tests
+  pinning the parser. Each kind discriminator + edge
+  cases (malformed exit code, missing `=` in key=value,
+  empty parms, wrong type, multi-byte kind, etc.) +
+  `Source = Osc133` stamping + `DetectedAt`
+  passthrough.
+- `tests/Tests.Unit/ScreenTests.fs` — 7 OSC 133
+  integration tests pinning the producer pipeline:
+  PromptStart fires; CommandFinished with exit code
+  fires; `aid=` captures CommandId; malformed silent-
+  drops; OSC 52 still silent-dropped (no
+  misclassification); SequenceNumber advances; multiple
+  back-to-back sequences fire one event each in order.
+- `tests/Tests.Unit/CanonicalStateTests.fs` (16 sites),
+  `tests/Tests.Unit/StreamPathwayTests.fs` (10 sites),
+  `tests/Tests.Unit/TuiPathwayTests.fs` (6 sites) — 32
+  `CanonicalState.create` calls updated mechanically
+  (insertion of `(0, 0)` cursor argument; tests don't
+  care about cursor in Tier 1.B).
+- `tests/Tests.Unit/Tests.Unit.fsproj` — register
+  `Osc133Tests.fs` between `SessionModelTests.fs` and
+  `StreamPathwayTests.fs`.
+
+**Q1 resolution shipped**: `Canonical.CursorPosition`
+field added per the Tier 1.A plan's deferral.
+SESSION-MODEL.md Q1 marked shipped.
+
+**Sequencing**: Cycle 12 of post-audit work. Next:
+Tier 1.C — SessionModel state machine + heuristic
+fallback + composition root. Tier 1.D follows with
+diagnostic battery extension + corpus tests.
+
 ### Added (Cycle 11): SessionModel Tier 1.A — substrate skeleton
 
 **FIRST POST-AUDIT IMPLEMENTATION CYCLE.** Lands the

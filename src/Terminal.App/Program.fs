@@ -789,6 +789,18 @@ module Program =
         // OutputEvent.BellRang for the Earcon profile.
         screen.Bell.Add(fun () ->
             notificationChannel.Writer.TryWrite(ScreenNotification.Bell) |> ignore)
+        // SessionModel Tier 1.B — bridge screen.PromptBoundary
+        // events (parsed OSC 133 sequences) into the
+        // notification channel. The PathwayPump's no-op
+        // PromptBoundary arm (added in Tier 1.A) currently
+        // discards them; Tier 1.C wires the SessionModel state
+        // machine + active-pathway OnPromptBoundary dispatch.
+        // The Screen fires these AFTER releasing its internal
+        // lock (mirrors the Bell + ModeChanged pattern), so
+        // TryWrite is non-blocking and deadlock-free.
+        screen.PromptBoundary.Add(fun boundary ->
+            notificationChannel.Writer.TryWrite(
+                ScreenNotification.PromptBoundary boundary) |> ignore)
 
         // Stage 8b — output framework substrate composition.
         //
@@ -963,8 +975,8 @@ module Program =
         // named helper keeps the match body single-expression.
         let pumpLog = Logger.get "Terminal.App.Program.pathwayPump"
         let handleRowsChanged () : unit =
-            let seq, snapshot = screen.SnapshotRows(0, screen.Rows)
-            let canonical = CanonicalState.create snapshot seq
+            let seq, cursorPos, snapshot = screen.SnapshotRows(0, screen.Rows)
+            let canonical = CanonicalState.create snapshot cursorPos seq
             let emitted = activePathway.Consume canonical
             pumpLog.LogDebug(
                 "PathwayPump RowsChanged → {Pathway}.Consume → {Count} events.",
@@ -983,10 +995,10 @@ module Program =
             try activePathway.Reset () with _ -> ()
             activePathway <- next
             try
-                let seq, snapshot =
+                let seq, cursorPos, snapshot =
                     screen.SnapshotRows(0, screen.Rows)
                 let canonical =
-                    CanonicalState.create snapshot seq
+                    CanonicalState.create snapshot cursorPos seq
                 activePathway.SetBaseline canonical
             with _ -> ()
             pumpLog.LogInformation(
@@ -1726,10 +1738,10 @@ module Program =
                                         // there's no race with the
                                         // new shell's first paint.
                                         try
-                                            let seq, snapshot =
+                                            let seq, cursorPos, snapshot =
                                                 screen.SnapshotRows(0, screen.Rows)
                                             let canonical =
-                                                CanonicalState.create snapshot seq
+                                                CanonicalState.create snapshot cursorPos seq
                                             activePathway.SetBaseline canonical
                                         with _ -> ()
                                         wirePostSpawn newHost

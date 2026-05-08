@@ -126,6 +126,18 @@ type Screen(rows: int, cols: int) =
     let bellEvent = Event<unit>()
     let mutable pendingBell : bool = false
 
+    // SessionModel Tier 1.B — OSC 133 prompt-boundary event,
+    // same buffered-then-fire pattern as ModeChanged + Bell.
+    // `Apply`'s `OscDispatch` arm calls `Osc133.tryParse` and
+    // appends successful parses to `pendingPromptBoundaries`;
+    // after the gate releases each pending boundary fires
+    // `promptBoundaryEvent`. Subscribers (Program.fs's bridge
+    // into the notification channel) push a
+    // `ScreenNotification.PromptBoundary` for the framework
+    // dispatcher to route to SessionModel + active pathway.
+    let promptBoundaryEvent = Event<PromptBoundaryData>()
+    let pendingPromptBoundaries = ResizeArray<PromptBoundaryData>()
+
     // Mutation gate. Apply takes this lock; SnapshotRows takes it to
     // capture (sequence, rows) atomically. Stage 3b feeds Apply on the
     // WPF dispatcher; Stage 4's UIA peer reads snapshots from the UIA
@@ -513,10 +525,20 @@ type Screen(rows: int, cols: int) =
     member _.SequenceNumber : int64 = lock gate (fun () -> sequenceNumber)
 
     /// Atomically capture an immutable copy of `count` rows starting
-    /// at `startRow`, paired with the sequence number at capture
-    /// time. Each returned row is a fresh `Cell[]` of length `Cols`;
-    /// callers may retain it indefinitely.
-    member _.SnapshotRows(startRow: int, count: int) : int64 * Cell[][] =
+    /// at `startRow`, paired with the sequence number + cursor
+    /// position at capture time. Each returned row is a fresh
+    /// `Cell[]` of length `Cols`; callers may retain it
+    /// indefinitely.
+    ///
+    /// **SessionModel Tier 1.B** added the cursor-position
+    /// component. The cursor `(row, col)` is captured under the
+    /// same `gate` lock as the snapshot so the substrate's
+    /// downstream `CanonicalState.create` (which runs on a
+    /// different thread, the PathwayPump worker) gets a value
+    /// consistent with the snapshot. Without atomic capture the
+    /// pump would race against `Apply`'s cursor mutation and
+    /// observe a torn `(row, col)` pair.
+    member _.SnapshotRows(startRow: int, count: int) : int64 * (int * int) * Cell[][] =
         if startRow < 0 || startRow >= rows then
             invalidArg "startRow" (sprintf "startRow must be in [0, %d); got %d" rows startRow)
         if count < 0 then
@@ -527,7 +549,8 @@ type Screen(rows: int, cols: int) =
             let snapshot = Array.init count (fun i ->
                 let r = startRow + i
                 Array.init cols (fun c -> activeBuffer.[r, c]))
-            sequenceNumber, snapshot)
+            let cursorPos = (cursor.Row, cursor.Col)
+            sequenceNumber, cursorPos, snapshot)
 
     /// Stage 5 — fires when `enterAltScreen` / `exitAltScreen`
     /// (or any future Stage 6 mode flip) changes a
@@ -549,6 +572,20 @@ type Screen(rows: int, cols: int) =
     [<CLIEvent>]
     member _.Bell = bellEvent.Publish
 
+    /// SessionModel Tier 1.B — fires when `Apply`'s OscDispatch
+    /// arm parses a well-formed OSC 133 escape sequence (per
+    /// `Terminal.Core.Osc133.tryParse`). Same buffered-then-fire
+    /// pattern as `ModeChanged` + `Bell`: pending boundaries
+    /// accumulate in a list under the gate; events fire after
+    /// the gate releases. Subscribers (Program.fs's bridge into
+    /// the notification channel) push a
+    /// `ScreenNotification.PromptBoundary` for the framework
+    /// dispatcher to route to SessionModel + the active pathway.
+    /// Multiple boundaries fire one event per pending entry,
+    /// preserving order.
+    [<CLIEvent>]
+    member _.PromptBoundary = promptBoundaryEvent.Publish
+
     /// Apply a single VT event to the buffer. Stage 3a covers the
     /// minimum needed to render cmd.exe-style output; unsupported
     /// sequences are silently no-ops so the parser can continue
@@ -562,6 +599,11 @@ type Screen(rows: int, cols: int) =
         // Stage 8d.1: same pattern for the Bell signal.
         let toEmit = ResizeArray<TerminalModeFlag * bool>()
         let mutable bellFired = false
+        // SessionModel Tier 1.B: same pattern for OSC 133
+        // PromptBoundary signals. Per-Apply local accumulator
+        // collected from the gate-protected pendingPromptBoundaries
+        // buffer; fired post-lock-release one event per entry.
+        let toEmitBoundaries = ResizeArray<PromptBoundaryData>()
         lock gate (fun () ->
             sequenceNumber <- sequenceNumber + 1L
             match event with
@@ -582,7 +624,8 @@ type Screen(rows: int, cols: int) =
                 escDispatch intermediates finalByte
             | OscDispatch(parms, _) ->
                 // SECURITY-CRITICAL: silently dropping all OSC
-                // dispatches today. The OSC 52 case
+                // dispatches today, EXCEPT OSC 133 (SessionModel
+                // Tier 1.B). The OSC 52 case
                 // (parms.[0] = "52"B) is a known hostile-input
                 // vector — a child writing
                 //     `\x1b]52;c;<base64>\x07`
@@ -603,13 +646,42 @@ type Screen(rows: int, cols: int) =
                 //     the strategic review §B sequenced as a
                 //     post-Stage-10 PR.
                 //
-                // Reviewers: re-enabling any OSC dispatch here
-                // MUST come with a SECURITY.md update describing
-                // the new mitigation strategy plus a
+                // **OSC 133 (FinalTerm-style shell integration)**:
+                // metadata only — no clipboard / filesystem /
+                // execution surface. The parser caps payload at
+                // MAX_OSC_RAW = 1024 bytes; SessionModel's bounded
+                // ring buffer caps history. `Osc133.tryParse`
+                // returns None for malformed inputs (silent drop
+                // matches the existing OSC policy). Parsed
+                // boundaries land in `pendingPromptBoundaries`
+                // and fire post-lock-release as
+                // `PromptBoundary` events. See SECURITY.md +
+                // docs/SESSION-MODEL.md §3 + audit-cycle Track C
+                // for the threat model.
+                //
+                // Reviewers: re-enabling any OTHER OSC dispatch
+                // here MUST come with a SECURITY.md update
+                // describing the new mitigation strategy plus a
                 // security-test row. Do NOT collapse the explicit
                 // arm back into a generic catch-all — the comment
                 // is grep-bait for future audits.
-                ignore parms
+                if parms.Length >= 1
+                   && parms.[0].Length = 3
+                   && parms.[0].[0] = 0x31uy (* '1' *)
+                   && parms.[0].[1] = 0x33uy (* '3' *)
+                   && parms.[0].[2] = 0x33uy (* '3' *)
+                then
+                    match Osc133.tryParse parms (System.DateTime.UtcNow) with
+                    | Some boundary ->
+                        pendingPromptBoundaries.Add(boundary)
+                    | None ->
+                        // Malformed OSC 133 — silently drop per
+                        // the OSC silent-drop convention.
+                        ()
+                else
+                    // Non-133 OSC types continue to be silent-
+                    // dropped per the security comment above.
+                    ignore parms
             | DcsHook _
             | DcsPut _
             | DcsUnhook -> ()  // Not yet handled — Stage 4+
@@ -622,7 +694,14 @@ type Screen(rows: int, cols: int) =
             // Stage 8d.1: drain the bell flag the same way.
             if pendingBell then
                 bellFired <- true
-                pendingBell <- false)
+                pendingBell <- false
+            // SessionModel Tier 1.B: drain any OSC 133 prompt-
+            // boundary parses that the OscDispatch arm queued
+            // into the per-Apply local emit list, then clear
+            // the buffer for the next Apply.
+            if pendingPromptBoundaries.Count > 0 then
+                toEmitBoundaries.AddRange(pendingPromptBoundaries)
+                pendingPromptBoundaries.Clear())
         // Post-lock: fire each event. Subscribers run on the
         // calling thread; if a subscriber throws, the exception
         // propagates back to the parser-loop's `with | ex -> ...`
@@ -632,3 +711,7 @@ type Screen(rows: int, cols: int) =
             modeChangedEvent.Trigger(pair)
         if bellFired then
             bellEvent.Trigger(())
+        // SessionModel Tier 1.B: fire one PromptBoundary event
+        // per pending parsed OSC 133 sequence. Order preserved.
+        for boundary in toEmitBoundaries do
+            promptBoundaryEvent.Trigger(boundary)
