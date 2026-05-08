@@ -85,9 +85,15 @@ module Diagnostics =
     /// SessionModel snapshot — long PromptTexts (Powerline-style
     /// shells with embedded git status etc.) would dominate the
     /// log line otherwise.
+    ///
+    /// **F# 9 nullness**: parameter is `string` (non-nullable);
+    /// no defensive `isNull` check needed (FS3261 would fire
+    /// under TreatWarningsAsErrors). Callers pass values
+    /// sourced from `SessionTuple.PromptText` (record field —
+    /// always non-null) or `string option` unwrapped via
+    /// pattern match — both paths guarantee non-null input.
     let internal truncate (maxLen: int) (text: string) : string =
-        if isNull text then ""
-        elif text.Length <= maxLen then text
+        if text.Length <= maxLen then text
         else text.Substring(0, maxLen) + "..."
 
     /// Per-tuple view captured for the SessionModel diagnostic
