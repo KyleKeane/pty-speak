@@ -13,13 +13,13 @@
     <Compile Include="AnnounceSanitiser.fs" />
     <Compile Include="UpdateMessages.fs" />
     <Compile Include="FileLogger.fs" />
-    <Compile Include="SessionModel.fs" />
     <Compile Include="Coalescer.fs" />
     <Compile Include="OutputEventTypes.fs" />
     <Compile Include="OutputEventBuilder.fs" />
     <Compile Include="NvdaChannel.fs" />
     <Compile Include="FileLoggerChannel.fs" />
     <Compile Include="CanonicalState.fs" />
+    <Compile Include="SessionModel.fs" />
     <Compile Include="HeuristicPromptDetector.fs" />
     <Compile Include="DisplayPathway.fs" />
     <Compile Include="StreamPathway.fs" />
