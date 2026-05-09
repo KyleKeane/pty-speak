@@ -255,6 +255,70 @@ type OutputEvent =
       Version: int
       Extensions: Map<string, obj> }
 
+/// Stage 8e-A — well-known `OutputEvent.Extensions` keys for
+/// SelectionShown / SelectionItem / SelectionDismissed events
+/// emitted by `SelectionDetector`. Defined as `[<Literal>]`
+/// strings so producer + profile + tests reference one schema
+/// (no duplicated string literals drifting apart). 8e-B's UIA
+/// peer queries the same keys when promoting these events to
+/// listbox semantics — schema-stable across the sub-cycle.
+///
+/// **Value typing.** `Extensions` is `Map<string, obj>` so
+/// each value is opaque at the schema layer; consumers cast
+/// per-key. Comments below pin the runtime types each key
+/// carries.
+[<RequireQualifiedAccess>]
+module SelectionExtensions =
+    /// Total item count in the selection (`int`). Set on
+    /// `SelectionShown` and (for cross-event correlation) on
+    /// each `SelectionItem`.
+    [<Literal>]
+    let ItemCount = "selection.itemCount"
+
+    /// 0-based index of the currently-selected item (`int`).
+    /// Set on `SelectionShown` and `SelectionItem`. Absent on
+    /// `SelectionDismissed`.
+    [<Literal>]
+    let SelectedIndex = "selection.selectedIndex"
+
+    /// Single item's text (`string`). Set on `SelectionItem`
+    /// only — for the row that was newly highlighted or
+    /// emitted as part of the initial Shown burst.
+    [<Literal>]
+    let ItemText = "selection.itemText"
+
+    /// Full ordered item list (`string[]`). Set on
+    /// `SelectionShown` only — gives 8e-B's UIA peer enough
+    /// state to construct the ListItem children without
+    /// re-running detection.
+    [<Literal>]
+    let AllItems = "selection.allItems"
+
+    /// Top row index of the detected region (`int`,
+    /// 0-indexed within the screen snapshot). Set on
+    /// `SelectionShown`. 8e-B's UIA peer uses this to mark
+    /// backing rows `IsContentElementCore = false` per spec
+    /// §8.5 dual-read fix.
+    [<Literal>]
+    let TopRow = "selection.topRow"
+
+    /// Bottom row index of the detected region (`int`,
+    /// 0-indexed). Set on `SelectionShown`. Companion to
+    /// `TopRow`.
+    [<Literal>]
+    let BottomRow = "selection.bottomRow"
+
+    /// Detection confidence (`string`): `"HeuristicSGR"` (signals
+    /// 1+2 only) or `"HeuristicSGRWithKeystroke"` (signals 1+2+3
+    /// — arrow-key correlation observed within the keystroke
+    /// window). Set on `SelectionShown` for the initial-burst
+    /// audit; subsequent `SelectionItem` events carry the
+    /// confidence at the moment they were emitted (which may be
+    /// upgraded from the initial value once a keystroke
+    /// correlates).
+    [<Literal>]
+    let Source = "selection.source"
+
 /// A channel is an `OutputEvent` consumer. The `Send` callback
 /// is invoked by the dispatcher per `ChannelDecision`; it is
 /// responsible for any threading marshalling (e.g., the
