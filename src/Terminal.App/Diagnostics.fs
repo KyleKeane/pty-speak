@@ -919,9 +919,16 @@ module Diagnostics =
             (content: string)
             : string option =
         try
-            let dir = Path.GetDirectoryName(path)
-            if not (String.IsNullOrEmpty dir) then
-                Directory.CreateDirectory(dir) |> ignore
+            // F# 9 nullness: Path.GetDirectoryName returns
+            // `string | null` (the F# 9 annotation marks every
+            // System.IO API that can legitimately return null).
+            // Narrow via pattern match so the non-null arm
+            // type-checks against Directory.CreateDirectory's
+            // non-nullable signature.
+            match Path.GetDirectoryName(path) with
+            | null -> ()
+            | "" -> ()
+            | dir -> Directory.CreateDirectory(dir) |> ignore
             File.WriteAllText(path, content, Encoding.UTF8)
             Some path
         with ex ->
