@@ -262,6 +262,182 @@ for the full sequencing rationale; the per-stage detail in this
 file's "Stage N implementation sketch" sections remains useful
 historical reference but is no longer the active plan.
 
+## Cycle 24 in-flight handoff (for new-agent pickup)
+
+> This section is the cross-session bridge for Cycle 24
+> (SessionModel persistence cycle). The previous Claude session
+> closed Cycle 23 end-to-end (PRs #200 + #201 merged 2026-05-08),
+> opened the Cycle 24-pre tone-note commit (`40aaf60`, awaiting
+> manual PR open due to a GitHub MCP disconnect), and captured
+> the Cycle 24 scope decisions here so a new agent can resume
+> without reconstruction.
+
+### Cycle 24 status
+
+- **Cycle 23** (doc-currency refresh + CUSTOMIZATION-MODEL Q&A +
+  Q&A-resolution PR) — ✅ closed 2026-05-08 via PRs #200 + #201.
+- **Phase 4 fork resolved by maintainer 2026-05-08**: chose
+  **Tier 2 SessionModel persistence** (the default), not Phase 2
+  input framework cycle.
+- **Cycle 24-pre** (CLAUDE.md tone-note) — commit `40aaf60`
+  pushed to `claude/continue-project-setup-2LepM`; PR not yet
+  opened (GitHub MCP disconnect; maintainer-confirmed re-auth
+  flow does not work for this maintainer's environment). Manual
+  PR open via
+  `https://github.com/KyleKeane/pty-speak/compare/main...claude/continue-project-setup-2LepM?expand=1`.
+- **Cycle 24a** (TOML plumbing) — scoped + planned, not yet
+  started. New agent picks up here.
+- **Cycles 24b-24e** — sketched (see sub-cycle table below);
+  detailed planning at execute-time per sub-cycle.
+
+### Cycle naming convention (chosen 2026-05-08)
+
+Use **cycle-number naming** (`Cycle 24`, `Cycle 24a/b/c/d/e`,
+`Cycle 24-pre`) for PR titles, branch names, commit messages, and
+CHANGELOG entries. Avoid "Tier 2" / "Tier 6" framings in user-
+facing artifacts because the docs collide on that vocabulary
+(see next subsection).
+
+### Vocabulary note: SESSION-MODEL Tier 6 vs planning-doc Tier 2
+
+The two vocabularies coexist on `main`:
+
+- `docs/SESSION-MODEL.md` §6 calls Tier 2 the **heuristic-fallback**
+  stage (already shipped via Cycles 11-22b) and lists
+  **persistence as Tier 6** (lines 1269-1274).
+- `docs/PROJECT-PLAN-2026-05-revision.md`,
+  `docs/SESSION-HANDOFF.md`,
+  `docs/AUDIT-BACKLOG-VALIDATION.md` (item 28) all call the next
+  implementation cycle **"Tier 2 SessionModel persistence"**.
+
+Reconciling these is a **separate doc-currency PR** (PR-200-
+shape) and **not a blocker** for Cycle 24. New agent: prefer
+cycle-number naming; if asked about "Tier N", clarify by quoting
+both vocabularies.
+
+### Cycle 24a scope (the immediate next PR)
+
+**Maintainer-approved scope (chosen 2026-05-08)**: TOML plumbing
+only — **no I/O, no JSONL serializer**. Mirrors PR #185 (Tier 1
+substrate skeleton) shape. ~150-250 LOC across ~6-8 files.
+
+**Files to touch**:
+
+- **NEW** `src/Terminal.Core/SessionPersistence.fs` —
+  `PersistenceMode` DU (`MemoryOnly` / `SessionLog` / `Always`),
+  `PersistenceFormat` DU (`Jsonl`), `PersistenceConfig` record,
+  `defaultConfig` factory, `parseFromTable` parser. Mirror
+  `Config.fs:395-429` whitelist + log-and-drop pattern.
+- **EDIT** `src/Terminal.Core/Config.fs` — extend root-config
+  parser to recognise `[session_model.persistence]` table.
+- **EDIT** `src/Terminal.Core/Terminal.Core.fsproj` — add
+  `<Compile Include="SessionPersistence.fs" />` **before**
+  `Config.fs`.
+- **EDIT** `src/Terminal.App/Program.fs` — read new config field
+  at composition root + emit one Information-level log line
+  (`"SessionModel persistence mode: {Mode} (output_dir={OutputDir})"`).
+  No behaviour change.
+- **NEW** `tests/Tests.Unit/SessionPersistenceTests.fs` —
+  10-12 `[<Fact>]` parsing tests (xUnit only, no FsCheck).
+- **EDIT** `tests/Tests.Unit/Tests.Unit.fsproj` — slot new test
+  file after `SessionModelTests.fs` (line 30).
+- **EDIT** `docs/USER-SETTINGS.md` — document the
+  `[session_model.persistence]` schema (mirror existing
+  `[startup]` section format).
+- **EDIT** `CHANGELOG.md` — `### Added (Cycle 24a): SessionModel
+  persistence config substrate (TOML schema, no I/O yet)` block
+  at top of `[Unreleased]`.
+
+### Cycle 24 sub-cycle sketch
+
+| Sub-cycle | What | LOC est. | I/O? | NVDA row? |
+|---|---|---|---|---|
+| **24a** *(next)* | TOML schema + Config.fs extension + composition-root wire (config read, behavior unchanged) | 150-250 | none | no |
+| 24b | JSONL serializer — pure `formatTupleAsJsonl : SessionTuple -> string` mirroring `formatHistoryForClipboard` | 150-250 | none | no |
+| 24c | File writer (bounded-channel async, mirrors `FileLogger.fs`) + `memory_only` / `session_log` modes wired | 300-500 | yes | yes |
+| 24d | `always` mode (synchronous flush on Active→History) + secrets sanitisation via env-var deny-list | 200-300 | yes | yes |
+| 24e | NVDA matrix rows + diagnostic helpers + CHECKPOINTS tag candidate | 100-200 | yes | yes |
+
+Subsequent cycles (Cycle 25+) cover the read-back / query API
+specified in `docs/SESSION-MODEL.md` §7 (`LatestTuple`,
+`NthFromLast`, `TupleByCommandId`, etc.) and the
+`pty-speak-replay` CLI deferred to that doc's Tier 6.
+
+### Pre-decided design (per `docs/SESSION-MODEL.md` §5)
+
+- **Modes**: `memory_only` (default — privacy-by-default) /
+  `session_log` (per-tuple flush on Active→History) /
+  `always` (synchronous flush, audit-grade durability).
+- **Format**: JSONL (newline-delimited JSON, one tuple per line).
+- **Path**:
+  `%LOCALAPPDATA%\PtySpeak\sessions\session-<SessionId>.jsonl`.
+  One file per shell session per launch (shell-switch creates a
+  new file).
+- **TOML schema**: `[session_model.persistence]` with `mode`
+  (string) / `output_dir` (string) / `format` (string) /
+  `max_session_size_mb` (int).
+- **Secrets handling**: env-var deny-list sanitiser applied to
+  `commandText` before write (same policy as Stage 7's
+  env-scrub PO-5). Lands in Cycle 24d.
+- **Permissions**: inherit `FileLogger`'s user-only NTFS ACLs.
+- **Ring-buffer cap**: in-memory History bounded to 100 tuples
+  (already enforced by Tier 1); beyond cap, oldest evicted
+  silently (or written to disk first if persistence enabled).
+
+### Persistence hookpoint already commented in code
+
+`src/Terminal.App/Program.fs` lines 2142-2147 carry an
+explicit `// Tier 1.C has no persistence so the finalised tuple
+is structurally discarded with the prior SessionModel; Tier 2's
+persistence will use this seam to flush History before
+recreation.` comment marking the shell-switch flush injection
+point. Cycle 24c is the PR that takes this seam.
+
+### Patterns to mirror (file:line)
+
+- **TOML loading**: `src/Terminal.Core/Config.fs:173-181`
+  (`defaultConfigFilePath()` — `%LOCALAPPDATA%\PtySpeak\` path
+  resolution with `%TEMP%` fallback if `LOCALAPPDATA` unset).
+- **TOML parsing + whitelist + log-and-drop + fallback**:
+  `src/Terminal.Core/Config.fs:395-429` (`parseStartupOverrides`,
+  PR #194 precedent).
+- **JSONL serializer template** (Cycle 24b, NOT Cycle 24a):
+  `src/Terminal.Core/SessionModel.fs:formatHistoryForClipboard`
+  (Cycle 22b, pure function, StringBuilder pattern).
+- **File writer** (Cycle 24c, NOT Cycle 24a):
+  `src/Terminal.Core/FileLogger.fs:11-12, 84-88, 104-119,
+  174-225` (day-folder + per-session-file + bounded-channel
+  async writer + 7-day retention + defensive `%TEMP%` fallback).
+- **Test pattern**: `tests/Tests.Unit/SessionModelTests.fs`
+  (xUnit `[<Fact>]`, immutable record fixtures, no FsCheck).
+
+### In-flight branch state (2026-05-08)
+
+- Branch: `claude/continue-project-setup-2LepM`.
+- HEAD: `40aaf60` (`docs(claude): prefer succinct CI-completion
+  responses`) — pushed to origin; **no PR opened yet**.
+- A second commit will land on top of this with the very handoff
+  section you're reading now.
+- Both commits are independent in scope. New agent options:
+  - Open ONE PR with both commits (multi-concern body covering
+    tone-note + Cycle 24 handoff doc).
+  - Open TWO separate PRs (`docs(claude): prefer succinct
+    CI-completion responses` + `docs(handoff): Cycle 24
+    in-flight handoff`).
+- Local `main` is divergent (51/53 commits) — leave alone;
+  always branch off `origin/main` for new work.
+
+### Open clarifications for the new agent (none load-bearing)
+
+- Whether `docs/config.toml.sample` exists and needs updating
+  (investigate at execute-time; bundle into smallest of Cycle
+  24a-c PRs that touches user-facing schema, OR ship as a
+  follow-up).
+- Whether `Ctrl+Shift+S`-style "dump current session-log path"
+  hotkey lands in Cycle 24e or a later sub-cycle (defer
+  decision until 24c ships and the maintainer's NVDA experience
+  surfaces the need).
+
 ## Pending action items (maintainer)
 
 These can only be done from a workstation with normal git +
