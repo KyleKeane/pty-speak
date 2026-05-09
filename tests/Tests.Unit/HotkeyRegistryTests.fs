@@ -84,7 +84,10 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               // Cycle 26c — first menu-only command. Surfaced
               // via Diagnostics → Test Process Cleanup; no
               // keyboard accelerator.
-              HotkeyRegistry.RunProcessCleanupScript ]
+              HotkeyRegistry.RunProcessCleanupScript
+              // Cycle 28 — Window menu commands (menu-only).
+              HotkeyRegistry.CloseWindow
+              HotkeyRegistry.ExitApp ]
     let actual = Set.ofList HotkeyRegistry.allCommands
     Assert.Equal<Set<HotkeyRegistry.AppCommand>>(expected, actual)
 
@@ -379,6 +382,29 @@ let ``RunProcessCleanupScript is menu-only (Cycle 26c — None Key, None Modifie
         HotkeyRegistry.nameOf HotkeyRegistry.RunProcessCleanupScript)
     // gestureText must return None for menu-only commands so
     // MenuItem.InputGestureText is left blank in XAML.
+    Assert.Equal(None, HotkeyRegistry.gestureText hk)
+
+[<Fact>]
+let ``CloseWindow is menu-only (Cycle 28 — None Key, None Modifiers)`` () =
+    // Cycle 28 — Window menu Close Window. Menu-only by
+    // design; the Alt+F4 OS gesture is handled by WPF Window
+    // natively, not via an AppReservedHotkeys entry. The XAML
+    // hardcodes `InputGestureText="Alt+F4"` for visual display
+    // since `gestureText` returns None for menu-only commands.
+    let hk = HotkeyRegistry.hotkeyOf HotkeyRegistry.CloseWindow
+    Assert.Equal(None, hk.Key)
+    Assert.Equal<Set<HotkeyRegistry.Modifier> option>(None, hk.Modifiers)
+    Assert.Equal("CloseWindow", HotkeyRegistry.nameOf HotkeyRegistry.CloseWindow)
+    Assert.Equal(None, HotkeyRegistry.gestureText hk)
+
+[<Fact>]
+let ``ExitApp is menu-only (Cycle 28 — None Key, None Modifiers)`` () =
+    // Cycle 28 — Window menu Exit. Menu-only; calls
+    // `Application.Current.Shutdown()`.
+    let hk = HotkeyRegistry.hotkeyOf HotkeyRegistry.ExitApp
+    Assert.Equal(None, hk.Key)
+    Assert.Equal<Set<HotkeyRegistry.Modifier> option>(None, hk.Modifiers)
+    Assert.Equal("ExitApp", HotkeyRegistry.nameOf HotkeyRegistry.ExitApp)
     Assert.Equal(None, HotkeyRegistry.gestureText hk)
 
 [<Fact>]

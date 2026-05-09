@@ -15,6 +15,63 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 28): Window menu (Close Window + Exit) + Program.fs comment cleanup + PROJECT-PLAN status refresh
+
+Foundation cleanup PR before the framework cycle ramps. Mixes
+three small items: a new top-level Window menu with Close Window
++ Exit slots; a stale `Ctrl+Shift+L` comment in `Program.fs`
+(removed in Cycle 25b-1a) replaced with the live `Ctrl+Shift+P`
+reference; and an in-place status refresh of
+`PROJECT-PLAN-2026-05-09.md` to reflect Cycle 26 + 27 closure
+without spawning a new dated successor.
+
+- **Window menu** (`MainWindow.xaml`) — new top-level `_Window`
+  menu between Diagnostics and Help. Two children:
+  - `Close _Window` — calls `Window.Close()` (symmetric with
+    the OS-level Alt+F4 gesture WPF handles natively).
+    `InputGestureText="Alt+F4"` is hardcoded in XAML so NVDA
+    reads "Close Window, Alt plus F4, menu item" — the gesture
+    string is purely visual since the Alt+F4 path is OS-handled,
+    not via `AppReservedHotkeys`.
+  - `E_xit` — calls `Application.Current.Shutdown()`. In the
+    current single-window app the visible behaviour is
+    identical to Close Window; the separate slot future-proofs
+    multi-pane Phase 2 plans.
+- **New menu-only AppCommands**: `CloseWindow` and `ExitApp`
+  added to `HotkeyRegistry.AppCommand` DU + `nameOf` +
+  `builtIns` (both with `Key=None, Modifiers=None`) +
+  `allCommands`. Brings the menu-only AppCommand count to 3
+  (after `RunProcessCleanupScript`).
+- **`Program.fs` handlers**: `runCloseWindow` + `runExitApp` log
+  invocation at Information level then dispatch to
+  `Window.Close()` / `Application.Current.Shutdown()`. Wired
+  via the existing `bind` helper so the menu and the
+  (non-existent) keyboard path share a single `RoutedCommand`.
+- **`HotkeyRegistryTests.fs`**: `allCommands contains exactly
+  the documented commands` set extended with `CloseWindow` +
+  `ExitApp`. Two new menu-only-shape fixtures
+  (`CloseWindow is menu-only`, `ExitApp is menu-only`) mirror
+  the existing `RunProcessCleanupScript is menu-only` pattern.
+- **`Program.fs:685` comment fix**: replaced `Ctrl+Shift+L` (the
+  hotkey for "open logs folder") with `Ctrl+Shift+P` (the
+  current `OpenDataFolder` hotkey, which opens the parent of
+  `\logs`). The Ctrl+Shift+L hotkey was removed in Cycle
+  25b-1a; the stale comment had survived since.
+- **`PROJECT-PLAN-2026-05-09.md` in-place refresh**: new "Status
+  update 2026-05-09 (post Cycle 27 closure)" callout near the
+  top of the doc + Sequencing block updated to mark Cycles
+  26a/b/c/d, 27, and 28 as ✅ shipped. The next strategic stage
+  is now framed as "Cycle 29+: Output framework cycle (Part
+  3)" with a note pointing at `STAGE-7-ISSUES.md` +
+  `spec/event-and-output-framework.md` as the design substrate
+  for the framework cycle's first plan-mode RFC sub-stage.
+- **Hotkey-menu coverage audit (informational)**: confirmed all
+  12 remaining gesture-bearing AppCommands ARE represented in
+  the menu after Cycles 26b + 27. `Ctrl+Shift+P` (Data → Open
+  Data Folder), `Ctrl+Shift+U` (Help → Check for Updates),
+  `Ctrl+Shift+E/D/R/H/B/Y/S/1/2/3` all surface via their
+  respective menus. No hotkey is "menu-orphaned".
+
 ### Changed (Cycle 27): Multi-state menu paradigm canon + EarconsMode/LoggingLevel migration + dropped Ctrl+Shift+M / Ctrl+Shift+G
 
 First architectural cycle after the Cycle 26 app-menu skeleton. Adds

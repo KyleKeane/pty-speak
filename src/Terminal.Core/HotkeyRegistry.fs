@@ -103,6 +103,18 @@ module HotkeyRegistry =
         // hotkey-count working-memory ceiling for additional
         // diagnostic scripts.
         | RunProcessCleanupScript
+        // Cycle 28 — Window menu commands. Both menu-only.
+        // CloseWindow shows `Alt+F4` as InputGestureText (the OS
+        // gesture WPF Window already handles natively); the
+        // menu item itself wires `Window.Close()` so the menu
+        // path is symmetric with the keyboard path. ExitApp
+        // calls `Application.Current.Shutdown()` for an explicit
+        // app-level exit (in a single-window app the visible
+        // behaviour is identical to CloseWindow today; the
+        // separate slot future-proofs against multi-pane Phase 2
+        // plans where Close-Window-vs-Exit-App becomes meaningful).
+        | CloseWindow
+        | ExitApp
 
     /// Stable string name for a command, used as the
     /// `RoutedCommand` name passed to WPF and as a TOML key
@@ -124,6 +136,8 @@ module HotkeyRegistry =
         | CopyHistoryToClipboard -> "CopyHistoryToClipboard"
         | AnnounceSessionLogPath -> "AnnounceSessionLogPath"
         | RunProcessCleanupScript -> "RunProcessCleanupScript"
+        | CloseWindow -> "CloseWindow"
+        | ExitApp -> "ExitApp"
 
     /// Default key binding for a command. Mirrors the
     /// `AppReservedHotkeys` table in
@@ -212,7 +226,20 @@ module HotkeyRegistry =
           { Command = RunProcessCleanupScript
             Key = None
             Modifiers = None
-            Description = "Interactive process-cleanup test (test-process-cleanup.ps1; Cycle 26c)" } ]
+            Description = "Interactive process-cleanup test (test-process-cleanup.ps1; Cycle 26c)" }
+          // Cycle 28 — Window menu commands. Both menu-only.
+          // The Alt+F4 OS gesture is handled by WPF Window
+          // natively; the menu items duplicate the same
+          // operations for discoverability via Alt-menu
+          // navigation.
+          { Command = CloseWindow
+            Key = None
+            Modifiers = None
+            Description = "Close the main window (Cycle 28; Alt+F4 also works as the OS gesture)" }
+          { Command = ExitApp
+            Key = None
+            Modifiers = None
+            Description = "Exit pty-speak (Cycle 28; Application.Current.Shutdown)" } ]
 
     /// Look up the default Hotkey for a command. Throws
     /// `KeyNotFoundException` if the registry is incomplete —
@@ -289,7 +316,9 @@ module HotkeyRegistry =
           SwitchToClaude
           CopyHistoryToClipboard
           AnnounceSessionLogPath
-          RunProcessCleanupScript ]
+          RunProcessCleanupScript
+          CloseWindow
+          ExitApp ]
 
     // ---------------------------------------------------------------
     // Cycle 27 — Multi-state command paradigm
