@@ -29,6 +29,7 @@
     <Compile Include="CanonicalStateTests.fs" />
     <Compile Include="SessionModelTests.fs" />
     <Compile Include="SessionPersistenceTests.fs" />
+    <Compile Include="SessionSanitiserTests.fs" />
     <Compile Include="SessionModelJsonlTests.fs" />
     <Compile Include="SessionLogWriterTests.fs" />
     <Compile Include="HeuristicPromptDetectorTests.fs" />

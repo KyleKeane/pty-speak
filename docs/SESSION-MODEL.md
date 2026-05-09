@@ -1149,6 +1149,55 @@ Schema migration runtime ships in Cycle 25+ (the
 deserializer). Cycle 24b only emits version 1; the
 versioning hook is the future-proofing handle.
 
+### Env-var-value sanitisation (Cycle 24d-2)
+
+Before each tuple is written to disk, the
+`SessionLogWriterSink` runs it through
+`SessionSanitiser.sanitiseTuple`
+(`src/Terminal.Core/SessionSanitiser.fs`). The sanitiser
+replaces any occurrence of a registered env-var value with
+the marker `<REDACTED:UPPERCASE_NAME>` in the tuple's
+`commandText`, `outputText`, `promptText`, and every
+`extraParams` value. The substrate's in-memory History keeps
+unsanitised text (the user can recover their own commands
+via `Ctrl+Shift+Y`); only the persistence layer redacts.
+
+**Registration**: at startup, the composition root calls
+`SessionSanitiser.registerFromEnvironment` which enumerates
+the process environment and registers values for every var
+whose name matches the Stage 7 deny-list pattern (suffix
+match on uppercase: `*_TOKEN`, `*_SECRET`, `*_KEY`,
+`*_PASSWORD`; `ANTHROPIC_API_KEY` exempted as Claude Code's
+primary credential — same precedent as
+`Terminal.Pty.Native.isDenied`). Registration is silent for
+values shorter than 16 chars (the `MinValueLength`
+threshold) to avoid false-positive redactions on common
+short values like `BANK_API_KEY=admin`.
+
+**Threat model**: a shell expands an env var into output
+(e.g. `echo $GITHUB_TOKEN` substitutes the literal token
+value into stdout). Stage 7's NAME-only env-scrub at the
+spawn boundary prevents the CHILD shell from seeing the
+deny-listed env vars; this sanitiser is the complement —
+when pty-speak's parent process inherits a deny-listed env
+var, and the user types a command that echoes its value,
+the on-disk artefact won't contain the secret. NAME-only
+matching can't catch this case because once the shell has
+expanded the variable, the literal name is gone.
+
+**Marker format** is decades-stable. Future replay tools
+parse `<REDACTED:([A-Z_]+)>` to identify which credential
+was redacted. The format is documented here so it can't
+change without a coordinated migration; if it ever does,
+the change increments `JsonlSchemaVersion`.
+
+**Limitations**: the sanitiser captures values at startup;
+env vars set after launch are NOT retroactively scrubbed.
+Restart-to-update is the documented cost. Future cycles
+can add per-tuple env re-scan if demand surfaces. Pattern-
+based detection (e.g. AWS-key regex `^AKIA[0-9A-Z]{16}$`)
+is also out of scope today.
+
 ### Cross-session loading
 
 Future read API: pty-speak exposes a CLI command (or

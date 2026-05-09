@@ -940,6 +940,21 @@ module Program =
             SessionPersistence.formatToString persistenceConfig.Format,
             persistenceConfig.MaxSessionSizeMb)
 
+        // Cycle 24d-2 — register env-var-value redaction
+        // patterns. Reads the process env at startup, captures
+        // values for any name matching the Stage 7 deny-list
+        // pattern (`*_TOKEN`, `*_SECRET`, `*_KEY`,
+        // `*_PASSWORD`; `ANTHROPIC_API_KEY` exempted), and
+        // registers values ≥ 16 chars. Run unconditionally
+        // (even for `MemoryOnly` mode — cheap; the registered
+        // values are only consulted by the sink's `writeOne`,
+        // which never runs when no sink exists). Per
+        // LOGGING.md "log counts, never names or values", the
+        // count is logged at Information level inside
+        // `registerFromEnvironment`.
+        SessionSanitiser.registerFromEnvironment log
+        |> ignore
+
         // Cycle 24c — construct the SessionLogWriter sink for
         // the initial shell session when persistence is
         // requested. `MemoryOnly` skips construction entirely

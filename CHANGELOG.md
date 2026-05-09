@@ -15,6 +15,92 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 24d-2): env-var value sanitisation for SessionTuple persistence
+
+Closes the Cycle 24d sub-cycle. Adds VALUE-based redaction
+of env-var-derived secrets in persisted SessionTuple text
+fields, complementing Stage 7's NAME-only env-scrub at the
+child-process spawn boundary.
+
+**Threat model**: a shell expands an env var into output —
+e.g. `echo $GITHUB_TOKEN` substitutes the literal token
+value `ghp_abc123...` into stdout. The terminal sees the
+expanded value (NOT the variable name); without sanitisation
+the SessionLogWriter would persist that value to the
+on-disk JSONL. NAME-only matching can't catch this case;
+once the shell has expanded, the literal name is gone.
+
+**What ships**:
+
+- New `Terminal.Core.SessionSanitiser` module with public
+  surface: `register`, `registerFromEnvironment`, `sanitise`,
+  `sanitiseTuple`, `clear` (for tests), `MinValueLength`,
+  `isDenied` (internal — Stage 7 deny-list parity).
+- Composition root in `Program.fs` calls
+  `registerFromEnvironment` at startup unconditionally
+  (cheap; the registered values are only consulted by the
+  sink's `writeOne`, which never runs when no sink exists).
+  Per `LOGGING.md`, the registration count is logged at
+  Information level — never the names or values.
+- `SessionLogWriter.writeOne` calls
+  `SessionSanitiser.sanitiseTuple` before
+  `SessionModel.formatTupleAsJsonl`. The substrate's
+  in-memory History keeps unsanitised text (user can
+  recover their own commands via `Ctrl+Shift+Y`); only the
+  persistence layer redacts.
+
+**Locked design** (per the Cycle 24d-2 plan):
+
+- **Deny-list pattern**: lifted verbatim from
+  `Terminal.Pty.Native.isDenied` (Stage 7 PO-5). Suffix
+  match on uppercase names: `*_TOKEN`, `*_SECRET`, `*_KEY`,
+  `*_PASSWORD`. `ANTHROPIC_API_KEY` exempted (Claude Code's
+  primary credential, same precedent).
+- **Min-length threshold**: 16 chars. Avoids false
+  positives on short common values (e.g. `BANK_API_KEY=admin`
+  would NOT register).
+- **Redaction marker**: `<REDACTED:UPPERCASE_NAME>`.
+  Decades-stable; angle brackets are unambiguous in shell
+  output; colon-delimited for regex parseability by future
+  replay tools.
+- **Substring-overlap safety**: registered values sorted by
+  length DESC so the longer value is matched first if one
+  is a substring of another.
+- **Sanitised fields**: `CommandText`, `OutputText`,
+  `PromptText`, and every `ExtraParams` value. Conservative.
+- **Threading**: lock-guarded module-level state; safe from
+  any thread.
+
+**21 new xUnit `[<Fact>]` tests** in
+`tests/Tests.Unit/SessionSanitiserTests.fs` cover:
+- `MinValueLength` threshold behaviour.
+- Empty / whitespace value skip.
+- Marker format pinning.
+- Single + multi-value redaction.
+- Same-value-multiple-times handling.
+- Substring-overlap safety (longer wins).
+- `isDenied` parity with Stage 7 — every pattern + the
+  `ANTHROPIC_API_KEY` exemption + non-match cases
+  (`KEYBOARD_LAYOUT`, `KEYS_TO_THE_KINGDOM`, `PATH`).
+- `sanitiseTuple` field application (CommandText,
+  OutputText, PromptText, ExtraParams values, key
+  pass-through, non-text-field invariance).
+- `clear` test isolation.
+- `registerFromEnvironment` happy path + non-match skip +
+  short-value skip.
+
+`docs/SESSION-MODEL.md` adds an "Env-var-value sanitisation
+(Cycle 24d-2)" sub-section under §"Persistence modes"
+documenting the threat model, registration source, marker
+format stability, and known limitations (registered at
+startup; not retroactively scanned).
+
+**Limitations** (documented in SESSION-MODEL.md):
+- Env vars set after launch are NOT retroactively scrubbed.
+- Pattern-based detection (e.g. AWS-key regex
+  `^AKIA[0-9A-Z]{16}$`) is out of scope; future cycles can
+  add this if demand surfaces.
+
 ### Changed (Cycle 24d-1): SessionLog file writer — `Always` mode synchronous flush
 
 Implements true audit-grade durability for the `Always`
