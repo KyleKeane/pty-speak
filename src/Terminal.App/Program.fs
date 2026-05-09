@@ -923,11 +923,11 @@ module Program =
             Config.tryLoad log (Config.defaultConfigFilePath ())
 
         // Cycle 24a — log the resolved SessionModel persistence
-        // mode once at startup. Pure observability; no I/O is
-        // wired this sub-cycle. Cycle 24c is the sub-cycle that
-        // actually persists tuples for `session_log` mode using
-        // the seam already commented at the shell-switch site
-        // below.
+        // mode once at startup. Pure observability; no I/O was
+        // wired in 24a. Cycle 24c (this PR) actually persists
+        // tuples for `session_log` mode using the
+        // `applyAndCapture` / `finalizeIncompleteAndCapture`
+        // seams below.
         let persistenceConfig = config.SessionPersistence
         let persistenceOutputDir =
             match persistenceConfig.OutputDir with
@@ -939,6 +939,51 @@ module Program =
             persistenceOutputDir,
             SessionPersistence.formatToString persistenceConfig.Format,
             persistenceConfig.MaxSessionSizeMb)
+
+        // Cycle 24c — `Always` mode is not yet implemented;
+        // the synchronous-flush behaviour ships in Cycle 24d.
+        // For 24c, log a Warning and treat `Always` as
+        // `SessionLog` (asynchronous flush via the bounded
+        // channel). This keeps `Always`-configured users
+        // getting durable persistence (just without the
+        // sync-on-finalize semantic) instead of silently
+        // dropping their data.
+        match persistenceConfig.Mode with
+        | SessionPersistence.Always ->
+            log.LogWarning(
+                "SessionModel persistence mode 'always' is not yet implemented (synchronous flush ships in Cycle 24d). Behaving as 'session_log' (async flush) for this release.")
+        | _ -> ()
+
+        // Cycle 24c — construct the SessionLogWriter sink for
+        // the initial shell session when persistence is
+        // requested. `MemoryOnly` skips construction entirely
+        // (no file is ever opened). `SessionLog` and `Always`
+        // both construct the sink today (Always degrades to
+        // SessionLog semantics per the warning above).
+        //
+        // Sink lifetime: one-per-shell-session. Shell-switch
+        // disposes the old sink + constructs a fresh one for
+        // the new SessionId; app shutdown disposes whatever
+        // sink is current. The mutable handle below is the
+        // single source of truth.
+        let sessionLogWriterFactory
+                (sessionId: System.Guid)
+                : SessionLogWriterSink option
+                =
+            match persistenceConfig.Mode with
+            | SessionPersistence.MemoryOnly -> None
+            | SessionPersistence.SessionLog
+            | SessionPersistence.Always ->
+                let opts =
+                    SessionLogWriterOptions.createDefault
+                        sessionId persistenceConfig.OutputDir
+                let sink = new SessionLogWriterSink(opts, log)
+                log.LogInformation(
+                    "SessionLogWriter started: path={Path}",
+                    sink.ActiveLogPath)
+                Some sink
+        let mutable sessionLogWriter
+                : SessionLogWriterSink option = None
 
         // Phase B (subset, "C2") — per-shell pathway selection.
         // Reads the loaded `config` for both pathway choice and
@@ -1016,6 +1061,10 @@ module Program =
         // it only via the pump.
         let mutable currentSession : SessionModel.T =
             SessionModel.createDefault (shellIdToConfigKey ShellRegistry.Cmd)
+
+        // Cycle 24c — initial sink for the first shell's
+        // SessionId. None when persistence is MemoryOnly.
+        sessionLogWriter <- sessionLogWriterFactory currentSession.SessionId
 
         // SessionModel Tier 1.D — heuristic prompt-boundary
         // detector. Per-shell regex + stability window
@@ -1113,9 +1162,20 @@ module Program =
                             MatchedRowIndex = Some cursorRow }
                     aug, snap
                 | None, _ -> boundary, snapshot
-            currentSession <-
-                SessionModel.apply
+            // Cycle 24c — `applyAndCapture` returns the new
+            // state plus an Option carrying the freshly-finalised
+            // tuple (when this boundary triggered an
+            // Active→History transition). Dispatch the tuple to
+            // the writer; `MemoryOnly` mode leaves
+            // `sessionLogWriter` as `None` and the dispatch
+            // becomes a no-op.
+            let nextSession, finalisedOpt =
+                SessionModel.applyAndCapture
                     currentSession augmented snapshotForApply
+            currentSession <- nextSession
+            match finalisedOpt, sessionLogWriter with
+            | Some tuple, Some sink -> sink.Enqueue tuple
+            | _ -> ()
             let emitted = activePathway.OnPromptBoundary augmented
             pumpLog.LogDebug(
                 "PathwayPump PromptBoundary {Kind} → {Pathway}.OnPromptBoundary → {Count} events.",
@@ -2172,13 +2232,41 @@ module Program =
                                         // ever leaves the
                                         // substrate without a
                                         // CommandFinishedAt.
-                                        currentSession <-
-                                            SessionModel.finalizeIncomplete
+                                        // Cycle 24c — capture the
+                                        // shell-switch finalised
+                                        // tuple (if any) and flush
+                                        // it through the OLD
+                                        // sink before rotating to
+                                        // the new shell's sink.
+                                        let nextSession, finalisedOpt =
+                                            SessionModel.finalizeIncompleteAndCapture
                                                 currentSession
                                                 DateTime.UtcNow
+                                        currentSession <- nextSession
+                                        match finalisedOpt, sessionLogWriter with
+                                        | Some tuple, Some sink ->
+                                            sink.Enqueue tuple
+                                        | _ -> ()
+                                        // Cycle 24c — dispose the
+                                        // outgoing shell's sink
+                                        // BEFORE creating the
+                                        // fresh SessionModel; the
+                                        // dispose flushes pending
+                                        // entries to the old file.
+                                        // A new sink is then
+                                        // constructed for the new
+                                        // shell's SessionId below.
+                                        match sessionLogWriter with
+                                        | Some sink ->
+                                            (sink :> System.IDisposable).Dispose()
+                                        | None -> ()
+                                        sessionLogWriter <- None
                                         currentSession <-
                                             SessionModel.createDefault
                                                 (shellIdToConfigKey shell.Id)
+                                        sessionLogWriter <-
+                                            sessionLogWriterFactory
+                                                currentSession.SessionId
                                         // SessionModel Tier 1.D —
                                         // reset heuristic
                                         // detector for the new
@@ -2279,6 +2367,17 @@ module Program =
 
         app.Exit.Add(fun _ ->
             try log.LogInformation("pty-speak exiting.") with _ -> ()
+            // Cycle 24c — flush + close the SessionLogWriter
+            // BEFORE disposing the FileLogger provider so its
+            // shutdown errors (if any) get captured in the log.
+            // A 2-second timeout-bounded drain is built into the
+            // sink's `Dispose`; on timeout the OS reclaims the
+            // file handle on process exit.
+            try
+                match sessionLogWriter with
+                | Some sink -> (sink :> System.IDisposable).Dispose()
+                | None -> ()
+            with _ -> ()
             try cts.Cancel() with _ -> ()
             // Stage 7-followup PR-F — stop the heartbeat timer
             // before the logger is disposed so the timer doesn't

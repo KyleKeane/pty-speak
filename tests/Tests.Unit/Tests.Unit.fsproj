@@ -30,6 +30,7 @@
     <Compile Include="SessionModelTests.fs" />
     <Compile Include="SessionPersistenceTests.fs" />
     <Compile Include="SessionModelJsonlTests.fs" />
+    <Compile Include="SessionLogWriterTests.fs" />
     <Compile Include="HeuristicPromptDetectorTests.fs" />
     <Compile Include="Osc133Tests.fs" />
     <Compile Include="StreamPathwayTests.fs" />
