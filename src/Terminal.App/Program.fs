@@ -4,6 +4,7 @@ open System
 open System.Threading
 open System.Threading.Tasks
 open System.Windows
+open System.Windows.Controls
 open System.Windows.Input
 open System.Windows.Threading
 open Microsoft.Extensions.Logging
@@ -335,23 +336,45 @@ module Program =
     /// Phase 2 user-settings will inject overridden Hotkey
     /// records (different Key / Modifiers per command) before
     /// this call; the dispatch path stays unchanged.
+    /// Cycle 26b — return type changed from `unit` to
+    /// `RoutedCommand` so compose() can capture each created
+    /// command into a dictionary indexed by `AppCommand` and
+    /// then wire `MenuItem.Command` from the corresponding
+    /// XAML-named `MenuItem_<nameOf cmd>` element. Pressing
+    /// the keyboard gesture and selecting the menu item
+    /// invoke the same `RoutedCommand` and therefore the same
+    /// handler — single source of truth, zero behaviour
+    /// duplication.
+    ///
+    /// Cycle 26b — `Hotkey.Key` and `Hotkey.Modifiers` are now
+    /// `option`-typed. Menu-only commands (`Key = None,
+    /// Modifiers = None`) skip the `KeyBinding` registration
+    /// (no keyboard gesture exists) but still register the
+    /// `CommandBinding` so the menu can dispatch via the
+    /// returned `RoutedCommand`.
     let private bindHotkey
             (window: MainWindow)
             (cmd: HotkeyRegistry.AppCommand)
             (handler: unit -> unit)
-            : unit =
+            : RoutedCommand =
         let hk = HotkeyRegistry.hotkeyOf cmd
         let routed = RoutedCommand(HotkeyRegistry.nameOf cmd, typeof<MainWindow>)
-        let gesture =
-            KeyGesture(
-                translateHotkeyKey hk.Key,
-                translateHotkeyModifiers hk.Modifiers)
-        window.InputBindings.Add(KeyBinding(routed, gesture)) |> ignore
+        match hk.Key, hk.Modifiers with
+        | Some k, Some m ->
+            let gesture =
+                KeyGesture(translateHotkeyKey k, translateHotkeyModifiers m)
+            window.InputBindings.Add(KeyBinding(routed, gesture)) |> ignore
+        | _ ->
+            // Menu-only command: no KeyBinding installed.
+            // The CommandBinding below still registers so the
+            // RoutedCommand can be invoked from MenuItem.Command.
+            ()
         window.CommandBindings.Add(
             CommandBinding(
                 routed,
                 ExecutedRoutedEventHandler(fun _ _ -> handler ())))
         |> ignore
+        routed
 
     // Ctrl+Shift+D's body lives in
     // `Terminal.App.Diagnostics.runFullBattery` (PR #165 —
@@ -635,16 +658,32 @@ module Program =
         // Order doesn't matter relative to the ConPTY spawn
         // below; we install before the window is loaded so the
         // keybindings are live for the user's first keypress.
-        bindHotkey window HotkeyRegistry.CheckForUpdates (fun () -> runUpdateFlow window)
+        //
+        // Cycle 26b — capture each `bindHotkey` return value
+        // (the `RoutedCommand` it created) into a dictionary
+        // indexed by `AppCommand` so the menu-wiring step
+        // below this block can assign the same command to the
+        // matching XAML-named `MenuItem_<nameOf cmd>` element.
+        // Pressing the keyboard gesture and selecting the
+        // menu item invoke the same `RoutedCommand` and
+        // therefore the same handler — single source of truth.
+        // The local `bind` wrapper centralises the dictionary
+        // population so individual call sites stay one-liners.
+        let menuCommands =
+            System.Collections.Generic.Dictionary<HotkeyRegistry.AppCommand, RoutedCommand>()
+        let bind cmd handler =
+            let routed = bindHotkey window cmd handler
+            menuCommands.[cmd] <- routed
+        bind HotkeyRegistry.CheckForUpdates (fun () -> runUpdateFlow window)
         // Ctrl+Shift+D's bind is in the closure-bind group below
         // (around line 1537) — its handler captures local
         // mutables (`hostHandle`, `currentShell`, `screen`) that
         // aren't in scope here yet.
-        bindHotkey window HotkeyRegistry.DraftNewRelease (fun () -> runOpenNewRelease window)
-        bindHotkey window HotkeyRegistry.OpenDataFolder (fun () -> runOpenDataFolder window)
-        bindHotkey window HotkeyRegistry.OpenConfig (fun () -> runOpenConfig window)
-        bindHotkey window HotkeyRegistry.ToggleDebugLog (fun () -> runToggleDebugLog window)
-        bindHotkey window HotkeyRegistry.MuteEarcons (fun () -> runMuteEarcons window)
+        bind HotkeyRegistry.DraftNewRelease (fun () -> runOpenNewRelease window)
+        bind HotkeyRegistry.OpenDataFolder (fun () -> runOpenDataFolder window)
+        bind HotkeyRegistry.OpenConfig (fun () -> runOpenConfig window)
+        bind HotkeyRegistry.ToggleDebugLog (fun () -> runToggleDebugLog window)
+        bind HotkeyRegistry.MuteEarcons (fun () -> runMuteEarcons window)
 
         // Cycle 25b-1a — `SetCopyLogToClipboardHandler` defense-in-
         // depth wiring removed alongside the Ctrl+Shift+L hotkey
@@ -1937,17 +1976,11 @@ module Program =
         // hostHandle, channels, currentShell) so they're built
         // here rather than as module-level handlers like the
         // Ctrl+Shift+G toggle (which only needs loggerSink).
-        bindHotkey window HotkeyRegistry.HealthCheck runHealthCheck
-        bindHotkey window HotkeyRegistry.IncidentMarker runIncidentMarker
-        bindHotkey window HotkeyRegistry.RunDiagnostic runDiagnostic
-        bindHotkey
-            window
-            HotkeyRegistry.CopyHistoryToClipboard
-            runCopyHistoryToClipboard
-        bindHotkey
-            window
-            HotkeyRegistry.AnnounceSessionLogPath
-            runAnnounceSessionLogPath
+        bind HotkeyRegistry.HealthCheck runHealthCheck
+        bind HotkeyRegistry.IncidentMarker runIncidentMarker
+        bind HotkeyRegistry.RunDiagnostic runDiagnostic
+        bind HotkeyRegistry.CopyHistoryToClipboard runCopyHistoryToClipboard
+        bind HotkeyRegistry.AnnounceSessionLogPath runAnnounceSessionLogPath
 
         // Stage 7-followup PR-F — background heartbeat. Every 5
         // seconds, log a single Information-level "Heartbeat" line
@@ -2412,9 +2445,42 @@ module Program =
         // The keys are listed in `TerminalView.AppReservedHotkeys`
         // so `OnPreviewKeyDown` doesn't mark them Handled before
         // `InputBindings` can fire.
-        bindHotkey window HotkeyRegistry.SwitchToCmd (fun () -> switchToShell ShellRegistry.Cmd)
-        bindHotkey window HotkeyRegistry.SwitchToPowerShell (fun () -> switchToShell ShellRegistry.PowerShell)
-        bindHotkey window HotkeyRegistry.SwitchToClaude (fun () -> switchToShell ShellRegistry.Claude)
+        bind HotkeyRegistry.SwitchToCmd (fun () -> switchToShell ShellRegistry.Cmd)
+        bind HotkeyRegistry.SwitchToPowerShell (fun () -> switchToShell ShellRegistry.PowerShell)
+        bind HotkeyRegistry.SwitchToClaude (fun () -> switchToShell ShellRegistry.Claude)
+
+        // Cycle 26b — wire the menu items. Walk the
+        // `menuCommands` dictionary populated by the `bind`
+        // wrapper above. For each entry, find the XAML-named
+        // `MenuItem_<nameOf cmd>` element via reflection and
+        // assign its `Command` (so menu click invokes the same
+        // RoutedCommand as the keyboard gesture) and
+        // `InputGestureText` (so NVDA reads the shortcut when
+        // the menu item is focused). Reflection is the cheapest
+        // way to keep the wiring data-driven — adding a new
+        // menu item is just (a) AppCommand DU case, (b) builtIns
+        // row, (c) named MenuItem in XAML; the wiring loop
+        // below picks it up automatically.
+        let windowType = window.GetType()
+        for kv in menuCommands do
+            let fieldName = sprintf "MenuItem_%s" (HotkeyRegistry.nameOf kv.Key)
+            match windowType.GetField(fieldName) with
+            | null ->
+                // No XAML MenuItem with this name. Either the
+                // command isn't surfaced in the menu yet (some
+                // future cycle adds it) or the XAML name diverged
+                // from the registry's nameOf — neither is fatal at
+                // runtime but the missing surface is worth a log
+                // line at a higher level if it ever bites.
+                ()
+            | field ->
+                match field.GetValue(window) with
+                | :? MenuItem as menuItem ->
+                    menuItem.Command <- kv.Value
+                    HotkeyRegistry.gestureText (HotkeyRegistry.hotkeyOf kv.Key)
+                    |> Option.iter (fun text ->
+                        menuItem.InputGestureText <- text)
+                | _ -> ()
 
         app.Exit.Add(fun _ ->
             try log.LogInformation("pty-speak exiting.") with _ -> ()
