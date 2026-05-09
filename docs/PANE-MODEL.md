@@ -1,9 +1,10 @@
 # Pane Model
 
-> **Snapshot**: 2026-05-07
+> **Snapshot**: 2026-05-09
 > **Status**: design / forward-looking — sketch only; not a full spec; not yet implemented
 > **Authoring item**: backlog item 30 (research stage)
 > **Companion docs**:
+> - [`CORE-ABSTRACTION-BOUNDARY.md`](CORE-ABSTRACTION-BOUNDARY.md) — substrate / channel boundary. Defines the three-sub-pane decomposition of the shell pane (§6) and the three reserved peer panes (notification queue, contextual keyword info, input assistant) added in 2026-05-09 redirect. Canonical source for both refinements; this doc lifts the framing into the workspace catalog.
 > - [`INTERACTION-MODEL.md`](INTERACTION-MODEL.md) — architectural framing (Shell Interaction Manager + three-component model). The shell pane is owned by the SIM; this doc extends into multi-pane composition.
 > - [`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md) — operational mechanics (12-stage byte-to-announcement flow). Each pane runs its own pipeline.
 > - [`SESSION-MODEL.md`](SESSION-MODEL.md) — history substrate. The cherry-picked I/O pairs pane consumes SessionModel queries.
@@ -486,11 +487,14 @@ panes. Concrete UI / data shapes deferred.
 
 | Pane | Producer | Content source | Status |
 |---|---|---|---|
-| **Shell pane** | SIM | PTY child process; cell grid | ✅ shipping |
+| **Shell pane** (decomposes into three sub-panes — see "Shell pane internal structure" below) | SIM | PTY child process; linear-text producer + screen grid | ✅ shipping |
 | **File tree pane** | Filesystem Producer (future) | Directory enumeration; OS file events | 📋 reserved |
 | **Cherry-picked I/O pairs pane** | Pinned-Tuple Producer (future) | SessionModel query (selected tuples) | 📋 reserved |
 | **Language documentation pane** | Doc Producer (future) | Local docset / web docs / LSP-sourced | 📋 reserved |
 | **AI assistance pane** | LLM Producer (future) | Anthropic Claude API; SessionModel-grounded | 📋 reserved |
+| **Notification queue pane** | Stream-derived notification producer (future) | StreamProfile + future notification taxonomy | 📋 reserved (added 2026-05-09) |
+| **Contextual keyword info pane** | KeywordDetector + reference resolver (future) | Output substrate; user keyword highlights | 📋 reserved (added 2026-05-09) |
+| **Input assistant pane** | InputPathway + completion / help producer (future) | Command-input sub-pane substrate | 📋 reserved (added 2026-05-09) |
 
 ### Shell pane (✅ shipping)
 
@@ -513,6 +517,68 @@ Surface, Active Output, Historical Document — per
 [INTERACTION-MODEL §5](INTERACTION-MODEL.md)) is internal
 to the shell pane; the workspace doesn't see those
 components, just the pane as a whole.
+
+### Shell pane internal structure — three sub-panes
+
+> **Canonical source**:
+> [`CORE-ABSTRACTION-BOUNDARY.md` §6](CORE-ABSTRACTION-BOUNDARY.md).
+> This subsection summarises that framing for the pane-catalog
+> reader; the boundary doc carries the substrate-level detail.
+
+The shell pane internally decomposes into **three sub-panes**,
+each consuming a different substrate slice. Today's
+`TerminalView` plays all three roles in a single WPF surface;
+the decomposition is **conceptual first** (substrate +
+accessibility surfaces are distinct even though rendering is
+shared today). A future Phase 2 layout PR may surface them as
+distinct WPF regions; the conceptual decomposition does not
+require it.
+
+The three sub-panes:
+
+1. **Command-input sub-pane** — where the user types commands
+   that get sent to the PTY child. Substrate: future
+   `InputPathway` (Cycle 38) + `EchoCorrelator`. Visible
+   representation of "what I am about to send".
+2. **Current-output sub-pane** — where the active in-flight
+   output is rendered using whatever canonical display the
+   parser determines (raw text / interactive list / form with
+   text input — the three exemplar canonical displays of
+   [`CORE-ABSTRACTION-BOUNDARY.md` §5](CORE-ABSTRACTION-BOUNDARY.md);
+   future primitives extend the catalog without re-architecting).
+   Substrate: linear-text producer (raw text) + detector output
+   (interactive list / form). The current-output sub-pane is
+   the place where the parser's classification decisions become
+   user-perceivable form.
+3. **History sub-pane** — sealed past `SessionTuple`s,
+   semantic-navigable. Quick-nav primitives (paragraph-within-
+   output; prev/next command boundary; jump-to-most-recent-
+   output) make keyboard navigation fast for a screen-reader
+   user who needs to jump back to a prior result without
+   scrolling linearly. Substrate: SessionModel + the linear-
+   text producer's high-water-mark commits (post-Cycle 34,
+   replaces `extractCommandAndOutput`'s screen-row
+   reconstruction). Each tuple is a navigable text region with
+   prev/next-paragraph + prev/next-tuple gestures.
+
+**Why this decomposition matters for the pane catalog**: the
+three sub-panes crystallize a fixed interaction paradigm — the
+user is always in one of three modes — **inputting** a command,
+**interacting with** the current output, or **exploring**
+history. The framework names that paradigm so workspace-level
+focus routing (the Pane Coordinator's responsibility) and pane-
+switch announcements know what they're switching among. A future
+"focus the input sub-pane" gesture is meaningfully distinct from
+"focus the shell pane" — the former targets a specific sub-pane
+within the shell pane.
+
+The three-sub-pane decomposition supersedes any prior framing in
+this doc that treated the shell pane as monolithic. The doc's
+previous catalog row above is preserved, but the "internal
+structure" pointer is what governs implementation: when adding
+shell-pane-internal substrate or accessibility infrastructure,
+treat the three sub-panes as the unit, not the shell pane as a
+whole.
 
 ### File tree pane (📋 reserved)
 
@@ -654,6 +720,156 @@ Reserved decisions: API client implementation (Anthropic
 SDK); auth token storage (TOML / OS keyring); cost +
 rate-limit handling; offline degradation (what happens
 without network).
+
+### Notification queue pane (📋 reserved — added 2026-05-09)
+
+> **Source**:
+> [`CORE-ABSTRACTION-BOUNDARY.md` §6](CORE-ABSTRACTION-BOUNDARY.md)
+> "Three additional reserved peer panes". Captured here as a
+> documentation reservation; no design / spec / implementation
+> in the 2026-05-09 plan.
+
+An ephemeral toast-style queue for notifications surfaced from
+the stream substrate. Produces:
+
+- A scrolling list of recent notification entries (e.g.
+  spinner-burst summary "Claude finished thinking after 12s",
+  build-completed, test-failure-detected, long-running-
+  command-progress milestones).
+- Entries time out or clear on user read.
+- The pane sits as a peer to the shell pane in the workspace;
+  the user can focus it by hotkey to re-read recent
+  notifications.
+
+User interaction:
+
+- Arrow keys navigate the queue.
+- Enter on an entry: re-read the notification verbosely (NVDA
+  expansion).
+- Delete on an entry: dismiss / clear.
+- A "clear all" hotkey.
+
+Cross-pane coordination:
+
+- Shell pane → notification queue: stream-derived notifications
+  flow as the shell pane's substrate produces them. (The
+  channel-layer producer for these notifications is future
+  work; the substrate hooks already exist via the
+  StreamPathway / EarconPathway emit points.)
+- Notification queue → shell pane: optional "jump to the output
+  that produced this notification" gesture (requires
+  SessionModel substrate cross-link).
+
+UIA: `role="log"` aria-live=assertive analog;
+`ControlType.List` with `ControlType.ListItem` children.
+
+Reserved decisions: notification taxonomy (which substrate
+events qualify); persistence (in-memory only vs. on-disk);
+deduplication policy; per-shell vs. unified queue.
+
+### Contextual keyword info pane (📋 reserved — added 2026-05-09)
+
+> **Source**:
+> [`CORE-ABSTRACTION-BOUNDARY.md` §6](CORE-ABSTRACTION-BOUNDARY.md)
+> "Three additional reserved peer panes". Captured here as a
+> documentation reservation; no design / spec / implementation
+> in the 2026-05-09 plan.
+
+A pane that displays contextual information about particular
+keywords surfaced in shell output. Produces:
+
+- Definitions / documentation / reference snippets for keywords
+  the user (or the substrate) highlights — file paths, error
+  codes, package names, language symbols, command names.
+- Updates on shell pane keyword surface events (driven by a
+  future `KeywordDetector` in the parser pipeline).
+- Updates on user-explicit "look up X in shell context"
+  gestures.
+
+User interaction:
+
+- Arrow keys / Page Up / Down navigate the displayed reference
+  text.
+- Hyperlinks within the reference: Enter follows; UIA invoke.
+- "Pin this reference" gesture: persist into the cherry-picked
+  I/O pane (or a notes substrate; out of scope for this
+  reservation).
+
+Cross-pane coordination:
+
+- Shell pane → contextual keyword info: detector-fired keyword
+  events open the pane to the relevant reference.
+- Cherry-picked I/O pane → contextual keyword info: re-look-up
+  on a pinned tuple's keyword.
+
+Distinguishing from the language documentation pane: language
+docs is a passive viewer the user navigates explicitly; the
+contextual keyword info pane is **substrate-driven** —
+keywords surfaced in output trigger lookups automatically (or
+on a single confirmation gesture). The two panes may share a
+backend reference resolver but differ in UX flow.
+
+UIA: `ControlType.Document` + `ITextProvider` + hyperlink
+invoke; ARIA `role="region"` aria-live=polite analog (so the
+user is informed when new context arrives but not interrupted).
+
+Reserved decisions: keyword detection mechanism (heuristic
+regex vs. LSP-grounded); reference source registry overlap with
+docs pane; on-demand vs. always-resolve cadence; per-shell
+keyword-allowlist scoping.
+
+### Input assistant pane (📋 reserved — added 2026-05-09)
+
+> **Source**:
+> [`CORE-ABSTRACTION-BOUNDARY.md` §6](CORE-ABSTRACTION-BOUNDARY.md)
+> "Three additional reserved peer panes". Captured here as a
+> documentation reservation; no design / spec / implementation
+> in the 2026-05-09 plan.
+
+A pane that gives contextual information about commands being
+typed in the shell pane's command-input sub-pane. Produces:
+
+- Man-page snippets / command help / parameter documentation
+  for the command currently being composed.
+- Autocomplete / completion suggestions sourced from shell
+  history, filesystem, or per-command completion specs.
+- Inline warnings / safety checks for risky commands (rm -rf,
+  force-push patterns, etc.).
+
+Updates flow from the InputPathway substrate (Cycle 38) — every
+keystroke into the command-input sub-pane is mirrored to the
+input assistant's content producer, which re-resolves help /
+completions in real time (with debounce).
+
+User interaction:
+
+- Arrow keys navigate completion suggestions.
+- Tab from the command-input sub-pane: accept the highlighted
+  completion (subject to the command-input sub-pane's existing
+  Tab semantics — the maintainer's keyboard contract decides
+  who wins on conflict).
+- Enter on a help section: read it verbosely.
+- Esc: dismiss the assistant for this command.
+
+Cross-pane coordination:
+
+- Command-input sub-pane → input assistant: every keystroke
+  drives content refresh.
+- Input assistant → command-input sub-pane: completion
+  acceptance writes the suggested text back into the input
+  buffer.
+- AI assistance pane ↔ input assistant: optional integration
+  where the AI pane surfaces completions sourced from prior
+  conversation context (deferred coordination).
+
+UIA: two regions — completion list (`ControlType.List`) +
+help text (`ControlType.Document`); ARIA `role="form"`
+container with `role="listbox"` + `role="region"` children.
+
+Reserved decisions: completion source registry (shell-native
+completion specs vs. custom); debounce cadence; integration
+shape with the maintainer's preferred shell completion stack;
+risky-command warning policy.
 
 ## Coordination protocols
 
