@@ -97,23 +97,45 @@ minutes of wasted CI cycle plus a noisier git history.
   automatically). Other PR-creation channels do not trigger the
   subscription.
 - **Webhook events are unreliable in this maintainer's environment —
-  poll CI every 30 seconds.** Confirmed across many sessions: PR
+  poll CI every 60 seconds.** Confirmed across many sessions: PR
   activity webhooks frequently fail to arrive when CI completes,
   leaving the agent stuck in "waiting for events that won't come".
   The workaround: after pushing a PR (or a fixup commit), start a
   poll loop that calls `mcp__github__pull_request_read` with
-  `method: get_check_runs` every 30 seconds until every check's
+  `method: get_check_runs` every 60 seconds until every check's
   `status` is `completed`. Implementation: `Bash` with
-  `run_in_background: true` running `sleep 30`; the harness
+  `run_in_background: true` running `sleep 60`; the harness
   notifies on completion; check status; repeat. **Don't poll faster
-  than 30s** — it wastes API calls and the actual CI feedback
-  cadence is multi-minute. **Don't sleep longer between polls** —
-  the maintainer's working rhythm depends on prompt CI follow-up.
-  Webhook events still arrive sometimes; treat them as a free
-  early-exit signal but don't depend on them.
-- **Standing merge rule:** once CI is green on a PR, merge it
-  without re-asking (per maintainer authorization). Use squash-merge.
-  Update local main + delete the local branch after.
+  than 60s** — it wastes API calls, clutters the chat, and the
+  actual CI feedback cadence is multi-minute. **Don't sleep longer
+  between polls** — the maintainer's working rhythm depends on
+  prompt CI follow-up. Webhook events still arrive sometimes;
+  treat them as a free early-exit signal but don't depend on them.
+- **Docs-only PRs may merge after only the markdown link check
+  passes** — skip the slow Windows build/test. The Windows build
+  cannot fail on pure-markdown changes; the link checker catches
+  the real risk (broken internal / external links silently rotting
+  the docs over time). "Docs-only" is **strictly** defined:
+  - **Allowed**: `*.md`, `CHANGELOG.md`, `README.md`, `LICENSE`,
+    `SECURITY.md` (any file extension `.md` or top-level
+    `LICENSE`).
+  - **Disallowed** (any change to these forfeits the fast-merge):
+    `.github/workflows/**`, `src/**`, `tests/**`, `spec/**`,
+    `scripts/**`, `*.fs` / `*.fsproj` / `*.cs` / `*.csproj` /
+    `*.xaml` / `*.toml` / `*.yml` / `*.yaml`.
+  - **Verify scope** by checking the PR's file list before applying
+    this rule (`mcp__github__pull_request_read` with
+    `method: get_files`). A "docs-only" PR that secretly touches a
+    workflow file, a sample consumed by a test, or a CHANGELOG
+    when a changelog gate is enabled must wait for full CI. When
+    in doubt, wait for everything.
+  - Still wait for the link check itself — don't merge a docs PR
+    while the link check is `in_progress`. It's the one signal
+    that matters.
+- **Standing merge rule:** once CI is green on a PR (or, for
+  docs-only PRs, the link check is green per the rule above),
+  merge it without re-asking (per maintainer authorization). Use
+  squash-merge. Update local main + delete the local branch after.
 - **Preferred response style:** simple and succinct, especially on
   CI-completion announcements. When all checks are green,
   "all three green, merging" is sufficient — no play-by-play
