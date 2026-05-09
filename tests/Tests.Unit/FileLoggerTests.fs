@@ -213,6 +213,14 @@ let ``logger creates the day-folder if it does not exist`` () =
     let provider = new FileLoggerProvider(sink) :> ILoggerProvider
     let logger = provider.CreateLogger("Test")
     logger.LogInformation("should create the parent dir + day folder")
+    // FlushPending blocks until the drain has processed pending
+    // entries — opening the log file creates the parent directory
+    // tree as a side effect. Pre-fix, the test relied on
+    // `Dispose`'s 2-second drain-wait, which became flaky under
+    // CI load after ~40 concurrent-filesystem-I/O tests landed in
+    // Cycles 24c-24f. `FlushPending` is the explicit sync API
+    // (same one `Ctrl+Shift+;` uses to read the file safely).
+    sink.FlushPending(5000).Wait() |> ignore
     (provider :> IDisposable).Dispose()
     Assert.True(Directory.Exists(nestedDir),
         "Expected sink to create the log root")
