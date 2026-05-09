@@ -1706,3 +1706,127 @@ configurability. If user demand surfaces (e.g. heavy-log
 workload that sees backpressure), the right move is to
 investigate the workload first, not to expose the knob.
 
+## How to add a menu item (Cycle 26 extension recipe)
+
+The Cycle 26 app menu (`src/Views/MainWindow.xaml`) is wired
+via reflection from `HotkeyRegistry.builtIns`: every entry whose
+`nameOf` matches a XAML `MenuItem`'s `x:Name` (in the form
+`MenuItem_<AppCommandName>`) gets its `Command` and
+`InputGestureText` assigned at compose time. Adding a new menu
+item is therefore a **three-edit recipe** with no `Program.fs`
+composition or test-fixture changes required.
+
+### Recipe — gesture-bearing command (the typical case)
+
+To add a new keyboard hotkey AND surface it in the menu:
+
+1. **`src/Terminal.Core/HotkeyRegistry.fs`** — add the new
+   `AppCommand` DU case, the matching `nameOf` arm
+   (the F# compiler enforces exhaustive pattern match), the
+   `builtIns` row with `Some Key` / `Some Modifiers`, and
+   the `allCommands` row.
+2. **`src/Views/TerminalView.cs`** — add the matching
+   `(Key.X, ModifierKeys.Control | ModifierKeys.Shift, "Description")`
+   row to the `AppReservedHotkeys` static array
+   (`TerminalView.cs:346-489`). The
+   `AppReservedHotkeysMirrorTests.fs` test pins this parity at
+   test time — a missing C# row fails CI immediately.
+3. **`src/Views/MainWindow.xaml`** — add a
+   `<MenuItem x:Name="MenuItem_<NewCommand>" x:FieldModifier="public" Header="..." />`
+   element inside the appropriate top-level menu (Shell, View,
+   Data, Diagnostics, Help — see Cycle 26b notes for taxonomy).
+
+Compose's reflection wiring picks up the new entry on next
+launch — `Program.fs:638-647 / 1940-1950 / 2415-2417` already
+calls `bind` for every `AppCommand` and the menu-wiring loop at
+`Program.fs:2452-2480` walks the dictionary and assigns
+`MenuItem.Command` + `InputGestureText` automatically.
+
+The handler — the function that runs when the user presses the
+hotkey or selects the menu item — does need a `bind` call
+somewhere in `Program.fs`. Module-level handlers go alongside
+`runOpenNewRelease` / `runOpenDataFolder` / `runOpenConfig`
+(announce-before-focus-grab pattern); compose-closure handlers
+go alongside `runHealthCheck` / `runDiagnostic` (when state
+capture is needed).
+
+### Recipe — menu-only command (no keyboard accelerator)
+
+To add a new menu item with NO default keyboard hotkey
+(relieving the working-memory ceiling):
+
+1. **`src/Terminal.Core/HotkeyRegistry.fs`** — add the
+   `AppCommand` DU case + `nameOf` arm + `allCommands` row, as
+   above. The `builtIns` row uses `Key = None; Modifiers = None`
+   (the helper `gestureText` returns `None` for menu-only
+   commands so `InputGestureText` is left blank).
+2. **No `TerminalView.AppReservedHotkeys` change** — menu-only
+   commands have no gesture to reserve. The mirror test's filter
+   excludes `None` entries automatically.
+3. **`src/Views/MainWindow.xaml`** — add the
+   `<MenuItem x:Name="MenuItem_<NewCommand>" ... />` element.
+
+`bindHotkey` pattern-matches on `(Some k, Some m)` to install
+the `KeyBinding` (skipping it for menu-only) but always registers
+the `CommandBinding` so the menu can dispatch via the captured
+`RoutedCommand`.
+
+Cycle 26c (`RunProcessCleanupScript`) is the worked example.
+
+### Recipe — adding a new top-level menu
+
+To add a new menu (e.g. Window, Display, Preferences/Settings —
+all anticipated in
+[`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md)):
+
+1. **`src/Views/MainWindow.xaml`** — add a new
+   `<MenuItem Header="_NewMenu">...</MenuItem>` block inside the
+   `<Menu>` element. Put it in the order the maintainer wants
+   relative to the existing 5 top-level menus.
+2. Pick a unique mnemonic letter (the `_X` prefix); top-level
+   menus must not conflict with each other. Current taxonomy
+   uses S (Shell), V (View), D (Data), g (Diagnostics), H (Help).
+3. Add child `<MenuItem>` items per the recipes above.
+
+No F# changes required for the new top-level menu itself; only
+the children's wiring follows the existing recipes.
+
+### Recipe — rebinding or removing an accelerator
+
+To rebind a hotkey (e.g. change `Ctrl+Shift+M` to `Ctrl+Alt+M`):
+
+1. Edit the `Key` / `Modifiers` fields in the `builtIns` row in
+   `HotkeyRegistry.fs`.
+2. Update the matching `AppReservedHotkeys` row in
+   `TerminalView.cs`.
+3. Update any `HotkeyRegistryTests.fs` documented-binding fixture
+   that pins the old gesture (the test name typically mentions
+   the gesture explicitly).
+
+The mirror test catches a rebind that touches only one side. The
+menu's `InputGestureText` updates automatically on next launch
+since it's read from `gestureText` at compose time.
+
+To remove an accelerator while keeping the menu item, change
+the `builtIns` row's `Key` and `Modifiers` to `None`. Drop the
+`AppReservedHotkeys` row. Mirror test asserts the now-menu-only
+command is excluded from the parity set.
+
+To remove a menu item entirely: reverse the original recipe —
+delete the `AppCommand` DU case + `nameOf` arm + `builtIns` row
++ `allCommands` row + `AppReservedHotkeys` row + `MenuItem` XAML
+element + the handler function + the `bind` call. (Cycle 25b-1a
+removed `Ctrl+Shift+L` via this exact shape; the commit history
+is the worked example.)
+
+### Phase 2 evolution (forward-looking)
+
+The `Hotkey` record's `Key` / `Modifiers` fields are designed for
+a future Phase 2 user-settings TOML override surface — e.g.
+`[hotkeys] checkForUpdates = "Ctrl+Alt+U"`. The user-settings
+substrate would (a) load TOML, (b) override fields on the
+default `Hotkey` record, (c) pass the result to `bindHotkey`.
+Menu-only commands have no TOML-overridable gesture today;
+Phase 2 may surface the `None → Some` promotion as a separate
+config knob.
+

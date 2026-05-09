@@ -692,6 +692,76 @@ input) ship; see SESSION-HANDOFF item 6 for options.
   flow. The two share the same constant by design (single source
   of truth for the repo URL).
 
+### Cycle 26 — App menu
+
+Cycle 26 ships the app-menu mini-cycle end-to-end: menu skeleton
++ UIA plumbing (26a), 14 existing AppCommands wired into menu
+items via shared `RoutedCommand` instances (26b), and the first
+menu-only AppCommand `RunProcessCleanupScript` for diagnostic
+scripts that don't deserve a hotkey slot (26c). The menu rides
+on top of WPF's standard `Menu`/`MenuItem` UIA exposure so NVDA
+reads it correctly without custom-announce layering. The
+`OnPreviewKeyDown` filter ordering invariant + `AppReservedHotkeys`
+hot-path mirror are unchanged — keyboard pipeline behaviour is
+identical to pre-Cycle-26.
+
+The rows below verify each layer's user-facing contract.
+
+| Test                              | Procedure                                       | Expected behaviour                                               |
+|-----------------------------------|-------------------------------------------------|------------------------------------------------------------------|
+| Menu reachable via Alt; document role preserved (26a) | Launch pty-speak. NVDA should announce "pty-speak terminal {version}, document". Press Alt | NVDA announces the menu bar (typically "menu bar" or the first menu's name with role "menu"). Press Esc; NVDA returns focus and re-announces "document". The Cycle 26a `Loaded → TerminalSurface.Focus()` invariant is preserved (Menu does not steal focus on launch) |
+| InputGestureText reading (26b)    | Press Alt; arrow into Diagnostics; arrow to Health Check (or any hotkey-bearing item) | NVDA reads `<item name>, <gesture>` (e.g. "Health Check, Ctrl plus Shift plus H"). The `MenuItem.InputGestureText` is set from `HotkeyRegistry.gestureText` at compose time — gesture string matches the keyboard binding |
+| Menu invokes same handler as keyboard gesture (26b) | Press Alt; arrow to Diagnostics → Health Check; press Enter. Compare with pressing `Ctrl+Shift+H` directly | Both paths announce the same one-line health-check summary (shell + PID + alive + queue depth). Single-source-of-truth contract: menu and keyboard fire the same `RoutedCommand` |
+| All 14 keyboard hotkeys still fire (26b regression) | Without using the menu, press each of the 14 reserved hotkeys: `Ctrl+Shift+U/D/R/P/E/G/H/B/M/Y/S/1/2/3` | Each hotkey announces / acts as before Cycle 26. The `OnPreviewKeyDown` filter ordering invariant + `AppReservedHotkeys` mirror are unchanged; `AppReservedHotkeysMirrorTests.fs` pins this at test time |
+| Menu-only command launches script (26c) | Press Alt; arrow to Diagnostics → Test Process Cleanup; press Enter | NVDA announces "Launching process-cleanup test in a separate PowerShell window." A separate PowerShell window opens with `test-process-cleanup.ps1` running. Close pty-speak via Alt+F4 to see the script's PASS/FAIL output (the script verifies Job Object cascade-kill cleanup) |
+| Menu-only item omits InputGestureText (26c) | Focus Diagnostics → Test Process Cleanup via arrow keys | NVDA reads only the item name "Test Process Cleanup" — no gesture suffix. `gestureText` returns `None` for menu-only commands so `InputGestureText` is left blank |
+
+**Diagnostic decoder for Cycle 26:**
+
+- **Menu invisible / not in UIA tree** → check that
+  `MainWindow.xaml`'s `<DockPanel>` wraps both the `<Menu>`
+  (with `DockPanel.Dock="Top"`) and the `<views:TerminalView>`
+  child. A regression that removed the DockPanel layout would
+  drop the menu from the visual tree.
+- **NVDA announces "menu" instead of "document" on launch** →
+  the `Loaded → TerminalSurface.Focus()` handler in
+  `MainWindow.xaml.cs` was removed or misordered. The handler
+  must run after `InitializeComponent()` so the visual tree
+  exists when `Focus()` is called.
+- **Menu item shows no `InputGestureText` for a hotkey-bearing
+  command** → compose's reflection-driven wiring didn't find
+  the named `MenuItem`. Check that the XAML `x:Name` matches
+  `MenuItem_<HotkeyRegistry.nameOf cmd>` exactly. The wiring
+  loop logs nothing on miss; missing wiring shows up as a
+  blank `InputGestureText` (also: command becomes inert because
+  `MenuItem.Command` was never set).
+- **Menu item invokes a different handler than its hotkey** →
+  the `bind` wrapper's `menuCommands` dictionary captured the
+  wrong `RoutedCommand`. Press `Ctrl+Shift+D`; the bundle's
+  `--- FILELOGGER ACTIVE LOG ---` section will not show this
+  directly (no logging on bind), but `Diagnostics` battery
+  output will surface inconsistent state.
+- **F# / C# mirror parity broken (build green, NVDA reports
+  hotkey doesn't fire)** → `AppReservedHotkeysMirrorTests`
+  should have caught this at test time. If it didn't, check
+  whether the test fixture skipped its build (e.g.
+  `<Compile Include>` missing in `Tests.Unit.fsproj`).
+
+**ADR-style note: parallel-surface decision (2026-05-09).**
+
+Cycle 26 keeps the C# `TerminalView.AppReservedHotkeys` static
+array (`TerminalView.cs:346-489`) as a parallel surface to the
+F# `HotkeyRegistry.builtIns` registry. The keyboard hot-path
+filter (`OnPreviewKeyDown`, fired per keystroke) consults the
+C# array directly for O(1) hot-path performance; the F#
+registry is consulted at compose-time only. The new
+`AppReservedHotkeysMirrorTests.fs` test pins the parity
+invariant at test time so "single source of truth" is maintained
+in spirit (a missed update on either side fails CI immediately
+rather than at NVDA-test time). A future cycle may collapse the
+two surfaces into a single one if the maintainer wants — but
+that's a focused refactor, not Cycle 26's scope.
+
 ## Recording results
 
 For each release tag:
