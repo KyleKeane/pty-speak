@@ -15,6 +15,64 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 26d): Cycle 26 NVDA matrix rows + How-to-add-a-menu-item recipe + Where-we-left-off refresh
+
+Final PR of Cycle 26 (the multi-PR app-menu mini-cycle). Doc-only;
+locks the cycle's user-facing contract via a new NVDA validation
+matrix and a contributor-facing extension recipe.
+
+- **`docs/ACCESSIBILITY-TESTING.md`** — new "Cycle 26 — App menu"
+  subsection (sits between the Stage-7 / Cycle-24 cluster and
+  Stage 8) with 6 NVDA validation rows covering: Menu reachable
+  via Alt; document-role preserved on launch (26a invariant);
+  `InputGestureText` reading via NVDA (26b); menu invokes same
+  handler as keyboard gesture (single-source-of-truth contract);
+  all 14 keyboard hotkeys still fire (regression check); menu-only
+  command launches script (26c); menu-only item omits
+  `InputGestureText`. Includes a 5-row diagnostic decoder for
+  common failure modes and an ADR-style note documenting the
+  parallel-surface decision (`TerminalView.AppReservedHotkeys`
+  stays as the C#-side hot-path mirror; `AppReservedHotkeysMirrorTests`
+  pins parity at test time).
+- **`docs/USER-SETTINGS.md`** — new "How to add a menu item
+  (Cycle 26 extension recipe)" section at the end. Documents
+  the three-edit pattern (AppCommand DU + builtIns row + named
+  MenuItem in XAML) for: gesture-bearing commands, menu-only
+  commands, new top-level menus, accelerator rebinds, and item
+  removal (the inverse of the recipe). Phase 2 evolution note
+  flags the future TOML-override surface for `Hotkey.Key` /
+  `Modifiers`.
+- **`CLAUDE.md`** — updates the line at 462-463 (formerly "A
+  future cycle's app menu will surface this script as a menu
+  item.") to past tense, citing Cycle 26c's surfacing of
+  `test-process-cleanup.ps1` via Diagnostics → Test Process
+  Cleanup.
+- **`docs/SESSION-HANDOFF.md`** — refreshes "Where we left off"
+  through Cycle 26: Last merged stages cell extended with PRs
+  #223-#227 (Cycle 25c, 25d, 26a, 26b, 26c) plus this PR's 26d;
+  In-flight branch updated to `claude/cycle-26d-docs-and-nvda-matrix`;
+  Next stage cell repointed at the candidate-cycle picker
+  (Output framework Part 3 strategic-priority vs. landing one of
+  the maintainer's anticipated future menus first to exercise
+  the Cycle 26 extension recipe).
+- **`docs/CHECKPOINTS.md`** — adds `baseline/cycle-26-app-menu`
+  to the pending-tag-pushes table, with the standard "resolve
+  the merge SHA after this PR lands" template the maintainer's
+  workstation sweep uses.
+
+No code changes. The Cycle 26 mini-cycle ships end-to-end with
+this PR.
+
+**Maintainer follow-ups** (per `docs/SESSION-HANDOFF.md`
+"Where we left off" Open follow-ups):
+
+- Push the new `baseline/cycle-26-app-menu` tag once this PR
+  merges (along with the other pending-tag-pushes —
+  `baseline/stage-7-claude-roundtrip`,
+  `baseline/cycle-24-sessionmodel-persistence`).
+- Run the new Cycle 26 NVDA matrix rows against the next preview
+  cut to verify the menu surface end-to-end on NVDA.
+
 ### Added (Cycle 26c): RunProcessCleanupScript menu-only AppCommand + handler
 
 Third PR of Cycle 26 (the multi-PR app-menu mini-cycle). Lands the

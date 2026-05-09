@@ -459,8 +459,11 @@ Terminal.App.exe + its parent-PID children + sibling shell counts
 pty-speak, and reports whether anything was orphaned. Run it
 directly from PowerShell when diagnosing Job Object cascade-kill
 regressions, NOT for "is the child alive right now?" — that's the
-inline check above. A future cycle's app menu will surface this
-script as a menu item.
+inline check above. **Cycle 26c also surfaces this script via the
+app menu** (Diagnostics → Test Process Cleanup; no keyboard
+accelerator) — the menu item invokes `runTestProcessCleanup` in
+`Program.fs`, which spawns the same script in a separate
+PowerShell window via `ProcessStartInfo`.
 
 ## Current sequencing (May 2026)
 
