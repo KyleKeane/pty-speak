@@ -15,6 +15,49 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 26a): app menu skeleton + UIA plumbing
+
+First PR of Cycle 26 (the multi-PR app-menu mini-cycle planned in
+[`docs/PROJECT-PLAN-2026-05-09.md`](docs/PROJECT-PLAN-2026-05-09.md)).
+Goal of the cycle: surface every `AppCommand` (14 reserved hotkeys
+today) as a discoverable menu item with its keyboard shortcut shown
+via `MenuItem.InputGestureText`, plus add a new menu-only
+`RunProcessCleanupScript` command — relieving the maintainer's
+hotkey-count working-memory ceiling and creating a natural surface
+for future diagnostic scripts to plug in without burning hotkey slots.
+
+This first PR lands the **structural skeleton** only; no command
+wiring, no behaviour change beyond proving the menu renders + UIA
+routes correctly.
+
+- **`src/Views/MainWindow.xaml`**: wrap the existing `<Grid>` in a
+  `<DockPanel>`. Add a top-docked `<Menu>` with
+  `AutomationProperties.Name="Application menu"` and
+  `AutomationProperties.AutomationId="pty-speak.AppMenu"` (mirrors
+  the `pty-speak.<surface>` AutomationId convention used on
+  `MainWindow` itself, future-proofing for FlaUI E2E per the
+  parked Cycle 25b-2 design). The terminal view stays as the
+  `LastChildFill` child so it expands to fill the remaining space.
+- **Single throwaway menu item**: `_Help → E_xit` wired to a
+  `Click` handler in `MainWindow.xaml.cs` that calls `Close()`.
+  Its only purpose is to prove that menu Click events route
+  end-to-end before Cycle 26b lands the populated-from-`HotkeyRegistry`
+  structure. Cycle 26b deletes both the item and the handler.
+- **`src/Views/MainWindow.xaml.cs`**: add the `Exit_Click` handler
+  (deleted in Cycle 26b). Add an addendum to the existing focus-routing
+  comment block (lines 44-62) explicitly noting that the Cycle 26a
+  Menu does NOT compete for focus on `Loaded` — WPF Menu only claims
+  focus on Alt press or explicit `Focus()`, and the `DockPanel`
+  layout keeps `TerminalSurface.Focus()` routing to the document-role
+  peer as before. The Cycle 26a NVDA matrix row pins this.
+- **No code changes outside `src/Views/`**. F# code, hotkey registry,
+  `OnPreviewKeyDown` filter, and the C# `AppReservedHotkeys` mirror
+  are all untouched.
+- **NVDA validation gate** (lands in Cycle 26d's matrix-row PR):
+  Launch reads "pty-speak terminal {version}, document"; press Alt
+  to summon the menu bar; arrow keys announce menu names; Esc
+  returns focus and NVDA re-announces "document".
+
 ### Added (Cycle 25d): `PROJECT-PLAN-2026-05-09.md` dated successor + cross-reference sweep
 
 Spawns the dated successor strategic plan

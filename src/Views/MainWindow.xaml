@@ -8,7 +8,24 @@
         Background="Black"
         AutomationProperties.Name="pty-speak terminal"
         AutomationProperties.AutomationId="pty-speak.MainWindow">
-    <Grid>
+    <DockPanel>
+        <!-- Cycle 26a: top-of-window app menu skeleton. Always-visible
+             (NVDA-user has no real-estate cost; discoverability is the
+             point — see PROJECT-PLAN-2026-05-09.md "Cycle 26 — app menu").
+             AutomationProperties.AutomationId mirrors the
+             `pty-speak.<surface>` convention used on MainWindow itself
+             so a future FlaUI E2E suite (Cycle 25b-2, parked) can
+             find it deterministically. The single _Help → E_xit item
+             is a smoke-test placeholder; Cycle 26b replaces this with
+             the full menu structure populated from HotkeyRegistry. -->
+        <Menu DockPanel.Dock="Top"
+              AutomationProperties.Name="Application menu"
+              AutomationProperties.AutomationId="pty-speak.AppMenu">
+            <MenuItem Header="_Help">
+                <MenuItem Header="E_xit"
+                          Click="Exit_Click" />
+            </MenuItem>
+        </Menu>
         <views:TerminalView x:Name="TerminalSurface" x:FieldModifier="public" />
-    </Grid>
+    </DockPanel>
 </Window>

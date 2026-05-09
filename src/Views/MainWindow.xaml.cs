@@ -60,6 +60,15 @@ public partial class MainWindow : Window
         // Terminal.App's `Program.fs` already handles screen
         // attachment in `Window.Loaded`; this fits naturally
         // alongside.
+        //
+        // Cycle 26a addendum: the Menu added in MainWindow.xaml
+        // does NOT compete for focus on Loaded. WPF Menu only
+        // claims focus on Alt press or explicit Focus() call,
+        // and the layout (DockPanel.Dock="Top" Menu, then
+        // TerminalView) keeps TerminalSurface's Focus() call
+        // routing to the document-role peer as before. Pinned
+        // by the Cycle 26a NVDA matrix row in
+        // docs/ACCESSIBILITY-TESTING.md.
         Loaded += (_, _) => TerminalSurface.Focus();
 
         // Audit-cycle PR-C deleted the SourceInitialized +
@@ -75,4 +84,11 @@ public partial class MainWindow : Window
         // is reached via `TerminalView.OnCreateAutomationPeer`
         // — no native-interop window subclass involved.
     }
+
+    // Cycle 26a: throwaway Help → Exit menu item handler.
+    // Smoke-test wiring to prove the Menu surface routes click
+    // events end-to-end. Cycle 26b replaces the entire Help
+    // menu structure with the populated-from-HotkeyRegistry
+    // version, and this handler is deleted with it.
+    private void Exit_Click(object sender, RoutedEventArgs e) => Close();
 }
