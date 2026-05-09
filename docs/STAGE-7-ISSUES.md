@@ -334,6 +334,24 @@ remains in scope for Output framework cycle Part 3.2 RFC; a
 stopgap could cap announce length at the coalescer
 (post-PR-G follow-up if needed).
 
+**Re-confirmed during Cycle 29b NVDA test 2026-05-09**: a
+fresh failure mode surfaces specifically on Claude's
+*thinking-state spinner animations* (`✻ Transmuting…` / `✶
+Considering…` / `· Flibbertigibbeting…`). Each spinner frame
+mutates the rendered text minimally — the glyph rotates
+through `✻ ✶ ✽ ✢ ·` and the token counter increments
+(`↓ 50 tokens` → `↓ 67 tokens` → `↓ 82 tokens`). Existing
+spinner suppression compares frame *hashes* for identity,
+so each cosmetically-different frame slips through the gate
+and emits a full StreamChunk. ~80 spinner-frame announces
+counted in a single 12-second Claude turn. Fix sketch:
+change spinner suppression from "identical hash" to
+"high-frequency low-edit-distance" (Levenshtein within a
+threshold over a short window). ~50-100 LOC change isolated
+to `StreamPathway`; doesn't require the full framework
+cycle. Tracked as a near-term candidate alongside
+`[output-earcon]` red-tone misfire below.
+
 ### [output-selection] Tool-use prompt reads as flat text instead of listbox
 
 **What broke.** Claude's tool-use confirmation prompt
@@ -368,15 +386,40 @@ the Output framework cycle's Selection profile.
 [`spec/tech-plan.md`](../spec/tech-plan.md) §7.4 known issue
 #2 → Stage 8). Empirical confirmation pending.
 
-**Status (2026-05-09).** Partially addressed by Cycles 29a +
-29b (Stage 8e-A parts 1+2 of 3): NVDA now reads selection
-prompts as text ("selection prompt: Edit, Yes, Always, No
-(selected: Yes)" + "selected: Yes, 2 of 4" on highlight
-movement + "selection dismissed" on dismissal). UIA listbox
-semantics — the full fix that gives NVDA `1 of 4` navigation
-+ ListItem control type — arrives in Stage 8e-B (separate
-plan-mode pass). Cycle 29c finalises the substrate with
+**Status (2026-05-09).** Code-complete via Cycles 29a + 29b
+(Stage 8e-A parts 1+2 of 3): NVDA reads selection prompts
+as text ("selection prompt: Edit, Yes, Always, No (selected:
+Yes)" + "selected: Yes, 2 of 4" on highlight movement +
+"selection dismissed" on dismissal). UIA listbox semantics —
+the full fix that gives NVDA `1 of 4` navigation + ListItem
+control type — arrives in Stage 8e-B (separate plan-mode
+pass). Cycle 29c finalises the substrate with
 `[profile.selection]` TOML loader.
+
+**Validation gotcha — Claude auto-trust mode skips the
+prompt UI** (discovered during Cycle 29b NVDA test
+2026-05-09). When Claude has previously been granted trust
+in a directory (or is invoked with `--allowedTools` or
+similar configuration), tool-use confirmation prompts
+**never render** — Claude proceeds to read/list/glob
+without showing the "Edit / Yes / Always / No" UI at all.
+The grep confirms: zero `Semantic=SelectionShown` events
+across a multi-minute Claude session that included
+multiple file reads. To force a prompt for testing,
+either:
+- Ask Claude to **write/edit** a file (write tools are
+  more likely to require confirmation even in trusted
+  directories);
+- Run pty-speak from a directory Claude has not been
+  granted trust in (`cd C:\temp` then launch);
+- Or invoke Claude with whatever flag forces full-approval
+  mode in the user's installed Claude version.
+
+The `SelectionDetector` per-shell short-circuit DID confirm
+working under cmd / PowerShell during the same test —
+zero false positives across a 5-minute cmd session — so
+the wiring is sound; only the inability to reach a real
+prompt blocked end-to-end validation.
 
 ### [output-earcon] Red error text reads as plain text (no severity signal)
 
@@ -407,7 +450,30 @@ is documented in spec §9.3 but not yet implemented.
 
 **Source: design prediction** (per
 [`spec/tech-plan.md`](../spec/tech-plan.md) §7.4 known issue
-#3 → Stage 9). Empirical confirmation pending.
+#3 → Stage 9). Status updated 2026-05-09: 8d.2 has shipped
+the Earcon profile + the StreamPathway color-detection that
+emits `ErrorLine` events for red-dominant frames. The
+substrate works correctly for genuine errors.
+
+**However — empirically CONFIRMED in INVERSE form during
+Cycle 29b NVDA test 2026-05-09**: the color-detection
+heuristic fires false positives on Claude's thinking-state
+spinner UI, which uses red ANSI for the rotating glyph.
+Counted ~30 `error-tone` earcons (400 Hz) per Claude
+thinking turn, all triggered by spinner frames being
+flagged as red-dominant. The user can no longer
+distinguish a real error tone from a spinner tick. Fix
+sketches: (a) skip ErrorLine emission when the red region
+matches a known-spinner glyph pattern (`✻✶✽✢·*`); (b) add
+a per-shell TOML toggle `[shell.claude] color_detection =
+false`; (c) require larger red-character-count threshold
+than current heuristic (single-character spinners
+shouldn't trigger). All of (a)/(b)/(c) are ~30-50 LOC in
+`StreamPathway`'s color-detector. Tracked as a near-term
+candidate alongside `[output-stream]` spinner storm above —
+together they're the load-bearing UX issues for Claude
+sessions until Cycle 8e-B / 8e-C close out the selection
+sub-cycle.
 
 ### [review-mode] No quick-nav after focus moves past response
 
