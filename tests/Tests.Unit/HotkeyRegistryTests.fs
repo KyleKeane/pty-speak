@@ -66,14 +66,17 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               HotkeyRegistry.OpenConfig
               // Cycle 25b-1a — CopyLatestLog removed (D's bundle
               // subsumes it).
-              HotkeyRegistry.ToggleDebugLog
+              // Cycle 27 — `ToggleDebugLog` and `MuteEarcons`
+              // migrated to `MultiStateCommand` (`LoggingLevel`
+              // and `EarconsMode`); see
+              // `MultiStateRegistryTests`. Both keyboard
+              // accelerators (Ctrl+Shift+G, Ctrl+Shift+M)
+              // dropped — the operations are menu-only by canon.
               HotkeyRegistry.HealthCheck
               HotkeyRegistry.IncidentMarker
               HotkeyRegistry.SwitchToCmd
               HotkeyRegistry.SwitchToPowerShell
               HotkeyRegistry.SwitchToClaude
-              // Stage 8d.1 — earcon mute toggle.
-              HotkeyRegistry.MuteEarcons
               // Cycle 22b — copy SessionModel history to clipboard.
               HotkeyRegistry.CopyHistoryToClipboard
               // Cycle 24e — announce session-log file path.
@@ -200,6 +203,28 @@ let ``CheckForUpdates is bound to Ctrl+Shift+U`` () =
         hk.Modifiers)
 
 [<Fact>]
+let ``Ctrl+Shift+G is unbound (Cycle 27 migrated ToggleDebugLog to LoggingLevel multi-state)`` () =
+    // Cycle 27 — `ToggleDebugLog` migrated from `AppCommand` to
+    // `MultiStateCommand.LoggingLevel`. The keyboard
+    // accelerator was dropped per the maintainer's
+    // hotkey-count working-memory ceiling; the operation now
+    // surfaces only via View → Logging Level. The G gesture
+    // must flow through to the shell as plain text.
+    let modifiers = Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ]
+    let result = HotkeyRegistry.tryFind (HotkeyRegistry.Letter 'G') modifiers
+    Assert.Equal(None, result)
+
+[<Fact>]
+let ``Ctrl+Shift+M is unbound (Cycle 27 migrated MuteEarcons to EarconsMode multi-state)`` () =
+    // Cycle 27 — `MuteEarcons` migrated from `AppCommand` to
+    // `MultiStateCommand.EarconsMode`. Same rationale as
+    // `Ctrl+Shift+G`: dropped accelerator + menu-only via
+    // View → Earcons.
+    let modifiers = Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ]
+    let result = HotkeyRegistry.tryFind (HotkeyRegistry.Letter 'M') modifiers
+    Assert.Equal(None, result)
+
+[<Fact>]
 let ``Ctrl+Shift+L is unbound (Cycle 25b-1a removed CopyLatestLog)`` () =
     // Cycle 25b-1a — CopyLatestLog removed entirely. The
     // Ctrl+Shift+D diagnostic battery's bundle now includes the
@@ -281,19 +306,22 @@ let ``every existing AppCommand from Cycle 25b still has Some Key and Some Modif
     // command that shipped with a default hotkey before Cycle 26b
     // must still have one. Silently demoting an existing hotkey
     // to menu-only would be a UX regression.
+    // Cycle 27 — `ToggleDebugLog` and `MuteEarcons` removed
+    // from `priorCommands` because they migrated to
+    // `MultiStateCommand` and shed their default keyboard
+    // accelerators in the same change. The remaining priors
+    // must still have `Some Key` / `Some Modifiers`.
     let priorCommands =
         [ HotkeyRegistry.CheckForUpdates
           HotkeyRegistry.RunDiagnostic
           HotkeyRegistry.DraftNewRelease
           HotkeyRegistry.OpenDataFolder
           HotkeyRegistry.OpenConfig
-          HotkeyRegistry.ToggleDebugLog
           HotkeyRegistry.HealthCheck
           HotkeyRegistry.IncidentMarker
           HotkeyRegistry.SwitchToCmd
           HotkeyRegistry.SwitchToPowerShell
           HotkeyRegistry.SwitchToClaude
-          HotkeyRegistry.MuteEarcons
           HotkeyRegistry.CopyHistoryToClipboard
           HotkeyRegistry.AnnounceSessionLogPath ]
     for cmd in priorCommands do

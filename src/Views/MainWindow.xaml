@@ -49,13 +49,41 @@
                           x:FieldModifier="public"
                           Header="C_laude" />
             </MenuItem>
+            <!-- Cycle 27 — multi-state menu paradigm. The two
+                 children are parent menu items whose sub-items
+                 are the discrete options. Each option's
+                 IsCheckable + IsChecked is wired in
+                 Program.fs's compose() multi-state pass; the
+                 parent's SubmenuOpened handler refreshes
+                 IsChecked on every open so the active option
+                 always reflects current state.
+
+                 Naming convention: `MenuItem_<Cmd>` for the
+                 parent and `MenuItem_<Cmd>_<OptionId>` for each
+                 option, matching `multiStateNameOf` and the
+                 stable `OptionId`s in
+                 `HotkeyRegistry.multiStateBuiltIns`. -->
             <MenuItem Header="_View">
-                <MenuItem x:Name="MenuItem_ToggleDebugLog"
+                <MenuItem x:Name="MenuItem_LoggingLevel"
                           x:FieldModifier="public"
-                          Header="Toggle _Debug Logging" />
-                <MenuItem x:Name="MenuItem_MuteEarcons"
+                          Header="Logging _Level">
+                    <MenuItem x:Name="MenuItem_LoggingLevel_information"
+                              x:FieldModifier="public"
+                              Header="_Information" />
+                    <MenuItem x:Name="MenuItem_LoggingLevel_debug"
+                              x:FieldModifier="public"
+                              Header="_Debug" />
+                </MenuItem>
+                <MenuItem x:Name="MenuItem_EarconsMode"
                           x:FieldModifier="public"
-                          Header="_Mute Earcons" />
+                          Header="_Earcons">
+                    <MenuItem x:Name="MenuItem_EarconsMode_enabled"
+                              x:FieldModifier="public"
+                              Header="_Enabled" />
+                    <MenuItem x:Name="MenuItem_EarconsMode_muted"
+                              x:FieldModifier="public"
+                              Header="_Muted" />
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="_Data">
                 <MenuItem x:Name="MenuItem_OpenDataFolder"

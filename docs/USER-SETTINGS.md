@@ -1830,3 +1830,126 @@ Menu-only commands have no TOML-overridable gesture today;
 Phase 2 may surface the `None → Some` promotion as a separate
 config knob.
 
+### Recipe — multi-state command (Cycle 27 paradigm)
+
+The Cycle 27 paradigm covers operations whose UX is "select one
+of N discrete options" rather than "fire one action". Multi-state
+commands surface as a parent `MenuItem` with one sub-item per
+option; each option's `IsCheckable=true` + `IsChecked` exposes
+UIA TogglePattern that NVDA reads as "menu item, checked" /
+"menu item, not checked", so a screen-reader user can tell at a
+glance which option is currently active.
+
+The two existing migrations (Cycle 27) are:
+
+- `EarconsMode` (View → Earcons → Enabled / Muted) — formerly the
+  `MuteEarcons` Ctrl+Shift+M toggle.
+- `LoggingLevel` (View → Logging Level → Information / Debug) —
+  formerly the `ToggleDebugLog` Ctrl+Shift+G toggle.
+
+Multi-state commands are **menu-only by canon** as of Cycle 27;
+they have no keyboard accelerator. A future multi-state command
+that needs per-option keyboard accelerators (e.g. a Shell-switch
+migration where `Ctrl+Shift+1`/`+2`/`+3` would each target a
+distinct option) is a clean extension to `MultiStateOption` —
+add optional `Key`/`Modifiers` fields and extend
+`bindMultiState` to install a `KeyBinding` per gesture-bearing
+option. Out of scope until needed.
+
+#### Four edits to add a multi-state command
+
+1. **`HotkeyRegistry.fs` — extend the registry.** Add the new
+   case to `MultiStateCommand`, append a `multiStateNameOf`
+   match arm (the F# compiler enforces exhaustiveness under
+   `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`),
+   append a row to `multiStateBuiltIns` listing the `Options`
+   (each with a stable snake_case `OptionId` + a user-facing
+   `DisplayName`), and append the case to
+   `multiStateAllCommands`.
+2. **`Program.fs compose ()` — add a `bindMultiState` call.**
+   Right after the existing `bindMultiState` block for
+   `EarconsMode` / `LoggingLevel`, add a new block:
+   ```fsharp
+   let myCmdLog = Logger.get "Terminal.App.Program.bindMultiState.MyCmd"
+   let myCmdDef = HotkeyRegistry.multiStateOf HotkeyRegistry.MyCmd
+   let myCmdBinding =
+       bindMultiState
+           window
+           myCmdDef
+           (fun () -> /* current OptionId */)
+           (fun target -> /* set state to target; idempotent */
+                          /* + log + announce via ActivityIds */)
+   multiStateBindings.[HotkeyRegistry.MyCmd] <- myCmdBinding
+   ```
+   The `setByName` closure should be **idempotent**: no-op when
+   `current ≡ target`. Re-selecting the active option from the
+   menu should not re-log or re-announce; the existing two
+   migrations gate the work behind a `current ≠ target`
+   comparison and you should follow that pattern.
+3. **`MainWindow.xaml` — add the parent + per-option items.**
+   Convention: `MenuItem_<MultiStateName>` for the parent and
+   `MenuItem_<MultiStateName>_<OptionId>` for each child.
+   Mark both with `x:FieldModifier="public"` so reflection-
+   driven wiring in `compose ()` can find them.
+   ```xaml
+   <MenuItem x:Name="MenuItem_MyCmd"
+             x:FieldModifier="public"
+             Header="My _Cmd">
+       <MenuItem x:Name="MenuItem_MyCmd_optionA"
+                 x:FieldModifier="public"
+                 Header="Option _A" />
+       <MenuItem x:Name="MenuItem_MyCmd_optionB"
+                 x:FieldModifier="public"
+                 Header="Option _B" />
+   </MenuItem>
+   ```
+4. **`MultiStateRegistryTests.fs` — pin the OptionIds.** Add a
+   pinning fixture so a future PR can't silently rename an
+   `OptionId` (which would break the XAML field-name lookup,
+   the `RoutedCommand` name, and any future TOML key):
+   ```fsharp
+   [<Fact>]
+   let ``MyCmd options are pinned to optionA, optionB`` () =
+       let def = HotkeyRegistry.multiStateOf HotkeyRegistry.MyCmd
+       let ids = def.Options |> List.map (fun o -> o.OptionId)
+       Assert.Equal<string list>([ "optionA"; "optionB" ], ids)
+   ```
+
+The reflection-driven wiring in `compose ()` picks up the new
+parent + children automatically — the per-option
+`MenuItem.Command` is assigned and the parent's
+`SubmenuOpened` event is hooked to refresh `IsChecked` whenever
+the user opens the submenu.
+
+#### Removing a multi-state command
+
+Inverse of the recipe: drop the `MultiStateCommand` DU case
+(F# compiler surfaces dead arms in `multiStateNameOf` and any
+exhaustive match), drop the `multiStateBuiltIns` row, drop the
+`multiStateAllCommands` entry, drop the `bindMultiState` call
+in `compose ()`, drop the parent + children from
+`MainWindow.xaml`, drop the pinning fixture from
+`MultiStateRegistryTests.fs`. The reflection-driven wiring is
+forgiving: missing XAML fields are skipped silently (same
+behaviour as the single-action wiring loop).
+
+#### Migrating an existing single-action toggle
+
+If the existing single-action `AppCommand` is a binary toggle
+that conceptually fits "select one of N options" (the Cycle 27
+migrations are the worked examples), follow this sequence:
+(1) drop the `AppCommand` DU case + `nameOf` arm + `builtIns`
+row + `allCommands` entry; (2) drop the matching row from
+C#-side `TerminalView.AppReservedHotkeys` (the
+`AppReservedHotkeysMirrorTests` parity test catches asymmetry
+automatically); (3) drop the handler function in `Program.fs`
++ the `bind HotkeyRegistry.<cmd> ...` call in `compose ()`;
+(4) drop the single-action XAML `MenuItem`; (5) follow the
+four-edit recipe above to add the multi-state replacement.
+
+If the migration drops the keyboard accelerator (the Cycle 27
+default per the maintainer's working-memory ceiling), also add
+a fixture to `HotkeyRegistryTests.fs` pinning the gesture as
+unbound (mirrors the `Ctrl+Shift+G is unbound` and
+`Ctrl+Shift+M is unbound` fixtures Cycle 27 added).
+

@@ -82,8 +82,6 @@ module HotkeyRegistry =
         // Cycle 25a — auto-create config.toml with defaults if
         // missing, then open in default app.
         | OpenConfig
-        // Stage 7-followup PR-E — toggle FileLogger min-level.
-        | ToggleDebugLog
         // Stage 7-followup PR-F + PR-J liveness probe — health check.
         | HealthCheck
         // Stage 7-followup PR-F — incident marker.
@@ -94,8 +92,6 @@ module HotkeyRegistry =
         | SwitchToPowerShell
         // Stage 7 PR-C / PR-J — switch spawned shell to claude.
         | SwitchToClaude
-        // Stage 8d.1 — toggle WASAPI Earcons mute on/off.
-        | MuteEarcons
         // Cycle 22b — copy SessionModel history to clipboard.
         | CopyHistoryToClipboard
         // Cycle 24e — announce active session-log file path.
@@ -120,13 +116,11 @@ module HotkeyRegistry =
         | DraftNewRelease -> "DraftNewRelease"
         | OpenDataFolder -> "OpenDataFolder"
         | OpenConfig -> "OpenConfig"
-        | ToggleDebugLog -> "ToggleDebugLog"
         | HealthCheck -> "HealthCheck"
         | IncidentMarker -> "IncidentMarker"
         | SwitchToCmd -> "SwitchToCmd"
         | SwitchToPowerShell -> "SwitchToPowerShell"
         | SwitchToClaude -> "SwitchToClaude"
-        | MuteEarcons -> "MuteEarcons"
         | CopyHistoryToClipboard -> "CopyHistoryToClipboard"
         | AnnounceSessionLogPath -> "AnnounceSessionLogPath"
         | RunProcessCleanupScript -> "RunProcessCleanupScript"
@@ -185,10 +179,6 @@ module HotkeyRegistry =
             Key = Some (Letter 'E')
             Modifiers = Some ctrlShift
             Description = "Edit config.toml (Cycle 25a; auto-creates with defaults if missing)" }
-          { Command = ToggleDebugLog
-            Key = Some (Letter 'G')
-            Modifiers = Some ctrlShift
-            Description = "Toggle FileLogger Information ↔ Debug" }
           { Command = HealthCheck
             Key = Some (Letter 'H')
             Modifiers = Some ctrlShift
@@ -209,10 +199,6 @@ module HotkeyRegistry =
             Key = Some (Digit 3)
             Modifiers = Some ctrlShift
             Description = "Switch to Claude shell" }
-          { Command = MuteEarcons
-            Key = Some (Letter 'M')
-            Modifiers = Some ctrlShift
-            Description = "Mute / unmute WASAPI earcons (Stage 8d.1)" }
           { Command = CopyHistoryToClipboard
             Key = Some (Letter 'Y')
             Modifiers = Some ctrlShift
@@ -296,13 +282,128 @@ module HotkeyRegistry =
           DraftNewRelease
           OpenDataFolder
           OpenConfig
-          ToggleDebugLog
           HealthCheck
           IncidentMarker
           SwitchToCmd
           SwitchToPowerShell
           SwitchToClaude
-          MuteEarcons
           CopyHistoryToClipboard
           AnnounceSessionLogPath
           RunProcessCleanupScript ]
+
+    // ---------------------------------------------------------------
+    // Cycle 27 — Multi-state command paradigm
+    // ---------------------------------------------------------------
+    //
+    // `MultiStateCommand` is the parallel concept to `AppCommand`
+    // for operations whose UX is "select one of N discrete options"
+    // rather than "fire one action". The two surfaces it adds:
+    //
+    //   - A parent `MenuItem` whose sub-items are the options.
+    //   - Each option exposes its checked / not-checked state via
+    //     WPF `MenuItem.IsCheckable=true` + `IsChecked`, which
+    //     surfaces UIA TogglePattern that NVDA reads as
+    //     "menu item, checked" / "menu item, not checked". A
+    //     screen-reader user can therefore tell at a glance which
+    //     option is currently active.
+    //
+    // The existing `AppCommand` / `Hotkey` / `bindHotkey`
+    // framework above is unchanged and continues to be the path
+    // for single-action commands (gesture-bearing or menu-only).
+    // The two surfaces are deliberately parallel — a future
+    // multi-state command needing per-option keyboard
+    // accelerators is a clean extension to `MultiStateOption`
+    // without disturbing single-action commands.
+    //
+    // **Cycle 27 migrations.** `EarconsMode` (formerly the
+    // `MuteEarcons` Ctrl+Shift+M toggle) and `LoggingLevel`
+    // (formerly the `ToggleDebugLog` Ctrl+Shift+G toggle) are
+    // both binary-state operations whose previous flip-toggle
+    // UX provided no on-screen indication of the current state.
+    // Surfacing them as multi-state menu items makes the current
+    // state legible. Both keyboard hotkeys are dropped per the
+    // maintainer's hotkey-count working-memory ceiling; future
+    // multi-state commands are menu-only by canon.
+
+    /// Identity of every multi-state command. Parallel to
+    /// `AppCommand`; lookup goes through `multiStateOf` (analog
+    /// of `hotkeyOf`).
+    type MultiStateCommand =
+        // Cycle 27 — Migrated from the Ctrl+Shift+M toggle.
+        // Options: enabled / muted.
+        | EarconsMode
+        // Cycle 27 — Migrated from the Ctrl+Shift+G toggle.
+        // Options: information / debug.
+        | LoggingLevel
+
+    /// Stable string name for a multi-state command. Used as
+    /// the XAML field-name prefix (`MenuItem_<name>`) for the
+    /// parent menu item and as the prefix for each per-option
+    /// `RoutedCommand` name.
+    let multiStateNameOf (cmd: MultiStateCommand) : string =
+        match cmd with
+        | EarconsMode -> "EarconsMode"
+        | LoggingLevel -> "LoggingLevel"
+
+    /// One option within a multi-state command. `OptionId` is
+    /// the stable snake_case identifier used in XAML field
+    /// naming (`MenuItem_<Cmd>_<OptionId>`), per-option
+    /// `RoutedCommand` naming, log lines, and (future) TOML
+    /// config keys. `DisplayName` is the user-facing label
+    /// rendered in the menu and read by NVDA.
+    type MultiStateOption =
+        { OptionId: string
+          DisplayName: string }
+
+    /// Multi-state command definition: identity, display
+    /// label, the ordered option list, and a description.
+    /// Mirrors `Hotkey`'s shape for `AppCommand` minus the
+    /// keyboard-gesture fields (multi-state is menu-only by
+    /// canon as of Cycle 27; future per-option gestures are a
+    /// `MultiStateOption` extension when needed).
+    type MultiStateDef =
+        { Command: MultiStateCommand
+          DisplayName: string
+          Options: MultiStateOption list
+          Description: string }
+
+    /// All registered multi-state commands. Mirrors
+    /// `builtIns` for `AppCommand`. Adding a multi-state
+    /// command requires (a) extending `MultiStateCommand`,
+    /// (b) updating `multiStateNameOf`, (c) appending a row
+    /// here, (d) appending to `multiStateAllCommands`. The
+    /// exhaustive `multiStateNameOf` match catches (b);
+    /// `MultiStateRegistryTests` fixtures pin (a) + (c) + (d).
+    let multiStateBuiltIns : MultiStateDef list =
+        [ { Command = EarconsMode
+            DisplayName = "Earcons"
+            Options =
+              [ { OptionId = "enabled"; DisplayName = "Enabled" }
+                { OptionId = "muted"; DisplayName = "Muted" } ]
+            Description = "Earcons enabled / muted (migrated from Ctrl+Shift+M; menu-only since Cycle 27)" }
+          { Command = LoggingLevel
+            DisplayName = "Logging Level"
+            Options =
+              [ { OptionId = "information"; DisplayName = "Information" }
+                { OptionId = "debug"; DisplayName = "Debug" } ]
+            Description = "FileLogger min-level Information / Debug (migrated from Ctrl+Shift+G; menu-only since Cycle 27)" } ]
+
+    /// Look up the `MultiStateDef` for a `MultiStateCommand`.
+    /// Throws `KeyNotFoundException` if missing — pinned by
+    /// the `MultiStateRegistryTests.every MultiStateCommand
+    /// case has a builtIns entry` fixture.
+    let multiStateOf (cmd: MultiStateCommand) : MultiStateDef =
+        multiStateBuiltIns
+        |> List.tryFind (fun d -> d.Command = cmd)
+        |> Option.defaultWith (fun () ->
+            raise (
+                System.Collections.Generic.KeyNotFoundException(
+                    sprintf
+                        "HotkeyRegistry.multiStateBuiltIns missing entry for MultiStateCommand.%s"
+                        (multiStateNameOf cmd))))
+
+    /// All registered multi-state commands. Manually
+    /// maintained; pinned by `MultiStateRegistryTests`.
+    let multiStateAllCommands : MultiStateCommand list =
+        [ EarconsMode
+          LoggingLevel ]

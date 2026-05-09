@@ -414,16 +414,15 @@ public class TerminalView : FrameworkElement
             (Key.D2, ModifierKeys.Control | ModifierKeys.Shift, "Switch to PowerShell shell"),
             (Key.D3, ModifierKeys.Control | ModifierKeys.Shift, "Switch to claude shell"),
 
-            // Stage 7-followup PR-E — toggle FileLogger min-level
-            // between Information (default) and Debug at runtime,
-            // without requiring an env-var + relaunch cycle. Each
-            // press flips the level and announces the new state via
-            // NVDA so the user can confirm at any time. Mnemonic:
-            // G for "loGging". No NVDA collision (NVDA's
-            // `Ctrl+Shift+G` has no default binding; the
-            // letter-G family in NVDA is `NVDA+G` for object-nav
-            // graphics, which is a different modifier).
-            (Key.G, ModifierKeys.Control | ModifierKeys.Shift, "Toggle debug logging"),
+            // Cycle 27 — `Ctrl+Shift+G` (toggle FileLogger
+            // min-level) was migrated to the multi-state menu
+            // paradigm. The operation now lives under
+            // View → Logging Level → Information / Debug, with
+            // the current level indicated via WPF
+            // `MenuItem.IsChecked`. No keyboard accelerator;
+            // `Ctrl+Shift+G` flows through to the shell as plain
+            // text. See `HotkeyRegistry.MultiStateCommand`
+            // (`Terminal.Core/HotkeyRegistry.fs`).
 
             // Stage 7-followup PR-F — diagnostic-surface hotkeys.
             //
@@ -448,13 +447,15 @@ public class TerminalView : FrameworkElement
             (Key.H, ModifierKeys.Control | ModifierKeys.Shift, "Health check"),
             (Key.B, ModifierKeys.Control | ModifierKeys.Shift, "Incident marker"),
 
-            // Stage 8d.1 — toggle WASAPI earcons mute on/off.
-            // Each press flips the process-wide mute state and
-            // announces "Earcons muted." / "Earcons unmuted."
-            // via NVDA. The reservation has been on this slot
-            // since Stage 6 (per CLAUDE.md "Reserved (not yet
-            // bound)" list); 8d.1 is the first claim.
-            (Key.M, ModifierKeys.Control | ModifierKeys.Shift, "Mute earcons"),
+            // Cycle 27 — `Ctrl+Shift+M` (toggle WASAPI earcons
+            // mute) was migrated to the multi-state menu
+            // paradigm. The operation now lives under
+            // View → Earcons → Enabled / Muted, with the
+            // current state indicated via WPF
+            // `MenuItem.IsChecked`. No keyboard accelerator;
+            // `Ctrl+Shift+M` flows through to the shell as plain
+            // text. See `HotkeyRegistry.MultiStateCommand`
+            // (`Terminal.Core/HotkeyRegistry.fs`).
 
             // Cycle 22b — copy SessionModel history to clipboard.
             // Mnemonic: Y for histor*Y*. Dumps the full session
