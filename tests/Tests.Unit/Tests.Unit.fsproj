@@ -33,6 +33,7 @@
     <Compile Include="SessionModelJsonlTests.fs" />
     <Compile Include="SessionLogWriterTests.fs" />
     <Compile Include="HeuristicPromptDetectorTests.fs" />
+    <Compile Include="SelectionDetectorTests.fs" />
     <Compile Include="Osc133Tests.fs" />
     <Compile Include="StreamPathwayTests.fs" />
     <Compile Include="TuiPathwayTests.fs" />

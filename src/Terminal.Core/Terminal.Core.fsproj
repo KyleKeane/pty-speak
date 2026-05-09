@@ -24,6 +24,7 @@
     <Compile Include="SessionSanitiser.fs" />
     <Compile Include="SessionLogWriter.fs" />
     <Compile Include="HeuristicPromptDetector.fs" />
+    <Compile Include="SelectionDetector.fs" />
     <Compile Include="DisplayPathway.fs" />
     <Compile Include="StreamPathway.fs" />
     <Compile Include="TuiPathway.fs" />

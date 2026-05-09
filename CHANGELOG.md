@@ -15,6 +15,65 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 29a, Stage 8e-A part 1): SelectionDetector substrate + SelectionExtensions schema (not yet wired to dispatcher)
+
+First of three sequenced PRs (29a / 29b / 29c) that close the
+output-framework spec's Stage 8e — `[output-selection]` per
+`docs/STAGE-7-ISSUES.md:337` (Claude tool-use prompt reads as
+flat text instead of listbox). 29a ships the producer-side
+substrate **fully unit-tested but not yet wired into the
+dispatcher**. 29b will add `SelectionProfile.fs` + `Program.fs`
+wiring (NVDA starts speaking selection events as text). 29c will
+add the `[profile.selection]` TOML loader. 8e-B + 8e-C continue
+the sub-cycle with the UIA listbox peer + arrow-key round-trip.
+
+- **`src/Terminal.Core/SelectionDetector.fs`** — pure functional
+  detector implementing spec `tech-plan.md` §8.1 detection
+  heuristic. Two-pass per-frame algorithm: PASS 1 classifies
+  rows (Blank / Plain / Highlighted via SGR-distinct background
+  or Inverse bit), groups runs of contiguous non-blank rows
+  into candidate regions (2-6 rows; exactly one highlighted;
+  reject pure-punctuation rows); PASS 2 picks the bottommost
+  candidate, applies signal aggregation (stable region after
+  `HighlightDetectionThresholdMs`; SGR-distinct by construction;
+  arrow-key correlation upgrades confidence to
+  `HeuristicSGRWithKeystroke`), and emits `OutputEvent`s with
+  `SemanticCategory.SelectionShown` / `SelectionItem` /
+  `SelectionDismissed`. Public surface: `Direction` /
+  `SelectionSource` / `Parameters` / `defaultParameters` /
+  `create` / `tryDetect` / `feedKeystroke` / `reset`. Mirrors
+  `HeuristicPromptDetector.fs` shape. Per-shell short-circuit
+  (claude-only in 8e-A; 8f wires TOML).
+- **`src/Terminal.Core/OutputEventTypes.fs`** — new
+  `SelectionExtensions` constants module declaring the
+  well-known `OutputEvent.Extensions` keys (`selection.itemCount`,
+  `selection.selectedIndex`, `selection.itemText`,
+  `selection.allItems`, `selection.topRow`, `selection.bottomRow`,
+  `selection.source`). Schema-stable across the sub-cycle —
+  8e-B's UIA peer queries the same keys.
+- **`tests/Tests.Unit/SelectionDetectorTests.fs`** — 19 facts
+  pinning the detector contract: per-shell activation gate,
+  stability window, initial-burst shape (Producer +
+  Priority + Extensions), selection-index update via signature
+  gate, suppression on identical snapshot, dismissal grace,
+  confidence-tier upgrade on arrow-key correlation,
+  `MinConfidence` gating, region-rejection (single-row /
+  8-row / SGR-uniform), reset behaviour. Mirrors
+  `HeuristicPromptDetectorTests.fs` fixture-builder pattern;
+  adds `cellWithBg` + `highlightedRowOf` helpers for the
+  SGR-distinct simulation.
+- **`src/Terminal.Core/Terminal.Core.fsproj`** + **`tests/Tests.Unit/Tests.Unit.fsproj`** — register the new sources after their respective cousins (`HeuristicPromptDetector.fs` /
+  `HeuristicPromptDetectorTests.fs`).
+
+**Wiring status.** This PR does NOT route detector output into
+`OutputDispatcher`. The detector compiles standalone, is
+exercised entirely via tests, and exports a clean public API
+ready for 29b. NVDA behaviour on the running app is **unchanged**
+by this PR — there is no selection-text speech yet. That is
+intentional per the maintainer-chosen 29a/29b/29c split: ship
+the detection logic first so the heuristic can be code-reviewed
+and CI-tested in isolation; wire it into NVDA when 29b ships.
+
 ### Added (Cycle 28): Window menu (Close Window + Exit) + Program.fs comment cleanup + PROJECT-PLAN status refresh
 
 Foundation cleanup PR before the framework cycle ramps. Mixes
