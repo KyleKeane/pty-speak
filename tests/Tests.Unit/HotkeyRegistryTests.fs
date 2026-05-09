@@ -317,7 +317,14 @@ let ``gestureText returns None for menu-only commands`` () =
     // command is menu-only as of Cycle 26b; Cycle 26c adds
     // RunProcessCleanupScript). The format helper must
     // return None for any (None, None) pair.
-    let menuOnly =
+    //
+    // Type annotation on the binding is required because
+    // `HotkeyRegistry` is a module inside `Terminal.Core`
+    // (not auto-opened), so a bare record literal can't
+    // infer `Hotkey` from field labels alone — see
+    // CLAUDE.md "Record literal type inference fails when
+    // the record module is not auto-opened" (FS0039 gotcha).
+    let menuOnly : HotkeyRegistry.Hotkey =
         { Command = HotkeyRegistry.CheckForUpdates  // command identity is irrelevant here
           Key = None
           Modifiers = None
@@ -328,7 +335,7 @@ let ``gestureText returns None for menu-only commands`` () =
 let ``gestureText modifier order is Ctrl+Alt+Shift regardless of Set enumeration`` () =
     // Pin the stable rendering order so menu-displayed gestures
     // and CHANGELOG-cited gestures stay textually identical.
-    let hk =
+    let hk : HotkeyRegistry.Hotkey =
         { Command = HotkeyRegistry.CheckForUpdates
           Key = Some (HotkeyRegistry.Letter 'X')
           Modifiers = Some (Set.ofList [ HotkeyRegistry.Shift; HotkeyRegistry.Alt; HotkeyRegistry.Ctrl ])
