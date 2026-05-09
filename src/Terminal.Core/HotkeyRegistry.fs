@@ -105,8 +105,6 @@ module HotkeyRegistry =
         | CopyHistoryToClipboard
         // Cycle 24e — announce active session-log file path.
         | AnnounceSessionLogPath
-        // Cycle 25b — run automated NVDA-matrix test runner.
-        | RunTestMatrix
 
     /// Stable string name for a command, used as the
     /// `RoutedCommand` name passed to WPF and as a TOML key
@@ -130,7 +128,6 @@ module HotkeyRegistry =
         | MuteEarcons -> "MuteEarcons"
         | CopyHistoryToClipboard -> "CopyHistoryToClipboard"
         | AnnounceSessionLogPath -> "AnnounceSessionLogPath"
-        | RunTestMatrix -> "RunTestMatrix"
 
     /// Default key binding for a command. Mirrors the
     /// `AppReservedHotkeys` table in
@@ -160,7 +157,7 @@ module HotkeyRegistry =
           { Command = RunDiagnostic
             Key = Letter 'D'
             Modifiers = ctrlShift
-            Description = "Process-cleanup diagnostic launcher (PR-J adds inline shell-process snapshot)" }
+            Description = "Run full automated diagnostic suite (Cycle 25b — bundles dump to clipboard + dated snapshot file)" }
           { Command = DraftNewRelease
             Key = Letter 'R'
             Modifiers = ctrlShift
@@ -212,11 +209,7 @@ module HotkeyRegistry =
           { Command = AnnounceSessionLogPath
             Key = Letter 'S'
             Modifiers = ctrlShift
-            Description = "Announce the active session-log file path (Cycle 24e)" }
-          { Command = RunTestMatrix
-            Key = Letter 'T'
-            Modifiers = ctrlShift
-            Description = "Run automated NVDA-matrix test runner (Cycle 25b)" } ]
+            Description = "Announce the active session-log file path (Cycle 24e)" } ]
 
     /// Look up the default Hotkey for a command. Throws
     /// `KeyNotFoundException` if the registry is incomplete —
@@ -263,5 +256,4 @@ module HotkeyRegistry =
           SwitchToClaude
           MuteEarcons
           CopyHistoryToClipboard
-          AnnounceSessionLogPath
-          RunTestMatrix ]
+          AnnounceSessionLogPath ]

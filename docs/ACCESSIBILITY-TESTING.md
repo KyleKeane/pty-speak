@@ -398,7 +398,7 @@ surface, not solve.**
 | **Hot-switch cmd → claude (PR-C)**  | At the cmd prompt, press `Ctrl+Shift+2`         | NVDA announces "Switching to Claude Code." → ~700ms pause → "Switched to Claude Code." → claude welcome reads. Active session log includes "Shell-switch: spawning Claude Code. CommandLine=<path>" |
 | **Hot-switch claude → cmd (PR-C)**  | After claude is running, press `Ctrl+Shift+1`   | NVDA announces "Switching to Command Prompt." → ~700ms pause → "Switched to Command Prompt." → cmd prompt reads. Brief alt-screen residue is acceptable for v1 — log severity to `STAGE-7-ISSUES.md` with `[output-tui]` tag if it confuses the read |
 | **Hot-switch resolve failure (PR-C)** | On a machine WITHOUT claude.exe on PATH, press `Ctrl+Shift+2` | NVDA announces "Cannot switch to Claude Code: not found on PATH." (sanitised). The existing cmd shell continues to work; the user is NOT dropped into a dead window |
-| **Process-cleanup after switch (PR-C)** | After at least one Ctrl+Shift+1 / Ctrl+Shift+2 cycle, press `Ctrl+Shift+D` (process-cleanup diagnostic) | Diagnostic confirms no orphan `claude.exe` / cmd.exe / Terminal.App processes from the previous host. (Job Object's `KILL_ON_JOB_CLOSE` is the kernel-enforced cleanup.) |
+| **Process-cleanup after switch (PR-C)** | After at least one Ctrl+Shift+1 / Ctrl+Shift+2 cycle, press `Ctrl+Shift+D` (autonomous diagnostic battery) | The battery's snapshot section in the bundled dump (clipboard + dated snapshot file) confirms no orphan `claude.exe` / cmd.exe / Terminal.App processes from the previous host. (Job Object's `KILL_ON_JOB_CLOSE` is the kernel-enforced cleanup.) Cycle 25b — Ctrl+Shift+D no longer auto-launches `test-process-cleanup.ps1`; that interactive close-and-recheck flow is now invoked manually from PowerShell when reproducing Job-cascade-kill regressions. |
 | **Quitting cleanly**                | `/exit` (Claude), `exit` (cmd), or Ctrl+D       | Process exits; NVDA announces it; terminal returns to host shell or window closes |
 | **PTYSPEAK_SHELL unrecognised value** | Launch pty-speak with `PTYSPEAK_SHELL=garbage` | cmd.exe still spawns (fallback); active session log includes "PTYSPEAK_SHELL=\"garbage\" not recognised; falling back to cmd.exe. Recognised values: cmd, claude." NVDA-bound behaviour is identical to default-shell launch |
 
@@ -646,8 +646,8 @@ the app-reserved-hotkey contract in `spec/tech-plan.md` §6.
 
 | Test                              | Procedure                                       | Expected behaviour                                               |
 |-----------------------------------|-------------------------------------------------|------------------------------------------------------------------|
-| Diagnostic launcher               | From running pty-speak, press `Ctrl+Shift+D`    | NVDA reads "Diagnostic launched in a separate PowerShell window. Switch to that window to follow the test."; PowerShell window opens; bundled `test-process-cleanup.ps1` runs; on Alt+Tab to that window NVDA reads its plain-text progress |
-| Diagnostic two-pass               | After the launcher: follow the script's prompts | Pass 1 (Alt+F4 close) and Pass 2 (X-button close, with `Alt+Space`/`Enter` keyboard-equivalent) both report PASS; final summary line `OVERALL: PASS` |
+| Diagnostic battery (Cycle 25b)    | From running pty-speak, press `Ctrl+Shift+D`    | NVDA reads "Starting diagnostic on <Shell>..." → ~10s autonomous battery → "Diagnostic complete. K of N passed. SessionModel: ... Diagnostic snapshot bundle copied to clipboard. Snapshot saved to %LOCALAPPDATA%\PtySpeak\diagnostic-snapshots\snapshot-<stamp>.txt." Bundle includes: per-shell command battery results + SessionModel substrate state + active FileLogger log slice + config.toml + redacted environment. Paste back from clipboard for triage. |
+| Process-cleanup interactive test  | From a PowerShell prompt (not pty-speak's hotkey since Cycle 25b), run `& "$env:LOCALAPPDATA\pty-speak\current\test-process-cleanup.ps1"` | Pass 1 (Alt+F4 close) and Pass 2 (X-button close, with `Alt+Space`/`Enter` keyboard-equivalent) both report PASS; final summary line `OVERALL: PASS`. A future cycle's app menu will surface this script as a menu item. |
 | Release-notes launcher            | From running pty-speak, press `Ctrl+Shift+R`    | NVDA reads "Opened release notes in default browser: <url>"; default browser opens to the GitHub Releases page |
 | Release-notes URL is correct      | Inspect the browser's address bar               | URL is `https://github.com/KyleKeane/pty-speak/releases` (or whatever fork's `UpdateRepoUrl` was configured to) |
 
@@ -665,16 +665,22 @@ input) ship; see SESSION-HANDOFF item 6 for options.
 
 **Diagnostic decoder for the launcher hotkeys:**
 
-- **`Ctrl+Shift+D` silent, no PowerShell window** → Either the
-  `setupDiagnosticKeybinding` wiring regressed in `Program.fs`, OR
-  the bundled `test-process-cleanup.ps1` is missing from the
-  install. Check `%LocalAppData%\pty-speak\current\` for the
-  script file; if missing, the `Content` include in
-  `Terminal.App.fsproj` regressed (which Velopack pack picks up).
-- **`Ctrl+Shift+D` opens PowerShell but the script bails immediately
-  with "pty-speak already running, abort"** → PR #82's fix
-  regressed; the script's `Run-Pass` should detect-and-reuse, not
-  abort.
+- **`Ctrl+Shift+D` silent, no announcement** → The
+  `bindHotkey window HotkeyRegistry.RunDiagnostic runDiagnostic`
+  wiring regressed, OR `runFullBattery`'s outer `try`-`with`
+  swallowed an exception (check the active FileLogger log for an
+  ERR line tagged `Terminal.App.Diagnostics.runFullBattery`).
+  Cycle 25b: D no longer launches a PowerShell window; the
+  battery runs in-process. If you expected a PS window, you're
+  probably thinking of `test-process-cleanup.ps1` which is now
+  invoked manually.
+- **`Ctrl+Shift+D` runs the battery but the snapshot file is
+  missing** → `writeSnapshotFile` failed (e.g. the user lacks
+  write access to `%LOCALAPPDATA%\PtySpeak\diagnostic-snapshots\`).
+  The clipboard payload still contains the bundle; the announce
+  notes "Snapshot file write failed; clipboard still has the
+  bundle." Investigate via the FileLogger log's
+  `Diagnostic snapshot file write failed` warning line.
 - **`Ctrl+Shift+R` silent, no browser** → Either the
   `setupReleasesKeybinding` wiring regressed, OR the user has no
   default browser handler registered for `https:` URLs (rare on

@@ -492,7 +492,3 @@ module ActivityIds =
     /// freshly written) before the default-app launch grabs
     /// focus.
     let openConfig = "pty-speak.open-config"
-
-    /// Run-test-matrix announcements (Cycle 25b
-    /// `Ctrl+Shift+T`). Emits launch + completion summary.
-    let runTestMatrix = "pty-speak.run-test-matrix"

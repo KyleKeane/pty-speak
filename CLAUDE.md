@@ -313,8 +313,13 @@ is load-bearing and pinned by xUnit + behavioural tests.
 Currently shipped (orientation reference; spec section 6 is canonical):
 
 - `Ctrl+Shift+U` — Velopack auto-update (Stage 11)
-- `Ctrl+Shift+D` — process-cleanup diagnostic launcher with
-  inline shell-process snapshot announce (PR-J)
+- `Ctrl+Shift+D` — full automated diagnostic battery (Cycle 25b
+  bundles its diagnostic-battery log + active FileLogger log +
+  config.toml + redacted environment into a single dated
+  snapshot file at `%LOCALAPPDATA%\PtySpeak\diagnostic-snapshots\
+  snapshot-<yyyy-MM-dd-HH-mm-ss-fff>.txt` and copies the bundle
+  to clipboard, so a paste-back to triage chat carries the full
+  triage context in one block)
 - `Ctrl+Shift+R` — draft-a-new-release form launcher
 - `Ctrl+Shift+L` — copy active session log to clipboard
   (Cycle 25a moved from `Ctrl+Shift+;` for the L-as-Log
@@ -326,8 +331,6 @@ Currently shipped (orientation reference; spec section 6 is canonical):
   old `Ctrl+Shift+L`)
 - `Ctrl+Shift+E` — edit `config.toml` in the default app;
   auto-creates with sensible defaults if missing (Cycle 25a)
-- `Ctrl+Shift+T` — run automated NVDA-matrix test runner
-  (Cycle 25b; placeholder handler in 25a)
 - `Ctrl+Shift+1` / `+2` / `+3` — hot-switch the spawned shell
   (`+1`=cmd / `+2`=PowerShell / `+3`=Claude; PR-J reordered to
   put PowerShell next to cmd as the diagnostic control shell)
@@ -340,8 +343,9 @@ Currently shipped (orientation reference; spec section 6 is canonical):
 - `Ctrl+Shift+Y` — copy SessionModel history to clipboard (Cycle 22b);
   paste-friendly structured plain-text dump of all completed
   tuples + any in-flight active tuple. Companion to
-  `Ctrl+Shift+D` (which announces a substrate summary);
-  `Ctrl+Shift+Y` dumps the full content for analysis.
+  `Ctrl+Shift+D` (which copies the broader diagnostic snapshot
+  bundle); `Ctrl+Shift+Y` is the SessionModel-only narrow dump
+  for substrate-specific analysis.
 - `Ctrl+Shift+S` — announce the active session-log file path
   (Cycle 24e); verbose format `Session log mode <mode>; path
   <full-path>.` for `session_log` / `always`;
@@ -400,11 +404,12 @@ recipes Ctrl+Shift+D uses internally.
 
 **Inline child-process check (the everyday triage tool):**
 
-The user can press `Ctrl+Shift+D` in pty-speak and NVDA reads back
-"Diagnostic snapshot: 1 cmd, 0 powershell, 0 pwsh, 1 claude, 1
-Terminal.App. Launching cleanup test." in one announcement —
-that's the inline enumeration the F# `enumerateShellProcesses`
-helper produces (`src/Terminal.App/Program.fs`). For Claude
+`Ctrl+Shift+D` runs the autonomous diagnostic battery (which
+internally calls F# `enumerateShellProcesses` —
+`src/Terminal.App/Diagnostics.fs`) and writes the per-process
+counts into both the diagnostic-battery log file AND the
+combined snapshot bundle that lands in clipboard +
+`%LOCALAPPDATA%\PtySpeak\diagnostic-snapshots\`. For Claude
 sessions reasoning about what the user might be seeing, the
 equivalent CLI commands are:
 
@@ -443,14 +448,17 @@ appears. That's the precise wedge timestamp.
 
 **Process tree diagnostic:**
 
-`Ctrl+Shift+D` launches `scripts/test-process-cleanup.ps1` in a
-new PowerShell window for the close-and-recheck flow. That
-script enumerates Terminal.App.exe + its parent-PID children +
-sibling shell counts (`Get-ShellProcessSnapshot`), then asks the
-user to close pty-speak via Alt+F4 / X-button and reports
-whether anything was orphaned. Use this when diagnosing Job
-Object cascade-kill regressions, NOT for "is the child alive
-right now?" — that's the inline check above.
+`scripts/test-process-cleanup.ps1` is the interactive complement
+to `Ctrl+Shift+D`'s autonomous battery (Cycle 25b decoupled it
+from the hotkey because it requires the maintainer to physically
+close pty-speak via Alt+F4 / X-button). The script enumerates
+Terminal.App.exe + its parent-PID children + sibling shell counts
+(`Get-ShellProcessSnapshot`), prompts the maintainer to close
+pty-speak, and reports whether anything was orphaned. Run it
+directly from PowerShell when diagnosing Job Object cascade-kill
+regressions, NOT for "is the child alive right now?" — that's the
+inline check above. A future cycle's app menu will surface this
+script as a menu item.
 
 ## Current sequencing (May 2026)
 
