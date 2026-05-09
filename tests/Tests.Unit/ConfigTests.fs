@@ -4,6 +4,7 @@ open System
 open System.IO
 open Xunit
 open Microsoft.Extensions.Logging
+open Tomlyn
 open Terminal.Core
 
 // ---------------------------------------------------------------------
@@ -469,3 +470,90 @@ let ``[startup] unknown key logs Warning but does not corrupt parse`` () =
     Assert.Equal(Some "cmd", Config.resolveDefaultShell config)
     Assert.True(logger.HasLevel(LogLevel.Warning))
 
+
+// ---------------------------------------------------------------------
+// Cycle 24g — snapshotAsJson: TOML model dump
+// ---------------------------------------------------------------------
+//
+// Pinned for the diagnostic surface that lets a maintainer compare
+// what Tomlyn understood against what they wrote in config.toml.
+// The dump is JSON-shaped so subtleties like dotted-key vs. nested-
+// table representation are visible.
+
+let private parseToTable (toml: string) : Tomlyn.Model.TomlTable =
+    let doc = Tomlyn.Toml.Parse(toml)
+    Assert.False(doc.HasErrors, "Test TOML must parse cleanly")
+    doc.ToModel()
+
+[<Fact>]
+let ``snapshotAsJson on empty TOML returns "{}"`` () =
+    let model = parseToTable ""
+    Assert.Equal("{}", Config.snapshotAsJson model)
+
+[<Fact>]
+let ``snapshotAsJson emits string values quoted`` () =
+    let model = parseToTable "name = \"hello\"\n"
+    let json = Config.snapshotAsJson model
+    Assert.Contains("\"name\": \"hello\"", json)
+
+[<Fact>]
+let ``snapshotAsJson emits int64 values as bare numbers`` () =
+    let model = parseToTable "n = 42\n"
+    let json = Config.snapshotAsJson model
+    Assert.Contains("\"n\": 42", json)
+
+[<Fact>]
+let ``snapshotAsJson emits bool values as lowercase literals`` () =
+    let model = parseToTable "flag = true\n"
+    let json = Config.snapshotAsJson model
+    Assert.Contains("\"flag\": true", json)
+
+[<Fact>]
+let ``snapshotAsJson nests dotted-key headers as sub-tables`` () =
+    // The bug we're chasing: Tomlyn's representation of
+    // `[a.b]`-headers. snapshotAsJson should show the model
+    // exactly as the rest of the parser sees it. With a clean
+    // Tomlyn install + UTF-8 input, this should produce nested
+    // tables.
+    let model = parseToTable "[session_model.persistence]\nmode = \"session_log\"\n"
+    let json = Config.snapshotAsJson model
+    Assert.Contains("\"session_model\":", json)
+    Assert.Contains("\"persistence\":", json)
+    Assert.Contains("\"mode\": \"session_log\"", json)
+
+[<Fact>]
+let ``snapshotAsJson escapes embedded quotes and backslashes`` () =
+    let model = parseToTable "path = \"C:\\\\Users\\\\test\"\n"
+    let json = Config.snapshotAsJson model
+    Assert.Contains("\"path\": \"C:\\\\Users\\\\test\"", json)
+
+[<Fact>]
+let ``snapshotAsJson emits nested table with two-space indent`` () =
+    let model = parseToTable "[outer]\n[outer.inner]\nkey = \"value\"\n"
+    let json = Config.snapshotAsJson model
+    // Outer level: top "{" + 2-space indent for "outer" key
+    Assert.StartsWith("{", json)
+    Assert.Contains("  \"outer\":", json)
+    // Inner level: 4-space indent for "inner.key"
+    Assert.Contains("    \"inner\":", json)
+    Assert.Contains("      \"key\": \"value\"", json)
+
+[<Fact>]
+let ``snapshotAsJson preserves multiple sibling keys as comma-separated entries`` () =
+    let model = parseToTable "a = 1\nb = 2\nc = 3\n"
+    let json = Config.snapshotAsJson model
+    Assert.Contains("\"a\": 1,", json)
+    Assert.Contains("\"b\": 2,", json)
+    Assert.Contains("\"c\": 3", json)
+
+[<Fact>]
+let ``snapshotAsJson emits empty sub-table inline as {}`` () =
+    let model = parseToTable "[empty]\n"
+    let json = Config.snapshotAsJson model
+    Assert.Contains("\"empty\": {}", json)
+
+[<Fact>]
+let ``snapshotAsJson handles arrays as bracketed inline lists`` () =
+    let model = parseToTable "items = [1, 2, 3]\n"
+    let json = Config.snapshotAsJson model
+    Assert.Contains("\"items\": [1, 2, 3]", json)

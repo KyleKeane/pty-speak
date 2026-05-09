@@ -2,6 +2,7 @@ namespace Terminal.Core
 
 open System
 open System.IO
+open System.Text
 open Microsoft.Extensions.Logging
 open Tomlyn
 open Tomlyn.Model
@@ -238,6 +239,112 @@ module Config =
               "bulk_change_threshold"
               "backspace_policy"
               "mode_barrier_flush_policy" ]
+
+    /// Cycle 24g — emit a JSON-shaped hierarchical dump of a
+    /// parsed `TomlTable` so a maintainer can compare what
+    /// Tomlyn actually understood against what they wrote in
+    /// `config.toml`. Pins the difference between "section
+    /// absent from the parsed model" and "section present but
+    /// keyed differently than my reader expected" without
+    /// requiring per-key trace logging on every parse path.
+    ///
+    /// Format choices:
+    ///
+    /// - JSON-shaped (not literal TOML re-emit) so subtleties
+    ///   like dotted-key vs. nested-table representation are
+    ///   visible. A maintainer reading the dump sees the
+    ///   logical structure the parser landed on, NOT the
+    ///   surface syntax it originated from.
+    /// - Two-space indent per level. Keys quoted; embedded
+    ///   quotes / control chars escaped per JSON rules. Arrays
+    ///   inline. Sub-tables nested.
+    /// - Unrecognised value types render as
+    ///   `"<<TypeName: value>>"` so future Tomlyn types don't
+    ///   crash the dump and any oddity is greppable.
+    /// - Non-deterministic key order: Tomlyn's `TomlTable`
+    ///   preserves insertion order from the parsed source, so
+    ///   the dump's ordering matches the user's file ordering.
+    let internal snapshotAsJson (root: TomlTable) : string =
+        let sb = StringBuilder()
+        let escape (s: string) : string =
+            let inner = StringBuilder(s.Length + 2)
+            for c in s do
+                match c with
+                | '"' -> inner.Append("\\\"") |> ignore
+                | '\\' -> inner.Append("\\\\") |> ignore
+                | '\n' -> inner.Append("\\n") |> ignore
+                | '\r' -> inner.Append("\\r") |> ignore
+                | '\t' -> inner.Append("\\t") |> ignore
+                | c when c < ' ' ->
+                    inner.AppendFormat(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        "\\u{0:x4}",
+                        int c)
+                    |> ignore
+                | c -> inner.Append(c) |> ignore
+            inner.ToString()
+        let rec writeValue (indent: int) (value: obj | null) : unit =
+            match value with
+            | null ->
+                sb.Append("null") |> ignore
+            | :? TomlTable as t ->
+                writeTable indent t
+            | :? TomlArray as arr ->
+                sb.Append('[') |> ignore
+                let mutable first = true
+                for item in arr do
+                    if not first then sb.Append(", ") |> ignore
+                    first <- false
+                    writeValue (indent + 1) item
+                sb.Append(']') |> ignore
+            | :? TomlTableArray as arr ->
+                sb.Append('[') |> ignore
+                let mutable first = true
+                for item in arr do
+                    if not first then sb.Append(", ") |> ignore
+                    first <- false
+                    writeTable (indent + 1) item
+                sb.Append(']') |> ignore
+            | :? string as s ->
+                sb.Append('"').Append(escape s).Append('"') |> ignore
+            | :? bool as b ->
+                sb.Append(if b then "true" else "false") |> ignore
+            | :? int64 as i ->
+                sb.Append(string i) |> ignore
+            | :? double as d ->
+                sb.Append(
+                    d.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture))
+                |> ignore
+            | other ->
+                sb.AppendFormat(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    "\"<<{0}: {1}>>\"",
+                    other.GetType().Name,
+                    escape (string other))
+                |> ignore
+        and writeTable (indent: int) (t: TomlTable) : unit =
+            let entries = t |> Seq.toList
+            if List.isEmpty entries then
+                sb.Append("{}") |> ignore
+            else
+                sb.AppendLine("{") |> ignore
+                let prefix = String(' ', (indent + 1) * 2)
+                entries
+                |> List.iteri (fun i kvp ->
+                    sb.Append(prefix)
+                        .Append('"')
+                        .Append(escape kvp.Key)
+                        .Append("\": ")
+                    |> ignore
+                    writeValue (indent + 1) kvp.Value
+                    if i < entries.Length - 1 then
+                        sb.AppendLine(",") |> ignore
+                    else
+                        sb.AppendLine() |> ignore)
+                sb.Append(String(' ', indent * 2)).Append('}') |> ignore
+        writeTable 0 root
+        sb.ToString()
 
     /// Internal — known shell-id keys for `[shell.<id>]`.
     /// Mirrors `ShellRegistry.parseEnvVar`'s lowercase
@@ -523,6 +630,18 @@ module Config =
                     defaultConfig
                 else
                     let model = doc.ToModel()
+                    // Cycle 24g — log the raw parsed TOML model
+                    // BEFORE any per-section reader runs. Lets a
+                    // maintainer compare Tomlyn's interpretation
+                    // against their `config.toml` content, which
+                    // pins encoding / dotted-key / typo issues
+                    // that are otherwise invisible (the TOML
+                    // parses cleanly, the section just isn't
+                    // where the per-section reader looks).
+                    logger.LogInformation(
+                        "Config: parsed TOML model snapshot from {Path}:\n{Snapshot}",
+                        filePath,
+                        snapshotAsJson model)
                     let version = parseSchemaVersion logger model
                     if version > CurrentSchemaVersion then
                         logger.LogError(

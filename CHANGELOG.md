@@ -15,6 +15,42 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 24g): TOML model snapshot logged at startup
+
+Diagnostic surface to pin the difference between "config section
+absent from the parsed Tomlyn model" and "config section present
+but keyed differently than my reader expected" — the case Cycle
+24f's per-branch logging surfaced but couldn't disambiguate
+without further investigation.
+
+`Config.tryLoad` now logs the **full parsed TOML model** as a
+JSON-shaped hierarchical dump immediately after `Toml.ToModel()`
+returns, BEFORE any per-section reader runs. A maintainer can:
+
+- See exactly which top-level keys Tomlyn produced — pinning
+  encoding (BOM), dotted-key, and typo issues that are
+  otherwise invisible (the file parses cleanly, the section
+  just isn't where the per-section reader looks).
+- Compare the dump's structure against the source TOML to spot
+  invisible characters or unexpected representations.
+- Forward the log slice (via `Ctrl+Shift+;`) for triage without
+  having to manually transcribe the file content.
+
+JSON-shaped (not TOML re-emit) so subtleties like `[a.b.c]`
+dotted-header → nested-table representation are explicit. Keys
+quoted; embedded quotes/control chars escaped per JSON rules.
+Unrecognised value types render as `"<<TypeName: value>>"` so
+future Tomlyn types don't crash the dump.
+
+The on-demand variant (hotkey-driven snapshot copy-to-clipboard
+plus unknown-keys flagging) is planned for the upcoming Cycle
+25 PR; this 24g surface is the no-new-hotkey unblocker that
+captures the model on every launch.
+
+10 new xUnit `[<Fact>]` tests in `ConfigTests.fs` covering empty
+table, scalar types, nested dotted-headers, escaping, indent
+shape, comma separation, empty sub-tables, and inline arrays.
+
 ### Fixed (Cycle 24f): SessionModel persistence config diagnostic + matrix section-name typo
 
 Two paired fixes surfaced during the first manual NVDA-matrix
