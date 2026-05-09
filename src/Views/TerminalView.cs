@@ -61,34 +61,11 @@ public class TerminalView : FrameworkElement
     /// </summary>
     private Action<int, int>? _resize;
 
-    /// <summary>
-    /// Direct callback for the `Ctrl+Shift+;` "copy active log
-    /// to clipboard" hotkey. Wired by
-    /// <see cref="SetCopyLogToClipboardHandler"/> from
-    /// <c>Program.fs compose ()</c>. Defence-in-depth path
-    /// alongside the Window-level `KeyBinding`, which has been
-    /// observed to flake for custom <see cref="FrameworkElement"/>s
-    /// (see the Ctrl+V family of bugs). Direct handling at the
-    /// top of <see cref="OnPreviewKeyDown"/> guarantees the
-    /// gesture reaches <c>runCopyLatestLog</c> regardless of
-    /// any quirks in WPF's CommandManager class routing.
-    ///
-    /// Hotkey-choice history: `Ctrl+Alt+L` was the original
-    /// binding but collided with the Windows Magnifier zoom-in
-    /// shortcut on some default Magnifier configs, AND required
-    /// a SystemKey-aware filter in this method that in turn
-    /// intercepted `Alt+F4`. `Ctrl+Shift+;` (the semicolon /
-    /// colon key, <see cref="Key.OemSemicolon"/>) was chosen for
-    /// proximity recall — physically adjacent to `L` (the
-    /// `Ctrl+Shift+L` open-folder primary) on a US-layout
-    /// keyboard. Reserves `Ctrl+Shift+C` for a future
-    /// copy-latest-command-output feature, which is the cross-
-    /// terminal convention for that gesture. Layout caveat: on
-    /// non-US layouts the `OemSemicolon` virtual-key may sit in
-    /// a different physical position; remap when configurable
-    /// keybindings ship in Phase 2.
-    /// </summary>
-    private Action? _copyActiveLogToClipboard;
+    // Cycle 25b-1a — `_copyActiveLogToClipboard` field +
+    // `SetCopyLogToClipboardHandler` setter + the OemSemicolon
+    // direct-handler in OnPreviewKeyDown were removed alongside
+    // the Ctrl+Shift+L hotkey itself. Ctrl+Shift+D's bundle is
+    // now the single paste-the-log path.
 
     /// <summary>
     /// Stage 6 PR-B — 200ms trailing-edge debounce for
@@ -198,18 +175,8 @@ public class TerminalView : FrameworkElement
         _resize = resize ?? throw new ArgumentNullException(nameof(resize));
     }
 
-    /// <summary>
-    /// Wire the Ctrl+Shift+; handler. Called from
-    /// <c>Program.fs compose ()</c> with a closure that invokes
-    /// <c>runCopyLatestLog</c>. The handler must run on the WPF
-    /// dispatcher thread (it touches the clipboard); our caller
-    /// in OnPreviewKeyDown already runs on the dispatcher so no
-    /// marshalling needed.
-    /// </summary>
-    public void SetCopyLogToClipboardHandler(Action handler)
-    {
-        _copyActiveLogToClipboard = handler ?? throw new ArgumentNullException(nameof(handler));
-    }
+    // Cycle 25b-1a — `SetCopyLogToClipboardHandler` deleted with
+    // the Ctrl+Shift+L hotkey itself.
 
     /// <summary>
     /// Attach a screen to render. Call once at startup; subsequent
@@ -395,8 +362,6 @@ public class TerminalView : FrameworkElement
 
             // Cycle 25a — reorganized to put the most-used hotkeys
             // on letter keys and free Ctrl+Shift+; entirely:
-            //   Ctrl+Shift+L: copy active session log to clipboard
-            //                 (mnemonic: L for Log; was opens-folder).
             //   Ctrl+Shift+P: open the pty-speak data folder
             //                 (parent of logs / sessions / config;
             //                 navigable to any of them in one
@@ -410,7 +375,10 @@ public class TerminalView : FrameworkElement
             // snapshot file + clipboard); the interactive
             // process-cleanup test moves to a future app menu
             // rather than a hotkey.
-            (Key.L, ModifierKeys.Control | ModifierKeys.Shift, "Copy active log to clipboard"),
+            // Cycle 25b-1a: removed Ctrl+Shift+L (CopyLatestLog).
+            // Ctrl+Shift+D's bundle is now the only paste-the-log
+            // path; the dedicated copy-just-the-log hotkey was
+            // redundant given the bundle's coverage.
             (Key.P, ModifierKeys.Control | ModifierKeys.Shift, "Open pty-speak data folder"),
             (Key.E, ModifierKeys.Control | ModifierKeys.Shift, "Edit config.toml"),
 
@@ -758,19 +726,9 @@ public class TerminalView : FrameworkElement
     /// </summary>
     private bool HandleAppLevelShortcut(Key key, ModifierKeys modifiers)
     {
-        // Ctrl+Shift+; → copy active log to clipboard. Handled
-        // FIRST and independent of _writeBytes because this
-        // gesture is meaningful even when no PTY host is attached
-        // (e.g. early in app lifecycle if compose() hasn't
-        // finished wiring SetPtyHost). Window-level KeyBinding
-        // routing has been observed to flake on custom
-        // FrameworkElements; direct handling here is the reliable
-        // path.
-        if (key == Key.OemSemicolon && modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
-        {
-            _copyActiveLogToClipboard?.Invoke();
-            return true;
-        }
+        // Cycle 25b-1a — `Ctrl+Shift+;` direct handler removed
+        // with the Ctrl+Shift+L hotkey itself. The semicolon
+        // gesture passes through to the shell as plain text.
 
         if (_writeBytes is null) return false;
 

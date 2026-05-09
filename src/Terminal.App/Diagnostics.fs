@@ -863,6 +863,7 @@ module Diagnostics =
             (batteryLogContent: string)
             (fileLoggerLogPath: string option)
             (configPath: string)
+            (sessionLogSummary: string)
             : string =
         let sb = StringBuilder()
         let appendLine (s: string) = sb.AppendLine(s) |> ignore
@@ -900,6 +901,10 @@ module Diagnostics =
         appendLine "--- CONFIG.TOML ---"
         appendLine (sprintf "(source: %s)" configPath)
         appendLine (readFileSafe configPath)
+        appendLine ""
+
+        appendLine "--- SESSION LOG ---"
+        appendLine sessionLogSummary
         appendLine ""
 
         appendLine "--- ENVIRONMENT (deny-listed values redacted) ---"
@@ -957,6 +962,7 @@ module Diagnostics =
             (resolveSeq: unit -> int64)
             (resolveSessionSnapshot: unit -> SessionModelSnapshot)
             (resolveFileLoggerLogPath: unit -> string option)
+            (resolveSessionLogSummary: unit -> string)
             : unit =
         let log = Logger.get "Terminal.App.Diagnostics.runFullBattery"
         let _ =
@@ -1112,6 +1118,7 @@ module Diagnostics =
                     // triage chat carries everything in one block.
                     let configPath = Config.defaultConfigFilePath ()
                     let fileLoggerLogPath = resolveFileLoggerLogPath ()
+                    let sessionLogSummary = resolveSessionLogSummary ()
                     let snapshotPath = resolveSnapshotPath now
                     let bundle =
                         formatDiagnosticBundle
@@ -1120,6 +1127,7 @@ module Diagnostics =
                             content
                             fileLoggerLogPath
                             configPath
+                            sessionLogSummary
                     let writtenPath = writeSnapshotFile log snapshotPath bundle
                     let savedFragment =
                         match writtenPath with
