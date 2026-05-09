@@ -1041,6 +1041,18 @@ object followed by a literal `\n` terminator. **This format
 is decades-stable**: locked design decisions enforced by
 unit tests in `tests/Tests.Unit/SessionModelJsonlTests.fs`.
 
+The writer that calls this serializer ships in **Cycle 24c**
+as `Terminal.Core.SessionLogWriterSink`
+(`src/Terminal.Core/SessionLogWriter.fs`). The composition
+root at `src/Terminal.App/Program.fs` constructs a sink
+per shell session (when persistence mode is `SessionLog` or
+`Always`), pattern-matches the
+`SessionModel.applyAndCapture` / `finalizeIncompleteAndCapture`
+return tuples, and dispatches each finalised tuple to the
+sink. The sink owns one `BoundedChannel<SessionTuple>` +
+one background drain task + one open `StreamWriter`; pinned
+by `tests/Tests.Unit/SessionLogWriterTests.fs`.
+
 Canonical example (line breaks added for readability — the
 on-disk form is one line per tuple, no whitespace):
 

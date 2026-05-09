@@ -15,6 +15,78 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 24c): bounded-channel async file writer for SessionTuple JSONL persistence
+
+Third sub-cycle of the Tier 2 SessionModel persistence cycle.
+Wires the actual on-disk writer that consumes
+`SessionModel.formatTupleAsJsonl` (Cycle 24b, PR #206) and
+appends each finalised `SessionTuple` as one JSONL line to a
+per-shell-session file.
+
+**What ships**:
+
+- New `Terminal.Core.SessionLogWriterSink` — a class that owns
+  one bounded channel + one background drain task + one open
+  `StreamWriter` per shell session. Mirrors the `FileLogger`
+  sink pattern (`src/Terminal.Core/FileLogger.fs:120-455`).
+- New `Terminal.Core.SessionLogWriterOptions` record + helper
+  module with `createDefault` resolution (output-dir override
+  from TOML config, fallback to
+  `%LOCALAPPDATA%\PtySpeak\sessions\`).
+- New `SessionModel.applyAndCapture` and
+  `SessionModel.finalizeIncompleteAndCapture` —
+  tuple-returning variants of `apply` and `finalizeIncomplete`
+  that surface the freshly-finalised `SessionTuple` (when this
+  call resulted in an Active→History transition) so the
+  composition root can dispatch to the writer. The original
+  `apply` and `finalizeIncomplete` stay as thin wrappers
+  preserving the existing public API for 81+ existing test
+  callers — no test churn.
+- Composition-root wiring in `src/Terminal.App/Program.fs`:
+  - Sink constructed at startup IF persistence mode is
+    `SessionLog` or `Always`. `MemoryOnly` skips construction
+    entirely; the sink is `None` and dispatch is a no-op.
+  - Sink lifecycle: one-per-shell-session. Shell-switch
+    (`Ctrl+Shift+1/2/3`) flushes the outgoing shell's
+    finalize-incomplete tuple, disposes the old sink, then
+    constructs a fresh sink for the new SessionId.
+  - Sink disposal in `app.Exit` — flushes pending writes
+    before the FileLogger provider tears down.
+
+**Locked design** (per the Cycle 24c plan):
+
+- `BoundedChannelFullMode.Wait`. If the channel ever fills
+  (disk stall), enqueue back-pressures into the SessionModel
+  state machine. Decades-stable bias: losing a tuple is worse
+  than a brief UI hitch. In practice the back-pressure path
+  should never trigger — `applyAndCapture` fires at most once
+  per command (~1-10 Hz peak); 256-capacity channel drains at
+  >>1000 lines/sec on a working disk.
+- `MemoryOnly` mode: writer never opens a file.
+- `Always` mode: not yet implemented this cycle. The
+  composition root logs a Warning at startup and treats
+  `Always` identically to `SessionLog` (async flush). True
+  synchronous-flush semantics ship in Cycle 24d.
+- File path: `<output_dir>/session-<SessionId>.jsonl`.
+- No UTF-8 BOM (`UTF8Encoding(false)`) — preserves the
+  byte-for-byte stability the wire format promises.
+- Silent error handling — file I/O exceptions logged via
+  `ILogger`, never thrown into the NVDA path.
+- Lone-surrogate tuples (per the Cycle 24b serializer
+  contract) are logged + skipped without breaking the writer
+  for subsequent tuples; pinned by a test.
+
+**13 new xUnit `[<Fact>]` tests** in
+`tests/Tests.Unit/SessionLogWriterTests.fs` cover path
+resolution, single + multi-tuple enqueue, LF-only line
+endings, disposal flush + idempotency, output-dir creation,
+lone-surrogate skip, concurrent-writer thread safety, and the
+`SessionLogWriterOptions.createDefault` resolution chain.
+
+`docs/SESSION-MODEL.md` adds a sentence under §"On-disk wire
+format (Cycle 24b)" noting that Cycle 24c ships the writer
+that calls the serializer on the Active→History seam.
+
 ### Added (Cycle 24b): pure JSONL serializer for SessionTuple
 
 Second sub-cycle of the Tier 2 SessionModel persistence cycle.

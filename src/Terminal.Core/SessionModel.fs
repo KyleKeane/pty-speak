@@ -394,6 +394,15 @@ module SessionModel =
     /// `finalizeIncomplete` (shell-switch) passes `None /
     /// None / [||]` so extraction gracefully returns empty
     /// strings.
+    /// Cycle 24c — return type extended from `T` to
+    /// `T * SessionTuple option`. The option is `Some
+    /// finalised` whenever the tuple actually landed in
+    /// History (i.e. the normal case); it's `None` only when
+    /// `MaxHistorySize <= 0` — a degenerate config in which
+    /// the tuple is discarded entirely. Cycle 24c's writer
+    /// dispatches off the `Some` branch; persisting tuples
+    /// the user explicitly opted out of tracking would be a
+    /// surprise.
     let private finalizeAndEnqueue
             (state: T)
             (tuple: SessionTuple)
@@ -402,7 +411,7 @@ module SessionModel =
             (oldPromptRowIndex: int option)
             (newPromptRowIndex: int option)
             (snapshot: Cell[][])
-            : T
+            : T * SessionTuple option
             =
         let commandText, outputText =
             extractContent
@@ -417,14 +426,14 @@ module SessionModel =
                 CommandText = commandText
                 OutputText = outputText }
         if state.MaxHistorySize <= 0 then
-            { state with Active = None }
+            { state with Active = None }, None
         else
             // Ring-buffer eviction: drop oldest until under
             // the cap, then enqueue.
             while state.History.Count >= state.MaxHistorySize do
                 state.History.Dequeue() |> ignore
             state.History.Enqueue(finalised)
-            { state with Active = None }
+            { state with Active = None }, Some finalised
 
     /// **Tier 1.C — Q5 helper**: finalise any in-flight
     /// active tuple as incomplete (`CommandFinishedAt =
@@ -439,9 +448,23 @@ module SessionModel =
     /// extraction context (no new prompt or snapshot at
     /// shell-switch time); CommandText / OutputText stay
     /// empty for incomplete tuples.
-    let finalizeIncomplete (state: T) (finishedAt: DateTime) : T =
+    let rec finalizeIncomplete (state: T) (finishedAt: DateTime) : T =
+        finalizeIncompleteAndCapture state finishedAt |> fst
+
+    /// Cycle 24c — capture variant of `finalizeIncomplete`.
+    /// Returns both the new state and the finalised tuple
+    /// (when there was an Active to finalise) so the
+    /// composition root can dispatch the tuple to the
+    /// SessionLogWriterSink. The state-only `finalizeIncomplete`
+    /// wrapper above preserves the existing public API for
+    /// 15+ existing test callers.
+    and finalizeIncompleteAndCapture
+            (state: T)
+            (finishedAt: DateTime)
+            : T * SessionTuple option
+            =
         match state.Active with
-        | None -> state
+        | None -> state, None
         | Some active ->
             finalizeAndEnqueue
                 state active.Tuple finishedAt None
@@ -472,15 +495,38 @@ module SessionModel =
     /// snapshot context (legacy / tests) pass `[||]`;
     /// extraction gracefully skips because row-bounds checks
     /// fail.
-    let apply
+    let rec apply
             (state: T)
             (boundary: PromptBoundaryData)
             (snapshot: Cell[][])
             : T
             =
+        applyAndCapture state boundary snapshot |> fst
+
+    /// Cycle 24c — capture variant of `apply`. Returns both the
+    /// new state and the freshly-finalised SessionTuple (when
+    /// this call resulted in an Active→History transition) so
+    /// the composition root can dispatch to the
+    /// SessionLogWriterSink. The state-only `apply` wrapper
+    /// above preserves the existing public API for the 81+
+    /// existing test callers.
+    ///
+    /// Two arms produce a `Some tuple` return:
+    ///   * `Some active, BoundaryKind.PromptStart` — interrupt;
+    ///     prior tuple finalised as incomplete before the new
+    ///     one starts.
+    ///   * `Some active, BoundaryKind.CommandFinished _` —
+    ///     normal completion path.
+    /// All other arms return `None` for the tuple.
+    and applyAndCapture
+            (state: T)
+            (boundary: PromptBoundaryData)
+            (snapshot: Cell[][])
+            : T * SessionTuple option
+            =
         if state.IsAltScreenActive then
             // Q3 — boundaries ignored during alt-screen.
-            state
+            state, None
         else
             let kind = boundary.Kind
             let detectedAt = boundary.DetectedAt
@@ -494,19 +540,19 @@ module SessionModel =
                       // Tier 1.E2.B: capture the row index for
                       // future finalize-time output extraction.
                       PromptRowIndex = boundary.MatchedRowIndex }
-                { state with Active = Some active }
+                { state with Active = Some active }, None
             | None, BoundaryKind.CommandStart ->
                 logger.LogWarning(
                     "SessionModel CommandStart with no Active tuple; ignored.")
-                state
+                state, None
             | None, BoundaryKind.OutputStart ->
                 logger.LogWarning(
                     "SessionModel OutputStart with no Active tuple; ignored.")
-                state
+                state, None
             | None, BoundaryKind.CommandFinished _ ->
                 logger.LogWarning(
                     "SessionModel CommandFinished with no Active tuple; ignored.")
-                state
+                state, None
             // === Active = Some — replaces / advances by kind ===
             | Some active, BoundaryKind.PromptStart ->
                 // Interrupted: finalise prior as incomplete,
@@ -520,7 +566,7 @@ module SessionModel =
                 // PromptRowIndex (where the old prompt sat)
                 // and the incoming boundary's MatchedRowIndex
                 // (where the new prompt is).
-                let withPrior =
+                let withPrior, finalisedOpt =
                     finalizeAndEnqueue
                         state active.Tuple detectedAt None
                         active.PromptRowIndex
@@ -531,7 +577,7 @@ module SessionModel =
                     { Tuple = tuple
                       State = ActiveTupleState.AwaitingCommandStart
                       PromptRowIndex = boundary.MatchedRowIndex }
-                { withPrior with Active = Some nextActive }
+                { withPrior with Active = Some nextActive }, finalisedOpt
             | Some active, BoundaryKind.CommandStart ->
                 let merged = mergeBoundary active boundary
                 match active.State with
@@ -543,7 +589,7 @@ module SessionModel =
                         { merged with
                             Tuple = nextTuple
                             State = ActiveTupleState.EditingCommand }
-                    { state with Active = Some nextActive }
+                    { state with Active = Some nextActive }, None
                 | ActiveTupleState.EditingCommand ->
                     // Re-submit / re-emit; refresh timestamp.
                     logger.LogWarning(
@@ -551,13 +597,13 @@ module SessionModel =
                     let nextTuple =
                         { merged.Tuple with
                             CommandStartedAt = Some detectedAt }
-                    { state with Active = Some { merged with Tuple = nextTuple } }
+                    { state with Active = Some { merged with Tuple = nextTuple } }, None
                 | ActiveTupleState.OutputStreaming
                 | ActiveTupleState.AwaitingPromptStart ->
                     logger.LogWarning(
                         "SessionModel CommandStart in unexpected state {State}; ignored.",
                         active.State)
-                    { state with Active = Some merged }
+                    { state with Active = Some merged }, None
             | Some active, BoundaryKind.OutputStart ->
                 let merged = mergeBoundary active boundary
                 match active.State with
@@ -572,7 +618,7 @@ module SessionModel =
                         { merged with
                             Tuple = nextTuple
                             State = ActiveTupleState.OutputStreaming }
-                    { state with Active = Some nextActive }
+                    { state with Active = Some nextActive }, None
                 | ActiveTupleState.EditingCommand ->
                     let nextTuple =
                         { merged.Tuple with
@@ -581,18 +627,18 @@ module SessionModel =
                         { merged with
                             Tuple = nextTuple
                             State = ActiveTupleState.OutputStreaming }
-                    { state with Active = Some nextActive }
+                    { state with Active = Some nextActive }, None
                 | ActiveTupleState.OutputStreaming ->
                     logger.LogWarning(
                         "SessionModel duplicate OutputStart in OutputStreaming; refreshing OutputStartedAt.")
                     let nextTuple =
                         { merged.Tuple with
                             OutputStartedAt = Some detectedAt }
-                    { state with Active = Some { merged with Tuple = nextTuple } }
+                    { state with Active = Some { merged with Tuple = nextTuple } }, None
                 | ActiveTupleState.AwaitingPromptStart ->
                     // Should not be observable; guarded above
                     // by `None, OutputStart` arm.
-                    state
+                    state, None
             | Some active, BoundaryKind.CommandFinished exitCode ->
                 let merged = mergeBoundary active boundary
                 // Tier 1.E2.B: OSC 133 CommandFinished arm
