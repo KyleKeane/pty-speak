@@ -922,6 +922,24 @@ module Program =
         let config =
             Config.tryLoad log (Config.defaultConfigFilePath ())
 
+        // Cycle 24a — log the resolved SessionModel persistence
+        // mode once at startup. Pure observability; no I/O is
+        // wired this sub-cycle. Cycle 24c is the sub-cycle that
+        // actually persists tuples for `session_log` mode using
+        // the seam already commented at the shell-switch site
+        // below.
+        let persistenceConfig = config.SessionPersistence
+        let persistenceOutputDir =
+            match persistenceConfig.OutputDir with
+            | Some dir -> dir
+            | None -> "<default>"
+        log.LogInformation(
+            "SessionModel persistence mode: {Mode} (output_dir={OutputDir}, format={Format}, max_session_size_mb={MaxSessionSizeMb})",
+            SessionPersistence.modeToString persistenceConfig.Mode,
+            persistenceOutputDir,
+            SessionPersistence.formatToString persistenceConfig.Format,
+            persistenceConfig.MaxSessionSizeMb)
+
         // Phase B (subset, "C2") — per-shell pathway selection.
         // Reads the loaded `config` for both pathway choice and
         // pathway parameters. Three v1 built-in shells (cmd /

@@ -15,6 +15,59 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 24a): SessionModel persistence config substrate (TOML schema, no I/O)
+
+First sub-cycle of the **Tier 2 SessionModel persistence**
+implementation cycle (the maintainer's chosen Phase 4 fork
+from Cycle 23). Introduces the `[session_model.persistence]`
+TOML table and parses it into a typed `PersistenceConfig`
+record; **no I/O is wired this sub-cycle.** Cycles 24b–24e
+add the JSONL serializer, file writer, `always`-mode
+synchronous flush + secrets sanitisation, and the
+NVDA-validation matrix rows in turn.
+
+**Schema** (all fields optional; absence = pre-Cycle-24a
+behaviour, byte-equivalent):
+
+```toml
+[session_model.persistence]
+mode = "memory_only"        # memory_only / session_log / always
+output_dir = ""              # empty → default %LOCALAPPDATA%\PtySpeak\sessions\
+format = "jsonl"             # jsonl (only value today)
+max_session_size_mb = 64
+```
+
+**What ships**:
+
+- New `Terminal.Core.SessionPersistence` module
+  (`PersistenceMode` / `PersistenceFormat` DUs +
+  `PersistenceConfig` record + `defaultConfig` +
+  `parseFromTable` + `modeToString` / `formatToString`
+  helpers).
+- Extends `Config.Config` with a `SessionPersistence` field;
+  `Config.tryLoad` invokes `parseFromTable` against the
+  loaded TOML root table, mirroring the existing
+  `parseStartupOverrides` warn-and-fall-back pattern.
+- `Program.fs` composition root logs the resolved mode at
+  `Information` level once at startup, so `Ctrl+Shift+;`
+  log capture confirms the user's TOML opt-in actually took
+  effect.
+- 18 xUnit `[<Fact>]` tests pin every parser branch
+  (defaults, each valid value, case-insensitivity, unknown
+  keys, bad-typed values, empty/non-positive numerics,
+  `modeToString`/`formatToString` round-trips, full-table
+  composition).
+- `docs/USER-SETTINGS.md` adds a "SessionModel persistence"
+  section in the same shape as the existing "Default shell"
+  and "Pathway selection" entries.
+
+**Bundled doc-currency fix** (≤ 20 LOC of doc edits in the
+same PR): mark the now-stale "Cycle 23 in-flight handoff"
+section in `docs/SESSION-HANDOFF.md` as historical (Cycle 23
+phases 1–4 all shipped 2026-05-08 via PRs #200 + #201) and
+refresh the "In-flight branch" / "Next stage" cells in the
+top-of-doc summary table to point at Cycle 24a.
+
 ### Changed (Cycle 24-pre): tighten CLAUDE.md CI-completion tone guidance
 
 **Doc-only PR; no code changes.** Add a one-paragraph

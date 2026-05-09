@@ -139,7 +139,10 @@ module Config =
         { SchemaVersion: int
           ShellOverrides: Map<string, ShellPathwayConfig>
           StreamOverrides: StreamParameterOverrides
-          StartupOverrides: StartupOverrides }
+          StartupOverrides: StartupOverrides
+          /// Cycle 24a — `[session_model.persistence]` table.
+          /// Pure config substrate; Cycles 24b-d wire actual I/O.
+          SessionPersistence: SessionPersistence.PersistenceConfig }
 
     /// The all-defaults Config — equivalent to "no config file
     /// present". `defaultConfig` is the authoritative source
@@ -163,7 +166,8 @@ module Config =
               BackspacePolicy = None
               ModeBarrierFlushPolicy = None }
           StartupOverrides =
-            { DefaultShell = None } }
+            { DefaultShell = None }
+          SessionPersistence = SessionPersistence.defaultConfig }
 
     /// The default config file path —
     /// `%LOCALAPPDATA%\PtySpeak\config.toml`. Mirrors the
@@ -538,11 +542,14 @@ module Config =
                                     parseStreamOverrides logger streamTable
                         let startupOverrides =
                             parseStartupOverrides logger model
+                        let sessionPersistence =
+                            SessionPersistence.parseFromTable logger model
                         let result =
                             { SchemaVersion = version
                               ShellOverrides = shellOverrides
                               StreamOverrides = streamOverrides
-                              StartupOverrides = startupOverrides }
+                              StartupOverrides = startupOverrides
+                              SessionPersistence = sessionPersistence }
                         // One Information line summarising the
                         // resolved config so post-hoc diagnosis
                         // via Ctrl+Shift+; is trivial. The
