@@ -1008,9 +1008,12 @@ moves from `Active` to `History`. File location:
 `<output_dir>/session-<SessionId>.jsonl`. One JSON
 object per tuple, line-delimited.
 
-```jsonl
-{"id":"a1b2c3...","commandId":null,"shellId":"powershell","promptStartedAt":"2026-05-06T16:20:04.5Z","commandStartedAt":"2026-05-06T16:20:09.7Z","outputStartedAt":"2026-05-06T16:20:12.6Z","commandFinishedAt":"2026-05-06T16:20:13.3Z","promptText":"PS C:\\Users\\jz24544\\AppData\\Local\\pty-speak\\current>","commandText":"dir","outputText":" Volume in drive C is OS\nVolume Serial Number is 24C0-BD5D\n...","exitCode":0,"sources":{"PromptStart":"Osc133","CommandStart":"Osc133","OutputStart":"Osc133","CommandFinished":{"CommandFinished":0}},"extraParams":{}}
-```
+The on-disk wire format is **decades-stable** — see the
+"On-disk wire format (Cycle 24b)" sub-section below for
+the canonical reference. Cycle 24b ships the pure
+serializer (`SessionModel.formatTupleAsJsonl`); Cycle 24c
+adds the bounded-channel async writer that calls it on
+the Active → History transition.
 
 Each pty-speak launch produces one file (one SessionId).
 Within a launch, shell-switches START NEW FILES (one
@@ -1028,6 +1031,111 @@ write cadence.
 
 Use case: high-stakes audit scenarios where data loss
 on crash is unacceptable.
+
+### On-disk wire format (Cycle 24b)
+
+The serializer is `SessionModel.formatTupleAsJsonl :
+SessionTuple -> string` in
+`src/Terminal.Core/SessionModel.fs`. It returns one JSON
+object followed by a literal `\n` terminator. **This format
+is decades-stable**: locked design decisions enforced by
+unit tests in `tests/Tests.Unit/SessionModelJsonlTests.fs`.
+
+Canonical example (line breaks added for readability — the
+on-disk form is one line per tuple, no whitespace):
+
+```jsonl
+{
+  "schemaVersion": 1,
+  "id": "11111111-2222-3333-4444-555555555555",
+  "commandId": null,
+  "shellId": "powershell",
+  "promptStartedAt": "2026-05-09T14:23:45.1234567Z",
+  "commandStartedAt": "2026-05-09T14:23:46.4560000Z",
+  "outputStartedAt": "2026-05-09T14:23:46.7890000Z",
+  "commandFinishedAt": "2026-05-09T14:23:48.0120000Z",
+  "promptText": "PS C:\\Users\\test>",
+  "commandText": "dir",
+  "outputText": " Volume in drive C is OS\n...",
+  "exitCode": 0,
+  "sources": [
+    {"boundary": "PromptStart",     "source": {"kind": "Osc133"}},
+    {"boundary": "CommandStart",    "source": {"kind": "Osc133"}},
+    {"boundary": "OutputStart",     "source": {"kind": "Osc133"}},
+    {"boundary": "CommandFinished", "source": {"kind": "Osc133"}}
+  ],
+  "extraParams": {}
+}
+```
+
+**Locked design decisions:**
+
+1. **Per-record `"schemaVersion"`** — first key on every
+   record. Today's value is `1`. Future schema changes
+   increment the value; replay tools branch on it; old
+   files always remain readable. Reserved values: `0` is
+   forbidden (a missing or zero value should be detectable
+   as corruption).
+2. **Field order is fixed**: schemaVersion → identity (id,
+   commandId, shellId) → timestamps (promptStartedAt,
+   commandStartedAt, outputStartedAt, commandFinishedAt) →
+   text (promptText, commandText, outputText) → exitCode
+   → maps (sources, extraParams). Pinned by a snapshot
+   test.
+3. **camelCase field names** throughout.
+4. **DateTime serialisation**: ISO-8601 UTC with 100ns
+   ticks (`yyyy-MM-ddTHH:mm:ss.fffffffZ`). Lossless from
+   the Windows clock — sub-millisecond precision survives
+   round-trip. Always UTC; the formatter calls
+   `dt.ToUniversalTime()` defensively.
+5. **`option<T>` handling**: `None` → JSON `null`; `Some v`
+   → the value's normal encoding. Never an empty string,
+   never a missing key.
+6. **`BoundarySource` is always a tagged object**: uniform
+   `{"kind":"<case>"}` shape across all DU cases, with
+   payload fields siblings of `kind`. Examples:
+   - `Osc133` → `{"kind":"Osc133"}`
+   - `HeuristicPromptRegex 500` → `{"kind":"HeuristicPromptRegex","stabilityMs":500}`
+   - `HeuristicClaudeInkBox` → `{"kind":"HeuristicClaudeInkBox"}`
+7. **`sources` is an array of records, not an object**:
+   each entry is `{"boundary":"<kind-name>","source":<tagged-object>}`.
+   Sorted by an explicit ordinal: `PromptStart=0,
+   CommandStart=1, OutputStart=2, CommandFinished=3`.
+   Diverges from earlier illustrative examples in this
+   doc — the array shape avoids a latent collision bug
+   where `BoundaryKind.CommandFinished _` payload variants
+   would alias to the same JSON key. The boundary name in
+   `"boundary"` is the bare DU case name (no payload — the
+   exit code lives on `tuple.exitCode` and is not
+   duplicated here).
+8. **`extraParams`** is a JSON object keyed by the OSC 133
+   parameter name. Keys iterate in ordinal-string-compare
+   order (F# `Map<string, _>` natural sort) for byte-stable
+   output across .NET versions.
+9. **String escapes** follow RFC 8259 minimum (named
+   escapes for `"`, `\`, `\b`, `\f`, `\n`, `\r`, `\t`;
+   `\u00XX` for any other byte in `0x00-0x1F`) PLUS DEL
+   (`0x7F` → ``, deliberate superset; many parsers
+   and viewers mis-handle bare DEL). C1 controls
+   (`0x80-0x9F`), forward slash, U+2028, U+2029 pass
+   through unescaped.
+10. **Lone UTF-16 surrogates throw at emit time**. Silent
+    corruption of a decades-old log is the worst possible
+    failure mode; a thrown exception forces upstream code
+    to fix the surrogate-producing bug.
+11. **Trailing terminator is the literal `"\n"`**, never
+    `Environment.NewLine`. The latter would emit `\r\n` on
+    Windows and silently break byte stability across
+    platforms.
+12. **No UTF-8 BOM ever**. The Cycle 24c writer must use
+    `UTF8Encoding(false)`.
+13. **No Unicode normalisation**. Bytes pass through
+    verbatim — normalisation is a semantic transform; the
+    substrate preserves shell output exactly as received.
+
+Schema migration runtime ships in Cycle 25+ (the
+deserializer). Cycle 24b only emits version 1; the
+versioning hook is the future-proofing handle.
 
 ### Cross-session loading
 

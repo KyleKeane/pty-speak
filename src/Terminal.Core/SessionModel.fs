@@ -813,3 +813,263 @@ module SessionModel =
             | Some active -> appendActive sb active
             | None -> ()
         sb.ToString()
+
+    // -----------------------------------------------------------------
+    // Cycle 24b — JSONL serializer for SessionTuple.
+    // -----------------------------------------------------------------
+    //
+    // Pure function `formatTupleAsJsonl : SessionTuple -> string`
+    // that emits one JSONL line (a JSON object followed by a literal
+    // `\n` terminator). No I/O — Cycle 24c wires the file writer
+    // against the Active→History transition seam in
+    // `Terminal.App.Program`.
+    //
+    // **Wire format pinned in `docs/SESSION-MODEL.md` §"On-disk
+    // wire format (Cycle 24b)" — needs to remain stable for
+    // decades.** Locked decisions:
+    //
+    // 1. Per-record `"schemaVersion":1` as the first key. Future
+    //    schema changes increment the value; old files always
+    //    remain readable; replay tools branch on it.
+    // 2. `BoundarySource` always serialises as a tagged object
+    //    `{"kind":"<case>", ...payload}` — uniform shape across
+    //    all DU cases; future cases land cleanly.
+    // 3. `Sources` serialises as a JSON ARRAY of records, not as
+    //    a JSON object keyed by `BoundaryKind`. Avoids the latent
+    //    collision bug where `BoundaryKind.CommandFinished _`
+    //    payload variants would alias to the same JSON key.
+    //    Sorted by an explicit `boundaryOrdinal` (NOT by F# DU
+    //    compare semantics — those are an implementation detail
+    //    we don't want to depend on for decades-stable byte
+    //    output).
+    // 4. Hand-rolled (no JSON library). The codebase has zero JSON
+    //    dependencies; F# `option` and DUs would require custom
+    //    System.Text.Json converters that grow per type;
+    //    hand-rolling gives byte-stable output across .NET
+    //    versions and full control over field ordering. Mirrors
+    //    the Tomlyn-uses-only-what-we-need pattern from Cycle 24a.
+    //
+    // String-escape policy: RFC 8259 minimum (named escapes for
+    // `"`, `\`, `\b`, `\f`, `\n`, `\r`, `\t`; `\u00XX` for any
+    // other byte in `0x00-0x1F`) PLUS DEL (0x7F → ``,
+    // deliberate superset; many parsers and viewers mis-handle
+    // bare DEL). C1 controls (0x80-0x9F), forward slash, U+2028
+    // / U+2029 pass through unescaped. Lone UTF-16 surrogates
+    // throw — loud failure beats silent corruption in a
+    // ten-year-old log.
+
+    /// Schema version emitted on every JSONL record. Increment
+    /// when the on-disk shape changes; replay tools branch on
+    /// the value to apply per-version deserializers.
+    [<Literal>]
+    let JsonlSchemaVersion : int = 1
+
+    let private jsonInvariant : System.Globalization.CultureInfo =
+        System.Globalization.CultureInfo.InvariantCulture
+
+    /// Escape a string per the JSON-string production in RFC 8259
+    /// + DEL (0x7F). Throws `InvalidOperationException` on lone
+    /// UTF-16 surrogates — silent corruption of decades-old logs
+    /// is the worst possible failure mode; a thrown exception at
+    /// emit time forces upstream code to fix the surrogate-
+    /// producing bug.
+    let private escapeJsonString (s: string) : string =
+        let sb = System.Text.StringBuilder(s.Length + 2)
+        let len = s.Length
+        let mutable i = 0
+        while i < len do
+            let c = s.[i]
+            let cInt = int c
+            match c with
+            | '"' -> sb.Append("\\\"") |> ignore
+            | '\\' -> sb.Append("\\\\") |> ignore
+            | '\b' -> sb.Append("\\b") |> ignore
+            | '\f' -> sb.Append("\\f") |> ignore
+            | '\n' -> sb.Append("\\n") |> ignore
+            | '\r' -> sb.Append("\\r") |> ignore
+            | '\t' -> sb.Append("\\t") |> ignore
+            | _ when cInt < 0x20 || cInt = 0x7F ->
+                sb.Append(System.String.Format(
+                    jsonInvariant, "\\u{0:x4}", cInt)) |> ignore
+            | _ when System.Char.IsHighSurrogate(c) ->
+                if i + 1 < len && System.Char.IsLowSurrogate(s.[i + 1]) then
+                    sb.Append(c) |> ignore
+                    sb.Append(s.[i + 1]) |> ignore
+                    i <- i + 1
+                else
+                    raise (System.InvalidOperationException(
+                        sprintf "JSONL serializer: lone high surrogate at index %d" i))
+            | _ when System.Char.IsLowSurrogate(c) ->
+                raise (System.InvalidOperationException(
+                    sprintf "JSONL serializer: lone low surrogate at index %d" i))
+            | _ ->
+                sb.Append(c) |> ignore
+            i <- i + 1
+        sb.ToString()
+
+    /// ISO-8601 UTC with 100ns ticks (`yyyy-MM-ddTHH:mm:ss.fffffffZ`)
+    /// — lossless from the Windows clock. Diverges from the
+    /// human-readable `formatTimestamp` (3-digit ms) which is for
+    /// clipboard/log inspection; the JSONL formatter is forensic
+    /// data and must round-trip exactly.
+    let private formatJsonTimestamp (dt: DateTime) : string =
+        dt.ToUniversalTime().ToString(
+            "yyyy-MM-ddTHH:mm:ss.fffffffZ",
+            jsonInvariant)
+
+    let private formatJsonOptionTimestamp (dt: DateTime option) : string =
+        match dt with
+        | Some t ->
+            let sb = System.Text.StringBuilder(35)
+            sb.Append('"') |> ignore
+            sb.Append(formatJsonTimestamp t) |> ignore
+            sb.Append('"') |> ignore
+            sb.ToString()
+        | None -> "null"
+
+    let private formatJsonOptionString (s: string option) : string =
+        match s with
+        | Some v ->
+            let sb = System.Text.StringBuilder(v.Length + 2)
+            sb.Append('"') |> ignore
+            sb.Append(escapeJsonString v) |> ignore
+            sb.Append('"') |> ignore
+            sb.ToString()
+        | None -> "null"
+
+    let private formatJsonOptionInt (i: int option) : string =
+        match i with
+        | Some v -> System.String.Format(jsonInvariant, "{0}", v)
+        | None -> "null"
+
+    /// Payload-less name of a `BoundaryKind` case. Used as both
+    /// the array entry's `"boundary"` value AND the `boundaryOrdinal`
+    /// sort axis — these MUST stay in sync when new cases are
+    /// added (the F# compiler's match-exhaustiveness check is the
+    /// forcing function).
+    let private formatBoundaryKindName (kind: BoundaryKind) : string =
+        match kind with
+        | BoundaryKind.PromptStart -> "PromptStart"
+        | BoundaryKind.CommandStart -> "CommandStart"
+        | BoundaryKind.OutputStart -> "OutputStart"
+        | BoundaryKind.CommandFinished _ -> "CommandFinished"
+
+    /// Deterministic sort key for `Sources` array serialization.
+    /// Don't depend on F# DU compare semantics for a decades-stable
+    /// byte-for-byte output format.
+    let private boundaryOrdinal (kind: BoundaryKind) : int =
+        match kind with
+        | BoundaryKind.PromptStart -> 0
+        | BoundaryKind.CommandStart -> 1
+        | BoundaryKind.OutputStart -> 2
+        | BoundaryKind.CommandFinished _ -> 3
+
+    let private formatBoundarySourceTaggedObject
+            (src: BoundarySource)
+            : string
+            =
+        match src with
+        | BoundarySource.Osc133 ->
+            "{\"kind\":\"Osc133\"}"
+        | BoundarySource.HeuristicPromptRegex stabilityMs ->
+            System.String.Format(
+                jsonInvariant,
+                "{{\"kind\":\"HeuristicPromptRegex\",\"stabilityMs\":{0}}}",
+                stabilityMs)
+        | BoundarySource.HeuristicClaudeInkBox ->
+            "{\"kind\":\"HeuristicClaudeInkBox\"}"
+
+    let private formatSourcesArray
+            (sources: Map<BoundaryKind, BoundarySource>)
+            : string
+            =
+        let sb = System.Text.StringBuilder()
+        sb.Append('[') |> ignore
+        let entries =
+            sources
+            |> Map.toList
+            |> List.sortBy (fst >> boundaryOrdinal)
+        let mutable first = true
+        for (kind, src) in entries do
+            if not first then sb.Append(',') |> ignore
+            first <- false
+            sb.Append("{\"boundary\":\"") |> ignore
+            sb.Append(formatBoundaryKindName kind) |> ignore
+            sb.Append("\",\"source\":") |> ignore
+            sb.Append(formatBoundarySourceTaggedObject src) |> ignore
+            sb.Append('}') |> ignore
+        sb.Append(']') |> ignore
+        sb.ToString()
+
+    let private formatExtraParamsObject
+            (extras: Map<string, string>)
+            : string
+            =
+        let sb = System.Text.StringBuilder()
+        sb.Append('{') |> ignore
+        let mutable first = true
+        // F# `Map<string, _>` iterates in sorted-key order via
+        // ordinal string compare per spec; deterministic across
+        // .NET versions.
+        for KeyValue (k, v) in extras do
+            if not first then sb.Append(',') |> ignore
+            first <- false
+            sb.Append('"') |> ignore
+            sb.Append(escapeJsonString k) |> ignore
+            sb.Append("\":\"") |> ignore
+            sb.Append(escapeJsonString v) |> ignore
+            sb.Append('"') |> ignore
+        sb.Append('}') |> ignore
+        sb.ToString()
+
+    /// Serialize one `SessionTuple` as one JSONL line — a JSON
+    /// object followed by a single literal `\n` terminator.
+    /// Pure (no I/O); safe to call from any thread; total (never
+    /// returns null; throws only on lone UTF-16 surrogates per
+    /// `escapeJsonString`).
+    ///
+    /// **Wire format is decades-stable** — see the section
+    /// docstring above for locked decisions and
+    /// `docs/SESSION-MODEL.md` §"On-disk wire format (Cycle 24b)"
+    /// for the canonical reference.
+    ///
+    /// Trailing terminator is the literal string `"\n"`, never
+    /// `Environment.NewLine` — the latter would emit `\r\n` on
+    /// Windows and silently break byte-for-byte stability across
+    /// platforms. Cycle 24c writer concatenates lines without
+    /// further processing.
+    let formatTupleAsJsonl (tuple: SessionTuple) : string =
+        let sb = System.Text.StringBuilder()
+        sb.Append('{') |> ignore
+        sb.Append("\"schemaVersion\":") |> ignore
+        sb.Append(System.String.Format(
+            jsonInvariant, "{0}", JsonlSchemaVersion)) |> ignore
+        sb.Append(",\"id\":\"") |> ignore
+        sb.Append(tuple.Id.ToString("D")) |> ignore
+        sb.Append("\",\"commandId\":") |> ignore
+        sb.Append(formatJsonOptionString tuple.CommandId) |> ignore
+        sb.Append(",\"shellId\":\"") |> ignore
+        sb.Append(escapeJsonString tuple.ShellId) |> ignore
+        sb.Append("\",\"promptStartedAt\":\"") |> ignore
+        sb.Append(formatJsonTimestamp tuple.PromptStartedAt) |> ignore
+        sb.Append("\",\"commandStartedAt\":") |> ignore
+        sb.Append(formatJsonOptionTimestamp tuple.CommandStartedAt) |> ignore
+        sb.Append(",\"outputStartedAt\":") |> ignore
+        sb.Append(formatJsonOptionTimestamp tuple.OutputStartedAt) |> ignore
+        sb.Append(",\"commandFinishedAt\":") |> ignore
+        sb.Append(formatJsonOptionTimestamp tuple.CommandFinishedAt) |> ignore
+        sb.Append(",\"promptText\":\"") |> ignore
+        sb.Append(escapeJsonString tuple.PromptText) |> ignore
+        sb.Append("\",\"commandText\":\"") |> ignore
+        sb.Append(escapeJsonString tuple.CommandText) |> ignore
+        sb.Append("\",\"outputText\":\"") |> ignore
+        sb.Append(escapeJsonString tuple.OutputText) |> ignore
+        sb.Append("\",\"exitCode\":") |> ignore
+        sb.Append(formatJsonOptionInt tuple.ExitCode) |> ignore
+        sb.Append(",\"sources\":") |> ignore
+        sb.Append(formatSourcesArray tuple.Sources) |> ignore
+        sb.Append(",\"extraParams\":") |> ignore
+        sb.Append(formatExtraParamsObject tuple.ExtraParams) |> ignore
+        sb.Append('}') |> ignore
+        sb.Append('\n') |> ignore
+        sb.ToString()

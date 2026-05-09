@@ -15,6 +15,57 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 24b): pure JSONL serializer for SessionTuple
+
+Second sub-cycle of the Tier 2 SessionModel persistence cycle.
+Adds `SessionModel.formatTupleAsJsonl : SessionTuple -> string`
+in `src/Terminal.Core/SessionModel.fs` — a pure function that
+emits one JSONL line (a JSON object followed by a literal `\n`
+terminator). **No I/O is wired this sub-cycle**; Cycle 24c
+adds the bounded-channel async writer that calls this serializer
+on the Active → History transition.
+
+The wire format is **decades-stable**. Locked design decisions
+(enforced by 39 xUnit `[<Fact>]` tests in
+`tests/Tests.Unit/SessionModelJsonlTests.fs`):
+
+- **Per-record `"schemaVersion":1`** as the first key on every
+  record. Future schema changes increment the value; replay
+  tools branch on it; old files always remain readable.
+- **`BoundarySource` is always a tagged object**:
+  `{"kind":"<case>",...payload}` — uniform shape across all
+  DU cases, future-proof for new cases.
+- **`sources` is an array of records, not an object**:
+  `[{"boundary":"PromptStart","source":{...}},...]`. Sorted by
+  an explicit `boundaryOrdinal` (PromptStart=0, ...,
+  CommandFinished=3) — avoids the latent collision bug where
+  `BoundaryKind.CommandFinished _` payload variants would
+  alias to the same JSON key. Diverges from earlier
+  illustrative SESSION-MODEL.md examples.
+- **DateTime serialisation**: ISO-8601 UTC with 100ns ticks
+  (`yyyy-MM-ddTHH:mm:ss.fffffffZ`). Lossless from the Windows
+  clock.
+- **Hand-rolled** (no JSON library). The codebase has zero JSON
+  dependencies; F# `option` and DUs would require custom
+  System.Text.Json converters that grow per type. Hand-rolling
+  gives byte-stable output across .NET versions and full control
+  over field ordering.
+- **String escapes**: RFC 8259 minimum + DEL (`0x7F` →
+  ``, deliberate superset).
+- **Lone UTF-16 surrogates throw at emit time** — silent
+  corruption of a decades-old log is the worst possible failure
+  mode.
+- **Trailing terminator is the literal `"\n"`**, never
+  `Environment.NewLine`.
+
+`docs/SESSION-MODEL.md` adds a comprehensive "On-disk wire
+format (Cycle 24b)" sub-section under §"Persistence modes"
+documenting all locked decisions for future contributors.
+
+The test suite includes a `JsonDocument` oracle test that
+parses every emitted line through the standard library's JSON
+parser to catch escape bugs the per-field tests miss.
+
 ### Added (Cycle 24a): SessionModel persistence config substrate (TOML schema, no I/O)
 
 First sub-cycle of the **Tier 2 SessionModel persistence**
