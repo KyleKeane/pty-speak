@@ -15,6 +15,67 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 24d-1): SessionLog file writer — `Always` mode synchronous flush
+
+Implements true audit-grade durability for the `Always`
+persistence mode introduced as a config substrate in Cycle
+24a. Cycle 24c shipped the file writer with `Always` degraded
+to `SessionLog` async semantics + a Warning at startup; this
+PR removes the degradation and the Warning, and adds the
+synchronous-flush path.
+
+**What ships**:
+
+- New `SessionLogWriterSink.EnqueueSync : SessionTuple -> unit`
+  — blocks the SessionModel state-machine call path until
+  the tuple is durable on disk (`StreamWriter.Flush` returned
+  successfully). 10-second timeout with graceful degradation:
+  on timeout, log a Warning and return (the tuple is still
+  queued; the state machine continues; the user gets a
+  noticeable hitch instead of a hung UI).
+- New internal `SessionLogWriteRequest` record (`{ Tuple;
+  CompletionSignal: TaskCompletionSource<unit> option }`) is
+  the channel payload. `Enqueue` (existing API for
+  `SessionLog` mode) sets `CompletionSignal = None`;
+  `EnqueueSync` (new API for `Always` mode) sets `Some tcs`
+  and awaits it.
+- Drain task accumulates per-batch `pendingSignals` and signals
+  them after the single `StreamWriter.Flush` returns. On
+  flush failure, faults all pending TCSs with the same
+  exception so sync callers learn fast; on success, completes
+  them all. Same FIFO order is preserved regardless of
+  CompletionSignal presence.
+- Composition root in `src/Terminal.App/Program.fs` introduces
+  a `dispatchTupleToWriter` helper used by both
+  `handlePromptBoundary` and the shell-switch path:
+  `MemoryOnly` → no-op; `SessionLog` → `Enqueue`; `Always` →
+  `EnqueueSync`. The Cycle 24c "Always not yet implemented"
+  Warning is removed.
+- 5 new xUnit `[<Fact>]` tests in
+  `tests/Tests.Unit/SessionLogWriterTests.fs` covering:
+  on-disk-after-return durability, post-Dispose graceful
+  return (no hang), mixed Enqueue + EnqueueSync FIFO
+  ordering, lone-surrogate skip-without-break for sync
+  callers, multi-thread concurrent EnqueueSync.
+
+**Failure modes**:
+
+- Serializer error (lone surrogate per Cycle 24b): drain task
+  faults the TCS via `TrySetException`; `EnqueueSync`
+  catches via `AggregateException`, logs Warning, returns.
+  Subsequent `EnqueueSync` calls unaffected.
+- Disk stall: 10s timeout fires; Warning logged; method
+  returns. Tuple stays queued and writes when the disk
+  recovers.
+- Sink `Dispose` while a sync caller is awaiting: drain's
+  final-pass either writes the tuple (signalling success) or
+  the channel is cancelled (caller unblocks via
+  `OperationCanceledException`).
+
+Cycle 24d-2 (still-pending) adds env-var VALUE-based
+sanitisation for `commandText` / `outputText` / `promptText`
+/ `extraParams` before write.
+
 ### Added (Cycle 24c): bounded-channel async file writer for SessionTuple JSONL persistence
 
 Third sub-cycle of the Tier 2 SessionModel persistence cycle.
