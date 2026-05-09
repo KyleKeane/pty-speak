@@ -940,20 +940,6 @@ module Program =
             SessionPersistence.formatToString persistenceConfig.Format,
             persistenceConfig.MaxSessionSizeMb)
 
-        // Cycle 24c — `Always` mode is not yet implemented;
-        // the synchronous-flush behaviour ships in Cycle 24d.
-        // For 24c, log a Warning and treat `Always` as
-        // `SessionLog` (asynchronous flush via the bounded
-        // channel). This keeps `Always`-configured users
-        // getting durable persistence (just without the
-        // sync-on-finalize semantic) instead of silently
-        // dropping their data.
-        match persistenceConfig.Mode with
-        | SessionPersistence.Always ->
-            log.LogWarning(
-                "SessionModel persistence mode 'always' is not yet implemented (synchronous flush ships in Cycle 24d). Behaving as 'session_log' (async flush) for this release.")
-        | _ -> ()
-
         // Cycle 24c — construct the SessionLogWriter sink for
         // the initial shell session when persistence is
         // requested. `MemoryOnly` skips construction entirely
@@ -984,6 +970,23 @@ module Program =
                 Some sink
         let mutable sessionLogWriter
                 : SessionLogWriterSink option = None
+
+        // Cycle 24d-1 — dispatch helper for finalised tuples.
+        // `MemoryOnly` (no sink) → no-op. `SessionLog` →
+        // `Enqueue` (non-blocking after queue). `Always` →
+        // `EnqueueSync` (audit-grade durability; blocks the
+        // SessionModel state-machine call path until the tuple
+        // is on disk; 10-second timeout with graceful
+        // degradation). Both `handlePromptBoundary` and the
+        // shell-switch path call this helper for consistency.
+        let dispatchTupleToWriter
+                (tuple: SessionModel.SessionTuple) : unit =
+            match sessionLogWriter, persistenceConfig.Mode with
+            | None, _ -> ()
+            | Some sink, SessionPersistence.Always ->
+                sink.EnqueueSync tuple
+            | Some sink, _ ->
+                sink.Enqueue tuple
 
         // Phase B (subset, "C2") — per-shell pathway selection.
         // Reads the loaded `config` for both pathway choice and
@@ -1168,14 +1171,16 @@ module Program =
             // Active→History transition). Dispatch the tuple to
             // the writer; `MemoryOnly` mode leaves
             // `sessionLogWriter` as `None` and the dispatch
-            // becomes a no-op.
+            // becomes a no-op. Cycle 24d-1: `Always` mode routes
+            // through `EnqueueSync` (blocking) via
+            // `dispatchTupleToWriter`.
             let nextSession, finalisedOpt =
                 SessionModel.applyAndCapture
                     currentSession augmented snapshotForApply
             currentSession <- nextSession
-            match finalisedOpt, sessionLogWriter with
-            | Some tuple, Some sink -> sink.Enqueue tuple
-            | _ -> ()
+            match finalisedOpt with
+            | Some tuple -> dispatchTupleToWriter tuple
+            | None -> ()
             let emitted = activePathway.OnPromptBoundary augmented
             pumpLog.LogDebug(
                 "PathwayPump PromptBoundary {Kind} → {Pathway}.OnPromptBoundary → {Count} events.",
@@ -2238,15 +2243,19 @@ module Program =
                                         // it through the OLD
                                         // sink before rotating to
                                         // the new shell's sink.
+                                        // Cycle 24d-1: routed via
+                                        // `dispatchTupleToWriter`
+                                        // so `Always` mode blocks
+                                        // until durable.
                                         let nextSession, finalisedOpt =
                                             SessionModel.finalizeIncompleteAndCapture
                                                 currentSession
                                                 DateTime.UtcNow
                                         currentSession <- nextSession
-                                        match finalisedOpt, sessionLogWriter with
-                                        | Some tuple, Some sink ->
-                                            sink.Enqueue tuple
-                                        | _ -> ()
+                                        match finalisedOpt with
+                                        | Some tuple ->
+                                            dispatchTupleToWriter tuple
+                                        | None -> ()
                                         // Cycle 24c — dispose the
                                         // outgoing shell's sink
                                         // BEFORE creating the

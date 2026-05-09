@@ -293,3 +293,167 @@ let ``createDefault treats empty / whitespace override as None`` () =
     let opts2 =
         SessionLogWriterOptions.createDefault fixedSessionId (Some "   ")
     Assert.Contains("PtySpeak", opts2.OutputDirectory)
+
+// ---------------------------------------------------------------------
+// Cycle 24d-1 — EnqueueSync (audit-grade durability for Always mode)
+// ---------------------------------------------------------------------
+
+/// Read a file's content while the sink may still hold the
+/// file open. `File.ReadAllText` uses default `FileShare.Read`
+/// which conflicts with the sink's open `StreamWriter` (which
+/// holds the file with `FileShare.ReadWrite` to permit
+/// concurrent inspection). Use a matching `FileShare.ReadWrite`
+/// to coexist.
+let private readSharedReadWrite (path: string) : string =
+    use stream =
+        new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite)
+    use reader = new StreamReader(stream)
+    reader.ReadToEnd()
+
+[<Fact>]
+let ``EnqueueSync returns only after the tuple is on disk`` () =
+    let dir = freshTempDir ()
+    let sink = newSink dir fixedSessionId
+    let path = sink.ActiveLogPath
+    try
+        sink.EnqueueSync (fixedTuple ())
+        // EnqueueSync's contract: when this method returns,
+        // the tuple has been written + flushed to disk. Read
+        // the file IMMEDIATELY after the return — no Dispose,
+        // no extra await. The read uses FileShare.ReadWrite
+        // because the sink's writer is still open.
+        let content = readSharedReadWrite path
+        Assert.True(content.Length > 0,
+            "File should contain the tuple after EnqueueSync returns.")
+        // Trailing '\n' stripped before parsing as JSON.
+        use doc =
+            JsonDocument.Parse(content.TrimEnd('\n'))
+        Assert.Equal(JsonValueKind.Object, doc.RootElement.ValueKind)
+        Assert.Equal(
+            "11111111-2222-3333-4444-555555555555",
+            doc.RootElement.GetProperty("id").GetString())
+    finally
+        (sink :> IDisposable).Dispose()
+
+[<Fact>]
+let ``EnqueueSync after Dispose returns gracefully without hanging`` () =
+    let dir = freshTempDir ()
+    let sink = newSink dir fixedSessionId
+    (sink :> IDisposable).Dispose()
+    // Post-dispose enqueue: the channel is closed; the sync
+    // wrapper should detect the failure and return without
+    // throwing or hanging. We bound this with a short Task
+    // timeout to catch any regression.
+    let completedTask =
+        System.Threading.Tasks.Task.Run(fun () ->
+            sink.EnqueueSync (fixedTuple ()))
+    let completed =
+        completedTask.Wait(TimeSpan.FromSeconds(2.0))
+    Assert.True(completed,
+        "EnqueueSync on a disposed sink must return within 2 seconds (regression: would hang on disposed channel).")
+
+[<Fact>]
+let ``mixed Enqueue + EnqueueSync calls preserve enqueue order on disk`` () =
+    let dir = freshTempDir ()
+    let sink = newSink dir fixedSessionId
+    let path = sink.ActiveLogPath
+    let baseTuple = fixedTuple ()
+    let mkTuple (id: string) (text: string) =
+        { baseTuple with
+            Id = Guid.Parse(id)
+            CommandText = text }
+    try
+        // Interleave async + sync calls; the FIFO contract
+        // of the BoundedChannel + single-threaded drain task
+        // guarantees on-disk order matches enqueue order
+        // regardless of CompletionSignal presence.
+        sink.Enqueue (mkTuple "11111111-1111-1111-1111-111111111111" "async-1")
+        sink.EnqueueSync (mkTuple "22222222-2222-2222-2222-222222222222" "sync-2")
+        sink.Enqueue (mkTuple "33333333-3333-3333-3333-333333333333" "async-3")
+        sink.EnqueueSync (mkTuple "44444444-4444-4444-4444-444444444444" "sync-4")
+    finally
+        (sink :> IDisposable).Dispose()
+    let content = File.ReadAllText(path)
+    let lines =
+        content.Split([| '\n' |], StringSplitOptions.RemoveEmptyEntries)
+    Assert.Equal(4, lines.Length)
+    Assert.Contains("\"commandText\":\"async-1\"", lines.[0])
+    Assert.Contains("\"commandText\":\"sync-2\"", lines.[1])
+    Assert.Contains("\"commandText\":\"async-3\"", lines.[2])
+    Assert.Contains("\"commandText\":\"sync-4\"", lines.[3])
+
+[<Fact>]
+let ``EnqueueSync with a lone-surrogate tuple returns gracefully and subsequent calls still work`` () =
+    let dir = freshTempDir ()
+    let sink = newSink dir fixedSessionId
+    let path = sink.ActiveLogPath
+    let goodFirst = fixedTuple ()
+    let badMiddle =
+        { fixedTuple () with
+            Id = Guid.Parse("99999999-9999-9999-9999-999999999999")
+            OutputText = String([| char 0xD800 |]) } // lone high surrogate
+    let goodLast =
+        { fixedTuple () with
+            Id = Guid.Parse("00000000-0000-0000-0000-000000000001")
+            CommandText = "after-bad-sync" }
+    try
+        // First sync write succeeds.
+        sink.EnqueueSync goodFirst
+        // Bad tuple's serializer throws inside the drain;
+        // EnqueueSync's catch surfaces the failure as a
+        // logged Warning + returns (does not throw).
+        sink.EnqueueSync badMiddle
+        // Subsequent sync write must still work.
+        sink.EnqueueSync goodLast
+    finally
+        (sink :> IDisposable).Dispose()
+    let content = File.ReadAllText(path)
+    let lines =
+        content.Split([| '\n' |], StringSplitOptions.RemoveEmptyEntries)
+    // Bad tuple skipped; two good tuples landed.
+    Assert.Equal(2, lines.Length)
+    Assert.Contains(
+        "\"id\":\"11111111-2222-3333-4444-555555555555\"",
+        lines.[0])
+    Assert.Contains(
+        "\"id\":\"00000000-0000-0000-0000-000000000001\"",
+        lines.[1])
+    Assert.DoesNotContain("99999999", content)
+
+[<Fact>]
+let ``EnqueueSync called concurrently from multiple threads completes successfully for all callers`` () =
+    let dir = freshTempDir ()
+    let sink = newSink dir fixedSessionId
+    let path = sink.ActiveLogPath
+    let baseTuple = fixedTuple ()
+    let count = 8
+    try
+        let tasks =
+            [ 0 .. count - 1 ]
+            |> List.map (fun i ->
+                System.Threading.Tasks.Task.Run(fun () ->
+                    let t =
+                        { baseTuple with
+                            Id = Guid.NewGuid()
+                            CommandText = sprintf "sync-%d" i }
+                    sink.EnqueueSync t))
+            |> List.toArray
+        let completed =
+            System.Threading.Tasks.Task.WaitAll(
+                tasks, TimeSpan.FromSeconds(15.0))
+        Assert.True(completed,
+            "All concurrent EnqueueSync callers should complete within 15s.")
+    finally
+        (sink :> IDisposable).Dispose()
+    let content = File.ReadAllText(path)
+    let lines =
+        content.Split([| '\n' |], StringSplitOptions.RemoveEmptyEntries)
+    Assert.Equal(count, lines.Length)
+    // Each line must parse — torn writes would surface here.
+    for line in lines do
+        use _doc = JsonDocument.Parse(line)
+        ()
