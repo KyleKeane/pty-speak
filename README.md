@@ -27,13 +27,16 @@ target workload.
 > in the spec per chat 2026-05-03 maintainer authorization;
 > see [`spec/tech-plan.md`](spec/tech-plan.md) §4a / §4b /
 > §5a. Stages 7-10 are sequenced via
-> [`docs/PROJECT-PLAN-2026-05-revision.md`](docs/PROJECT-PLAN-2026-05-revision.md)
-> (the current strategic plan revision) as cleanup
-> (✓ shipped May 2026) → Stage 7 (validation gate; ✓ shipped)
-> → substrate cycle (✓ shipped through PR #184) →
-> Tier 1 SessionModel implementation cycle (✓ shipped through
-> PR #199) → Tier 2 persistence OR Phase 2 input framework
-> (next; maintainer's choice). Follow
+> [`docs/PROJECT-PLAN-2026-05-09.md`](docs/PROJECT-PLAN-2026-05-09.md)
+> (the current strategic plan; 2026-05-09 successor to the
+> 2026-05-07 revision) as cleanup (✓ shipped May 2026) →
+> Stage 7 (validation gate; ✓ shipped) → substrate cycle
+> (✓ shipped through PR #184) → Tier 1 SessionModel
+> implementation cycle (✓ shipped through PR #199) →
+> Tier 2 SessionModel persistence (✓ shipped through PR #219) →
+> Cycle 25 operational ergonomics + diagnostic-dump bundle
+> (✓ shipped through PR #222) → **Cycle 26 app menu** (next;
+> maintainer-chosen 2026-05-09). Follow
 > [Releases](../../releases) for new builds; once installed,
 > `Ctrl+Shift+U` updates in place.
 

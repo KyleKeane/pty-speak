@@ -27,8 +27,9 @@ navigation anchor.
 | [`docs/SESSION-HANDOFF.md`](SESSION-HANDOFF.md) | Next Claude Code session | Session-to-session continuity | Mutable state: "Where we left off", in-flight branches, pre-digested implementation sketches for the next stage. |
 | [`spec/overview.md`](../spec/overview.md), [`spec/tech-plan.md`](../spec/tech-plan.md) | Architecture review | When changing design | Immutable spec: external research and stage-by-stage plan. ADR-style authorisation required for edits. |
 | [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md) | Architecture review (post-Stage-7 substrate) | When implementing sub-stages 8a-8f / 9a-9d, or when reasoning about event routing / output channels / profiles / the InputSource and OutputEvent schemas | Substrate spec for the post-Stage-7 framework cycles. Supersedes `spec/tech-plan.md` §8 / §9 in-place; reframes §10 as the first non-built-in framework consumer. Answers MAY-4.md's consolidated questions with v1 commitments (rationale + tradeoffs) on RawInput envelope, Intent layer, dispatcher, OutputEvent + Profile + Channel, threading + priority taxonomy, TOML schema. |
-| [`docs/PROJECT-PLAN-YYYY-MM.md`](PROJECT-PLAN-2026-05.md) | Strategic planning | When planning a cycle | Dated cycle plans (e.g. May-2026 cleanup → Stage 7 → framework cycles). Status-as-of-date when stale. The 2026-05-03 plan is preserved verbatim; **superseded by `PROJECT-PLAN-2026-05-revision.md`** for current sequencing. |
-| [`docs/PROJECT-PLAN-2026-05-revision.md`](PROJECT-PLAN-2026-05-revision.md) | Strategic planning | When planning a cycle (current) | Successor to `PROJECT-PLAN-2026-05.md`. Snapshot 2026-05-07. Captures the substrate-first shift (2026-05-06 directive). Reflects shipped substrate cycle PRs #146-#184; five research-stage docs (PIPELINE-NARRATIVE, SESSION-MODEL, INTERACTION-MODEL, PANE-MODEL, CUSTOMIZATION-MODEL); six-track audit phase; post-audit cleanup. Points next stage at SessionModel Tier 1 implementation as FIRST POST-AUDIT IMPLEMENTATION CYCLE. Authored under the original plan's "Future revisions should land as new dated plans" discipline (Track E E5 Option B resolution). |
+| [`docs/PROJECT-PLAN-YYYY-MM.md`](PROJECT-PLAN-2026-05.md) | Strategic planning | When planning a cycle | Dated cycle plans (e.g. May-2026 cleanup → Stage 7 → framework cycles). Status-as-of-date when stale. The 2026-05-03 plan is preserved verbatim; **superseded by `PROJECT-PLAN-2026-05-09.md`** for current sequencing. |
+| [`docs/PROJECT-PLAN-2026-05-revision.md`](PROJECT-PLAN-2026-05-revision.md) | Strategic planning (historical snapshot) | When tracing decision history for the substrate-first shift | First successor to `PROJECT-PLAN-2026-05.md`. Snapshot 2026-05-07. Captures the substrate-first shift (2026-05-06 directive). Reflects shipped substrate cycle PRs #146-#184; five research-stage docs (PIPELINE-NARRATIVE, SESSION-MODEL, INTERACTION-MODEL, PANE-MODEL, CUSTOMIZATION-MODEL); six-track audit phase; post-audit cleanup. Points next stage at SessionModel Tier 1 implementation as FIRST POST-AUDIT IMPLEMENTATION CYCLE. **Superseded by `PROJECT-PLAN-2026-05-09.md`** for current sequencing; preserved verbatim per dated-snapshot discipline. |
+| [`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md) | Strategic planning | When planning a cycle (current) | Successor to `PROJECT-PLAN-2026-05-revision.md`. Snapshot 2026-05-09. Captures the post-Tier-2 + post-Cycle-25 state: Tier 1 SessionModel substrate (Cycles 11-22b, PRs #185-#199), Tier 2 persistence (Cycles 24a-24g, PRs #203-#212+#219), Cycle 25 operational ergonomics + diagnostic-dump bundle (PRs #220-#222) all shipped end-to-end with NVDA-validation green. SESSION-MODEL Q1-Q4 + Q6-Q8 + CUSTOMIZATION-MODEL Q1-Q7 resolved. Points next stage at **Cycle 26 — app menu** (maintainer-chosen 2026-05-09) as the working-memory-pressure-relief cycle gating further hotkey-bound features. Cycle 25b-2 FlaUI/UIA E2E runner parked. Output framework Part 3 + Input framework Part 4 + Stage 10 sequenced after Cycle 26. Authored under the original plan's "Future revisions should land as new dated plans" discipline (Track E E5 Option B continued). |
 | [`docs/HISTORICAL-CONTEXT-*.md`](.) | Debugging archived patterns | Backup reference only | NOT primary handoff. Historical decisions retained for archaeology. |
 | [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) | First-time code navigator | Code orientation | Module-by-module map of the codebase. |
 | [`docs/ROADMAP.md`](ROADMAP.md) | Quick "what's next" scan | High-level glance | Stage list + ship status. |
@@ -64,7 +65,7 @@ navigation anchor.
 1. [`CLAUDE.md`](../CLAUDE.md) (auto-loaded; read it first)
 2. [`README.md`](../README.md) — what the project is + shipped stages
 3. [`docs/SESSION-HANDOFF.md`](SESSION-HANDOFF.md) — "Where we left off"
-4. [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md) — cycle plan
+4. [`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md) — current cycle plan (2026-05-09 successor)
 5. [`spec/tech-plan.md`](../spec/tech-plan.md) §N for the active stage
 6. [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md)
    when the active stage is in the framework cycles (sub-stages 8a-8f or 9a-9d) or Stage 10
@@ -99,10 +100,11 @@ navigation anchor.
 
 ### "I'm planning the next cycle"
 
-1. [`docs/PROJECT-PLAN-2026-05-revision.md`](PROJECT-PLAN-2026-05-revision.md) — current
-   strategic plan (revision); the original
-   `PROJECT-PLAN-2026-05.md` is the historical 2026-05-03
-   snapshot
+1. [`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md) — current
+   strategic plan (2026-05-09 successor revision);
+   `PROJECT-PLAN-2026-05-revision.md` (2026-05-07) and the
+   original `PROJECT-PLAN-2026-05.md` (2026-05-03) are
+   preserved as historical dated snapshots
 2. [`docs/ROADMAP.md`](ROADMAP.md) — high-level stage list
 3. [`docs/STAGE-7-ISSUES.md`](STAGE-7-ISSUES.md) — design input for
    Output / Input framework cycles
