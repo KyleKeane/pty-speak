@@ -37,6 +37,9 @@
     <Compile Include="OutputDispatcher.fs" />
     <Compile Include="KeyEncoding.fs" />
     <Compile Include="HotkeyRegistry.fs" />
+    <Compile Include="Channels/IClipboardProvider.fs" />
+    <Compile Include="Channels/IHotkeyTranslator.fs" />
+    <Compile Include="Channels/IDisplayBuffer.fs" />
   </ItemGroup>
 
   <ItemGroup>

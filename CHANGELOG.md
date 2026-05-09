@@ -15,6 +15,61 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 31b): sibling boundary interface declarations — `IClipboardProvider`, `IHotkeyTranslator<'TGesture>`, `IDisplayBuffer`
+
+Three pure interface declarations completing the boundary set
+named in `docs/CORE-ABSTRACTION-BOUNDARY.md` §1.6 (portability
+invariant). All three live in `Terminal.Core` per the substrate
+side of the boundary; **no consumers are cut over in this PR**.
+First consumer cutover (`IDisplayBuffer` at
+`TerminalView.cs:1002`) lands in Cycle 32b alongside the
+selection TOML loader. Portability CI lint added in Cycle 31a
+continues to gate against host-specific imports leaking into
+substrate code.
+
+- **`src/Terminal.Core/Channels/IClipboardProvider.fs`** (new)
+  — abstract `SetText: string → Async<bool>` codifying the
+  STA-thread + 3-second-timeout contract that
+  `Program.fs:2043` (Ctrl+Shift+Y) and `Diagnostics.fs:726`
+  (Ctrl+Shift+D) currently embed inline; abstract
+  `TryGetText: unit → string option` for read paths
+  (`TerminalView.cs:681,692,742,744`). All five existing call
+  sites continue to use `System.Windows.Clipboard` directly;
+  the interface formalises the seam for future cross-platform
+  builds without forcing a cutover today.
+- **`src/Terminal.Core/Channels/IHotkeyTranslator.fs`** (new) —
+  generic over the host gesture type (`'TGesture`) so
+  Terminal.Core does not import any WPF / GTK / AppKit type.
+  Abstract `Translate: HotkeyKey * Set<Modifier> → 'TGesture`.
+  Today's WPF translation in `Program.fs:274-333`
+  (`translateHotkeyKey` + `translateHotkeyModifiers`) stays as
+  direct helpers; the interface gives a future Avalonia / GTK
+  host a typed seam to plug into.
+- **`src/Terminal.Core/Channels/IDisplayBuffer.fs`** (new) —
+  abstract `Snapshot: int * int → int64 * (int * int) * Cell[][]`
+  matching today's `Screen.SnapshotRows` shape
+  (`Screen.fs:541-553`) including the locking contract
+  (atomic cell + cursor capture). Seven existing
+  `Screen.SnapshotRows` call sites (`TerminalView.cs:1002`,
+  `Program.fs:1258/1345/1375/1480/1534/2574`,
+  `TerminalAutomationPeer.fs:742`) continue direct; Cycle 32b
+  ships a `DefaultDisplayBuffer` adapter and migrates only
+  the UI render call site.
+- **`src/Terminal.Core/Terminal.Core.fsproj`** — three new
+  `<Compile Include>` entries appended after `HotkeyRegistry.fs`
+  (the new files depend on `HotkeyRegistry.HotkeyKey/Modifier`
+  and `Cell` from `Types.fs`, both of which compile earlier).
+- **`docs/CORE-ABSTRACTION-BOUNDARY.md`** §10 — cross-references
+  expanded to point at the actual interface files (the prior
+  doc referenced files that didn't yet exist on disk).
+
+The "channel" name in `Channels/` subdirectory is slightly
+imprecise — these three are substrate → host seams, not channel-
+side surfaces (the IOutputSink that channels implement lives
+in `OutputEventTypes.fs` for compile-order reasons). Naming
+preserved for now to match the strategic plan's vocabulary;
+may be revisited if maintenance demand surfaces.
+
 ### Docs (post-Cycle-31a): history sub-pane navigation contract via CommandOutputTuple
 
 Doc-only refinement folding the `docs/research/Output-paradigms.md`

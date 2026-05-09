@@ -557,6 +557,8 @@ a boundary violation; reviewers block.
 
 ## §10 — Cross-references
 
+### Documentation
+
 - **ADR**: [`adr/0001-substrate-channel-dichotomy.md`](adr/0001-substrate-channel-dichotomy.md)
 - **Strategic plan**: [`PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md)
 - **Channel principle (older framing)**:
@@ -567,6 +569,47 @@ a boundary violation; reviewers block.
 - **Pane catalog + sub-pane decomposition**:
   [`PANE-MODEL.md`](PANE-MODEL.md)
 - **Spec authority**: [`spec/tech-plan.md`](../spec/tech-plan.md)
+
+### Boundary interfaces (the actual code)
+
+The four boundary interfaces named in §1.6 (portability
+invariant) live in `Terminal.Core` per the substrate side of
+the boundary:
+
+- **`IOutputSink`** — declared inline in
+  [`src/Terminal.Core/OutputEventTypes.fs`](../src/Terminal.Core/OutputEventTypes.fs)
+  (just before the `Channel` record at line ~370). Cycle 31a;
+  the `Channel` record satisfies the interface trivially. The
+  dispatcher (`OutputDispatcher.routePair`) consumes via the
+  interface upcast. See §3.
+- **`IClipboardProvider`** —
+  [`src/Terminal.Core/Channels/IClipboardProvider.fs`](../src/Terminal.Core/Channels/IClipboardProvider.fs).
+  Cycle 31b; pure declaration. STA-thread + 3s-timeout
+  contract codified for write paths; read paths are
+  synchronous. No consumers cut over yet — today's `Program.fs:2043`
+  (Ctrl+Shift+Y) and `Diagnostics.fs:726` (Ctrl+Shift+D) keep
+  direct `System.Windows.Clipboard` access.
+- **`IHotkeyTranslator<'TGesture>`** —
+  [`src/Terminal.Core/Channels/IHotkeyTranslator.fs`](../src/Terminal.Core/Channels/IHotkeyTranslator.fs).
+  Cycle 31b; pure declaration. Generic over the host gesture
+  type so Terminal.Core stays free of WPF / GTK / AppKit
+  imports. No consumers cut over yet — today's
+  `Program.fs:274-333` `translateHotkeyKey` /
+  `translateHotkeyModifiers` continue as direct helpers.
+- **`IDisplayBuffer`** —
+  [`src/Terminal.Core/Channels/IDisplayBuffer.fs`](../src/Terminal.Core/Channels/IDisplayBuffer.fs).
+  Cycle 31b; pure declaration. Snapshot-of-grid surface
+  matching `Screen.SnapshotRows` shape (sequence number +
+  cursor + `Cell[][]`). First consumer cutover at
+  `TerminalView.cs:1002` lands in Cycle 32b alongside the
+  selection TOML loader.
+
+The portability invariant is enforced structurally by the
+`portability-lint` CI step (Cycle 31a, in
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)) which
+fails the build if any `Terminal.Core` or `Terminal.Audio`
+file imports `System.Windows.*`, `PresentationCore`,
+`WindowsBase`, or `Microsoft.Win32`.
 
 ## Versioning + maintenance
 
