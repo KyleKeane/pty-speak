@@ -77,7 +77,11 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               // Cycle 22b — copy SessionModel history to clipboard.
               HotkeyRegistry.CopyHistoryToClipboard
               // Cycle 24e — announce session-log file path.
-              HotkeyRegistry.AnnounceSessionLogPath ]
+              HotkeyRegistry.AnnounceSessionLogPath
+              // Cycle 26c — first menu-only command. Surfaced
+              // via Diagnostics → Test Process Cleanup; no
+              // keyboard accelerator.
+              HotkeyRegistry.RunProcessCleanupScript ]
     let actual = Set.ofList HotkeyRegistry.allCommands
     Assert.Equal<Set<HotkeyRegistry.AppCommand>>(expected, actual)
 
@@ -330,6 +334,24 @@ let ``gestureText returns None for menu-only commands`` () =
           Modifiers = None
           Description = "test fixture" }
     Assert.Equal(None, HotkeyRegistry.gestureText menuOnly)
+
+[<Fact>]
+let ``RunProcessCleanupScript is menu-only (Cycle 26c — None Key, None Modifiers)`` () =
+    // Cycle 26c — first menu-only AppCommand. Has no default
+    // keyboard accelerator; surfaced only via the Diagnostics →
+    // Test Process Cleanup menu item. Pin the (None, None)
+    // shape so a future PR doesn't accidentally promote it to
+    // gesture-bearing without an explicit decision.
+    let hk =
+        HotkeyRegistry.hotkeyOf HotkeyRegistry.RunProcessCleanupScript
+    Assert.Equal(None, hk.Key)
+    Assert.Equal<Set<HotkeyRegistry.Modifier> option>(None, hk.Modifiers)
+    Assert.Equal(
+        "RunProcessCleanupScript",
+        HotkeyRegistry.nameOf HotkeyRegistry.RunProcessCleanupScript)
+    // gestureText must return None for menu-only commands so
+    // MenuItem.InputGestureText is left blank in XAML.
+    Assert.Equal(None, HotkeyRegistry.gestureText hk)
 
 [<Fact>]
 let ``gestureText modifier order is Ctrl+Alt+Shift regardless of Set enumeration`` () =

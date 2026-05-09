@@ -81,6 +81,13 @@
                 <MenuItem x:Name="MenuItem_RunDiagnostic"
                           x:FieldModifier="public"
                           Header="Run Diagnostic _Battery" />
+                <!-- Cycle 26c — first menu-only command (no
+                     keyboard accelerator). Launches the
+                     interactive process-cleanup test script in
+                     a separate PowerShell window. -->
+                <MenuItem x:Name="MenuItem_RunProcessCleanupScript"
+                          x:FieldModifier="public"
+                          Header="Test Process _Cleanup" />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem x:Name="MenuItem_CheckForUpdates"

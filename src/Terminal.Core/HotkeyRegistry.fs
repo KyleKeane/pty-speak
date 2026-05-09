@@ -100,6 +100,13 @@ module HotkeyRegistry =
         | CopyHistoryToClipboard
         // Cycle 24e — announce active session-log file path.
         | AnnounceSessionLogPath
+        // Cycle 26c — first menu-only command. Interactive
+        // process-cleanup test (`scripts/test-process-cleanup.ps1`)
+        // surfaced via Diagnostics → Test Process Cleanup. No
+        // default keyboard accelerator; relieves the noted
+        // hotkey-count working-memory ceiling for additional
+        // diagnostic scripts.
+        | RunProcessCleanupScript
 
     /// Stable string name for a command, used as the
     /// `RoutedCommand` name passed to WPF and as a TOML key
@@ -122,6 +129,7 @@ module HotkeyRegistry =
         | MuteEarcons -> "MuteEarcons"
         | CopyHistoryToClipboard -> "CopyHistoryToClipboard"
         | AnnounceSessionLogPath -> "AnnounceSessionLogPath"
+        | RunProcessCleanupScript -> "RunProcessCleanupScript"
 
     /// Default key binding for a command. Mirrors the
     /// `AppReservedHotkeys` table in
@@ -212,7 +220,13 @@ module HotkeyRegistry =
           { Command = AnnounceSessionLogPath
             Key = Some (Letter 'S')
             Modifiers = Some ctrlShift
-            Description = "Announce the active session-log file path (Cycle 24e)" } ]
+            Description = "Announce the active session-log file path (Cycle 24e)" }
+          // Cycle 26c — menu-only; no default keyboard accelerator.
+          // Surfaced as Diagnostics → Test Process Cleanup.
+          { Command = RunProcessCleanupScript
+            Key = None
+            Modifiers = None
+            Description = "Interactive process-cleanup test (test-process-cleanup.ps1; Cycle 26c)" } ]
 
     /// Look up the default Hotkey for a command. Throws
     /// `KeyNotFoundException` if the registry is incomplete —
@@ -290,4 +304,5 @@ module HotkeyRegistry =
           SwitchToClaude
           MuteEarcons
           CopyHistoryToClipboard
-          AnnounceSessionLogPath ]
+          AnnounceSessionLogPath
+          RunProcessCleanupScript ]
