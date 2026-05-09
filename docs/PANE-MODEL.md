@@ -550,16 +550,35 @@ The three sub-panes:
    (interactive list / form). The current-output sub-pane is
    the place where the parser's classification decisions become
    user-perceivable form.
-3. **History sub-pane** — sealed past `SessionTuple`s,
-   semantic-navigable. Quick-nav primitives (paragraph-within-
-   output; prev/next command boundary; jump-to-most-recent-
-   output) make keyboard navigation fast for a screen-reader
-   user who needs to jump back to a prior result without
-   scrolling linearly. Substrate: SessionModel + the linear-
-   text producer's high-water-mark commits (post-Cycle 34,
-   replaces `extractCommandAndOutput`'s screen-row
-   reconstruction). Each tuple is a navigable text region with
-   prev/next-paragraph + prev/next-tuple gestures.
+3. **History sub-pane** — sealed past `SessionTuple`s exposed
+   as **CommandOutputTuple** canonical-display primitives (the
+   unit of history navigation per
+   [`research/Output-paradigms.md` §1.6](research/Output-paradigms.md)).
+   Each tuple wraps the submitted command, the output stream,
+   and the exit code as a single semantically-navigable region.
+   Concrete quick-nav contract:
+   - **`h` / `Shift+h`** — next / previous command boundary
+     (each command line exposed as a level-2 heading via UIA
+     `Document` + TextPattern attributes).
+   - **`o` / `Shift+o`** — next / previous output block
+     (embedded-object navigation in NVDA browse mode).
+   - **`Alt+Up` / `Alt+Down`** — previous / next tuple
+     boundary (parallel to VS Code's
+     `editor.action.marker.next`).
+   - **Jump-to-most-recent-output** — reserved hotkey TBD;
+     resets focus to the most recent tuple's output region.
+
+   Substrate: SessionModel + the linear-text producer's high-
+   water-mark commits (post-Cycle 34, replaces
+   `extractCommandAndOutput`'s screen-row reconstruction). The
+   CommandOutputTuple primitive (UIA `ControlType.Group`
+   wrapping a read-only `ControlType.Edit` for the command,
+   a `ControlType.Document` for the output, and a
+   `ControlType.Text` for the exit code with `ItemStatus`)
+   gets its full interaction contract in Cycle 33 RFC; today's
+   substrate (the SessionTuple in
+   [`SESSION-MODEL.md` §4](SESSION-MODEL.md)) is its
+   substrate-of-truth.
 
 **Why this decomposition matters for the pane catalog**: the
 three sub-panes crystallize a fixed interaction paradigm — the
