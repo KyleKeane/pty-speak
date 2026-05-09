@@ -1484,8 +1484,9 @@ Estimated scope: ~3000-5000 LOC across all three.
 > `Cycle 24c` (file writer — in flight), `Cycle 24d`
 > (`Always` sync flush + secrets sanitisation), `Cycle 24e`
 > (NVDA matrix + diagnostic helper). See
-> `docs/PROJECT-PLAN-2026-05-revision.md` and
-> `docs/SESSION-HANDOFF.md` for the active sequencing. The
+> `docs/PROJECT-PLAN-2026-05-09.md` (the current 2026-05-09
+> successor; supersedes `PROJECT-PLAN-2026-05-revision.md`)
+> and `docs/SESSION-HANDOFF.md` for the active sequencing. The
 > "Tier 6" framing is preserved here for decision-history
 > continuity.
 

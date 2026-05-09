@@ -9,10 +9,11 @@ CHANGELOG discipline, documentation policy, F# / WPF gotchas) live in
 [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 A new session should read this **first**, then
-[`docs/PROJECT-PLAN-2026-05-revision.md`](PROJECT-PLAN-2026-05-revision.md) (the
-current strategic plan revision; supersedes the original
-`PROJECT-PLAN-2026-05.md` per Track E E5 dated-snapshot
-discipline),
+[`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md) (the
+current strategic plan; 2026-05-09 successor to
+`PROJECT-PLAN-2026-05-revision.md` and the original
+`PROJECT-PLAN-2026-05.md`, both preserved verbatim per
+Track E E5 dated-snapshot discipline),
 [`CONTRIBUTING.md`](../CONTRIBUTING.md),
 [`spec/tech-plan.md`](../spec/tech-plan.md),
 [`docs/CHECKPOINTS.md`](CHECKPOINTS.md), and
@@ -22,18 +23,21 @@ discipline),
 ## Where we left off
 
 > **Authoritative plan**:
-> [`docs/PROJECT-PLAN-2026-05-revision.md`](PROJECT-PLAN-2026-05-revision.md). The
-> "Where we left off" table below captures snapshot state; the plan
-> document captures the multi-week sequencing decisions
-> (cleanup → Stage 7 validation gate → output framework cycle →
-> input framework cycle → Stage 10) that drive the work.
+> [`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md)
+> (2026-05-09 successor to `PROJECT-PLAN-2026-05-revision.md`,
+> preserved verbatim). The "Where we left off" table below
+> captures snapshot state; the plan document captures the
+> multi-week sequencing decisions (cleanup → Stage 7 validation
+> gate → SessionModel substrate (Tier 1 + Tier 2) → operational
+> ergonomics → **Cycle 26 app menu** (next) → output framework
+> cycle → input framework cycle → Stage 10) that drive the work.
 
 | | |
 |---|---|
 | **Last merged stages** | **Stages 0 → 7 + 11** all merged to `main`, plus the retroactively-formalized Stages 4a / 4b / 5a. Stage 7 shipped 2026-05-03 across 11 sequenced PRs (A → K, #131-#143) + PR-L #144 (doc-purpose audit + Stage 7 wrap-up) + PR-M #145 (coalescer cross-row spinner gate fix). **Post-Stage-7 substrate cycle 2026-05-04 → 2026-05-07** (PRs #146-#184) shipped: event-and-output framework spec (#151); Stages 8a/8b/8c/8d.1/8d.2 (#152-#157, #155); display-pathway substrate Phase A + Phase A.1 + Phase B subset + Phase A.2 + #166 suffix-diff + #167 atlas + #168 Tier 1 parameters + #169 shell-switch flush fix (#159-#169); five research-stage docs: PIPELINE-NARRATIVE (#170), SESSION-MODEL (#171), INTERACTION-MODEL (#173), PANE-MODEL (#174), CUSTOMIZATION-MODEL (#181); six-track audit phase (#172, #175-#180); post-audit cleanup (#181-#184). **Tier 1 SessionModel implementation cycle 2026-05-07 → 2026-05-08** (PRs #185-#199) shipped substrate end-to-end: skeleton (#185), OSC 133 producer + cursor field (#186), state machine + composition (#187), heuristic fallback + alt-screen wiring (#189), PromptText capture (#190), diagnostic battery extension (#191), tick-driven detector via channel-driven actor model (#192), CHANNEL-ARCHITECTURE doc (#193), default-shell config + detector consolidation (#194), row-index-aware emission (#195) + announce-wording followup (#196), CommandText + OutputText extraction (#197), multi-match flap fix (#198), Ctrl+Shift+Y clipboard hotkey (#199). Maintainer NVDA-validation green throughout. **Cycle 24 SessionModel persistence cycle 2026-05-09** (PRs #203, #206-#212, #219) shipped Tier 2 end-to-end: 24a TOML schema (#203), 24b JSONL serializer (#206), 24c bounded-channel async file writer (#208), 24d-1 Always-mode synchronous flush (#209), 24d-2 env-var value sanitisation (#210), 24e Ctrl+Shift+S diagnostic hotkey + NVDA matrix (#211), 24f persistence-config diagnostic + matrix typo fix (#212), 24g TOML model snapshot logged at startup (#219). **Cycle 25 operational-ergonomics + diagnostic-dump bundle 2026-05-09** (PRs #220-#222): 25a hotkey reorg (Ctrl+Shift+L/P/E rebound) + open-config auto-create + reload-on-shell-switch + `[logging]` TOML (#220); 25b-1 Ctrl+Shift+D bundles diagnostic dump (FileLogger log + config + redacted env into dated snapshot file + clipboard) + Ctrl+Shift+T placeholder removed (#221); 25b-1a bundle gains `--- SESSION LOG ---` section + Ctrl+Shift+L removed since D's bundle subsumes it (#222). |
 | **Last shipped release** | Maintainer cuts release builds from `main` whenever convenient. The last release predating Tier 1 was `v0.0.1-preview.43`; subsequent previews have shipped through the substrate + Tier 1 cycles. |
-| **In-flight branch** | (none) — Cycle 25b-1a shipped 2026-05-09 via PR #222 (the most recent merge; commit `75ae04e`). |
-| **Next stage** | **Decide next cycle direction.** Three candidates on deck: **(a) Cycle 25b-2** — the deferred FlaUI/UIA-driven E2E test runner from the original Cycle 25b plan; new `tests/Tests.E2E/` project with 7 tests covering the Cycle 24e NVDA matrix rows; spawns pty-speak via UIA, drives input via UIA `Keyboard.Type` / `Keyboard.Press`, asserts on JSONL file content + clipboard text + an internal `LastAnnouncement` hook on `TerminalView`. Risks: FlaUI flakiness; UIA needs an interactive desktop session so CI can't run it (project would build in CI but tests skipped). See "Cycle 25 in-flight handoff" below for the fuller deferred-design sketch. **(b) Cycle 26** — app menu, would surface `scripts/test-process-cleanup.ps1` + future diagnostic-script entries (release-notes drafter, etc.) as menu items; reduces hotkey-count working-memory pressure for additional features per the maintainer's noted ceiling. **(c) Framework cycles** — Output framework Part 3 + Input framework Part 4 per [`docs/PROJECT-PLAN-2026-05-revision.md`](PROJECT-PLAN-2026-05-revision.md); Stage 10 review-mode + quick-nav lands as the first non-built-in framework consumer. Maintainer to pick on next planning round. Open follow-ups (cross-cutting; not blocking the next cycle): (a) Screen-buffer runtime resize (Phase 2). (b) Stable-baseline tag pushes including `baseline/stage-7-claude-roundtrip` per [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) — local sandbox can't push tags, awaiting maintainer sweep. (c) MAY-4.md Concern 3 (navigable streaming response queue) — naturally subsumed by SessionModel + ReplPathway (Phase 2). (d) New dated revision of `PROJECT-PLAN-2026-05-revision.md` overdue per E5 discipline (current revision is the 2026-05-07 snapshot; multiple cycles have shipped since). |
+| **In-flight branch** | `claude/resume-and-plan-gMPNJ` — **Cycle 25d plan refresh + link sweep** (this PR). Spawns dated successor [`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md) per E5 discipline; sweeps `-revision.md` references in 7 files (CLAUDE.md, README.md, this file, DOC-MAP.md, AUDIT-DOC-CURRENCY.md, SESSION-MODEL.md, CHANGELOG.md). Doc-only; no code change. Most recent merge before this branch: PR #223 (Cycle 25c handoff refresh, commit `0da3764`). |
+| **Next stage** | **Cycle 26 — app menu** (chosen by maintainer 2026-05-09). Absorbs the existing hotkey-gesture surface (~14 reserved `Ctrl+Shift+letter` gestures + 3 numeric shell-switch hotkeys) into a discoverable WPF Menu framework with associated keyboard shortcuts, surfaces `scripts/test-process-cleanup.ps1` + future diagnostic-script entries as menu items, and relieves the maintainer's noted hotkey-count working-memory ceiling. Plan-mode cycle to resolve before code: hotkey-source-of-truth (single vs. parallel-surface), NVDA menu-mode patterns (alt-key access, arrow-nav, AutomationProperties plumbing), `OnPreviewKeyDown` filter ordering invariant (load-bearing per spec §6) under menu accelerators. Estimated 3-5 sequenced PRs / ~600-1200 LOC. See [`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md) "Next stage: Cycle 26 — app menu" for the fuller scope sketch. **Sequencing after Cycle 26**: Output framework Part 3 → Input framework Part 4 → Stage 10. **Parked**: Cycle 25b-2 (FlaUI/UIA E2E runner) — design sketch retained in this file's "Cycle 25 in-flight handoff" section; trigger to revisit is autonomous-validation discipline wanted OR a regression slips through manual NVDA validation. **Open follow-ups (cross-cutting; not blocking Cycle 26)**: (a) Screen-buffer runtime resize (Phase 2). (b) Stable-baseline tag pushes including `baseline/stage-7-claude-roundtrip` and the Cycle-24e candidate per [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) — local sandbox can't push tags, awaiting maintainer sweep. (c) MAY-4.md Concern 3 (navigable streaming response queue) — naturally subsumed by SessionModel + ReplPathway (Phase 2). (d) ✅ **New dated revision of the strategic plan — shipped via this PR** as `PROJECT-PLAN-2026-05-09.md`; closes the E5 discipline follow-up. |
 
 ## Cycle 23 in-flight handoff (✅ shipped 2026-05-08; retained for historical reference)
 
@@ -1827,17 +1831,23 @@ Guard against scope creep:
    stage sequencing index. Read this first; it indexes
    everything below.
 2. **This file** (SESSION-HANDOFF.md).
-3. **[`docs/PROJECT-PLAN-2026-05-revision.md`](PROJECT-PLAN-2026-05-revision.md)** —
-   the current strategic plan revision (snapshot 2026-05-07);
-   supersedes the original `PROJECT-PLAN-2026-05.md` per
-   Track E E5 dated-snapshot discipline. Captures the
-   substrate-first shift, audit phase outcome, and forward
-   sequencing through Tier 2 SessionModel persistence + Phase 2
-   input framework. Supersedes the per-stage ordering of
-   `spec/tech-plan.md` for Stages 7-10 specifically; the spec
-   remains immutable as architectural rationale. The original
-   `PROJECT-PLAN-2026-05.md` stays preserved as the 2026-05-03
-   historical snapshot.
+3. **[`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md)** —
+   the current strategic plan (snapshot 2026-05-09);
+   supersedes `PROJECT-PLAN-2026-05-revision.md` (the
+   2026-05-07 revision, preserved verbatim) and the original
+   `PROJECT-PLAN-2026-05.md` per Track E E5 dated-snapshot
+   discipline. Captures the post-Tier-2 + post-Cycle-25 state:
+   Tier 1 SessionModel substrate (Cycles 11-22b, PRs #185-#199),
+   Tier 2 persistence (Cycles 24a-24g, PRs #203-#212+#219), and
+   operational ergonomics + diagnostic-dump bundle (Cycle 25,
+   PRs #220-#222) all shipped with NVDA-validation green. Points
+   next stage at **Cycle 26 — app menu** (maintainer-chosen
+   2026-05-09) as the working-memory-pressure-relief cycle gating
+   further hotkey-bound features. Supersedes the per-stage
+   ordering of `spec/tech-plan.md` for Stages 7-10 specifically;
+   the spec remains immutable as architectural rationale. Both
+   prior plans stay preserved verbatim as their respective
+   historical snapshots.
 4. [`CONTRIBUTING.md`](../CONTRIBUTING.md) — PR shape, branching,
    CHANGELOG discipline, F# / WPF gotchas, documentation policy.
    Working conventions all live here.

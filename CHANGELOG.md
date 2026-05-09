@@ -15,6 +15,57 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 25d): `PROJECT-PLAN-2026-05-09.md` dated successor + cross-reference sweep
+
+Spawns the dated successor strategic plan
+[`docs/PROJECT-PLAN-2026-05-09.md`](docs/PROJECT-PLAN-2026-05-09.md)
+per the Track E E5 dated-snapshot discipline. The preceding
+`PROJECT-PLAN-2026-05-revision.md` (snapshot 2026-05-07)
+became three implementation cycles stale once Tier 1
+SessionModel substrate (Cycles 11-22b, PRs #185-#199), Tier 2
+persistence (Cycles 24a-24g, PRs #203-#212+#219), and Cycle 25
+operational ergonomics + diagnostic-dump bundle (PRs #220-#222)
+all shipped end-to-end with NVDA-validation green between
+2026-05-07 and 2026-05-09. The 2026-05-07 revision's "Next
+stage" pointer (SessionModel Tier 1) was satisfied; the
+SESSION-HANDOFF "Where we left off" cell flagged the gap
+explicitly.
+
+The new successor:
+
+- Captures the post-Tier-2 + post-Cycle-25 status with
+  per-PR shipped-since enumeration, audit health refresh,
+  open-questions resolved/remaining tally.
+- Points next stage at **Cycle 26 — app menu**
+  (maintainer-chosen 2026-05-09) as the working-memory-
+  pressure-relief cycle gating further hotkey-bound features.
+  Includes a sketch of the menu architecture decisions to
+  resolve in plan mode (hotkey-source-of-truth, NVDA
+  menu-mode patterns, `OnPreviewKeyDown` filter ordering
+  invariant under menu accelerators).
+- Sequences Output framework Part 3 → Input framework Part 4
+  → Stage 10 after Cycle 26 per the original strategic plan.
+- Parks Cycle 25b-2 (FlaUI/UIA E2E runner) with the design
+  sketch retained in `SESSION-HANDOFF.md`.
+- Establishes a YYYY-MM-DD naming convention for further
+  successors going forward.
+
+Cross-reference sweep across 5 files where the
+`-revision.md` reference was active:
+[`CLAUDE.md`](CLAUDE.md) reading-order; [`README.md`](README.md)
+status note; [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)
+"Authoritative plan" + "In-flight branch" + "Next stage" cells +
+recommended-reading-order; [`docs/DOC-MAP.md`](docs/DOC-MAP.md)
+table row + per-audience entry-point list;
+[`docs/SESSION-MODEL.md`](docs/SESSION-MODEL.md) §Tier 6
+vocabulary-bridge note. Two referencing files
+(`AUDIT-DOC-CURRENCY.md` and CHANGELOG entries) deliberately
+left untouched — those references are inside dated-snapshot
+artifacts that don't update post-snapshot per the same
+discipline.
+
+Doc-only PR; no code change.
+
 ### Changed (Cycle 25b-1a): bundle gains session-log section + Ctrl+Shift+L removed
 
 Follow-up to 25b-1 (PR #221) after the maintainer validated the
