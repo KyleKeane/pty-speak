@@ -99,6 +99,10 @@ minutes of wasted CI cycle plus a noisier git history.
 - **Standing merge rule:** once CI is green on a PR, merge it
   without re-asking (per maintainer authorization). Use squash-merge.
   Update local main + delete the local branch after.
+- **Preferred response style:** simple and succinct, especially on
+  CI-completion announcements. When all checks are green,
+  "all three green, merging" is sufficient — no play-by-play
+  summary needed.
 - **Fixup-commit rhythm for CI failures:** a `git push` to the open
   PR's branch auto-extends the PR with the new commit and re-runs
   CI. The squash-merge convention combines original + fixup into

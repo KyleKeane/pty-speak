@@ -15,6 +15,15 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 24-pre): tighten CLAUDE.md CI-completion tone guidance
+
+**Doc-only PR; no code changes.** Add a one-paragraph
+"Preferred response style" rule to `CLAUDE.md` under
+the existing "PR creation and webhook subscription"
+working-rules subsection. When all CI checks are green,
+"all three green, merging" is the preferred terseness
+— no play-by-play summary needed.
+
 ### Changed (Cycle 23 Phase 3): resolve CUSTOMIZATION-MODEL open questions in research-stage doc
 
 **Doc-only PR; no code changes.** Apply maintainer's
