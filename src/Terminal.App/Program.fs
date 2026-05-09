@@ -11,6 +11,7 @@ open Microsoft.Extensions.Logging
 open Velopack
 open Velopack.Sources
 open Terminal.Core
+open Terminal.Core.Channels
 open Terminal.Audio
 open Terminal.Parser
 open Terminal.Pty
@@ -729,6 +730,19 @@ module Program =
         let screen = Screen(rows = ScreenRows, cols = ScreenCols)
         let parser = Parser.create ()
         window.TerminalSurface.SetScreen(screen)
+
+        // Cycle 32b — first consumer of the IDisplayBuffer boundary
+        // interface (Cycle 31b declaration). Inline F# object
+        // expression wrapping the `screen` instance just constructed
+        // above; YAGNI principle over a separate named adapter
+        // class until a second implementation surfaces. Future
+        // renderers (Avalonia, GTK, AppKit) inject their own
+        // IDisplayBuffer instead of going through Screen directly.
+        let displayBuffer =
+            { new IDisplayBuffer with
+                member _.Snapshot(startRow, count) =
+                    screen.SnapshotRows(startRow, count) }
+        window.TerminalSurface.SetDisplayBuffer(displayBuffer)
 
         // Pre-framework-cycle PR-O — wire each app-reserved
         // hotkey through the unified `bindHotkey` helper which
