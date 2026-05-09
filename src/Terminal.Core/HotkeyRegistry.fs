@@ -127,10 +127,23 @@ module HotkeyRegistry =
     /// `AppReservedHotkeys` table in
     /// `src/Views/TerminalView.cs`. Phase 2 user-settings will
     /// override per-user.
+    ///
+    /// Cycle 26b — `Key` and `Modifiers` are `option`-typed.
+    /// `Some k, Some m` is a gesture-bearing command (most
+    /// commands today); `None, None` is a menu-only command
+    /// (e.g. `RunProcessCleanupScript` in Cycle 26c) that
+    /// surfaces only via the app menu, no default keyboard
+    /// shortcut. `bindHotkey` skips the `KeyBinding`
+    /// registration in the menu-only case but still registers
+    /// the `CommandBinding` so the `RoutedCommand` can be
+    /// invoked from `MenuItem.Command`. Adding or removing a
+    /// default accelerator on an existing command is now a
+    /// one-field edit (`Some` ↔ `None`) rather than a
+    /// DU-shape change.
     type Hotkey =
         { Command: AppCommand
-          Key: HotkeyKey
-          Modifiers: Set<Modifier>
+          Key: HotkeyKey option
+          Modifiers: Set<Modifier> option
           Description: string }
 
     let private ctrlShift : Set<Modifier> = Set.ofList [ Ctrl; Shift ]
@@ -145,60 +158,60 @@ module HotkeyRegistry =
     /// fixtures pin (a) + (c) + (d).
     let builtIns : Hotkey list =
         [ { Command = CheckForUpdates
-            Key = Letter 'U'
-            Modifiers = ctrlShift
+            Key = Some (Letter 'U')
+            Modifiers = Some ctrlShift
             Description = "Velopack auto-update (Stage 11)" }
           { Command = RunDiagnostic
-            Key = Letter 'D'
-            Modifiers = ctrlShift
+            Key = Some (Letter 'D')
+            Modifiers = Some ctrlShift
             Description = "Run full automated diagnostic suite (Cycle 25b — bundles dump to clipboard + dated snapshot file)" }
           { Command = DraftNewRelease
-            Key = Letter 'R'
-            Modifiers = ctrlShift
+            Key = Some (Letter 'R')
+            Modifiers = Some ctrlShift
             Description = "Draft a new release on GitHub" }
           { Command = OpenDataFolder
-            Key = Letter 'P'
-            Modifiers = ctrlShift
+            Key = Some (Letter 'P')
+            Modifiers = Some ctrlShift
             Description = "Open the pty-speak data folder (Cycle 25a; parent of logs / sessions / config)" }
           { Command = OpenConfig
-            Key = Letter 'E'
-            Modifiers = ctrlShift
+            Key = Some (Letter 'E')
+            Modifiers = Some ctrlShift
             Description = "Edit config.toml (Cycle 25a; auto-creates with defaults if missing)" }
           { Command = ToggleDebugLog
-            Key = Letter 'G'
-            Modifiers = ctrlShift
+            Key = Some (Letter 'G')
+            Modifiers = Some ctrlShift
             Description = "Toggle FileLogger Information ↔ Debug" }
           { Command = HealthCheck
-            Key = Letter 'H'
-            Modifiers = ctrlShift
+            Key = Some (Letter 'H')
+            Modifiers = Some ctrlShift
             Description = "Health-check announce (shell + PID + alive + queue depths)" }
           { Command = IncidentMarker
-            Key = Letter 'B'
-            Modifiers = ctrlShift
+            Key = Some (Letter 'B')
+            Modifiers = Some ctrlShift
             Description = "Incident-marker boundary line in active log" }
           { Command = SwitchToCmd
-            Key = Digit 1
-            Modifiers = ctrlShift
+            Key = Some (Digit 1)
+            Modifiers = Some ctrlShift
             Description = "Switch to cmd shell" }
           { Command = SwitchToPowerShell
-            Key = Digit 2
-            Modifiers = ctrlShift
+            Key = Some (Digit 2)
+            Modifiers = Some ctrlShift
             Description = "Switch to PowerShell shell (PR-J — diagnostic control shell)" }
           { Command = SwitchToClaude
-            Key = Digit 3
-            Modifiers = ctrlShift
+            Key = Some (Digit 3)
+            Modifiers = Some ctrlShift
             Description = "Switch to Claude shell" }
           { Command = MuteEarcons
-            Key = Letter 'M'
-            Modifiers = ctrlShift
+            Key = Some (Letter 'M')
+            Modifiers = Some ctrlShift
             Description = "Mute / unmute WASAPI earcons (Stage 8d.1)" }
           { Command = CopyHistoryToClipboard
-            Key = Letter 'Y'
-            Modifiers = ctrlShift
+            Key = Some (Letter 'Y')
+            Modifiers = Some ctrlShift
             Description = "Copy SessionModel history to clipboard (Cycle 22b)" }
           { Command = AnnounceSessionLogPath
-            Key = Letter 'S'
-            Modifiers = ctrlShift
+            Key = Some (Letter 'S')
+            Modifiers = Some ctrlShift
             Description = "Announce the active session-log file path (Cycle 24e)" } ]
 
     /// Look up the default Hotkey for a command. Throws
@@ -220,10 +233,42 @@ module HotkeyRegistry =
     /// for future user-settings UIs displaying the binding for
     /// a chosen gesture; not used by the dispatch path (which
     /// goes the other way: command → key).
+    ///
+    /// Cycle 26b — menu-only commands (`Hotkey.Key = None`)
+    /// are excluded from `tryFind` results since they have no
+    /// gesture to look up by definition. Only gesture-bearing
+    /// `Some` entries match.
     let tryFind (key: HotkeyKey) (modifiers: Set<Modifier>) : AppCommand option =
         builtIns
-        |> List.tryFind (fun h -> h.Key = key && h.Modifiers = modifiers)
+        |> List.tryFind (fun h ->
+            h.Key = Some key && h.Modifiers = Some modifiers)
         |> Option.map (fun h -> h.Command)
+
+    /// Format a `Hotkey`'s gesture as a human-readable string
+    /// for display in `MenuItem.InputGestureText` (which NVDA
+    /// reads when the menu item is focused). Returns `None`
+    /// for menu-only commands (`Key = None` / `Modifiers = None`)
+    /// so the menu item can omit the shortcut display.
+    ///
+    /// Format mirrors the convention used in CLAUDE.md and
+    /// CHANGELOG entries: `"Ctrl+Shift+U"`, `"Ctrl+Shift+1"`,
+    /// `"Ctrl+Shift+;"`. Modifier order is fixed
+    /// (Ctrl > Alt > Shift) so the rendered text is stable
+    /// regardless of `Set` enumeration order.
+    let gestureText (hk: Hotkey) : string option =
+        match hk.Key, hk.Modifiers with
+        | Some key, Some mods ->
+            let modParts =
+                [ if Set.contains Ctrl mods then yield "Ctrl"
+                  if Set.contains Alt mods then yield "Alt"
+                  if Set.contains Shift mods then yield "Shift" ]
+            let keyText =
+                match key with
+                | Letter c -> string (System.Char.ToUpperInvariant c)
+                | Digit n -> string n
+                | Semicolon -> ";"
+            Some (System.String.Join("+", modParts @ [ keyText ]))
+        | _ -> None
 
     /// All registered AppCommand cases as a list. Manually
     /// maintained; pinned by the

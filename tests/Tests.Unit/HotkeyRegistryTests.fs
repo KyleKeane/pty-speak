@@ -123,9 +123,17 @@ let ``no two hotkeys share the same (key, modifiers) gesture`` () =
     // both, the user's keystroke fires whichever is consulted
     // first (undefined ordering), and the other handler never
     // runs. This fixture catches the collision at test time.
+    //
+    // Cycle 26b — menu-only commands (`Key = None`,
+    // `Modifiers = None`) are excluded from collision detection
+    // by definition: they have no gesture to collide with. Only
+    // gesture-bearing entries participate.
     let gestures =
         HotkeyRegistry.builtIns
-        |> List.map (fun h -> (h.Key, h.Modifiers))
+        |> List.choose (fun h ->
+            match h.Key, h.Modifiers with
+            | Some k, Some m -> Some (k, m)
+            | _ -> None)
     let unique = Set.ofList gestures
     Assert.Equal(gestures.Length, unique.Count)
 
@@ -135,13 +143,19 @@ let ``no two hotkeys share the same (key, modifiers) gesture`` () =
 
 [<Fact>]
 let ``tryFind returns the registered command for each builtIns gesture`` () =
-    // For every entry in `builtIns`, `tryFind` with that entry's
-    // (key, modifiers) should yield the same command back.
-    // Closes the round-trip from the user-settings UI's
-    // perspective: select gesture → recover command.
+    // For every gesture-bearing entry in `builtIns`, `tryFind`
+    // with that entry's (key, modifiers) should yield the same
+    // command back. Closes the round-trip from the user-settings
+    // UI's perspective: select gesture → recover command.
+    //
+    // Cycle 26b — menu-only commands (`Key = None`) are
+    // skipped: they have no gesture to round-trip.
     for hk in HotkeyRegistry.builtIns do
-        let found = HotkeyRegistry.tryFind hk.Key hk.Modifiers
-        Assert.Equal(Some hk.Command, found)
+        match hk.Key, hk.Modifiers with
+        | Some k, Some m ->
+            let found = HotkeyRegistry.tryFind k m
+            Assert.Equal(Some hk.Command, found)
+        | _ -> ()
 
 [<Fact>]
 let ``tryFind returns None for an unregistered gesture`` () =
@@ -176,9 +190,9 @@ let ``tryFind distinguishes modifier sets`` () =
 [<Fact>]
 let ``CheckForUpdates is bound to Ctrl+Shift+U`` () =
     let hk = HotkeyRegistry.hotkeyOf HotkeyRegistry.CheckForUpdates
-    Assert.Equal(HotkeyRegistry.Letter 'U', hk.Key)
-    Assert.Equal<Set<HotkeyRegistry.Modifier>>(
-        Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ],
+    Assert.Equal(Some (HotkeyRegistry.Letter 'U'), hk.Key)
+    Assert.Equal<Set<HotkeyRegistry.Modifier> option>(
+        Some (Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ]),
         hk.Modifiers)
 
 [<Fact>]
@@ -195,17 +209,17 @@ let ``Ctrl+Shift+L is unbound (Cycle 25b-1a removed CopyLatestLog)`` () =
 [<Fact>]
 let ``OpenDataFolder is bound to Ctrl+Shift+P (Cycle 25a)`` () =
     let hk = HotkeyRegistry.hotkeyOf HotkeyRegistry.OpenDataFolder
-    Assert.Equal(HotkeyRegistry.Letter 'P', hk.Key)
-    Assert.Equal<Set<HotkeyRegistry.Modifier>>(
-        Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ],
+    Assert.Equal(Some (HotkeyRegistry.Letter 'P'), hk.Key)
+    Assert.Equal<Set<HotkeyRegistry.Modifier> option>(
+        Some (Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ]),
         hk.Modifiers)
 
 [<Fact>]
 let ``OpenConfig is bound to Ctrl+Shift+E (Cycle 25a)`` () =
     let hk = HotkeyRegistry.hotkeyOf HotkeyRegistry.OpenConfig
-    Assert.Equal(HotkeyRegistry.Letter 'E', hk.Key)
-    Assert.Equal<Set<HotkeyRegistry.Modifier>>(
-        Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ],
+    Assert.Equal(Some (HotkeyRegistry.Letter 'E'), hk.Key)
+    Assert.Equal<Set<HotkeyRegistry.Modifier> option>(
+        Some (Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ]),
         hk.Modifiers)
 
 [<Fact>]
@@ -232,11 +246,11 @@ let ``shell-switch hotkeys are bound to Ctrl+Shift+ digits 1, 2, 3 in PR-J order
     // PR-J reordered: cmd=1, PowerShell=2, Claude=3 (PowerShell
     // sits next to cmd as the diagnostic control shell).
     let cmd = HotkeyRegistry.hotkeyOf HotkeyRegistry.SwitchToCmd
-    Assert.Equal(HotkeyRegistry.Digit 1, cmd.Key)
+    Assert.Equal(Some (HotkeyRegistry.Digit 1), cmd.Key)
     let ps = HotkeyRegistry.hotkeyOf HotkeyRegistry.SwitchToPowerShell
-    Assert.Equal(HotkeyRegistry.Digit 2, ps.Key)
+    Assert.Equal(Some (HotkeyRegistry.Digit 2), ps.Key)
     let claude = HotkeyRegistry.hotkeyOf HotkeyRegistry.SwitchToClaude
-    Assert.Equal(HotkeyRegistry.Digit 3, claude.Key)
+    Assert.Equal(Some (HotkeyRegistry.Digit 3), claude.Key)
 
 [<Fact>]
 let ``AnnounceSessionLogPath is bound to Ctrl+Shift+S (Cycle 24e)`` () =
@@ -244,10 +258,86 @@ let ``AnnounceSessionLogPath is bound to Ctrl+Shift+S (Cycle 24e)`` () =
     // session-log file path. Mnemonic: S for Session log.
     let hk =
         HotkeyRegistry.hotkeyOf HotkeyRegistry.AnnounceSessionLogPath
-    Assert.Equal(HotkeyRegistry.Letter 'S', hk.Key)
-    Assert.Equal<Set<HotkeyRegistry.Modifier>>(
-        Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ],
+    Assert.Equal(Some (HotkeyRegistry.Letter 'S'), hk.Key)
+    Assert.Equal<Set<HotkeyRegistry.Modifier> option>(
+        Some (Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ]),
         hk.Modifiers)
     Assert.Equal(
         "AnnounceSessionLogPath",
         HotkeyRegistry.nameOf HotkeyRegistry.AnnounceSessionLogPath)
+
+// ---------------------------------------------------------------------
+// Cycle 26b — option-typing pinning + gestureText helper
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``every existing AppCommand from Cycle 25b still has Some Key and Some Modifiers`` () =
+    // Cycle 26b option-typed Hotkey.Key + Hotkey.Modifiers to
+    // accommodate menu-only commands. Regression guard: every
+    // command that shipped with a default hotkey before Cycle 26b
+    // must still have one. Silently demoting an existing hotkey
+    // to menu-only would be a UX regression.
+    let priorCommands =
+        [ HotkeyRegistry.CheckForUpdates
+          HotkeyRegistry.RunDiagnostic
+          HotkeyRegistry.DraftNewRelease
+          HotkeyRegistry.OpenDataFolder
+          HotkeyRegistry.OpenConfig
+          HotkeyRegistry.ToggleDebugLog
+          HotkeyRegistry.HealthCheck
+          HotkeyRegistry.IncidentMarker
+          HotkeyRegistry.SwitchToCmd
+          HotkeyRegistry.SwitchToPowerShell
+          HotkeyRegistry.SwitchToClaude
+          HotkeyRegistry.MuteEarcons
+          HotkeyRegistry.CopyHistoryToClipboard
+          HotkeyRegistry.AnnounceSessionLogPath ]
+    for cmd in priorCommands do
+        let hk = HotkeyRegistry.hotkeyOf cmd
+        Assert.True(
+            Option.isSome hk.Key,
+            sprintf "AppCommand %A unexpectedly lost its default Key" cmd)
+        Assert.True(
+            Option.isSome hk.Modifiers,
+            sprintf "AppCommand %A unexpectedly lost its default Modifiers" cmd)
+
+[<Fact>]
+let ``gestureText formats Ctrl+Shift+letter gestures as expected`` () =
+    let hk = HotkeyRegistry.hotkeyOf HotkeyRegistry.CheckForUpdates
+    Assert.Equal(Some "Ctrl+Shift+U", HotkeyRegistry.gestureText hk)
+
+[<Fact>]
+let ``gestureText formats Ctrl+Shift+digit gestures as expected`` () =
+    let hk = HotkeyRegistry.hotkeyOf HotkeyRegistry.SwitchToCmd
+    Assert.Equal(Some "Ctrl+Shift+1", HotkeyRegistry.gestureText hk)
+
+[<Fact>]
+let ``gestureText returns None for menu-only commands`` () =
+    // Synthesise a menu-only Hotkey shape (no production
+    // command is menu-only as of Cycle 26b; Cycle 26c adds
+    // RunProcessCleanupScript). The format helper must
+    // return None for any (None, None) pair.
+    //
+    // Type annotation on the binding is required because
+    // `HotkeyRegistry` is a module inside `Terminal.Core`
+    // (not auto-opened), so a bare record literal can't
+    // infer `Hotkey` from field labels alone — see
+    // CLAUDE.md "Record literal type inference fails when
+    // the record module is not auto-opened" (FS0039 gotcha).
+    let menuOnly : HotkeyRegistry.Hotkey =
+        { Command = HotkeyRegistry.CheckForUpdates  // command identity is irrelevant here
+          Key = None
+          Modifiers = None
+          Description = "test fixture" }
+    Assert.Equal(None, HotkeyRegistry.gestureText menuOnly)
+
+[<Fact>]
+let ``gestureText modifier order is Ctrl+Alt+Shift regardless of Set enumeration`` () =
+    // Pin the stable rendering order so menu-displayed gestures
+    // and CHANGELOG-cited gestures stay textually identical.
+    let hk : HotkeyRegistry.Hotkey =
+        { Command = HotkeyRegistry.CheckForUpdates
+          Key = Some (HotkeyRegistry.Letter 'X')
+          Modifiers = Some (Set.ofList [ HotkeyRegistry.Shift; HotkeyRegistry.Alt; HotkeyRegistry.Ctrl ])
+          Description = "test fixture" }
+    Assert.Equal(Some "Ctrl+Alt+Shift+X", HotkeyRegistry.gestureText hk)

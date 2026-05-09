@@ -84,11 +84,4 @@ public partial class MainWindow : Window
         // is reached via `TerminalView.OnCreateAutomationPeer`
         // — no native-interop window subclass involved.
     }
-
-    // Cycle 26a: throwaway Help → Exit menu item handler.
-    // Smoke-test wiring to prove the Menu surface routes click
-    // events end-to-end. Cycle 26b replaces the entire Help
-    // menu structure with the populated-from-HotkeyRegistry
-    // version, and this handler is deleted with it.
-    private void Exit_Click(object sender, RoutedEventArgs e) => Close();
 }

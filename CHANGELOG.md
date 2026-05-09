@@ -15,6 +15,123 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 26b): wire 14 existing AppCommands into menu items via shared RoutedCommand
+
+Second PR of Cycle 26 (the multi-PR app-menu mini-cycle). Replaces
+the throwaway `_Help → E_xit` placeholder shipped in Cycle 26a with
+the **populated-from-`HotkeyRegistry` structure**: 5 top-level menus
+(Shell, View, Data, Diagnostics, Help) containing 14 named
+`MenuItem`s — one per existing `AppCommand`.
+
+Each menu item binds to the **same `RoutedCommand` instance** that
+`bindHotkey` already creates for the keyboard hotkey. Pressing the
+gesture and clicking the menu item invoke the same handler — single
+source of truth, zero behaviour duplication. NVDA reads the gesture
+text from `MenuItem.InputGestureText` (auto-set from the registry)
+when the menu item is focused.
+
+**Architectural changes**:
+
+- **`src/Terminal.Core/HotkeyRegistry.fs`** — `Hotkey.Key` and
+  `Hotkey.Modifiers` are now `option`-typed (`HotkeyKey option`,
+  `Set<Modifier> option`). All 14 existing `builtIns` entries wrap
+  their gesture with `Some`. Cycle 26c will add the first `None,
+  None` (menu-only) entry. New `gestureText : Hotkey -> string
+  option` helper formats gestures as e.g. `"Ctrl+Shift+U"` /
+  `"Ctrl+Shift+1"` (modifier order Ctrl > Alt > Shift, fixed
+  regardless of `Set` enumeration order). `tryFind` filters to
+  `Some` entries only — menu-only commands are excluded by
+  definition since they have no gesture to look up.
+- **`src/Terminal.App/Program.fs`** — `bindHotkey` signature
+  changed from `unit` return to `RoutedCommand` return so compose
+  can capture each created command. `bindHotkey` now pattern-matches
+  on `(Some k, Some m)` to install the `KeyBinding` (skipping it
+  for menu-only commands) but always registers the `CommandBinding`.
+  A local `bind` wrapper inside compose populates a
+  `Dictionary<AppCommand, RoutedCommand>` as each binding is
+  created. After all 14 binds, a reflection-driven wiring step
+  walks the dictionary and assigns each XAML-named
+  `MenuItem_<nameOf cmd>` element's `Command` and
+  `InputGestureText` properties.
+- **`src/Views/MainWindow.xaml`** — full menu structure with
+  mnemonics: `_Shell` (cmd, PowerShell, Claude), `_View` (debug
+  log toggle, mute earcons), `_Data` (data folder, edit config,
+  copy history, announce session-log path), `Dia_gnostics` (health
+  check, incident marker, run battery), `_Help` (check for updates,
+  draft new release). Each `MenuItem` carries `x:Name` matching
+  `MenuItem_<AppCommandName>` and `x:FieldModifier="public"` so
+  compose's reflection wiring can locate it.
+- **`src/Views/MainWindow.xaml.cs`** — Cycle 26a's throwaway
+  `Exit_Click` handler removed (no longer needed; the populated
+  Help menu replaces the placeholder).
+
+**Extensibility-as-a-design-constraint** (per maintainer directive):
+
+Adding a new menu item is now three single-place edits per PR:
+
+1. Add the `AppCommand` DU case + `nameOf` arm + `allCommands` row
+   in `HotkeyRegistry.fs`.
+2. Add the `builtIns` row (with `Some` for gesture-bearing or
+   `None, None` for menu-only).
+3. Add a `<MenuItem x:Name="MenuItem_<NewCommandName>" ... />` row
+   in `MainWindow.xaml`.
+
+Compose's reflection-driven wiring picks it up automatically. No
+F# composition or test changes required for routine additions.
+
+Adding or removing a default accelerator on an existing command is
+now a one-field edit (`Some` ↔ `None`) rather than a DU-shape
+change. Adding a new top-level menu (Window, Display,
+Preferences/Settings — anticipated by the maintainer in
+[`docs/PROJECT-PLAN-2026-05-09.md`](docs/PROJECT-PLAN-2026-05-09.md))
+is just a new `<MenuItem Header="_NewMenu">` block in XAML; no F#
+changes.
+
+**New invariant test**:
+
+`tests/Tests.Unit/AppReservedHotkeysMirrorTests.fs` (new file).
+Reflectively reads `TerminalView.AppReservedHotkeys` and asserts
+F# / C# parity at test time:
+
+- Every gesture-bearing entry in `HotkeyRegistry.builtIns` has a
+  matching `(Key, ModifierKeys, Description)` row in
+  `AppReservedHotkeys`.
+- Every `AppReservedHotkeys` row has a matching `HotkeyRegistry`
+  entry (no orphans).
+- Counts match (catches "off by one" in the CI log).
+
+This pins the load-bearing `OnPreviewKeyDown` filter contract at
+test time — before Cycle 26b the parity was maintainer convention
+only ("update both surfaces in the same PR"); a missed update would
+silently demote a hotkey to "flows through to the shell as plain
+text instead of firing its handler". The test catches that
+regression immediately.
+
+**Existing tests updated**:
+
+`tests/Tests.Unit/HotkeyRegistryTests.fs` — every direct
+`hk.Key` / `hk.Modifiers` comparison wrapped with `Some (...)` for
+the new option type. `tryFind` round-trip now skips menu-only
+commands (no gesture to round-trip). Collision-detection filters
+to `Some` entries (menu-only `(None, None)` pairs would otherwise
+collide trivially with each other). 4 new fixtures pin the
+option-typing invariant + `gestureText` helper formatting.
+
+**No code changes outside the listed files**. The `OnPreviewKeyDown`
+filter in `TerminalView.cs:530-614` is untouched; the C#
+`AppReservedHotkeys` array at `TerminalView.cs:346-489` is
+untouched. The keyboard pipeline is unaffected.
+
+**NVDA validation gates** (all land in Cycle 26d's matrix-row PR):
+
+- Menu items announce `<name>, <gesture>` when focused
+  (e.g. "Health Check, Ctrl plus Shift plus H").
+- Pressing Enter on a menu item invokes the same handler as the
+  keyboard gesture (verify via Health Check's same one-line
+  summary).
+- All 14 keyboard gestures still fire correctly with the menu in
+  place (kbd pipeline unaffected).
+
 ### Added (Cycle 26a): app menu skeleton + UIA plumbing
 
 First PR of Cycle 26 (the multi-PR app-menu mini-cycle planned in

@@ -9,21 +9,86 @@
         AutomationProperties.Name="pty-speak terminal"
         AutomationProperties.AutomationId="pty-speak.MainWindow">
     <DockPanel>
-        <!-- Cycle 26a: top-of-window app menu skeleton. Always-visible
-             (NVDA-user has no real-estate cost; discoverability is the
-             point — see PROJECT-PLAN-2026-05-09.md "Cycle 26 — app menu").
-             AutomationProperties.AutomationId mirrors the
-             `pty-speak.<surface>` convention used on MainWindow itself
-             so a future FlaUI E2E suite (Cycle 25b-2, parked) can
-             find it deterministically. The single _Help → E_xit item
-             is a smoke-test placeholder; Cycle 26b replaces this with
-             the full menu structure populated from HotkeyRegistry. -->
+        <!-- Cycle 26b: top-of-window app menu populated from
+             HotkeyRegistry. Always-visible (NVDA-user has no
+             real-estate cost; discoverability is the point — see
+             PROJECT-PLAN-2026-05-09.md "Cycle 26 — app menu").
+
+             Each MenuItem has x:Name="MenuItem_<AppCommandName>"
+             matching HotkeyRegistry.nameOf; Program.fs compose()
+             walks the populated `menuCommands` dictionary after
+             all bindHotkey calls and assigns each MenuItem.Command
+             (RoutedCommand shared with the keyboard gesture) +
+             InputGestureText (read by NVDA when focused).
+
+             Adding a new menu item is three edits in one PR:
+             (a) HotkeyRegistry.AppCommand DU case,
+             (b) HotkeyRegistry.builtIns row,
+             (c) <MenuItem x:Name="MenuItem_<NewCmd>" /> here.
+             Compose's reflection-driven wiring auto-picks it up.
+
+             Top-level mnemonics: _Shell, _View, _Data,
+             Dia_gnostics, _Help (all unique; non-conflicting with
+             AppReservedHotkeys's Ctrl+Shift+letter gestures since
+             different modifier sets are different gestures).
+
+             Future menus (Window, Display, Preferences/Settings)
+             will slot in cleanly per the maintainer's
+             extensibility directive (see PROJECT-PLAN-2026-05-09.md). -->
         <Menu DockPanel.Dock="Top"
               AutomationProperties.Name="Application menu"
               AutomationProperties.AutomationId="pty-speak.AppMenu">
+            <MenuItem Header="_Shell">
+                <MenuItem x:Name="MenuItem_SwitchToCmd"
+                          x:FieldModifier="public"
+                          Header="_Cmd" />
+                <MenuItem x:Name="MenuItem_SwitchToPowerShell"
+                          x:FieldModifier="public"
+                          Header="_PowerShell" />
+                <MenuItem x:Name="MenuItem_SwitchToClaude"
+                          x:FieldModifier="public"
+                          Header="C_laude" />
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem x:Name="MenuItem_ToggleDebugLog"
+                          x:FieldModifier="public"
+                          Header="Toggle _Debug Logging" />
+                <MenuItem x:Name="MenuItem_MuteEarcons"
+                          x:FieldModifier="public"
+                          Header="_Mute Earcons" />
+            </MenuItem>
+            <MenuItem Header="_Data">
+                <MenuItem x:Name="MenuItem_OpenDataFolder"
+                          x:FieldModifier="public"
+                          Header="_Open Data Folder" />
+                <MenuItem x:Name="MenuItem_OpenConfig"
+                          x:FieldModifier="public"
+                          Header="_Edit Config" />
+                <MenuItem x:Name="MenuItem_CopyHistoryToClipboard"
+                          x:FieldModifier="public"
+                          Header="Copy _History to Clipboard" />
+                <MenuItem x:Name="MenuItem_AnnounceSessionLogPath"
+                          x:FieldModifier="public"
+                          Header="Announce _Session Log Path" />
+            </MenuItem>
+            <MenuItem Header="Dia_gnostics">
+                <MenuItem x:Name="MenuItem_HealthCheck"
+                          x:FieldModifier="public"
+                          Header="_Health Check" />
+                <MenuItem x:Name="MenuItem_IncidentMarker"
+                          x:FieldModifier="public"
+                          Header="_Incident Marker" />
+                <MenuItem x:Name="MenuItem_RunDiagnostic"
+                          x:FieldModifier="public"
+                          Header="Run Diagnostic _Battery" />
+            </MenuItem>
             <MenuItem Header="_Help">
-                <MenuItem Header="E_xit"
-                          Click="Exit_Click" />
+                <MenuItem x:Name="MenuItem_CheckForUpdates"
+                          x:FieldModifier="public"
+                          Header="Check for _Updates" />
+                <MenuItem x:Name="MenuItem_DraftNewRelease"
+                          x:FieldModifier="public"
+                          Header="Draft New _Release" />
             </MenuItem>
         </Menu>
         <views:TerminalView x:Name="TerminalSurface" x:FieldModifier="public" />
