@@ -4,6 +4,7 @@ open System
 open System.IO
 open Xunit
 open Microsoft.Extensions.Logging
+open Tomlyn
 open Terminal.Core
 
 // ---------------------------------------------------------------------
