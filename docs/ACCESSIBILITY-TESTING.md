@@ -464,7 +464,7 @@ verify each layer's user-facing contract.
 
 | Test                              | Procedure                                       | Expected behaviour                                               |
 |-----------------------------------|-------------------------------------------------|------------------------------------------------------------------|
-| Mode change at startup            | Edit `%LOCALAPPDATA%\PtySpeak\config.toml` to set `[session_persistence]\nmode = "session_log"`; relaunch | App starts cleanly; active session log (open via `Ctrl+Shift+L` → today's folder) contains the line `SessionModel persistence mode: session_log (output_dir=..., format=jsonl, max_session_size_mb=...)`; no Warning about "not yet implemented" |
+| Mode change at startup            | Edit `%LOCALAPPDATA%\PtySpeak\config.toml` to set `[session_model.persistence]\nmode = "session_log"`; relaunch | App starts cleanly; active session log (open via `Ctrl+Shift+L` → today's folder) contains the line `Config: [session_model.persistence] section parsed; mode=session_log, ...` immediately followed by `SessionModel persistence mode: session_log (output_dir=..., format=jsonl, max_session_size_mb=...)`; no Warning about "not yet implemented" |
 | File creation in `session_log` mode | With mode set as above, run `echo hello`        | File `%LOCALAPPDATA%\PtySpeak\sessions\session-<UUID>.jsonl` exists; first line is one valid JSON object containing `"commandText":"echo hello"` and `"schemaVersion":1` |
 | `Always` mode synchronous flush   | Set `mode = "always"`; relaunch; run `echo one` | The JSONL file contains the `echo one` tuple BEFORE the next prompt is announced (perceptually durable; verify by inspecting the file immediately after the prompt comes back via Notepad → File → Open) |
 | Diagnostic hotkey announces session-log path | Press `Ctrl+Shift+S` in any of the three modes | NVDA announces `Session log mode <mode>; path <full-path>.` for `session_log`/`always`; `Session log mode memory_only; no file.` for `memory_only`. Repeated presses dedupe via the `pty-speak.session-log-path` ActivityId |
@@ -473,13 +473,33 @@ verify each layer's user-facing contract.
 
 **Diagnostic decoder for Cycle 24:**
 
-- **Mode change ignored at startup** → TOML parser fell back
-  to default. Check the active session log for
-  `Failed to parse SessionPersistence config; using defaults`
-  + the inner exception message. Likely culprits: malformed
-  TOML, key typo (`mode` vs `Mode` — case matters),
-  unrecognised value (anything other than the three accepted
-  strings).
+- **Mode change ignored at startup** → grep the FileLogger
+  log (open via `Ctrl+Shift+L`) for `Config: ` lines. Cycle
+  24f added explicit per-branch diagnostic logging:
+  - `Config: no [session_model] section in TOML; using
+    session-persistence defaults.` — the section header was
+    typo'd (the canonical name is **nested**:
+    `[session_model.persistence]`, NOT `[session_persistence]`)
+    or the parent table is missing.
+  - `Config: [session_model] present but no
+    [session_model.persistence] sub-section; using
+    session-persistence defaults.` — you have `[session_model]`
+    on its own but didn't add the `.persistence` sub-table.
+  - `Config: [session_model.persistence] section parsed;
+    mode=<X>, ...` — the section was found and read; if
+    `<X>` isn't what you set, the value itself was rejected
+    (look for an immediately preceding Warning naming the
+    unrecognised value).
+  - `Config: [session_model.persistence] mode = '<value>' is
+    not one of 'memory_only' / 'session_log' / 'always';
+    using default 'memory_only'.` — typo'd value. Note
+    parsing is lower-cased, so `Session_Log` is fine but
+    `sessionlog` (no underscore) is rejected.
+  - If the FileLogger shows `Config: parse error in <path>`
+    instead of any of the above, the TOML file itself has a
+    syntax error (likely an unquoted string value or a
+    duplicate-table conflict). The line with the error is
+    surfaced in the same log entry.
 - **File NOT created in `session_log` mode** → composition
   root never instantiated the sink. Grep the log for
   `SessionLogWriter` lines; absence of any such line means

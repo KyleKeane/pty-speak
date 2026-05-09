@@ -110,6 +110,20 @@ module SessionPersistence =
     /// Internal — recognised keys for the
     /// `[session_model.persistence]` table. Used to surface typos
     /// via warn-and-ignore.
+    /// String form of a `PersistenceMode` for log messages and
+    /// diagnostic dumps. Stable identifiers (no localisation) so
+    /// log-grepping is reliable across builds.
+    let modeToString (mode: PersistenceMode) : string =
+        match mode with
+        | MemoryOnly -> "memory_only"
+        | SessionLog -> "session_log"
+        | Always -> "always"
+
+    /// String form of a `PersistenceFormat` for log messages.
+    let formatToString (format: PersistenceFormat) : string =
+        match format with
+        | Jsonl -> "jsonl"
+
     let private knownKeys : Set<string> =
         Set.ofList
             [ "mode"
@@ -227,32 +241,44 @@ module SessionPersistence =
             (root: TomlTable)
             : PersistenceConfig
             =
+        // Cycle 24f — log every branch at Information so a
+        // maintainer can diagnose the difference between
+        // "section absent → silent defaults" and "section
+        // parsed cleanly to memory_only" by reading the
+        // FileLogger log alone. Pre-24f both cases were
+        // observationally identical (the only line emitted
+        // was the composition root's `SessionModel persistence
+        // mode: memory_only ...`).
         match tryGetTable root "session_model" with
-        | None -> defaultConfig
+        | None ->
+            logger.LogInformation(
+                "Config: no [session_model] section in TOML; using session-persistence defaults (mode={Mode}).",
+                modeToString defaultConfig.Mode)
+            defaultConfig
         | Some sessionModelTable ->
             match tryGetTable sessionModelTable "persistence" with
-            | None -> defaultConfig
+            | None ->
+                logger.LogInformation(
+                    "Config: [session_model] present but no [session_model.persistence] sub-section; using session-persistence defaults (mode={Mode}).",
+                    modeToString defaultConfig.Mode)
+                defaultConfig
             | Some persistenceTable ->
                 for key in persistenceTable.Keys do
                     if not (knownKeys.Contains(key)) then
                         logger.LogWarning(
                             "Config: [session_model.persistence] unknown key '{Key}'; ignored.",
                             key)
-                { Mode = parseMode logger persistenceTable
-                  OutputDir = parseOutputDir logger persistenceTable
-                  Format = parseFormat logger persistenceTable
-                  MaxSessionSizeMb = parseMaxSessionSizeMb logger persistenceTable }
-
-    /// String form of a `PersistenceMode` for log messages and
-    /// diagnostic dumps. Stable identifiers (no localisation) so
-    /// log-grepping is reliable across builds.
-    let modeToString (mode: PersistenceMode) : string =
-        match mode with
-        | MemoryOnly -> "memory_only"
-        | SessionLog -> "session_log"
-        | Always -> "always"
-
-    /// String form of a `PersistenceFormat` for log messages.
-    let formatToString (format: PersistenceFormat) : string =
-        match format with
-        | Jsonl -> "jsonl"
+                let parsed =
+                    { Mode = parseMode logger persistenceTable
+                      OutputDir = parseOutputDir logger persistenceTable
+                      Format = parseFormat logger persistenceTable
+                      MaxSessionSizeMb = parseMaxSessionSizeMb logger persistenceTable }
+                logger.LogInformation(
+                    "Config: [session_model.persistence] section parsed; mode={Mode}, output_dir={OutputDir}, format={Format}, max_session_size_mb={MaxSessionSizeMb}.",
+                    modeToString parsed.Mode,
+                    (match parsed.OutputDir with
+                     | Some d -> d
+                     | None -> "<default>"),
+                    formatToString parsed.Format,
+                    parsed.MaxSessionSizeMb)
+                parsed

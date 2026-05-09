@@ -83,23 +83,56 @@ let ``defaultConfig is MemoryOnly with default size 64MB and Jsonl format`` () =
 // Missing table → defaultConfig
 // ---------------------------------------------------------------------
 
+// Cycle 24f added Information logging on each parse-branch so a
+// maintainer can grep `Config:` and see exactly why the
+// persistence config landed where it did. The three branches
+// (no [session_model], [session_model] without .persistence,
+// [session_model.persistence] present) each log a distinct
+// Information message; tests pin the message text.
+
 [<Fact>]
-let ``empty TOML returns defaultConfig`` () =
+let ``empty TOML returns defaultConfig and logs no [session_model] section`` () =
     let config, logger = parse ""
     Assert.Equal(SessionPersistence.defaultConfig, config)
     Assert.False(logger.HasLevel(LogLevel.Warning))
+    Assert.Contains(
+        logger.MessagesAtLevel(LogLevel.Information),
+        fun m ->
+            m.Contains("no [session_model] section in TOML")
+            && m.Contains("memory_only"))
 
 [<Fact>]
-let ``missing [session_model] table returns defaultConfig`` () =
+let ``missing [session_model] table returns defaultConfig and logs the missing-section diagnostic`` () =
     let config, logger = parse "[unrelated]\nfoo = \"bar\"\n"
     Assert.Equal(SessionPersistence.defaultConfig, config)
     Assert.False(logger.HasLevel(LogLevel.Warning))
+    Assert.Contains(
+        logger.MessagesAtLevel(LogLevel.Information),
+        fun m ->
+            m.Contains("no [session_model] section in TOML"))
 
 [<Fact>]
-let ``[session_model] table without [persistence] sub-table returns defaultConfig`` () =
+let ``[session_model] table without [persistence] sub-table returns defaultConfig and logs the sub-section diagnostic`` () =
     let config, logger = parse "[session_model]\nplaceholder = true\n"
     Assert.Equal(SessionPersistence.defaultConfig, config)
     Assert.False(logger.HasLevel(LogLevel.Warning))
+    Assert.Contains(
+        logger.MessagesAtLevel(LogLevel.Information),
+        fun m ->
+            m.Contains("[session_model] present but no [session_model.persistence]")
+            && m.Contains("memory_only"))
+
+[<Fact>]
+let ``[session_model.persistence] section present logs the parsed-section diagnostic with mode and format`` () =
+    let toml =
+        "[session_model.persistence]\nmode = \"session_log\"\noutput_dir = \"C:\\\\tmp\\\\sessions\"\n"
+    let _, logger = parse toml
+    Assert.Contains(
+        logger.MessagesAtLevel(LogLevel.Information),
+        fun m ->
+            m.Contains("[session_model.persistence] section parsed")
+            && m.Contains("session_log")
+            && m.Contains("jsonl"))
 
 // ---------------------------------------------------------------------
 // mode parsing
