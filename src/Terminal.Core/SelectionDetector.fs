@@ -187,7 +187,14 @@ module SelectionDetector =
     /// again, possibly with a new selectedIdx), dismiss (region
     /// disappeared and grace elapsed), or replace (different
     /// region detected).
-    type private Candidate =
+    ///
+    /// Public access is forced by F# rule that public type
+    /// `T`'s field types must be at least as accessible as `T`
+    /// itself (FS0410). Treat `Candidate` as effectively
+    /// internal — callers should use the `create` / `tryDetect`
+    /// /  `feedKeystroke` / `reset` API and not construct
+    /// candidates directly.
+    type Candidate =
         { TopRow: int
           BottomRow: int
           Items: string[]
@@ -200,7 +207,9 @@ module SelectionDetector =
     /// selectedRowIdx) gate. Identical signatures suppress
     /// re-emission; mismatched ones permit a single
     /// `SelectionItem` for the newly-selected row.
-    type private SelectionSignature =
+    ///
+    /// Public for the same FS0410 reason as `Candidate`.
+    type SelectionSignature =
         { ItemsHash: int
           SelectedRowIdx: int }
 
