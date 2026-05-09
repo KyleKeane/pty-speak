@@ -15,6 +15,79 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 25a): hotkey reorg + open-config + reload-on-shell-switch + [logging] TOML
+
+Operational ergonomics bundle landed in response to the friction
+surfaced by the first manual NVDA-matrix walkthrough of Cycle 24:
+
+**Hotkey reorg**:
+
+- `Ctrl+Shift+L` — repurposed: was `OpenLogsFolder`, now
+  `CopyLatestLog` (mnemonic: **L** for **L**og).
+- `Ctrl+Shift+P` — NEW `OpenDataFolder` (opens
+  `%LOCALAPPDATA%\PtySpeak\`, the parent of `\logs`,
+  `\sessions`, and `config.toml`).
+- `Ctrl+Shift+E` — NEW `OpenConfig` (auto-creates
+  `config.toml` with sensible defaults if missing, then
+  opens in the default app).
+- `Ctrl+Shift+T` — NEW `RunTestMatrix` (placeholder; full
+  implementation in Cycle 25b).
+- `Ctrl+Shift+;` — vacated entirely (clean removal,
+  no alias).
+- `OpenLogsFolder` `AppCommand` — deleted (replaced by
+  `OpenDataFolder` which lands in the parent and is one
+  arrow-key step from the logs subfolder).
+
+**Open-config auto-create**: `Ctrl+Shift+E` writes a
+boilerplate `config.toml` with all four documented sections
+(`[session_model.persistence]`, `[startup]`, `[logging]`,
+plus `schema_version`) and inline comments explaining each
+knob. UTF-8 no-BOM (`UTF8Encoding(false)`) per the
+`SessionLogWriter` precedent. Idempotent: refuses to
+overwrite an existing file. Solves the
+"maintainer hand-types a TOML header and gets it wrong"
+failure mode the Cycle 24 walkthrough surfaced (the
+maintainer wrote `[sessionmodel._persistence]` instead of
+`[session_model.persistence]` — character placement off
+by one — and couldn't see the typo via NVDA's underscore
+pronunciation).
+
+**New `[logging]` TOML section**: `min_level` enum
+(`Trace` / `Debug` / `Information` / `Warning` / `Error` /
+`Critical` / `None`). Precedence mirrors the established
+`[startup] default_shell` / `PTYSPEAK_SHELL` pattern:
+`PTYSPEAK_LOG_LEVEL` env var > TOML `min_level` >
+built-in default `Information`. Resolved at composition-root
+time; the FileLogger sink's `SetMinLevel` is called
+post-Config-load when the TOML value should win.
+`Ctrl+Shift+G` runtime toggle remains ephemeral (doesn't
+persist; next launch re-resolves the precedence).
+
+**Reload-on-shell-switch**: every `Ctrl+Shift+1/2/3`
+re-reads `config.toml` and applies `[session_model.persistence]`
+changes to the new shell session's writer. Lets the
+maintainer edit TOML mid-session and validate with one
+keystroke instead of relaunching. `default_shell` /
+`[logging]` / `[pathway.stream]` stay startup-only this
+cycle (documented in `docs/SESSION-MODEL.md` "Config
+reload on shell switch"). `SessionSanitiser` re-runs
+`registerFromEnvironment` on every switch; idempotent by
+design.
+
+**Tests**: 5 new `[<Fact>]`s in `HotkeyRegistryTests.fs`
+pinning new bindings + the vacated `Ctrl+Shift+;`. 6 new
+in `ConfigTests.fs` covering `[logging]` parsing (valid /
+invalid / case-insensitive / unknown-key / non-string).
+5 new in `ConfigTests.fs` covering `Config.writeDefaults`
+(write / idempotent / no-BOM / round-trip-no-warnings /
+parent-directory-creation).
+
+**Cycle 25b** (next): full UIA-based test runner driving
+all six matrix rows + a combined diagnostic-dump file
+(maintainer-requested) saved under
+`%LOCALAPPDATA%\PtySpeak\diagnostic-snapshots\`
+date-stamped + copied to clipboard.
+
 ### Added (Cycle 24g): TOML model snapshot logged at startup
 
 Diagnostic surface to pin the difference between "config section

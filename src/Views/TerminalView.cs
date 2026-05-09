@@ -393,25 +393,23 @@ public class TerminalView : FrameworkElement
             // Bound in `setupNewReleaseKeybinding`.
             (Key.R, ModifierKeys.Control | ModifierKeys.Shift, "Draft new release form"),
 
-            // Logging PR — open the logs folder in File Explorer.
-            // Bound in `setupOpenLogsKeybinding`.
-            (Key.L, ModifierKeys.Control | ModifierKeys.Shift, "Open logs folder"),
-
-            // Logging-restructure PR — copy active session log to
-            // clipboard. Bound in `setupCopyLatestLogKeybinding`.
-            // Mnemonic: physical proximity — the semicolon /
-            // colon key sits right next to `L`, the
-            // `Ctrl+Shift+L` open-folder primary, on a US-layout
-            // keyboard. The pair "open the folder | copy the
-            // active file" lives under one hand position.
-            // Originally bound to Ctrl+Alt+L but moved because
-            // that gesture collides with the Windows Magnifier
-            // zoom-in shortcut AND required a SystemKey-aware
-            // filter that broke Alt+F4. Ctrl+Shift+C is left
-            // unclaimed for a future copy-latest-command-output
-            // feature (the cross-terminal convention for that
-            // gesture).
-            (Key.OemSemicolon, ModifierKeys.Control | ModifierKeys.Shift, "Copy active log to clipboard"),
+            // Cycle 25a — reorganized to put the most-used hotkeys
+            // on letter keys and free Ctrl+Shift+; entirely:
+            //   Ctrl+Shift+L: copy active session log to clipboard
+            //                 (mnemonic: L for Log; was opens-folder).
+            //   Ctrl+Shift+P: open the pty-speak data folder
+            //                 (parent of logs / sessions / config;
+            //                 navigable to any of them in one
+            //                 arrow-key step).
+            //   Ctrl+Shift+E: edit config.toml (auto-creates
+            //                 with defaults if missing).
+            //   Ctrl+Shift+T: placeholder for the Cycle 25b
+            //                 test-matrix runner.
+            //   Ctrl+Shift+; vacated entirely (no alias).
+            (Key.L, ModifierKeys.Control | ModifierKeys.Shift, "Copy active log to clipboard"),
+            (Key.P, ModifierKeys.Control | ModifierKeys.Shift, "Open pty-speak data folder"),
+            (Key.E, ModifierKeys.Control | ModifierKeys.Shift, "Edit config.toml"),
+            (Key.T, ModifierKeys.Control | ModifierKeys.Shift, "Run NVDA-matrix test runner"),
 
             // Stage 7 PR-C — hot-switch the spawned shell mid-session.
             // PR-J (2026-05-03) reordered the slots and added

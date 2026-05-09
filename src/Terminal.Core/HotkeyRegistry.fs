@@ -74,9 +74,18 @@ module HotkeyRegistry =
         | RunDiagnostic
         // PR-#83 / PR-#91 — draft a new release form.
         | DraftNewRelease
-        // Logging-PR — open logs folder in File Explorer.
-        | OpenLogsFolder
+        // Cycle 25a — open the pty-speak data folder
+        // (`%LOCALAPPDATA%\PtySpeak\`). Replaces OpenLogsFolder
+        // because the parent gives one-keystroke access to all of
+        // logs / sessions / config rather than just logs.
+        | OpenDataFolder
+        // Cycle 25a — auto-create config.toml with defaults if
+        // missing, then open in default app.
+        | OpenConfig
         // Logging-restructure PR (#111) — copy active log to clipboard.
+        // Cycle 25a — moved from `Ctrl+Shift+;` to `Ctrl+Shift+L`
+        // (mnemonic: L for Log; the old `Ctrl+Shift+L` opened the
+        // logs folder, which was deleted in favor of OpenDataFolder).
         | CopyLatestLog
         // Stage 7-followup PR-E — toggle FileLogger min-level.
         | ToggleDebugLog
@@ -96,6 +105,8 @@ module HotkeyRegistry =
         | CopyHistoryToClipboard
         // Cycle 24e — announce active session-log file path.
         | AnnounceSessionLogPath
+        // Cycle 25b — run automated NVDA-matrix test runner.
+        | RunTestMatrix
 
     /// Stable string name for a command, used as the
     /// `RoutedCommand` name passed to WPF and as a TOML key
@@ -107,7 +118,8 @@ module HotkeyRegistry =
         | CheckForUpdates -> "CheckForUpdates"
         | RunDiagnostic -> "RunDiagnostic"
         | DraftNewRelease -> "DraftNewRelease"
-        | OpenLogsFolder -> "OpenLogsFolder"
+        | OpenDataFolder -> "OpenDataFolder"
+        | OpenConfig -> "OpenConfig"
         | CopyLatestLog -> "CopyLatestLog"
         | ToggleDebugLog -> "ToggleDebugLog"
         | HealthCheck -> "HealthCheck"
@@ -118,6 +130,7 @@ module HotkeyRegistry =
         | MuteEarcons -> "MuteEarcons"
         | CopyHistoryToClipboard -> "CopyHistoryToClipboard"
         | AnnounceSessionLogPath -> "AnnounceSessionLogPath"
+        | RunTestMatrix -> "RunTestMatrix"
 
     /// Default key binding for a command. Mirrors the
     /// `AppReservedHotkeys` table in
@@ -152,14 +165,18 @@ module HotkeyRegistry =
             Key = Letter 'R'
             Modifiers = ctrlShift
             Description = "Draft a new release on GitHub" }
-          { Command = OpenLogsFolder
+          { Command = OpenDataFolder
+            Key = Letter 'P'
+            Modifiers = ctrlShift
+            Description = "Open the pty-speak data folder (Cycle 25a; parent of logs / sessions / config)" }
+          { Command = OpenConfig
+            Key = Letter 'E'
+            Modifiers = ctrlShift
+            Description = "Edit config.toml (Cycle 25a; auto-creates with defaults if missing)" }
+          { Command = CopyLatestLog
             Key = Letter 'L'
             Modifiers = ctrlShift
-            Description = "Open logs folder in File Explorer" }
-          { Command = CopyLatestLog
-            Key = Semicolon
-            Modifiers = ctrlShift
-            Description = "Copy active session log to clipboard" }
+            Description = "Copy active session log to clipboard (Cycle 25a moved from Ctrl+Shift+;)" }
           { Command = ToggleDebugLog
             Key = Letter 'G'
             Modifiers = ctrlShift
@@ -195,7 +212,11 @@ module HotkeyRegistry =
           { Command = AnnounceSessionLogPath
             Key = Letter 'S'
             Modifiers = ctrlShift
-            Description = "Announce the active session-log file path (Cycle 24e)" } ]
+            Description = "Announce the active session-log file path (Cycle 24e)" }
+          { Command = RunTestMatrix
+            Key = Letter 'T'
+            Modifiers = ctrlShift
+            Description = "Run automated NVDA-matrix test runner (Cycle 25b)" } ]
 
     /// Look up the default Hotkey for a command. Throws
     /// `KeyNotFoundException` if the registry is incomplete —
@@ -231,7 +252,8 @@ module HotkeyRegistry =
         [ CheckForUpdates
           RunDiagnostic
           DraftNewRelease
-          OpenLogsFolder
+          OpenDataFolder
+          OpenConfig
           CopyLatestLog
           ToggleDebugLog
           HealthCheck
@@ -241,4 +263,5 @@ module HotkeyRegistry =
           SwitchToClaude
           MuteEarcons
           CopyHistoryToClipboard
-          AnnounceSessionLogPath ]
+          AnnounceSessionLogPath
+          RunTestMatrix ]

@@ -557,3 +557,136 @@ let ``snapshotAsJson handles arrays as bracketed inline lists`` () =
     let model = parseToTable "items = [1, 2, 3]\n"
     let json = Config.snapshotAsJson model
     Assert.Contains("\"items\": [1, 2, 3]", json)
+
+// ---------------------------------------------------------------------
+// Cycle 25a — [logging] section parsing
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``[logging] missing returns None min_level`` () =
+    let toml = "schema_version = 1\n"
+    let config, _ = loadFromText toml
+    Assert.Equal(None, config.LoggingOverrides.MinLevel)
+
+[<Fact>]
+let ``[logging] min_level = "Debug" parses as LogLevel.Debug`` () =
+    let toml = "schema_version = 1\n[logging]\nmin_level = \"Debug\"\n"
+    let config, _ = loadFromText toml
+    Assert.Equal(Some LogLevel.Debug, config.LoggingOverrides.MinLevel)
+
+[<Fact>]
+let ``[logging] min_level is case-insensitive (matches PTYSPEAK_LOG_LEVEL precedent)`` () =
+    let toml = "schema_version = 1\n[logging]\nmin_level = \"warning\"\n"
+    let config, _ = loadFromText toml
+    Assert.Equal(Some LogLevel.Warning, config.LoggingOverrides.MinLevel)
+
+[<Fact>]
+let ``[logging] min_level with invalid string logs Warning and returns None`` () =
+    let toml =
+        "schema_version = 1\n[logging]\nmin_level = \"banana\"\n"
+    let config, logger = loadFromText toml
+    Assert.Equal(None, config.LoggingOverrides.MinLevel)
+    Assert.True(logger.HasLevel(LogLevel.Warning))
+
+[<Fact>]
+let ``[logging] min_level non-string logs Warning and returns None`` () =
+    let toml = "schema_version = 1\n[logging]\nmin_level = 42\n"
+    let config, logger = loadFromText toml
+    Assert.Equal(None, config.LoggingOverrides.MinLevel)
+    Assert.True(logger.HasLevel(LogLevel.Warning))
+
+[<Fact>]
+let ``[logging] unknown key logs Warning but does not corrupt parse`` () =
+    let toml =
+        "schema_version = 1\n[logging]\nmin_level = \"Trace\"\nunknown_setting = 42\n"
+    let config, logger = loadFromText toml
+    Assert.Equal(Some LogLevel.Trace, config.LoggingOverrides.MinLevel)
+    Assert.True(logger.HasLevel(LogLevel.Warning))
+
+// ---------------------------------------------------------------------
+// Cycle 25a — Config.writeDefaults
+// ---------------------------------------------------------------------
+//
+// The open-config hotkey writes a defaults-populated config.toml
+// when one doesn't exist. Tests verify: (a) the file is written
+// with UTF-8 no-BOM; (b) the file is idempotent (won't overwrite);
+// (c) the written content round-trips through Config.tryLoad to
+// the same Config record as defaultConfig (modulo schema version);
+// (d) the create-then-parse path produces no Warnings (no
+// "unknown key" diagnostics, since the template uses only known
+// keys); (e) the file ends with a newline (matches typical TOML
+// file conventions).
+
+let private freshConfigTempPath () : string =
+    let tmpDir =
+        Path.Combine(
+            Path.GetTempPath(),
+            sprintf "pty-speak-config-test-%s" (Guid.NewGuid().ToString("N")))
+    Directory.CreateDirectory(tmpDir) |> ignore
+    Path.Combine(tmpDir, "config.toml")
+
+[<Fact>]
+let ``writeDefaults creates a fresh file at the target path`` () =
+    let path = freshConfigTempPath ()
+    Assert.False(File.Exists(path))
+    let wrote = Config.writeDefaults path
+    Assert.True(wrote, "writeDefaults should return true on fresh write")
+    Assert.True(File.Exists(path), "File should exist after writeDefaults")
+
+[<Fact>]
+let ``writeDefaults refuses to overwrite an existing file`` () =
+    let path = freshConfigTempPath ()
+    File.WriteAllText(path, "schema_version = 99\n")
+    let wrote = Config.writeDefaults path
+    Assert.False(wrote, "writeDefaults should return false when file exists")
+    let content = File.ReadAllText(path)
+    Assert.Contains("schema_version = 99", content)
+
+[<Fact>]
+let ``writeDefaults uses UTF-8 without BOM`` () =
+    let path = freshConfigTempPath ()
+    Config.writeDefaults path |> ignore
+    let bytes = File.ReadAllBytes(path)
+    // UTF-8 BOM is 0xEF 0xBB 0xBF. Cycle 25a's writer uses
+    // UTF8Encoding(false) so these three bytes must NOT be the
+    // file's prefix.
+    Assert.True(bytes.Length > 3, "File should have non-trivial content")
+    Assert.False(
+        bytes.[0] = 0xEFuy && bytes.[1] = 0xBBuy && bytes.[2] = 0xBFuy,
+        "writeDefaults must produce no UTF-8 BOM prefix")
+
+[<Fact>]
+let ``writeDefaults round-trips through Config.tryLoad without Warnings`` () =
+    let path = freshConfigTempPath ()
+    Config.writeDefaults path |> ignore
+    let logger = RecordingLogger()
+    let loaded = Config.tryLoad (logger :> ILogger) path
+    Assert.False(
+        logger.HasLevel(LogLevel.Warning),
+        sprintf "writeDefaults template should parse without warnings; got: %A"
+            (logger.MessagesAtLevel(LogLevel.Warning) |> Seq.toList))
+    Assert.False(
+        logger.HasLevel(LogLevel.Error),
+        "writeDefaults template should parse without errors")
+    // Verify the documented defaults round-trip.
+    Assert.Equal(
+        SessionPersistence.SessionLog,
+        loaded.SessionPersistence.Mode)
+    Assert.Equal(Some "cmd", loaded.StartupOverrides.DefaultShell)
+    Assert.Equal(Some LogLevel.Information, loaded.LoggingOverrides.MinLevel)
+
+[<Fact>]
+let ``writeDefaults creates parent directory tree if missing`` () =
+    // Mirrors FileLogger's defensive Directory.CreateDirectory
+    // pattern. On a fresh install, the %LOCALAPPDATA%\PtySpeak\
+    // directory may not exist yet.
+    let nestedPath =
+        Path.Combine(
+            Path.GetTempPath(),
+            sprintf "pty-speak-nested-%s" (Guid.NewGuid().ToString("N")),
+            "deeper",
+            "config.toml")
+    Assert.False(Directory.Exists(Path.GetDirectoryName(nestedPath)))
+    let wrote = Config.writeDefaults nestedPath
+    Assert.True(wrote)
+    Assert.True(File.Exists(nestedPath))
