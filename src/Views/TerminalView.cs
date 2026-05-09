@@ -1008,7 +1008,14 @@ public class TerminalView : FrameworkElement
         // dark surface even when no screen is attached yet.
         drawingContext.DrawRectangle(_background, null, new Rect(RenderSize));
 
-        if (_screen is null)
+        // Cycle 32b — both fields must be set by the composition root
+        // before the first render frame. SetScreen + SetDisplayBuffer
+        // are called sequentially at Program.fs:731-...; in practice
+        // both are always non-null here. The null-check is defense
+        // in depth + satisfies C# nullable-reference-types analysis
+        // (otherwise CS8602 fires on `_displayBuffer.Snapshot(...)`
+        // below).
+        if (_screen is null || _displayBuffer is null)
         {
             return;
         }
