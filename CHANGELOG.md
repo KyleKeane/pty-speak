@@ -15,6 +15,37 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Docs (post-Cycle-31a): history sub-pane navigation contract via CommandOutputTuple
+
+Doc-only refinement folding the `docs/research/Output-paradigms.md`
+CommandOutputTuple primitive (Section 1.6) into the history sub-
+pane's navigation contract. The framing aligns the CHI '21
+Pradhan et al. CLI-accessibility finding (command-as-anchor
+navigation as the single most-requested CLI feature) with our
+existing three-sub-pane decomposition. No behaviour change; no
+new exemplar canonical displays added — the three exemplars
+(raw text / interactive list / form with text input) stand.
+
+- **`docs/CORE-ABSTRACTION-BOUNDARY.md`** §6 — history sub-pane
+  paragraph rewritten to name CommandOutputTuple as the unit of
+  history navigation, with concrete quick-nav primitives (`h` /
+  `Shift+h` for command boundaries, `o` / `Shift+o` for output
+  blocks, `Alt+Up` / `Alt+Down` for tuple boundaries) replacing
+  the prior "paragraph navigation" hand-waving. Cross-references
+  the research doc; defers full UIA pattern provider mapping to
+  Cycle 33 RFC.
+- **`docs/PANE-MODEL.md`** — same refinement applied to the
+  "Shell pane internal structure" subsection's history sub-pane
+  bullet. Adds a substrate-of-truth pointer to
+  `SESSION-MODEL.md` §4.
+
+The two emission/output research docs landed independently on
+main between Cycle 30 and 31a (`docs/research/Output-paradigms.md`
++ `docs/research/emission-paradigms.md`); this PR is the first
+to cite them. Further integration (seam-hierarchy commit,
+cadence parameters, tail-mask vocabulary) lands in Cycle 33's
+linear-text-substrate RFC.
+
 ### Added (Cycle 31a): `IOutputSink` boundary interface + portability CI lint
 
 First code cycle of the substrate / channel boundary work locked
