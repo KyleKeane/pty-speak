@@ -30,10 +30,10 @@ discipline),
 
 | | |
 |---|---|
-| **Last merged stages** | **Stages 0 → 7 + 11** all merged to `main`, plus the retroactively-formalized Stages 4a / 4b / 5a. Stage 7 shipped 2026-05-03 across 11 sequenced PRs (A → K, #131-#143) + PR-L #144 (doc-purpose audit + Stage 7 wrap-up) + PR-M #145 (coalescer cross-row spinner gate fix). **Post-Stage-7 substrate cycle 2026-05-04 → 2026-05-07** (PRs #146-#184) shipped: event-and-output framework spec (#151); Stages 8a/8b/8c/8d.1/8d.2 (#152-#157, #155); display-pathway substrate Phase A + Phase A.1 + Phase B subset + Phase A.2 + #166 suffix-diff + #167 atlas + #168 Tier 1 parameters + #169 shell-switch flush fix (#159-#169); five research-stage docs: PIPELINE-NARRATIVE (#170), SESSION-MODEL (#171), INTERACTION-MODEL (#173), PANE-MODEL (#174), CUSTOMIZATION-MODEL (#181); six-track audit phase (#172, #175-#180); post-audit cleanup (#181-#184). **Tier 1 SessionModel implementation cycle 2026-05-07 → 2026-05-08** (PRs #185-#199) shipped substrate end-to-end: skeleton (#185), OSC 133 producer + cursor field (#186), state machine + composition (#187), heuristic fallback + alt-screen wiring (#189), PromptText capture (#190), diagnostic battery extension (#191), tick-driven detector via channel-driven actor model (#192), CHANNEL-ARCHITECTURE doc (#193), default-shell config + detector consolidation (#194), row-index-aware emission (#195) + announce-wording followup (#196), CommandText + OutputText extraction (#197), multi-match flap fix (#198), Ctrl+Shift+Y clipboard hotkey (#199). Maintainer NVDA-validation green throughout. |
+| **Last merged stages** | **Stages 0 → 7 + 11** all merged to `main`, plus the retroactively-formalized Stages 4a / 4b / 5a. Stage 7 shipped 2026-05-03 across 11 sequenced PRs (A → K, #131-#143) + PR-L #144 (doc-purpose audit + Stage 7 wrap-up) + PR-M #145 (coalescer cross-row spinner gate fix). **Post-Stage-7 substrate cycle 2026-05-04 → 2026-05-07** (PRs #146-#184) shipped: event-and-output framework spec (#151); Stages 8a/8b/8c/8d.1/8d.2 (#152-#157, #155); display-pathway substrate Phase A + Phase A.1 + Phase B subset + Phase A.2 + #166 suffix-diff + #167 atlas + #168 Tier 1 parameters + #169 shell-switch flush fix (#159-#169); five research-stage docs: PIPELINE-NARRATIVE (#170), SESSION-MODEL (#171), INTERACTION-MODEL (#173), PANE-MODEL (#174), CUSTOMIZATION-MODEL (#181); six-track audit phase (#172, #175-#180); post-audit cleanup (#181-#184). **Tier 1 SessionModel implementation cycle 2026-05-07 → 2026-05-08** (PRs #185-#199) shipped substrate end-to-end: skeleton (#185), OSC 133 producer + cursor field (#186), state machine + composition (#187), heuristic fallback + alt-screen wiring (#189), PromptText capture (#190), diagnostic battery extension (#191), tick-driven detector via channel-driven actor model (#192), CHANNEL-ARCHITECTURE doc (#193), default-shell config + detector consolidation (#194), row-index-aware emission (#195) + announce-wording followup (#196), CommandText + OutputText extraction (#197), multi-match flap fix (#198), Ctrl+Shift+Y clipboard hotkey (#199). Maintainer NVDA-validation green throughout. **Cycle 24 SessionModel persistence cycle 2026-05-09** (PRs #203, #206-#212, #219) shipped Tier 2 end-to-end: 24a TOML schema (#203), 24b JSONL serializer (#206), 24c bounded-channel async file writer (#208), 24d-1 Always-mode synchronous flush (#209), 24d-2 env-var value sanitisation (#210), 24e Ctrl+Shift+S diagnostic hotkey + NVDA matrix (#211), 24f persistence-config diagnostic + matrix typo fix (#212), 24g TOML model snapshot logged at startup (#219). **Cycle 25 operational-ergonomics + diagnostic-dump bundle 2026-05-09** (PRs #220-#222): 25a hotkey reorg (Ctrl+Shift+L/P/E rebound) + open-config auto-create + reload-on-shell-switch + `[logging]` TOML (#220); 25b-1 Ctrl+Shift+D bundles diagnostic dump (FileLogger log + config + redacted env into dated snapshot file + clipboard) + Ctrl+Shift+T placeholder removed (#221); 25b-1a bundle gains `--- SESSION LOG ---` section + Ctrl+Shift+L removed since D's bundle subsumes it (#222). |
 | **Last shipped release** | Maintainer cuts release builds from `main` whenever convenient. The last release predating Tier 1 was `v0.0.1-preview.43`; subsequent previews have shipped through the substrate + Tier 1 cycles. |
-| **In-flight branch** | (none) — Cycles 24a + 24b shipped 2026-05-09 via PRs #203 + #206. **Cycle 24c** (file writer) is the next pickup; doc-currency cleanup PR shipping in parallel resolves the Tier 2 / Tier 6 vocabulary collision. |
-| **Next stage** | **Cycle 24c — bounded-channel async file writer** that consumes `SessionModel.formatTupleAsJsonl` (shipped in 24b) and persists JSONL lines to `%LOCALAPPDATA%\PtySpeak\sessions\session-<SessionId>.jsonl` on the Active→History transition. Locked design: `BoundedChannelFullMode.Wait` (back-pressure into the state machine; data-durability bias); `MemoryOnly` mode never opens a file; `Always` mode logs a Warning + behaves as `SessionLog` for this cycle (true sync flush ships in 24d). Hook point: `SessionModel.apply` returns `(T * SessionTuple option)` so the composition root pattern-matches and dispatches to the writer. Mirrors `FileLogger.fs:120-455` sink-class pattern. Followed by **Cycle 24d** (`Always` sync flush + secrets sanitisation) and **Cycle 24e** (NVDA matrix rows + diagnostic helper). Predecessor cycles: Cycle 23 (doc cleanup + Q&A) shipped 2026-05-08 via PRs #200 + #201; Tier 1 SessionModel substrate shipped 2026-05-07/08 via PRs #185-#199; **Cycles 24a (TOML schema, PR #203) + 24b (JSONL serializer, PR #206) shipped 2026-05-09**. SESSION-MODEL Q1-Q8, INTERACTION-MODEL Q1-Q6, PANE-MODEL Q1-Q5, CUSTOMIZATION-MODEL Q1-Q7 all resolved + shipped. Open follow-ups: (a) Screen-buffer runtime resize (Phase 2 stage). (b) Stable-baseline tag pushes including `baseline/stage-7-claude-roundtrip` per [`docs/CHECKPOINTS.md`](CHECKPOINTS.md). (c) MAY-4.md Concern 3 (navigable streaming response queue) — naturally subsumed by SessionModel + ReplPathway (Phase 2). |
+| **In-flight branch** | (none) — Cycle 25b-1a shipped 2026-05-09 via PR #222 (the most recent merge; commit `75ae04e`). |
+| **Next stage** | **Decide next cycle direction.** Three candidates on deck: **(a) Cycle 25b-2** — the deferred FlaUI/UIA-driven E2E test runner from the original Cycle 25b plan; new `tests/Tests.E2E/` project with 7 tests covering the Cycle 24e NVDA matrix rows; spawns pty-speak via UIA, drives input via UIA `Keyboard.Type` / `Keyboard.Press`, asserts on JSONL file content + clipboard text + an internal `LastAnnouncement` hook on `TerminalView`. Risks: FlaUI flakiness; UIA needs an interactive desktop session so CI can't run it (project would build in CI but tests skipped). See "Cycle 25 in-flight handoff" below for the fuller deferred-design sketch. **(b) Cycle 26** — app menu, would surface `scripts/test-process-cleanup.ps1` + future diagnostic-script entries (release-notes drafter, etc.) as menu items; reduces hotkey-count working-memory pressure for additional features per the maintainer's noted ceiling. **(c) Framework cycles** — Output framework Part 3 + Input framework Part 4 per [`docs/PROJECT-PLAN-2026-05-revision.md`](PROJECT-PLAN-2026-05-revision.md); Stage 10 review-mode + quick-nav lands as the first non-built-in framework consumer. Maintainer to pick on next planning round. Open follow-ups (cross-cutting; not blocking the next cycle): (a) Screen-buffer runtime resize (Phase 2). (b) Stable-baseline tag pushes including `baseline/stage-7-claude-roundtrip` per [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) — local sandbox can't push tags, awaiting maintainer sweep. (c) MAY-4.md Concern 3 (navigable streaming response queue) — naturally subsumed by SessionModel + ReplPathway (Phase 2). (d) New dated revision of `PROJECT-PLAN-2026-05-revision.md` overdue per E5 discipline (current revision is the 2026-05-07 snapshot; multiple cycles have shipped since). |
 
 ## Cycle 23 in-flight handoff (✅ shipped 2026-05-08; retained for historical reference)
 
@@ -278,21 +278,28 @@ for the full sequencing rationale; the per-stage detail in this
 file's "Stage N implementation sketch" sections remains useful
 historical reference but is no longer the active plan.
 
-## Cycle 24 in-flight handoff (✅ Cycles 24a + 24b shipped 2026-05-09; Cycle 24c next; retained for reference)
+## Cycle 24 in-flight handoff (✅ Cycles 24a–24g all shipped 2026-05-09; retained for historical reference)
 
-> **Status (2026-05-09):** Cycles 24a (TOML schema) and 24b
-> (JSONL serializer) shipped via PRs #203 and #206. Cycle 24c
-> (file writer) is in flight; the locked design is captured in
-> the "Next stage" cell at the top of this doc. Cycles 24d–24e
-> (Always-mode + secrets sanitisation; NVDA matrix) follow.
+> **Status (2026-05-09):** all eight Cycle 24 sub-cycles
+> shipped. PR map: 24a TOML schema (#203); 24b JSONL
+> serializer (#206); 24c bounded-channel async file writer
+> (#208); 24d-1 Always-mode synchronous flush (#209); 24d-2
+> env-var value sanitisation (#210); 24e Ctrl+Shift+S
+> diagnostic hotkey + NVDA matrix (#211); 24f
+> persistence-config diagnostic + matrix typo fix (#212);
+> 24g TOML model snapshot logged at startup (#219). Tier 2
+> SessionModel persistence is end-to-end functional in
+> `main`; the maintainer's first manual NVDA-matrix
+> walkthrough on 2026-05-09 surfaced operational friction
+> that drove the subsequent Cycle 25 ergonomics + bundle
+> work (see the Cycle 25 in-flight handoff section below).
 >
 > The original Cycle 24 sub-cycle planning sketch is preserved
 > below verbatim for the audit trail. New agents picking up
-> Cycle 24c work should read the "Next stage" cell at the top
-> of this doc + the (just-merged) cleanup PR's commit message
-> for the locked decisions; the sub-cycle table below remains
-> useful as a roadmap for 24c→24e but the per-PR file lists
-> below are now historical.
+> SessionModel-persistence-adjacent work should treat the
+> sub-cycle table below as historical roadmap; the canonical
+> behaviour-of-record is `main` itself, the CHANGELOG
+> entries for 24c–24g, and `docs/SESSION-MODEL.md`.
 
 ### Cycle 24 status
 
@@ -467,6 +474,169 @@ point. Cycle 24c is the PR that takes this seam.
   hotkey lands in Cycle 24e or a later sub-cycle (defer
   decision until 24c ships and the maintainer's NVDA experience
   surfaces the need).
+
+## Cycle 25 in-flight handoff (✅ 25 + 25a + 25b-1 + 25b-1a all shipped 2026-05-09; 25b-2 deferred; retained for reference)
+
+> **Status (2026-05-09):** Cycle 25 closed the operational
+> ergonomics + diagnostic-dump bundle work that the Cycle
+> 24e NVDA-matrix walkthrough surfaced. Three PRs landed:
+> 25a (#220) shipped the hotkey reorg + open-config
+> auto-create + reload-on-shell-switch + `[logging]` TOML;
+> 25b-1 (#221) shipped the `Ctrl+Shift+D` diagnostic-dump
+> bundle + removed the `Ctrl+Shift+T` placeholder; 25b-1a
+> (#222) added the `--- SESSION LOG ---` section to the
+> bundle and removed `Ctrl+Shift+L` (subsumed by D).
+> Maintainer NVDA-validation green throughout — the bundle
+> format was paste-back-validated on a real D press
+> mid-session (the validation surfaced the env-var typo
+> `PTYS[EAK_SHELL=CLAUDE` that was harmless and intentionally
+> left in place).
+>
+> The deferred half — **Cycle 25b-2, the FlaUI/UIA-driven
+> E2E test runner** — is still on the table. Original 25b
+> plan called for a single PR combining the dump bundle +
+> the FlaUI runner; the maintainer chose to split when
+> the dump bundle's value was higher and the FlaUI
+> infrastructure carried more risk (UIA flakiness + CI
+> can't run it without an interactive desktop). Pick up
+> 25b-2 when the autonomous-validation discipline is
+> wanted; the bundle has bedded in by then so the runner
+> ships against a stable target.
+
+### Cycle 25 status
+
+- **Cycle 25a** — operational ergonomics (PR #220, shipped):
+  - Hotkey reorg: `Ctrl+Shift+L` rebound from "open logs
+    folder" to "copy active log to clipboard" (since
+    superseded by 25b-1a's removal); `Ctrl+Shift+P` rebound
+    to "open data folder" (the parent of `\logs`,
+    `\sessions`, and `config.toml` — one-keystroke access
+    to all three first-tier directories); `Ctrl+Shift+E`
+    NEW for "edit config.toml".
+  - Open-config auto-creates `config.toml` with sensible
+    defaults if missing, then opens in default app. Targets
+    the friction the maintainer surfaced typing TOML
+    section headers by hand (the `[sessionmodel._persistence]`
+    typo in the Cycle 24e walkthrough).
+  - Reload-on-shell-switch refreshes `persistenceConfig`
+    + `loggingConfig` from disk on each `Ctrl+Shift+1/2/3`
+    so config edits don't require a full restart for
+    persistence-mode toggles.
+  - New `[logging]` TOML section consolidates per-shell
+    log overrides under one schema branch.
+
+- **Cycle 25b-1** — Ctrl+Shift+D diagnostic-dump bundle
+  (PR #221, shipped):
+  - `Diagnostics.runFullBattery` extended to bundle the
+    diagnostic-battery log + active FileLogger log
+    (`loggerSink.ActiveLogPath`) + `config.toml` + redacted
+    environment into a single dated snapshot file at
+    `%LOCALAPPDATA%\PtySpeak\diagnostic-snapshots\snapshot-<yyyy-MM-dd-HH-mm-ss-fff>.txt`
+    (paired stamp with the diagnostic-log file from the
+    same press). Bundle content also copied to clipboard.
+  - Plain-text format with `--- SECTION ---` markers
+    between sections (DIAGNOSTIC BATTERY LOG, FILELOGGER
+    ACTIVE LOG, CONFIG.TOML, ENVIRONMENT, END OF SNAPSHOT;
+    plus a header carrying timestamp + version + OS + .NET
+    + PID). Format intentionally stable so future replay
+    tools can index by section header.
+  - Env-var deny-list mirrors `SessionSanitiser`'s pattern
+    (`*_TOKEN`, `*_SECRET`, `*_KEY`, `*_PASSWORD`,
+    `*_PASSWD`); `ANTHROPIC_API_KEY` exempted (maintainer
+    needs to verify it's set when triaging Claude shell
+    startup). Names always shown verbatim; values redacted
+    to `<redacted by suite>` for matches.
+  - `Ctrl+Shift+T` placeholder shipped in 25a removed
+    entirely (DU case + `nameOf` arm + `builtIns` row +
+    `allCommands` entry + C# `AppReservedHotkeys` row +
+    `runRunTestMatrix` placeholder handler + `bindHotkey`
+    line + `runTestMatrix` ActivityId). The "everything
+    that can be automated goes into D" directive folded
+    the diagnostic suite into D rather than splitting
+    across two hotkeys.
+  - One CI fixup: F# 9 nullness error at
+    `Diagnostics.fs:924,43` (`Path.GetDirectoryName` returns
+    `string | null`; pattern-match instead of
+    `if not (String.IsNullOrEmpty dir)` form which doesn't
+    propagate through F# 9 flow analysis).
+
+- **Cycle 25b-1a** — bundle gains `--- SESSION LOG ---`
+  section + Ctrl+Shift+L removed (PR #222, shipped):
+  - New `--- SESSION LOG ---` section between
+    `--- CONFIG.TOML ---` and `--- ENVIRONMENT ---`. Carries
+    the same `Session log mode <mode>; path <full-path>.`
+    line that `Ctrl+Shift+S` announces — surfaced as a
+    first-class triage line so the active session-log path
+    doesn't have to be grepped out of the FileLogger log
+    slice.
+  - Single source of truth via
+    `Program.fs.buildSessionLogSummary` (defined before
+    `runDiagnostic` so D's `resolveSessionLogSummary`
+    closure can capture it). Both the S handler and D's
+    bundle read this helper.
+  - **`Ctrl+Shift+L` (CopyLatestLog) removed entirely.**
+    The D bundle's `--- FILELOGGER ACTIVE LOG ---` section
+    subsumes L's payload, so a dedicated copy-just-the-log
+    hotkey was redundant. Removed: AppCommand DU case +
+    `nameOf` arm + `builtIns` row + `allCommands` entry;
+    `runCopyLatestLog` handler in Program.fs (~135 lines
+    including the dispatcher-deadlock-fix Task wrapper);
+    the `bindHotkey` line; the
+    `SetCopyLogToClipboardHandler` defense-in-depth
+    wiring; the C# `_copyActiveLogToClipboard` field,
+    `SetCopyLogToClipboardHandler` setter, the
+    `Key.OemSemicolon` direct handler in
+    `OnPreviewKeyDown`, and the `(Key.L, ...)` row in
+    `AppReservedHotkeys`. Per maintainer's
+    hotkey-count-pressure feedback (working-memory ceiling).
+
+### Cycle 25b-2 (deferred — design sketch retained)
+
+The deferred FlaUI/UIA-driven E2E test runner. Original
+plan locked these decisions before the split:
+
+- **New `tests/Tests.E2E/` xUnit project** depending on
+  `FlaUI.UIA3` 4.x. NOT added to the .sln so CI's
+  solution-level `dotnet test` doesn't pick it up
+  (UIA needs interactive desktop session; GitHub-hosted
+  Windows runners don't have one).
+- **7 `[<Fact>]`s** mirroring the Cycle 24e NVDA matrix
+  rows: (1) mode change at startup, (2) file creation in
+  session_log, (3) Always-mode synchronous flush,
+  (4) Ctrl+Shift+S announces path, (5) env-var redaction,
+  (6) Ctrl+Shift+Y substrate honesty, (7) inline
+  shell-process snapshot.
+- Each test backs up `config.toml`, writes a fixture,
+  spawns `Terminal.App.exe`, attaches via
+  `FlaUI.UIA3.Application.Attach(processId)`, drives
+  input via UIA `Keyboard.Type` / `Keyboard.Press`,
+  asserts on JSONL file content + clipboard text + an
+  internal `LastAnnouncement` hook on `TerminalView`,
+  then tears down + restores config.
+- **Internal `LastAnnouncement` hook** in
+  `src/Views/TerminalView.cs`: `internal static
+  (string Text, string ActivityId, DateTime At)
+  LastAnnouncement` updated under the announce-lock; tests
+  poll it via `[<assembly:
+  InternalsVisibleTo("PtySpeak.Tests.E2E")>]`.
+- **PowerShell harness script** at
+  `scripts/run-diagnostic-suite.ps1`: backs up config,
+  resolves the bundled `Tests.E2E.dll` path, runs
+  `dotnet test`, parses trx, builds the diagnostic dump
+  (would extend the existing 5-section bundle with a
+  `--- SUITE RESULTS ---` section and per-test session-log
+  files), restores config. Estimated 200-300 lines.
+- **Bundling**: `Tests.E2E.dll` + FlaUI deps via
+  `<Content Include>` in `Terminal.App.fsproj` so they
+  land next to `Terminal.App.exe` in the Velopack pack.
+- Estimated ~1200 lines total.
+- **Risk**: FlaUI flakiness on the maintainer's NVDA
+  machine; CI integration is a separate cycle (autologon
+  + scheduled task on a self-hosted runner).
+- **Trigger**: maintainer wants the autonomous-validation
+  discipline OR a regression slips through manual NVDA
+  validation. Until then, the bundle's manual-paste-back
+  loop is the validation pathway.
 
 ## Pending action items (maintainer)
 
