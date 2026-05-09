@@ -154,6 +154,21 @@ module Config =
           /// `sink.SetMinLevel` IF the env var was not set.
           MinLevel: LogLevel option }
 
+    /// Cycle 32a — `[profile.selection]` table overrides for
+    /// `SelectionDetector.Parameters` (defined at
+    /// `SelectionDetector.fs:128-148`). `None` fields fall back
+    /// to `SelectionDetector.defaultParameters` at the resolver
+    /// (`resolveSelectionParameters` below). The detector is
+    /// constructed once at startup with the resolved parameters
+    /// (`Program.fs` composition root); no hot-reload — matches
+    /// every other section except `[session_model.persistence]`,
+    /// which gets reloaded on shell-switch.
+    type SelectionParameterOverrides =
+        { HighlightDetectionThresholdMs: int option
+          DismissalGraceMs: int option
+          KeystrokeCorrelationWindowMs: int option
+          MinConfidence: SelectionDetector.SelectionSource option }
+
     /// The top-level config record. `ShellOverrides` is keyed
     /// by lowercase shell-id strings (`"cmd"`, `"claude"`,
     /// `"powershell"` — mirrors `ShellRegistry.parseEnvVar`'s
@@ -172,7 +187,12 @@ module Config =
           /// composition-root time; the FileLogger sink's
           /// `SetMinLevel` is called post-Config-load when this
           /// is `Some` AND `PTYSPEAK_LOG_LEVEL` is unset.
-          LoggingOverrides: LoggingOverrides }
+          LoggingOverrides: LoggingOverrides
+          /// Cycle 32a — `[profile.selection]` table.
+          /// Resolved via `resolveSelectionParameters`;
+          /// composition root passes the result to
+          /// `SelectionDetector.create` at startup.
+          SelectionOverrides: SelectionParameterOverrides }
 
     /// The all-defaults Config — equivalent to "no config file
     /// present". `defaultConfig` is the authoritative source
@@ -198,7 +218,12 @@ module Config =
           StartupOverrides =
             { DefaultShell = None }
           SessionPersistence = SessionPersistence.defaultConfig
-          LoggingOverrides = { MinLevel = None } }
+          LoggingOverrides = { MinLevel = None }
+          SelectionOverrides =
+            { HighlightDetectionThresholdMs = None
+              DismissalGraceMs = None
+              KeystrokeCorrelationWindowMs = None
+              MinConfidence = None } }
 
     /// The default config file path —
     /// `%LOCALAPPDATA%\PtySpeak\config.toml`. Mirrors the
@@ -693,6 +718,81 @@ module Config =
                         None
             { MinLevel = minLevel }
 
+    /// Cycle 32a — parse `[profile.selection]` table for the
+    /// SelectionDetector tunable parameters. Recognised keys:
+    /// `highlight_detection_threshold_ms`, `dismissal_grace_ms`,
+    /// `keystroke_correlation_window_ms` (all positive integers,
+    /// milliseconds), and `min_confidence`
+    /// (`"heuristic_sgr"` | `"heuristic_sgr_with_keystroke"`,
+    /// case-insensitive). Unknown keys log + drop; non-positive
+    /// values log + fall back to defaults; unrecognised
+    /// `min_confidence` values log + fall back to default.
+    let private parseProfileSelectionOverrides
+            (logger: ILogger)
+            (root: TomlTable)
+            : SelectionParameterOverrides
+            =
+        match tryGetTable root "profile" with
+        | None -> defaultConfig.SelectionOverrides
+        | Some profileTable ->
+            match tryGetTable profileTable "selection" with
+            | None -> defaultConfig.SelectionOverrides
+            | Some selectionTable ->
+                let knownKeys =
+                    Set.ofList
+                        [ "highlight_detection_threshold_ms"
+                          "dismissal_grace_ms"
+                          "keystroke_correlation_window_ms"
+                          "min_confidence" ]
+                for key in selectionTable.Keys do
+                    if not (knownKeys.Contains(key)) then
+                        logger.LogWarning(
+                            "Config: [profile.selection] unknown key '{Key}'; ignored.",
+                            key)
+
+                let parsePositiveMs (key: string) : int option =
+                    match tryGetInt selectionTable key with
+                    | None ->
+                        if selectionTable.ContainsKey(key) then
+                            logger.LogWarning(
+                                "Config: [profile.selection] {Key} is non-integer; using default.",
+                                key)
+                        None
+                    | Some raw ->
+                        // Reuses the existing positive-int validator
+                        // (Config.fs:506) which logs "non-positive;
+                        // clamping to default" for raw <= 0 and
+                        // "exceeds Int32.MaxValue; clamping to default"
+                        // for overflow.
+                        parsePositiveInt logger "[profile.selection]" key raw
+
+                let parseMinConfidence () : SelectionDetector.SelectionSource option =
+                    match tryGetString selectionTable "min_confidence" with
+                    | None ->
+                        if selectionTable.ContainsKey("min_confidence") then
+                            logger.LogWarning(
+                                "Config: [profile.selection] min_confidence is non-string; using default.")
+                        None
+                    | Some raw ->
+                        match raw.Trim().ToLowerInvariant() with
+                        | "heuristic_sgr" ->
+                            Some SelectionDetector.HeuristicSGR
+                        | "heuristic_sgr_with_keystroke" ->
+                            Some SelectionDetector.HeuristicSGRWithKeystroke
+                        | _ ->
+                            logger.LogWarning(
+                                "Config: [profile.selection] min_confidence = '{Value}' is not 'heuristic_sgr' or 'heuristic_sgr_with_keystroke'; using default.",
+                                raw)
+                            None
+
+                { HighlightDetectionThresholdMs =
+                    parsePositiveMs "highlight_detection_threshold_ms"
+                  DismissalGraceMs =
+                    parsePositiveMs "dismissal_grace_ms"
+                  KeystrokeCorrelationWindowMs =
+                    parsePositiveMs "keystroke_correlation_window_ms"
+                  MinConfidence = parseMinConfidence () }
+
     /// Cycle 19 — resolve the startup-shell preference. Returns
     /// `Some shellKey` when `[startup] default_shell` was set
     /// to a recognised shell id; `None` otherwise (composition
@@ -819,13 +919,16 @@ module Config =
                             SessionPersistence.parseFromTable logger model
                         let loggingOverrides =
                             parseLoggingOverrides logger model
+                        let selectionOverrides =
+                            parseProfileSelectionOverrides logger model
                         let result =
                             { SchemaVersion = version
                               ShellOverrides = shellOverrides
                               StreamOverrides = streamOverrides
                               StartupOverrides = startupOverrides
                               SessionPersistence = sessionPersistence
-                              LoggingOverrides = loggingOverrides }
+                              LoggingOverrides = loggingOverrides
+                              SelectionOverrides = selectionOverrides }
                         // One Information line summarising the
                         // resolved config so post-hoc diagnosis
                         // via Ctrl+Shift+; is trivial. The
@@ -889,3 +992,27 @@ module Config =
             Option.defaultValue defaults.BackspacePolicy ov.BackspacePolicy
           ModeBarrierFlushPolicy =
             Option.defaultValue defaults.ModeBarrierFlushPolicy ov.ModeBarrierFlushPolicy }
+
+    /// Cycle 32a — resolve the SelectionDetector parameters from
+    /// a Config. Each field that's `None` in `SelectionOverrides`
+    /// falls back to `SelectionDetector.defaultParameters`'s
+    /// value. The composition root passes the result to
+    /// `SelectionDetector.create` once at startup; no hot-reload.
+    let resolveSelectionParameters
+            (config: Config)
+            : SelectionDetector.Parameters
+            =
+        let defaults = SelectionDetector.defaultParameters
+        let ov = config.SelectionOverrides
+        { HighlightDetectionThresholdMs =
+            Option.defaultValue
+                defaults.HighlightDetectionThresholdMs
+                ov.HighlightDetectionThresholdMs
+          DismissalGraceMs =
+            Option.defaultValue defaults.DismissalGraceMs ov.DismissalGraceMs
+          KeystrokeCorrelationWindowMs =
+            Option.defaultValue
+                defaults.KeystrokeCorrelationWindowMs
+                ov.KeystrokeCorrelationWindowMs
+          MinConfidence =
+            Option.defaultValue defaults.MinConfidence ov.MinConfidence }

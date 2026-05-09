@@ -1178,12 +1178,15 @@ module Program =
         // Cycle 29b — selection-prompt detector. Same actor-
         // model contract as `promptDetector`: mutated on the
         // PathwayPump worker thread, captured by closures that
-        // stay in this scope. Defaults loaded inline (Cycle 29c
-        // will load from `[profile.selection]` TOML). Reset on
-        // shell-switch + alt-screen entry alongside
-        // `promptDetector`.
+        // stay in this scope. Cycle 32a wires
+        // `[profile.selection]` TOML overrides via
+        // `Config.resolveSelectionParameters`; absent or
+        // empty section → `SelectionDetector.defaultParameters`
+        // verbatim. Reset on shell-switch + alt-screen entry
+        // alongside `promptDetector`.
         let mutable selectionDetector : SelectionDetector.T =
-            SelectionDetector.create SelectionDetector.defaultParameters
+            SelectionDetector.create
+                (Config.resolveSelectionParameters config)
 
         // PathwayPump — Phase A replacement for TranslatorPump.
         // Reads raw ScreenNotifications and routes by case:

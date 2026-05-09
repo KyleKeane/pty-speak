@@ -15,6 +15,68 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 32a): `[profile.selection]` TOML loader — closes Stage 8e-A scope
+
+The four `SelectionDetector` tunable thresholds (`HighlightDetectionThresholdMs`,
+`DismissalGraceMs`, `KeystrokeCorrelationWindowMs`, `MinConfidence`)
+are now overridable via a new `[profile.selection]` TOML section.
+The detector itself (`SelectionDetector.fs:128-148` `Parameters`
+record + `defaultParameters`, both shipped in Cycle 29a) is
+**unchanged** — Cycle 32a is pure Config-side plumbing. With
+this PR, **Stage 8e-A is fully shipped** (Cycle 29a substrate +
+Cycle 29b consumer-side wiring + Cycle 32a config plumbing);
+Stage 8e-B (UIA listbox peer) remains open as a separate plan-
+mode pass.
+
+- **`src/Terminal.Core/Config.fs`** — adds
+  `SelectionParameterOverrides` record (four `option`-typed
+  fields mirroring the detector's `Parameters` shape); appends
+  the field to the top-level `Config` record + `defaultConfig`;
+  adds `parseProfileSelectionOverrides` (mirrors
+  `parseLoggingOverrides` template) and `resolveSelectionParameters`
+  (mirrors `resolveStreamParameters` template) helpers; wires
+  the parser into `tryLoad`.
+- **`src/Terminal.App/Program.fs:1186`** — composition cutover:
+  `SelectionDetector.create SelectionDetector.defaultParameters`
+  becomes
+  `SelectionDetector.create (Config.resolveSelectionParameters config)`.
+  Three-line change.
+- **`tests/Tests.Unit/ConfigTests.fs`** — adds 6 new facts in a
+  new "Cycle 32a — `[profile.selection]` TOML loader" section
+  covering: section absent → `SelectionDetector.defaultParameters`;
+  all four keys present override; single key overrides + others
+  default; unrecognised `min_confidence` string logs Warning +
+  defaults; non-integer threshold logs Warning + defaults; non-
+  positive (zero / negative) threshold logs Warning + defaults.
+- **`docs/USER-SETTINGS.md`** — new "Selection prompt thresholds
+  and confidence modes (Cycle 32a)" subsection documenting the
+  four keys, their defaults, the snake_case TOML format
+  (`heuristic_sgr` / `heuristic_sgr_with_keystroke` for the enum
+  values), tuning use cases, and the no-hot-reload caveat.
+- **`docs/STAGE-7-ISSUES.md`** — `[output-selection]` "Status"
+  line flipped from "Cycle 29c finalises the substrate" to
+  "Stage 8e-A is fully shipped (Cycle 29a + 29b + 32a)".
+
+**No behaviour change** for users who do not add a
+`[profile.selection]` section to `config.toml` — `defaultConfig`'s
+`SelectionOverrides` field is `None` everywhere, so
+`resolveSelectionParameters` returns
+`SelectionDetector.defaultParameters` byte-equivalent.
+
+**No hot-reload.** `[profile.selection]` is loaded once at
+startup; mid-session `config.toml` edits require a restart.
+Matches every existing TOML section except
+`[session_model.persistence]` (which gets reloaded on shell-
+switch via `Program.fs:2488-2500`). Adding hot-reload would
+be a future micro-cycle.
+
+**Validation per `docs/STAGE-7-ISSUES.md` `[output-selection]`:**
+manual NVDA testing requires a Claude tool-use prompt that
+forces user confirmation — write a file in an untrusted
+directory to defeat Claude's auto-trust mode. The Cycle 29b
+NVDA matrix (in `docs/ACCESSIBILITY-TESTING.md`) is the
+authoritative test surface; Cycle 32a does not add a new row.
+
 ### Added (Cycle 31b): sibling boundary interface declarations — `IClipboardProvider`, `IHotkeyTranslator<'TGesture>`, `IDisplayBuffer`
 
 Three pure interface declarations completing the boundary set
