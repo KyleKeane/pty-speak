@@ -15,6 +15,72 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 27): Multi-state menu paradigm canon + EarconsMode/LoggingLevel migration + dropped Ctrl+Shift+M / Ctrl+Shift+G
+
+First architectural cycle after the Cycle 26 app-menu skeleton. Adds
+a new menu paradigm for operations whose UX is "select one of N
+discrete options" rather than "fire one action", and migrates the
+two existing single-action toggles whose semantics fit that shape.
+
+- **New `MultiStateCommand` DU + registry**
+  (`src/Terminal.Core/HotkeyRegistry.fs`). Parallel concept to
+  `AppCommand`; the existing `AppCommand` / `Hotkey` / `bindHotkey`
+  framework is unchanged and continues to be the path for
+  single-action commands. Each `MultiStateDef` declares an ordered
+  list of `MultiStateOption`s with a stable `OptionId` (snake_case;
+  used in XAML field names, `RoutedCommand` names, log lines, and
+  future TOML keys) and a user-facing `DisplayName`.
+- **`bindMultiState` helper + composition wiring**
+  (`src/Terminal.App/Program.fs`). Mirrors `bindHotkey`'s shape minus
+  the `KeyBinding` step (multi-state is menu-only by canon as of
+  Cycle 27). Each option gets its own `RoutedCommand`; the parent
+  `MenuItem`'s `SubmenuOpened` handler refreshes `IsChecked` on every
+  open by querying the bound `getCurrent` closure. Each option's
+  `MenuItem.IsCheckable=true` surfaces UIA TogglePattern that NVDA
+  reads as "menu item, checked" / "menu item, not checked", so a
+  screen-reader user can tell at a glance which option is currently
+  active.
+- **Migrated `EarconsMode`** (formerly `MuteEarcons` Ctrl+Shift+M).
+  Now lives under View → Earcons → Enabled / Muted. The
+  Ctrl+Shift+M keyboard accelerator is **dropped**; the gesture
+  flows through to the shell as plain text.
+- **Migrated `LoggingLevel`** (formerly `ToggleDebugLog`
+  Ctrl+Shift+G). Now lives under View → Logging Level →
+  Information / Debug. The Ctrl+Shift+G keyboard accelerator is
+  **dropped**; the gesture flows through to the shell as plain
+  text.
+- **Mirror parity preserved automatically**. F#-side
+  `HotkeyRegistry.builtIns` shed two entries; C#-side
+  `TerminalView.AppReservedHotkeys` shed the matching `Key.G` and
+  `Key.M` rows. The `AppReservedHotkeysMirrorTests` parity invariant
+  catches asymmetric edits at test time.
+- **`MainWindow.xaml`** — replaces the old single-action
+  `MenuItem_ToggleDebugLog` and `MenuItem_MuteEarcons` items with
+  parent + per-option pairs (`MenuItem_LoggingLevel` +
+  `_information`/`_debug`; `MenuItem_EarconsMode` +
+  `_enabled`/`_muted`).
+- **New `MultiStateRegistryTests.fs`** — pins the same shape
+  contracts that `HotkeyRegistryTests` pins for `AppCommand`:
+  exhaustive DU/`multiStateNameOf` round-trip; one `multiStateBuiltIns`
+  entry per command; ≥2 distinct options per `MultiStateDef`; OptionId
+  uniqueness within a `MultiStateDef`; pinned documented OptionIds for
+  both migrating commands.
+- **`HotkeyRegistryTests.fs`** — updated `allCommands` documented
+  set + `priorCommands` regression guard to reflect the two
+  removals; new `Ctrl+Shift+G is unbound` and `Ctrl+Shift+M is
+  unbound` fixtures pin the gestures' new "flows to shell" behaviour.
+- **Docs**: `docs/USER-SETTINGS.md` recipe for multi-state extension;
+  `docs/ACCESSIBILITY-TESTING.md` Cycle 27 NVDA matrix subsection;
+  `CLAUDE.md` hotkey list refresh; `docs/SESSION-HANDOFF.md` "Where
+  we left off" update; `docs/CHECKPOINTS.md` pending-tag entry for
+  `baseline/cycle-27-multistate-paradigm`.
+
+Future per-option keyboard accelerators (e.g. for a Shell-switch
+multi-state migration where `Ctrl+Shift+1`/`+2`/`+3` would each
+target a distinct option) are a clean extension to
+`MultiStateOption` if the maintainer needs them — not in scope for
+this cycle.
+
 ### Added (Cycle 26d): Cycle 26 NVDA matrix rows + How-to-add-a-menu-item recipe + Where-we-left-off refresh
 
 Final PR of Cycle 26 (the multi-PR app-menu mini-cycle). Doc-only;

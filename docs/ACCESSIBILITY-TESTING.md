@@ -712,7 +712,7 @@ The rows below verify each layer's user-facing contract.
 | Menu reachable via Alt; document role preserved (26a) | Launch pty-speak. NVDA should announce "pty-speak terminal {version}, document". Press Alt | NVDA announces the menu bar (typically "menu bar" or the first menu's name with role "menu"). Press Esc; NVDA returns focus and re-announces "document". The Cycle 26a `Loaded → TerminalSurface.Focus()` invariant is preserved (Menu does not steal focus on launch) |
 | InputGestureText reading (26b)    | Press Alt; arrow into Diagnostics; arrow to Health Check (or any hotkey-bearing item) | NVDA reads `<item name>, <gesture>` (e.g. "Health Check, Ctrl plus Shift plus H"). The `MenuItem.InputGestureText` is set from `HotkeyRegistry.gestureText` at compose time — gesture string matches the keyboard binding |
 | Menu invokes same handler as keyboard gesture (26b) | Press Alt; arrow to Diagnostics → Health Check; press Enter. Compare with pressing `Ctrl+Shift+H` directly | Both paths announce the same one-line health-check summary (shell + PID + alive + queue depth). Single-source-of-truth contract: menu and keyboard fire the same `RoutedCommand` |
-| All 14 keyboard hotkeys still fire (26b regression) | Without using the menu, press each of the 14 reserved hotkeys: `Ctrl+Shift+U/D/R/P/E/G/H/B/M/Y/S/1/2/3` | Each hotkey announces / acts as before Cycle 26. The `OnPreviewKeyDown` filter ordering invariant + `AppReservedHotkeys` mirror are unchanged; `AppReservedHotkeysMirrorTests.fs` pins this at test time |
+| All keyboard hotkeys still fire (26b regression; updated for Cycle 27) | Without using the menu, press each of the 12 remaining reserved hotkeys: `Ctrl+Shift+U/D/R/P/E/H/B/Y/S/1/2/3` (Cycle 27 dropped `+G` and `+M` — see Cycle 27 row "dropped hotkeys flow through" below) | Each remaining hotkey announces / acts as before. The `OnPreviewKeyDown` filter ordering invariant + `AppReservedHotkeys` mirror are unchanged; `AppReservedHotkeysMirrorTests.fs` pins this at test time |
 | Menu-only command launches script (26c) | Press Alt; arrow to Diagnostics → Test Process Cleanup; press Enter | NVDA announces "Launching process-cleanup test in a separate PowerShell window." A separate PowerShell window opens with `test-process-cleanup.ps1` running. Close pty-speak via Alt+F4 to see the script's PASS/FAIL output (the script verifies Job Object cascade-kill cleanup) |
 | Menu-only item omits InputGestureText (26c) | Focus Diagnostics → Test Process Cleanup via arrow keys | NVDA reads only the item name "Test Process Cleanup" — no gesture suffix. `gestureText` returns `None` for menu-only commands so `InputGestureText` is left blank |
 
@@ -761,6 +761,64 @@ in spirit (a missed update on either side fails CI immediately
 rather than at NVDA-test time). A future cycle may collapse the
 two surfaces into a single one if the maintainer wants — but
 that's a focused refactor, not Cycle 26's scope.
+
+### Cycle 27 — Multi-state menu items
+
+Cycle 27 establishes the multi-state menu paradigm and migrates
+`MuteEarcons` (Ctrl+Shift+M) → `EarconsMode` (View → Earcons →
+Enabled / Muted) and `ToggleDebugLog` (Ctrl+Shift+G) →
+`LoggingLevel` (View → Logging Level → Information / Debug).
+Both keyboard accelerators are dropped; both operations are now
+menu-only. Active option is indicated via WPF
+`MenuItem.IsCheckable=true` + `IsChecked` (refreshed on
+`SubmenuOpened` from each binding's `GetCurrent` closure),
+which surfaces UIA TogglePattern that NVDA reads as "menu
+item, checked" / "menu item, not checked".
+
+The rows below verify that NVDA correctly announces the
+checked-state on focus + that activating an option produces the
+expected behavioural side-effect.
+
+| Test                              | Procedure                                       | Expected behaviour                                               |
+|-----------------------------------|-------------------------------------------------|------------------------------------------------------------------|
+| Logging Level checked-state on focus (Cycle 27) | Launch pty-speak (FileLogger defaults to Information). Press Alt; arrow to View → Logging Level; arrow into the submenu | NVDA announces the FIRST sub-item as "Information, menu item, checked" (the active level). Arrow to Debug; NVDA announces "Debug, menu item, not checked". The checked-state matches the active level |
+| Logging Level activate Debug (Cycle 27) | Continue from above. With Debug focused, press Enter | NVDA announces "Debug logging on." (via `ActivityIds.logToggle`). Menu closes. Reopen Diagnostics → Run Diagnostic Battery and inspect the bundled FileLogger log section in the clipboard or `%LOCALAPPDATA%\PtySpeak\diagnostic-snapshots\…` — the next entries are at level `[DBG]` (debug) |
+| Logging Level state persists across submenu reopens (Cycle 27) | After activating Debug, press Alt; re-navigate to View → Logging Level → arrow into submenu | NVDA now announces "Information, menu item, not checked" then "Debug, menu item, checked" — the previously-activated option is the one with the checkmark. The `SubmenuOpened` handler refreshed `IsChecked` from `GetCurrent` |
+| Logging Level idempotent re-activate (Cycle 27) | With Debug already active and checked, navigate to Debug and press Enter again | No announcement, no log spam. The `setByName` closure no-ops when `current ≡ target`. (Conceptually: re-selecting the active option is a no-op; flapping the menu shouldn't flap the log) |
+| Earcons checked-state on focus (Cycle 27) | Launch pty-speak (earcons default to Enabled). Press Alt; arrow to View → Earcons; arrow into the submenu | NVDA announces the FIRST sub-item as "Enabled, menu item, checked". Arrow to Muted; NVDA announces "Muted, menu item, not checked" |
+| Earcons activate Muted silences earcons (Cycle 27) | Continue from above. With Muted focused, press Enter. Then trigger an earcon-emitting action (e.g. press `Ctrl+Shift+H` for the health-check earcon) | NVDA announces "Earcons muted." Menu closes. The subsequent health-check announcement plays via NVDA but the audio earcon does NOT play |
+| Earcons activate Enabled restores earcons (Cycle 27) | After muting, navigate to View → Earcons → Enabled; press Enter; trigger the earcon-emitting action again | NVDA announces "Earcons unmuted." The audio earcon plays |
+| Dropped hotkeys flow through to shell (Cycle 27 regression) | Without opening any menu, press `Ctrl+Shift+G` then `Ctrl+Shift+M` | Both gestures flow through as plain `g` / `m` characters to the spawned shell (visible at the cmd / PowerShell prompt). No app-level announcement, no state change. The `AppReservedHotkeys` filter no longer reserves these slots |
+
+**Diagnostic decoder for Cycle 27:**
+
+- **Sub-item NVDA-reads as "menu item" without "checked" /
+  "not checked"** → the per-option `MenuItem.IsCheckable` was
+  not set to `true`. Check the multi-state wiring loop in
+  `Program.fs compose ()` — the `childItem.IsCheckable <- true`
+  assignment must run before the `Command` assignment (the loop
+  does both inside the same match arm, so a regression here
+  would drop both).
+- **`IsChecked` stuck on the wrong option after activating
+  another** → the `SubmenuOpened` handler isn't firing or
+  `GetCurrent` is returning a stale value. Verify by adding a
+  temporary `log.LogDebug("SubmenuOpened: %s -> %s", cmdName,
+  binding.GetCurrent())` line at the top of the handler and
+  re-running the matrix; the log should land in the FileLogger
+  active log on every menu open.
+- **Menu activates the option but no announcement / no
+  side-effect** → the `setByName` closure was never wired
+  (per-option `RoutedCommand` not assigned to
+  `MenuItem.Command`). Check the multi-state wiring loop's
+  `binding.PerOptionCommand.TryGetValue(opt.OptionId)` branch —
+  if the OptionId in XAML doesn't match the OptionId in
+  `multiStateBuiltIns`, the command stays unassigned.
+- **Activating an unchecked option doesn't change `IsChecked`
+  immediately** → expected behaviour. `IsChecked` is refreshed
+  on the NEXT `SubmenuOpened`, not at the moment of activation.
+  The active-option visual state lags by one menu open. (Adding
+  immediate-update logic is possible but adds complexity for no
+  user-visible benefit since the menu has already closed.)
 
 ## Recording results
 

@@ -617,62 +617,61 @@ module Program =
     // `SetCopyLogToClipboardHandler` plumbing are deleted in the
     // same change.
 
-    /// Stage 7-followup PR-E — toggle the active `FileLoggerSink`'s
-    /// min-level between Information (default) and Debug, and
-    /// announce the new state via NVDA. Lets the maintainer enable
-    /// verbose debug logging from inside pty-speak without an
-    /// env-var dance + relaunch (the previous workflow). Each
-    /// press flips the level; the level is persistent for the
-    /// lifetime of the session, but does NOT survive across
-    /// launches (a future Phase-2 user-settings TOML can persist
-    /// it if desired).
-    ///
-    /// The toggle event itself logs at `Information` level so the
-    /// audit trail captures every transition regardless of which
-    /// state we just left (Information passes both filters).
-    /// Announcement uses `ActivityIds.logToggle` so users can
-    /// configure NVDA's notification processing for diagnostic-
-    /// config announcements separately from streaming output.
-    let private runToggleDebugLog (window: MainWindow) : unit =
-        match loggerSink with
-        | None ->
-            let log = Logger.get "Terminal.App.Program.runToggleDebugLog"
-            log.LogWarning(
-                "Ctrl+Shift+G pressed but loggerSink is None; toggle skipped.")
-            window.TerminalSurface.Announce(
-                "Logger not initialised; toggle skipped.",
-                ActivityIds.error)
-        | Some sink ->
-            let log = Logger.get "Terminal.App.Program.runToggleDebugLog"
-            let next =
-                if sink.MinLevel = LogLevel.Debug then LogLevel.Information
-                else LogLevel.Debug
-            sink.SetMinLevel(next)
-            log.LogInformation(
-                "Ctrl+Shift+G pressed; FileLogger min-level toggled to {NewLevel}.",
-                next)
-            let cue =
-                match next with
-                | LogLevel.Debug -> "Debug logging on."
-                | _ -> "Debug logging off."
-            window.TerminalSurface.Announce(cue, ActivityIds.logToggle)
+    // Cycle 27 — `runToggleDebugLog` and `runMuteEarcons` were
+    // removed alongside the migration of `ToggleDebugLog` and
+    // `MuteEarcons` from `AppCommand` to `MultiStateCommand`.
+    // Their behaviour now lives inline in the closures passed
+    // to `bindMultiState` for `LoggingLevel` and `EarconsMode`
+    // (further down in `compose ()`), and dispatch is per-option
+    // (`SetByName "debug"`, `SetByName "muted"`, etc.) rather
+    // than flip-toggle. Announcement still uses
+    // `ActivityIds.logToggle` so NVDA users' notification-
+    // processing configuration is unchanged.
 
-    /// Stage 8d.1 — Ctrl+Shift+M handler. Toggles the
-    /// process-wide earcon mute state via `EarconChannel.toggle`
-    /// and announces the new state via NVDA. Reuses
-    /// `ActivityIds.logToggle` for the announcement (same
-    /// semantic family — toggling a diagnostic-config setting,
-    /// like Ctrl+Shift+G's debug-logging toggle).
-    let private runMuteEarcons (window: MainWindow) : unit =
-        let log = Logger.get "Terminal.App.Program.runMuteEarcons"
-        let nowMuted = EarconChannel.toggle ()
-        log.LogInformation(
-            "Ctrl+Shift+M pressed; earcons toggled. NowMuted={NowMuted}",
-            nowMuted)
-        let cue =
-            if nowMuted then "Earcons muted."
-            else "Earcons unmuted."
-        window.TerminalSurface.Announce(cue, ActivityIds.logToggle)
+    /// Cycle 27 — capture for a multi-state command's compose-
+    /// time wiring. `GetCurrent` reports the active option's
+    /// `OptionId` (used by the parent's `SubmenuOpened` handler
+    /// to refresh `IsChecked` on every open). `SetByName`
+    /// activates the named option; per-option `RoutedCommand`
+    /// instances wire each option's MenuItem to a closure that
+    /// calls `SetByName <OptionId>`.
+    type private MultiStateBinding =
+        { GetCurrent: unit -> string
+          SetByName: string -> unit
+          PerOptionCommand:
+              System.Collections.Generic.Dictionary<string, RoutedCommand> }
+
+    /// Cycle 27 — register `RoutedCommand` + `CommandBinding`
+    /// for each option of a multi-state command. Mirrors
+    /// `bindHotkey`'s shape minus the `KeyBinding` step
+    /// (multi-state is menu-only by canon as of Cycle 27).
+    /// Returns a `MultiStateBinding` capturing `GetCurrent` /
+    /// `SetByName` (for the menu-wiring loop's
+    /// `SubmenuOpened` handler) and the per-option
+    /// `RoutedCommand` dictionary (for assigning each option's
+    /// `MenuItem.Command`).
+    let private bindMultiState
+            (window: MainWindow)
+            (def: HotkeyRegistry.MultiStateDef)
+            (getCurrent: unit -> string)
+            (setByName: string -> unit)
+            : MultiStateBinding =
+        let perOption =
+            System.Collections.Generic.Dictionary<string, RoutedCommand>()
+        let cmdName = HotkeyRegistry.multiStateNameOf def.Command
+        for opt in def.Options do
+            let routedName = sprintf "%s_%s" cmdName opt.OptionId
+            let routed = RoutedCommand(routedName, typeof<MainWindow>)
+            let optionId = opt.OptionId
+            window.CommandBindings.Add(
+                CommandBinding(
+                    routed,
+                    ExecutedRoutedEventHandler(fun _ _ -> setByName optionId)))
+            |> ignore
+            perOption.[optionId] <- routed
+        { GetCurrent = getCurrent
+          SetByName = setByName
+          PerOptionCommand = perOption }
 
     /// Composition seam — Stage 4+ plugs Elmish.WPF and the UIA peer
     /// in here. For Stage 3b we just hold references to the long-lived
@@ -742,8 +741,11 @@ module Program =
         bind HotkeyRegistry.DraftNewRelease (fun () -> runOpenNewRelease window)
         bind HotkeyRegistry.OpenDataFolder (fun () -> runOpenDataFolder window)
         bind HotkeyRegistry.OpenConfig (fun () -> runOpenConfig window)
-        bind HotkeyRegistry.ToggleDebugLog (fun () -> runToggleDebugLog window)
-        bind HotkeyRegistry.MuteEarcons (fun () -> runMuteEarcons window)
+        // Cycle 27 — `ToggleDebugLog` and `MuteEarcons` migrated
+        // to `MultiStateCommand` as `LoggingLevel` and
+        // `EarconsMode`. Their wiring lives in the
+        // `multiStateBindings` block further down (after the
+        // shell-switch binds).
         // Cycle 26c — first menu-only command. `bindHotkey`
         // skips the KeyBinding installation (no gesture) but
         // still creates the CommandBinding so the menu can
@@ -2514,6 +2516,83 @@ module Program =
         bind HotkeyRegistry.SwitchToPowerShell (fun () -> switchToShell ShellRegistry.PowerShell)
         bind HotkeyRegistry.SwitchToClaude (fun () -> switchToShell ShellRegistry.Claude)
 
+        // Cycle 27 — wire the multi-state commands. Each
+        // `bindMultiState` call registers per-option
+        // `RoutedCommand` + `CommandBinding` (so each option's
+        // MenuItem can dispatch via `MenuItem.Command`) and
+        // captures `getCurrent` / `setByName` closures over the
+        // backing state. The set-by-name closure is idempotent
+        // (no-op when current ≡ target) so a no-change menu
+        // selection logs once and announces once without flapping
+        // the underlying state.
+        //
+        // Both migrated handlers reuse `ActivityIds.logToggle`
+        // for announcements so NVDA users' notification-
+        // processing configuration is unchanged from the prior
+        // Ctrl+Shift+G / Ctrl+Shift+M era.
+        let multiStateBindings =
+            System.Collections.Generic.Dictionary<HotkeyRegistry.MultiStateCommand, MultiStateBinding>()
+
+        let earconsLog = Logger.get "Terminal.App.Program.bindMultiState.EarconsMode"
+        let earconsDef = HotkeyRegistry.multiStateOf HotkeyRegistry.EarconsMode
+        let earconsBinding =
+            bindMultiState
+                window
+                earconsDef
+                (fun () ->
+                    if EarconChannel.isMuted () then "muted" else "enabled")
+                (fun target ->
+                    let wantMuted = target = "muted"
+                    let isMuted = EarconChannel.isMuted ()
+                    if isMuted <> wantMuted then
+                        EarconChannel.toggle () |> ignore
+                        earconsLog.LogInformation(
+                            "EarconsMode set to {Target}. NowMuted={NowMuted}",
+                            target,
+                            wantMuted)
+                        let cue =
+                            if wantMuted then "Earcons muted."
+                            else "Earcons unmuted."
+                        window.TerminalSurface.Announce(cue, ActivityIds.logToggle))
+        multiStateBindings.[HotkeyRegistry.EarconsMode] <- earconsBinding
+
+        let loggingLog = Logger.get "Terminal.App.Program.bindMultiState.LoggingLevel"
+        let loggingDef = HotkeyRegistry.multiStateOf HotkeyRegistry.LoggingLevel
+        let loggingBinding =
+            bindMultiState
+                window
+                loggingDef
+                (fun () ->
+                    match loggerSink with
+                    | Some sink when sink.MinLevel = LogLevel.Debug -> "debug"
+                    | _ -> "information")
+                (fun target ->
+                    match loggerSink with
+                    | None ->
+                        loggingLog.LogWarning(
+                            "LoggingLevel set requested but loggerSink is None; skipped. Target={Target}",
+                            target)
+                        window.TerminalSurface.Announce(
+                            "Logger not initialised; level change skipped.",
+                            ActivityIds.error)
+                    | Some sink ->
+                        let next =
+                            match target with
+                            | "debug" -> LogLevel.Debug
+                            | _ -> LogLevel.Information
+                        if sink.MinLevel <> next then
+                            sink.SetMinLevel(next)
+                            loggingLog.LogInformation(
+                                "LoggingLevel set to {Target}. NewLevel={NewLevel}",
+                                target,
+                                next)
+                            let cue =
+                                match next with
+                                | LogLevel.Debug -> "Debug logging on."
+                                | _ -> "Debug logging off."
+                            window.TerminalSurface.Announce(cue, ActivityIds.logToggle))
+        multiStateBindings.[HotkeyRegistry.LoggingLevel] <- loggingBinding
+
         // Cycle 26b — wire the menu items. Walk the
         // `menuCommands` dictionary populated by the `bind`
         // wrapper above. For each entry, find the XAML-named
@@ -2545,6 +2624,68 @@ module Program =
                     HotkeyRegistry.gestureText (HotkeyRegistry.hotkeyOf kv.Key)
                     |> Option.iter (fun text ->
                         menuItem.InputGestureText <- text)
+                | _ -> ()
+
+        // Cycle 27 — wire the multi-state menu items. For each
+        // `MultiStateCommand` in `multiStateBindings`, find:
+        //   - The parent MenuItem `MenuItem_<cmdName>`. Hook
+        //     its `SubmenuOpened` event to refresh `IsChecked`
+        //     on every child whenever the user opens the
+        //     submenu (state is queried via `GetCurrent` then;
+        //     no observer-style subscription needed).
+        //   - Each child `MenuItem_<cmdName>_<optionId>`. Set
+        //     `IsCheckable=true` (so WPF surfaces UIA
+        //     TogglePattern that NVDA reads as
+        //     "checked"/"not checked") and assign its `Command`
+        //     to the per-option `RoutedCommand` from
+        //     `bindMultiState`.
+        //
+        // Reflection-driven for the same reason as the
+        // single-action wiring loop above — adding a new
+        // multi-state command is just (a) MultiStateCommand DU
+        // case + multiStateNameOf arm + multiStateBuiltIns row,
+        // (b) `bindMultiState` call in compose(), (c) parent +
+        // per-option MenuItems in XAML; the loop picks them up
+        // automatically.
+        for kv in multiStateBindings do
+            let cmd = kv.Key
+            let binding = kv.Value
+            let def = HotkeyRegistry.multiStateOf cmd
+            let cmdName = HotkeyRegistry.multiStateNameOf cmd
+            for opt in def.Options do
+                let childFieldName = sprintf "MenuItem_%s_%s" cmdName opt.OptionId
+                match windowType.GetField(childFieldName) with
+                | null ->
+                    // No XAML MenuItem with this name. Skip
+                    // silently — same forgiving behaviour as
+                    // the single-action loop above.
+                    ()
+                | childField ->
+                    match childField.GetValue(window) with
+                    | :? MenuItem as childItem ->
+                        childItem.IsCheckable <- true
+                        match binding.PerOptionCommand.TryGetValue(opt.OptionId) with
+                        | true, routed -> childItem.Command <- routed
+                        | false, _ -> ()
+                    | _ -> ()
+            let parentFieldName = sprintf "MenuItem_%s" cmdName
+            match windowType.GetField(parentFieldName) with
+            | null -> ()
+            | parentField ->
+                match parentField.GetValue(window) with
+                | :? MenuItem as parentItem ->
+                    parentItem.SubmenuOpened.Add(fun _ ->
+                        let currentId = binding.GetCurrent()
+                        for opt in def.Options do
+                            let childFieldName =
+                                sprintf "MenuItem_%s_%s" cmdName opt.OptionId
+                            match windowType.GetField(childFieldName) with
+                            | null -> ()
+                            | childField ->
+                                match childField.GetValue(window) with
+                                | :? MenuItem as childItem ->
+                                    childItem.IsChecked <- (opt.OptionId = currentId)
+                                | _ -> ())
                 | _ -> ()
 
         app.Exit.Add(fun _ ->

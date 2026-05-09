@@ -332,8 +332,6 @@ Currently shipped (orientation reference; spec section 6 is canonical):
 - `Ctrl+Shift+1` / `+2` / `+3` — hot-switch the spawned shell
   (`+1`=cmd / `+2`=PowerShell / `+3`=Claude; PR-J reordered to
   put PowerShell next to cmd as the diagnostic control shell)
-- `Ctrl+Shift+G` — toggle FileLogger min-level Information ↔ Debug
-  (PR-E)
 - `Ctrl+Shift+H` — health-check announce: shell + PID + alive,
   log level, reader staleness, queue depths (PR-F + PR-J liveness
   probe)
@@ -353,9 +351,16 @@ Currently shipped (orientation reference; spec section 6 is canonical):
   bundle's `--- SESSION LOG ---` section so a paste-back
   carries it without a separate keystroke).
 
+Multi-state menu items (Cycle 27 paradigm; menu-only, no
+keyboard accelerator):
+
+- View → Logging Level → Information / Debug — flips
+  FileLogger min-level (migrated from `Ctrl+Shift+G`).
+- View → Earcons → Enabled / Muted — toggles WASAPI earcons
+  (migrated from `Ctrl+Shift+M`).
+
 Reserved (not yet bound):
 
-- `Ctrl+Shift+M` — Stage 9 earcon mute
 - `Alt+Shift+R` — Stage 10 review-mode toggle
 - `Ctrl+Shift+4` / `+5` / `+6` — additional shells (WSL, Python
   REPL, etc.) per Phase 2 plans
