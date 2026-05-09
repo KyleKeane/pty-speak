@@ -97,6 +97,41 @@ jobs:
           path: releases/
           retention-days: 7
 
+  portability-lint:
+    name: Portability lint (substrate / channel boundary)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Cycle 31a (2026-05-09): enforces ADR 0001 substrate / channel
+    # dichotomy at CI gate. Substrate code in `Terminal.Core` and
+    # `Terminal.Audio` MUST NOT import host-specific types
+    # (`System.Windows.*`, `PresentationCore`, `WindowsBase`,
+    # `Microsoft.Win32`) — those belong on the channel side
+    # (`Terminal.Accessibility` and the host process).
+    #
+    # The grep is anchored on `^[[:space:]]*open[[:space:]]+`
+    # so doc-comment mentions of these namespaces (e.g.,
+    # `KeyEncoding.fs:11` "Why a private DU instead of WPF's
+    # `System.Windows.Input.Key`?") do NOT trigger the lint —
+    # only actual `open` declarations on Core code do.
+    #
+    # Verified against current `main`: returns zero matches
+    # (the substrate is currently clean per Phase 1 audit
+    # 2026-05-09).
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Substrate must not import host-specific types
+        run: |
+          set -e
+          violations=$(grep -rEn '^[[:space:]]*open[[:space:]]+(System\.Windows|PresentationCore|WindowsBase|Microsoft\.Win32)' src/Terminal.Core src/Terminal.Audio --include='*.fs' || true)
+          if [ -n "$violations" ]; then
+            echo "::error::Portability invariant violated. Substrate code (Terminal.Core / Terminal.Audio) must not import host-specific types per ADR 0001."
+            echo "$violations"
+            exit 1
+          fi
+          echo "Portability invariant held: no host-specific imports in substrate."
+
   workflow-lint:
     name: Workflow lint (actionlint)
     runs-on: ubuntu-latest

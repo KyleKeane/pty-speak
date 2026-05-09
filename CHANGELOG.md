@@ -15,6 +15,61 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 31a): `IOutputSink` boundary interface + portability CI lint
+
+First code cycle of the substrate / channel boundary work locked
+in Cycle 30. Promotes the existing `Channel` record (a record-of-
+functions used by the dispatcher) to satisfy a formally-typed
+`IOutputSink` interface. Adds a CI gate that fails the build if
+substrate code (`Terminal.Core` / `Terminal.Audio`) ever imports
+host-specific types per ADR 0001. **No user-visible behaviour
+change** — all three shipped channels (NvdaChannel, EarconChannel,
+FileLoggerChannel) continue to work identically; their factory
+signatures are unchanged; the composition root (`Program.fs:891-916`)
+is untouched.
+
+- **`src/Terminal.Core/OutputEventTypes.fs`** — declares the
+  `IOutputSink` interface (`Id: ChannelId`, `Send: OutputEvent →
+  RenderInstruction → unit`) just before the existing `Channel`
+  record. The `Channel` record gains an `interface IOutputSink
+  with` implementation that forwards both members to the
+  record's own fields. The interface lives in the same file
+  (rather than a separate `Channels/IOutputSink.fs`) for F#
+  compile-order reasons — `IOutputSink` references types defined
+  earlier in `OutputEventTypes.fs`, and the `Channel` record
+  must reference `IOutputSink` to implement it.
+- **`src/Terminal.Core/OutputDispatcher.fs:106-114`** —
+  `routePair` upcasts the resolved channel to `IOutputSink`
+  before invoking `Send`. Functionally identical for `Channel`-
+  record sinks (which trivially satisfy the interface);
+  establishes the contract for future producers (linear-text
+  substrate consumers in Cycle 34, future cross-platform
+  channel adapters) that implement `IOutputSink` directly
+  without being `Channel` records.
+- **`tests/Tests.Unit/IOutputSinkTests.fs`** (new) — 6 facts
+  pinning the interface contract: each shipped channel's
+  factory output coerces to `IOutputSink`; the coerced
+  interface preserves the empty-payload skip (Nvda) + non-
+  Earcon skip (Earcon) + structured-log emit (FileLogger);
+  the `Channel` record's interface impl forwards `Id` and
+  `Send` reflexively to the record's own fields.
+- **`.github/workflows/ci.yml`** — new `portability-lint` job
+  (ubuntu-latest, 5-minute timeout) that fails the build if
+  `grep -rEn '^[[:space:]]*open[[:space:]]+(System\.Windows|
+  PresentationCore|WindowsBase|Microsoft\.Win32)' src/Terminal.Core
+  src/Terminal.Audio --include='*.fs'` returns matches. Anchored
+  on `^[[:space:]]*open[[:space:]]+` so doc-comment mentions of
+  these namespaces (e.g., `KeyEncoding.fs:11`'s comment
+  explaining "Why a private DU instead of WPF's
+  `System.Windows.Input.Key`?") do NOT trigger the lint.
+  Verified clean on current `main`.
+
+Cycle 31b (next) lands the sibling boundary interfaces:
+`IClipboardProvider`, `IHotkeyTranslator`, `IDisplayBuffer` —
+all pure interface declarations with no consumer cutovers.
+First cutover (`IDisplayBuffer` at `TerminalView.cs:1002`) lands
+in Cycle 32b alongside the selection TOML loader.
+
 ### Docs (Cycle 30): substrate / channel boundary doc + ADR 0001 + PANE-MODEL refinement
 
 Doc-only foundation cycle landing the architectural framing

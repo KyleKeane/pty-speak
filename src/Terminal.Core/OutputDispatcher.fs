@@ -103,10 +103,21 @@ module OutputDispatcher =
     /// notification-processing decisions, and the Render for
     /// the actual emission. Decisions referencing an
     /// unregistered channel are silently dropped.
+    ///
+    /// Cycle 31a (2026-05-09): the channel is upcast to
+    /// `IOutputSink` at the call site so the dispatcher
+    /// consumes the formal boundary surface rather than the
+    /// record's stored field. Functionally identical for the
+    /// `Channel` record (which trivially satisfies the
+    /// interface); establishes the contract for future
+    /// producers that implement `IOutputSink` directly without
+    /// being `Channel` records.
     let private routePair (effectiveEvent: OutputEvent) (decisions: ChannelDecision[]) : unit =
         for decision in decisions do
             match ChannelRegistry.lookup decision.Channel with
-            | Some channel -> channel.Send effectiveEvent decision.Render
+            | Some channel ->
+                let sink = channel :> IOutputSink
+                sink.Send effectiveEvent decision.Render
             | None -> ()
 
     /// Event-tap registry — a list of `OutputEvent -> unit`

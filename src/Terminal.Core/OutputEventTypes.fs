@@ -330,15 +330,72 @@ module SelectionExtensions =
     [<Literal>]
     let Source = "selection.source"
 
+/// First-class boundary surface for output channels — the
+/// "channel" side of the substrate / channel dichotomy per
+/// `docs/CORE-ABSTRACTION-BOUNDARY.md` §3 + ADR 0001.
+///
+/// Cycle 31a (2026-05-09) promotes the existing `Channel`
+/// record-of-functions to a formally-typed interface. The
+/// `Channel` record below trivially satisfies this interface;
+/// future producers (linear-text-stream consumers in Cycle 34;
+/// future cross-platform channel adapters) can implement
+/// `IOutputSink` directly without going through the `Channel`
+/// record shape.
+///
+/// **Threading contract:** implementations are called
+/// synchronously from `OutputDispatcher.routePair`. Any host-
+/// thread marshalling (e.g., WPF `Dispatcher.Invoke` for NVDA)
+/// is the implementation's responsibility, embedded in its
+/// `Send` closure or interface body.
+///
+/// **Portability:** this interface lives in `Terminal.Core` —
+/// the substrate side of the boundary. Implementations may
+/// live in OS-specific assemblies (`Terminal.Accessibility`
+/// for UIA, `Terminal.Audio` for WASAPI, future
+/// `Terminal.Channels.AT-SPI` for Linux). The substrate-side
+/// portability invariant (`Terminal.Core` MUST NOT import
+/// host-specific types) is enforced by the
+/// `portability-lint` CI step added in this cycle.
+///
+/// **Co-location with `Channel` record (file placement note):**
+/// the original Cycle 31 plan sketched a separate
+/// `src/Terminal.Core/Channels/IOutputSink.fs` file. F# compile-
+/// order constraints make that placement awkward — `IOutputSink`
+/// references `OutputEvent`, `RenderInstruction`, and
+/// `ChannelId`, all of which are defined earlier in this file,
+/// and the `Channel` record below must reference `IOutputSink`
+/// to implement it. Co-locating in the same file resolves both
+/// constraints without introducing a precursor file split. The
+/// architectural intent is preserved: `IOutputSink` IS the
+/// boundary interface; `Channel` IS one implementation.
+type IOutputSink =
+    /// Stable identifier for dispatcher routing (e.g., `"nvda"`,
+    /// `"earcon"`, `"filelogger"`).
+    abstract Id: ChannelId
+
+    /// Render a `ChannelDecision` against this sink.
+    /// Synchronous; implementations that need async work
+    /// (audio playback, IPC) MUST queue and return immediately.
+    abstract Send: OutputEvent -> RenderInstruction -> unit
+
 /// A channel is an `OutputEvent` consumer. The `Send` callback
 /// is invoked by the dispatcher per `ChannelDecision`; it is
 /// responsible for any threading marshalling (e.g., the
 /// NvdaChannel's WPF dispatcher hop). Channels do NOT block
 /// the dispatcher — backpressure is handled internally per
 /// spec B.5.3.
+///
+/// Implements `IOutputSink` (Cycle 31a) — the dispatcher consumes
+/// channels through the interface; the record shape is preserved
+/// so factories (`NvdaChannel.create`, `EarconChannel.create`,
+/// `FileLoggerChannel.create`) and the composition root
+/// (`Program.fs:891-916`) continue unchanged.
 type Channel =
     { Id: ChannelId
       Send: OutputEvent -> RenderInstruction -> unit }
+    interface IOutputSink with
+        member this.Id = this.Id
+        member this.Send event render = this.Send event render
 
 /// A profile is a pure function with per-instance state. `Apply`
 /// is the per-event entry point; `Tick` is the time-driven flush
