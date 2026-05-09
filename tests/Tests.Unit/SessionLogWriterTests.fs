@@ -298,6 +298,22 @@ let ``createDefault treats empty / whitespace override as None`` () =
 // Cycle 24d-1 — EnqueueSync (audit-grade durability for Always mode)
 // ---------------------------------------------------------------------
 
+/// Read a file's content while the sink may still hold the
+/// file open. `File.ReadAllText` uses default `FileShare.Read`
+/// which conflicts with the sink's open `StreamWriter` (which
+/// holds the file with `FileShare.ReadWrite` to permit
+/// concurrent inspection). Use a matching `FileShare.ReadWrite`
+/// to coexist.
+let private readSharedReadWrite (path: string) : string =
+    use stream =
+        new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite)
+    use reader = new StreamReader(stream)
+    reader.ReadToEnd()
+
 [<Fact>]
 let ``EnqueueSync returns only after the tuple is on disk`` () =
     let dir = freshTempDir ()
@@ -308,8 +324,9 @@ let ``EnqueueSync returns only after the tuple is on disk`` () =
         // EnqueueSync's contract: when this method returns,
         // the tuple has been written + flushed to disk. Read
         // the file IMMEDIATELY after the return — no Dispose,
-        // no extra await.
-        let content = File.ReadAllText(path)
+        // no extra await. The read uses FileShare.ReadWrite
+        // because the sink's writer is still open.
+        let content = readSharedReadWrite path
         Assert.True(content.Length > 0,
             "File should contain the tuple after EnqueueSync returns.")
         // Trailing '\n' stripped before parsing as JSON.
