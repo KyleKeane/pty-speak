@@ -403,13 +403,16 @@ public class TerminalView : FrameworkElement
             //                 arrow-key step).
             //   Ctrl+Shift+E: edit config.toml (auto-creates
             //                 with defaults if missing).
-            //   Ctrl+Shift+T: placeholder for the Cycle 25b
-            //                 test-matrix runner.
             //   Ctrl+Shift+; vacated entirely (no alias).
+            // Cycle 25b: removed Ctrl+Shift+T placeholder. The
+            // diagnostic suite folded into Ctrl+Shift+D (Cycle 25b
+            // bundles FileLogger log + config + env into a dated
+            // snapshot file + clipboard); the interactive
+            // process-cleanup test moves to a future app menu
+            // rather than a hotkey.
             (Key.L, ModifierKeys.Control | ModifierKeys.Shift, "Copy active log to clipboard"),
             (Key.P, ModifierKeys.Control | ModifierKeys.Shift, "Open pty-speak data folder"),
             (Key.E, ModifierKeys.Control | ModifierKeys.Shift, "Edit config.toml"),
-            (Key.T, ModifierKeys.Control | ModifierKeys.Shift, "Run NVDA-matrix test runner"),
 
             // Stage 7 PR-C — hot-switch the spawned shell mid-session.
             // PR-J (2026-05-03) reordered the slots and added

@@ -523,22 +523,6 @@ module Program =
             }
         ()
 
-    /// Cycle 25a — placeholder for the test-runner hotkey.
-    /// PR 25b replaces this with the FlaUI-driver launcher.
-    /// Until then, pressing `Ctrl+Shift+T` announces that the
-    /// runner isn't yet implemented (rather than silently
-    /// no-op-ing, which would be confusing — the binding is
-    /// reachable via the routed-command surface and the user
-    /// has every reason to think pressing it should do
-    /// something).
-    let private runRunTestMatrix (window: MainWindow) : unit =
-        let log = Logger.get "Terminal.App.Program.runRunTestMatrix"
-        log.LogInformation(
-            "Ctrl+Shift+T pressed — test-matrix runner not yet implemented (Cycle 25b).")
-        window.TerminalSurface.Announce(
-            "Test matrix runner not yet implemented; ships in Cycle 25b.",
-            ActivityIds.runTestMatrix)
-
     /// Copy the active session's log file content to the
     /// system clipboard so the maintainer can paste it into a
     /// bug report without navigating File Explorer. Triggered
@@ -817,7 +801,6 @@ module Program =
         bindHotkey window HotkeyRegistry.CopyLatestLog (fun () -> runCopyLatestLog window)
         bindHotkey window HotkeyRegistry.ToggleDebugLog (fun () -> runToggleDebugLog window)
         bindHotkey window HotkeyRegistry.MuteEarcons (fun () -> runMuteEarcons window)
-        bindHotkey window HotkeyRegistry.RunTestMatrix (fun () -> runRunTestMatrix window)
 
         // Direct dispatch via TerminalView.OnPreviewKeyDown is
         // kept as a defence-in-depth path because Window-level
@@ -1944,6 +1927,18 @@ module Program =
                         currentSession
                         promptDetector
                         activePathway.Id)
+                // Cycle 25b — snapshot-bundle path resolver. The
+                // diagnostic battery now includes the FileLogger
+                // active log slice in its dump-and-clipboard
+                // bundle so a paste-back to triage chat carries
+                // Cycle 24f / 24g `Config:` parse messages, the
+                // heartbeat trail, and any error-path log lines
+                // alongside the battery's own output. Resolves at
+                // press-time because `loggerSink` is a module-
+                // level mutable that compose () sets after this
+                // closure is captured.
+                (fun () ->
+                    loggerSink |> Option.map (fun s -> s.ActiveLogPath))
 
         // Cycle 22b — Ctrl+Shift+Y. Closure captures
         // `currentSession` from compose-local scope. Resolves

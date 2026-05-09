@@ -76,10 +76,7 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               // Cycle 22b — copy SessionModel history to clipboard.
               HotkeyRegistry.CopyHistoryToClipboard
               // Cycle 24e — announce session-log file path.
-              HotkeyRegistry.AnnounceSessionLogPath
-              // Cycle 25b — automated test runner (placeholder
-              // handler in 25a; full implementation in 25b).
-              HotkeyRegistry.RunTestMatrix ]
+              HotkeyRegistry.AnnounceSessionLogPath ]
     let actual = Set.ofList HotkeyRegistry.allCommands
     Assert.Equal<Set<HotkeyRegistry.AppCommand>>(expected, actual)
 
@@ -208,12 +205,14 @@ let ``OpenConfig is bound to Ctrl+Shift+E (Cycle 25a)`` () =
         hk.Modifiers)
 
 [<Fact>]
-let ``RunTestMatrix is bound to Ctrl+Shift+T (Cycle 25b)`` () =
-    let hk = HotkeyRegistry.hotkeyOf HotkeyRegistry.RunTestMatrix
-    Assert.Equal(HotkeyRegistry.Letter 'T', hk.Key)
-    Assert.Equal<Set<HotkeyRegistry.Modifier>>(
-        Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ],
-        hk.Modifiers)
+let ``Ctrl+Shift+T is unbound (Cycle 25b removed RunTestMatrix placeholder)`` () =
+    // Cycle 25b — the RunTestMatrix placeholder shipped in 25a is
+    // removed. The diagnostic suite folds into Ctrl+Shift+D rather
+    // than splitting across two hotkeys; the interactive cleanup
+    // test (which required user input) moves to a future app menu.
+    let modifiers = Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ]
+    let result = HotkeyRegistry.tryFind (HotkeyRegistry.Letter 'T') modifiers
+    Assert.Equal(None, result)
 
 [<Fact>]
 let ``Ctrl+Shift+; is unbound (Cycle 25a vacated)`` () =

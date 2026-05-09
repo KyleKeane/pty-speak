@@ -15,6 +15,53 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 25b-1): Ctrl+Shift+D bundles diagnostic dump + Ctrl+Shift+T placeholder removed
+
+`Ctrl+Shift+D` (autonomous diagnostic battery) now writes a
+combined diagnostic-dump bundle into a dated snapshot file at
+`%LOCALAPPDATA%\PtySpeak\diagnostic-snapshots\snapshot-<yyyy-MM-dd-HH-mm-ss-fff>.txt`
+**and** copies the bundle to clipboard (instead of just the
+diagnostic-battery log). The bundle includes:
+
+- The diagnostic-battery log (existing per-shell command results,
+  earcon replay outcome, T0 process snapshot, SessionModel
+  substrate state).
+- The active FileLogger log slice (carries Cycle 24f / 24g
+  `Config:` parse messages, the runtime heartbeat trail, and
+  any error-path log lines).
+- The literal `config.toml` content (or "(file not present)").
+- The current process environment with deny-list redaction
+  (`*_TOKEN`, `*_SECRET`, `*_KEY`, `*_PASSWORD`, `*_PASSWD` —
+  values redacted to `<redacted by suite>`; `ANTHROPIC_API_KEY`
+  exempted; names always shown verbatim).
+- A header with capture timestamp, pty-speak version, OS, .NET
+  runtime, process ID.
+
+Format is plain text with `--- SECTION ---` markers between
+sections so future replay tools can index content by section.
+Designed for one-keystroke paste-back to triage chat: the bundle
+carries everything the maintainer needs to triage a Cycle 24
+matrix-row failure or a runtime regression in one block.
+
+`Ctrl+Shift+T` (the `RunTestMatrix` placeholder shipped in 25a)
+is removed entirely — the `AppCommand` DU case, the `nameOf` arm,
+the `builtIns` row, the C#-side `AppReservedHotkeys` row, the
+`runTestMatrix` `ActivityId`, and the `runRunTestMatrix`
+placeholder handler in `Program.fs`. The diagnostic suite folds
+into `Ctrl+Shift+D` rather than splitting across two hotkeys per
+the maintainer's "everything that can be automated goes into D"
+directive. The interactive `test-process-cleanup.ps1` (which
+requires the maintainer to physically close pty-speak via Alt+F4
+/ X-button) stays in the repo but is invoked manually from
+PowerShell rather than hotkey-launched; a future cycle's app
+menu will surface it.
+
+The Cycle 25b plan originally bundled this with a UIA-driven
+FlaUI test runner; the dump-bundle half ships first (this PR)
+and the FlaUI runner lands as a separate PR (25b-2) so the
+maintainer can validate the bundle format before committing to
+the larger E2E test infrastructure.
+
 ### Added (Cycle 25a): hotkey reorg + open-config + reload-on-shell-switch + [logging] TOML
 
 Operational ergonomics bundle landed in response to the friction

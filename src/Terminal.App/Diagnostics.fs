@@ -751,14 +751,192 @@ module Diagnostics =
     /// Same parent folder as regular `pty-speak-*.log` files so
     /// `Ctrl+Shift+L` opens the right area; the
     /// `diagnostic-` prefix is what distinguishes them.
-    let private resolveDiagnosticLogPath () : string =
-        let now = DateTimeOffset.UtcNow.UtcDateTime
+    /// Cycle 25b: takes `now` so the diagnostic-log file and the
+    /// snapshot bundle file share an identical stamp for
+    /// cross-referencing.
+    let private resolveDiagnosticLogPath (now: DateTime) : string =
         let root =
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
         let dayFolder = now.ToString("yyyy-MM-dd")
         let stamp = now.ToString("yyyy-MM-dd-HH-mm-ss-fff")
         let dir = Path.Combine(root, "PtySpeak", "logs", dayFolder)
         Path.Combine(dir, sprintf "diagnostic-%s.log" stamp)
+
+    /// Cycle 25b — paired snapshot-bundle path. Lives under
+    /// `%LOCALAPPDATA%\PtySpeak\diagnostic-snapshots\` (a flat
+    /// folder; one file per Ctrl+Shift+D press, named with the
+    /// same stamp as the diagnostic-log file from that run so
+    /// future cross-referencing is mechanical). Plain `.txt` so
+    /// the maintainer can paste the contents back into a triage
+    /// chat or open in any text viewer.
+    let private resolveSnapshotPath (now: DateTime) : string =
+        let root =
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
+        let stamp = now.ToString("yyyy-MM-dd-HH-mm-ss-fff")
+        let dir = Path.Combine(root, "PtySpeak", "diagnostic-snapshots")
+        Path.Combine(dir, sprintf "snapshot-%s.txt" stamp)
+
+    // ---------------------------------------------------------------
+    // Cycle 25b — diagnostic-dump bundle
+    // ---------------------------------------------------------------
+
+    /// Read a file's content with FileShare.ReadWrite. Used for
+    /// the active FileLogger log (which the running app is still
+    /// writing to) and for config.toml. Returns a parenthesised
+    /// note when the file is missing or unreadable rather than
+    /// throwing — the bundle should always include something for
+    /// each section so the maintainer can see "config not
+    /// present" vs "config read failed".
+    let private readFileSafe (path: string) : string =
+        try
+            if not (File.Exists path) then
+                sprintf "(file not present: %s)" path
+            else
+                use stream =
+                    new FileStream(
+                        path, FileMode.Open, FileAccess.Read,
+                        FileShare.ReadWrite)
+                use reader = new StreamReader(stream, Encoding.UTF8)
+                reader.ReadToEnd()
+        with ex ->
+            sprintf "(read failed: %s)" ex.Message
+
+    /// Env-var deny-list mirroring `SessionSanitiser`'s pattern
+    /// for value-redaction in session logs (`*_TOKEN`, `*_SECRET`,
+    /// `*_KEY`, `*_PASSWORD`, `*_PASSWD`). `ANTHROPIC_API_KEY` is
+    /// exempted: the maintainer's Claude-shell triage flow needs
+    /// to confirm it's actually set in the spawned-app environment
+    /// when debugging "claude.exe spawned but immediately
+    /// errored", and the maintainer routinely shares the dump
+    /// content back to triage conversations where the value is
+    /// expected to be visible. Names always appear verbatim — the
+    /// SET of configured variables is itself useful diagnostic
+    /// info (e.g. spotting a missing `PATH` entry that broke a
+    /// shell launch).
+    let private isSensitiveEnvName (name: string) : bool =
+        if String.IsNullOrEmpty name then false
+        elif String.Equals(name, "ANTHROPIC_API_KEY", StringComparison.OrdinalIgnoreCase) then false
+        else
+            let upper = name.ToUpperInvariant()
+            upper.EndsWith("_TOKEN")
+            || upper.EndsWith("_SECRET")
+            || upper.EndsWith("_KEY")
+            || upper.EndsWith("_PASSWORD")
+            || upper.EndsWith("_PASSWD")
+
+    /// Snapshot the current process environment, sorted by name,
+    /// with sensitive values redacted. Format: one `NAME=value`
+    /// line per variable.
+    let private formatEnvironmentRedacted () : string =
+        let table = Environment.GetEnvironmentVariables()
+        let names = ResizeArray<string>()
+        for entry in table do
+            let de = entry :?> System.Collections.DictionaryEntry
+            match de.Key with
+            | :? string as k -> names.Add(k)
+            | _ -> ()
+        names.Sort()
+        let sb = StringBuilder()
+        for name in names do
+            let value =
+                match table.[name] with
+                | :? string as s -> s
+                | null -> ""
+                | other -> string other
+            let displayValue =
+                if isSensitiveEnvName name then "<redacted by suite>"
+                else value
+            sb.AppendLine(sprintf "%s=%s" name displayValue) |> ignore
+        sb.ToString()
+
+    /// Assemble the combined diagnostic dump bundle. Plain text
+    /// with `--- SECTION ---` markers between sections; format
+    /// is intentionally stable so future replay tools can index
+    /// content by section header. The diagnostic-battery log
+    /// (already gathered by `runFullBattery`) plus the active
+    /// FileLogger log slice (which carries Cycle 24f / 24g
+    /// `Config:` parse messages and the runtime heartbeat trail)
+    /// plus the literal config.toml plus a redacted env snapshot.
+    let private formatDiagnosticBundle
+            (now: DateTime)
+            (batteryLogPath: string)
+            (batteryLogContent: string)
+            (fileLoggerLogPath: string option)
+            (configPath: string)
+            : string =
+        let sb = StringBuilder()
+        let appendLine (s: string) = sb.AppendLine(s) |> ignore
+        let separator = "========================================================="
+        appendLine separator
+        appendLine "pty-speak diagnostic snapshot (Cycle 25b)"
+        appendLine (sprintf "Captured: %s UTC" (now.ToString("yyyy-MM-dd HH:mm:ss")))
+        let version =
+            try
+                let asm = System.Reflection.Assembly.GetExecutingAssembly()
+                let v = asm.GetName().Version
+                if isNull v then "unknown" else string v
+            with _ -> "unknown"
+        appendLine (sprintf "Version: %s" version)
+        appendLine (sprintf "OS: %s" (Environment.OSVersion.VersionString))
+        appendLine (sprintf ".NET: %s" (Environment.Version.ToString()))
+        appendLine (sprintf "Process ID: %d" (System.Diagnostics.Process.GetCurrentProcess().Id))
+        appendLine separator
+        appendLine ""
+
+        appendLine "--- DIAGNOSTIC BATTERY LOG ---"
+        appendLine (sprintf "(source: %s)" batteryLogPath)
+        appendLine batteryLogContent
+        appendLine ""
+
+        appendLine "--- FILELOGGER ACTIVE LOG ---"
+        match fileLoggerLogPath with
+        | Some path ->
+            appendLine (sprintf "(source: %s)" path)
+            appendLine (readFileSafe path)
+        | None ->
+            appendLine "(FileLogger not configured)"
+        appendLine ""
+
+        appendLine "--- CONFIG.TOML ---"
+        appendLine (sprintf "(source: %s)" configPath)
+        appendLine (readFileSafe configPath)
+        appendLine ""
+
+        appendLine "--- ENVIRONMENT (deny-listed values redacted) ---"
+        appendLine (formatEnvironmentRedacted ())
+        appendLine ""
+
+        appendLine "--- END OF SNAPSHOT ---"
+        sb.ToString()
+
+    /// Write the bundle text to disk. Creates the parent dir if
+    /// missing. Returns the path written, or `None` on failure
+    /// (the caller still has the bundle in memory for clipboard
+    /// fallback). Never throws.
+    let private writeSnapshotFile
+            (log: ILogger)
+            (path: string)
+            (content: string)
+            : string option =
+        try
+            // F# 9 nullness: Path.GetDirectoryName returns
+            // `string | null` (the F# 9 annotation marks every
+            // System.IO API that can legitimately return null).
+            // Narrow via pattern match so the non-null arm
+            // type-checks against Directory.CreateDirectory's
+            // non-nullable signature.
+            match Path.GetDirectoryName(path) with
+            | null -> ()
+            | "" -> ()
+            | dir -> Directory.CreateDirectory(dir) |> ignore
+            File.WriteAllText(path, content, Encoding.UTF8)
+            Some path
+        with ex ->
+            log.LogWarning(
+                ex,
+                "Diagnostic snapshot file write failed at {Path}: {Message}",
+                path, ex.Message)
+            None
 
     // ---------------------------------------------------------------
     // Main entry — runFullBattery
@@ -778,12 +956,18 @@ module Diagnostics =
             (resolveShell: unit -> ShellRegistry.Shell)
             (resolveSeq: unit -> int64)
             (resolveSessionSnapshot: unit -> SessionModelSnapshot)
+            (resolveFileLoggerLogPath: unit -> string option)
             : unit =
         let log = Logger.get "Terminal.App.Diagnostics.runFullBattery"
         let _ =
             task {
                 try
-                    let logPath = resolveDiagnosticLogPath ()
+                    // Cycle 25b — single timestamp drives the
+                    // diagnostic-battery log filename AND the
+                    // paired snapshot bundle filename so the two
+                    // are mechanically cross-referenceable.
+                    let now = DateTimeOffset.UtcNow.UtcDateTime
+                    let logPath = resolveDiagnosticLogPath now
                     use writer = new DiagnosticLogWriter(logPath)
                     let cat = "Diagnostic.Init"
                     let shell = resolveShell ()
@@ -919,21 +1103,50 @@ module Diagnostics =
                                 "Diagnostic complete. %d of %d passed.%s"
                                 pass total
                                 substrateFragment
-                    if String.IsNullOrEmpty content then
-                        let msg = sprintf "%s Could not read diagnostic log." summaryLine
+                    // Cycle 25b — assemble the combined dump
+                    // bundle: diagnostic-battery log + FileLogger
+                    // active log + config.toml + redacted env.
+                    // Write to the dated snapshot folder; clipboard
+                    // payload is the BUNDLE (not just the
+                    // diagnostic-battery log) so a paste-back to
+                    // triage chat carries everything in one block.
+                    let configPath = Config.defaultConfigFilePath ()
+                    let fileLoggerLogPath = resolveFileLoggerLogPath ()
+                    let snapshotPath = resolveSnapshotPath now
+                    let bundle =
+                        formatDiagnosticBundle
+                            now
+                            logPath
+                            content
+                            fileLoggerLogPath
+                            configPath
+                    let writtenPath = writeSnapshotFile log snapshotPath bundle
+                    let savedFragment =
+                        match writtenPath with
+                        | Some p -> sprintf " Snapshot saved to %s." p
+                        | None -> " Snapshot file write failed; clipboard still has the bundle."
+                    let! copied = copyToClipboardSta log bundle
+                    if copied then
+                        let msg =
+                            sprintf
+                                "%s Diagnostic snapshot bundle copied to clipboard.%s"
+                                summaryLine
+                                savedFragment
                         do! announce msg
                     else
-                        let! copied = copyToClipboardSta log content
-                        if copied then
-                            let msg = sprintf "%s Diagnostic log copied to clipboard." summaryLine
-                            do! announce msg
-                        else
-                            let msg =
+                        let msg =
+                            match writtenPath with
+                            | Some p ->
                                 sprintf
-                                    "%s Clipboard copy failed; diagnostic log at %s."
+                                    "%s Clipboard copy failed; snapshot saved to %s."
+                                    summaryLine
+                                    p
+                            | None ->
+                                sprintf
+                                    "%s Clipboard copy and snapshot write both failed; diagnostic log at %s."
                                     summaryLine
                                     logPath
-                            do! announce msg
+                        do! announce msg
                 with ex ->
                     log.LogError(
                         ex,

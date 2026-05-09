@@ -1,5 +1,16 @@
 # Process-cleanup baseline test for pty-speak.
 #
+# As of Cycle 25b this script is invoked manually rather than
+# from a hotkey. Ctrl+Shift+D now runs the autonomous diagnostic
+# battery + bundles the dump (FileLogger log + config + env)
+# into a dated snapshot file under `%LOCALAPPDATA%\PtySpeak\
+# diagnostic-snapshots\` plus the clipboard. This script
+# (which requires the maintainer to physically close pty-speak
+# via Alt+F4 / X-button) is the interactive complement: run it
+# manually when triaging Job Object cascade-kill regressions.
+# A future cycle's app menu will surface it; until then, run
+# directly from PowerShell as documented below.
+#
 # Run from PowerShell. The script:
 #   1. Locates the installed pty-speak under %LocalAppData%\pty-speak\.
 #   2. For each close method (Alt+F4 then X button):
