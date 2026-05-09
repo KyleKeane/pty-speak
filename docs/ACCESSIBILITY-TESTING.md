@@ -820,6 +820,44 @@ expected behavioural side-effect.
   immediate-update logic is possible but adds complexity for no
   user-visible benefit since the menu has already closed.)
 
+### Cycle 28 — Window menu
+
+Cycle 28 adds the top-level `Window` menu with two children:
+`Close Window` and `Exit`. Both are menu-only AppCommands;
+neither has a keyboard accelerator registered with
+`AppReservedHotkeys`. `Close Window`'s
+`InputGestureText="Alt+F4"` is hardcoded in XAML for visual
+display since the OS-level Alt+F4 is handled by WPF Window
+natively.
+
+| Test                              | Procedure                                       | Expected behaviour                                               |
+|-----------------------------------|-------------------------------------------------|------------------------------------------------------------------|
+| Window menu reachable via Alt (Cycle 28) | Press Alt; arrow to Window | NVDA announces the Window menu (sits between Diagnostics and Help) |
+| Close Window reads Alt+F4 gesture (Cycle 28) | Press Alt; arrow to Window → Close Window | NVDA announces "Close Window, Alt plus F4, menu item". The gesture string is hardcoded in XAML; pressing Enter calls `Window.Close()` |
+| Close Window from menu closes app (Cycle 28) | With Close Window focused, press Enter | The window closes; the `app.Exit` cleanup pipeline runs (logger flush, sessionLogWriter dispose, hostHandle dispose, etc.). FileLogger active log shows `[INF] [Terminal.App.Program.runCloseWindow] Window menu Close Window invoked.` and `[INF] [Terminal.App.Program] pty-speak exiting.` |
+| Alt+F4 still closes the window directly (Cycle 28 regression) | Without using the menu, press Alt+F4 | The window closes via the OS gesture handled by WPF Window natively. Same `app.Exit` chain runs. Verify no `runCloseWindow` log entry (the OS gesture bypasses the menu handler) |
+| Exit from menu shuts down app (Cycle 28) | Press Alt; arrow to Window → Exit; press Enter | The window closes; `app.Exit` chain runs identical to Close Window. FileLogger shows `[INF] [Terminal.App.Program.runExitApp] Window menu Exit invoked.` |
+
+**Diagnostic decoder for Cycle 28:**
+
+- **Window menu missing from the menu bar** → check that the
+  XAML `<MenuItem Header="_Window">` was preserved in
+  `MainWindow.xaml`; the reflection-driven menu wiring loop is
+  forgiving (skips missing fields silently), so a missing parent
+  shows as no menu rather than a runtime error.
+- **Close Window's Alt+F4 gesture text not announced** →
+  `InputGestureText="Alt+F4"` in XAML was overwritten or removed.
+  The Cycle 26b wiring loop only writes `InputGestureText` when
+  `gestureText` returns `Some`; for menu-only commands (`None`)
+  the hardcoded XAML value survives.
+- **Close Window menu item fires but the Alt+F4 keyboard
+  gesture doesn't** → the OS gesture is handled by WPF Window
+  natively, NOT via `AppReservedHotkeys`. If Alt+F4 stops
+  working, check whether something in `OnPreviewKeyDown`
+  intercepted it. The Cycle 28 PR added no new
+  `AppReservedHotkeys` rows; existing behaviour should be
+  unchanged.
+
 ## Recording results
 
 For each release tag:

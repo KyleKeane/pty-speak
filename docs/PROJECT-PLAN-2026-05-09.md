@@ -25,6 +25,49 @@ substantial shift happens... a further successor lands; this
 revision gets preserved in the same way"), this is a separate
 dated doc. The preceding revision is preserved verbatim.
 
+## Status update 2026-05-09 (post Cycle 27 closure)
+
+**This document was written at Cycle 25d closure** (initial spawn
+of the dated successor) and pointed "Cycle 26: App menu (NEXT)"
+in the Sequencing section. As of 2026-05-09 evening, **Cycles
+26 (app menu) and 27 (multi-state menu paradigm) have both
+shipped end-to-end on `main`** (PRs #225–#229). Cycle 28 (the
+Window menu + foundation cleanup PR carrying this update) ships
+alongside.
+
+**What Cycles 26 + 27 actually delivered vs. the sketch in
+"Next stage" below:**
+
+- ✅ Cycle 26 shipped as a 4-PR mini-cycle (26a/b/c/d) rather
+  than the 3-5 sketched. The hotkey-source-of-truth question
+  was resolved as "parallel surface" — `TerminalView.AppReservedHotkeys`
+  stays as the C#-side hot-path mirror, and a new
+  `AppReservedHotkeysMirrorTests.fs` pins the F#/C# parity
+  invariant at test time. ADR-style note in
+  `docs/ACCESSIBILITY-TESTING.md` Cycle 26 section.
+- ✅ Cycle 26b option-typed `Hotkey.Key`/`Modifiers` so a
+  command can be `(None, None)` → menu-only. Cycle 26c shipped
+  the first menu-only command (`RunProcessCleanupScript`, the
+  interactive `test-process-cleanup.ps1` launcher). Cycle 28
+  added `CloseWindow` + `ExitApp`, the second + third
+  menu-only commands.
+- ✅ Cycle 27 introduced the **multi-state menu paradigm** (a
+  parallel `MultiStateCommand` DU + `bindMultiState` helper)
+  and migrated `MuteEarcons`/`ToggleDebugLog` to it. Both
+  keyboard accelerators (`Ctrl+Shift+M`, `Ctrl+Shift+G`) were
+  dropped as part of the migration — further reducing the
+  hotkey-count working-memory ceiling that motivated Cycle 26.
+
+**Next strategic stage** is the **Output framework cycle (Part 3)**
+per the original sequencing — see updated "Sequencing" section
+below. The framework cycle's first move should be a plan-mode
+RFC sub-stage that consults `docs/STAGE-7-ISSUES.md` and
+`spec/event-and-output-framework.md` with framework-design
+intent. The Cycle 26 + 27 menu surface gives the framework
+cycle a natural place to land per-output-class user toggles
+(e.g. earcon-volume, suppression-rules) without burning hotkey
+slots.
+
 ## Why this revision exists
 
 The preceding revision was authored 2026-05-07 with status
@@ -274,17 +317,28 @@ runner and over jumping straight to framework cycles).
 ✅ Cycle 24a-24g: SessionModel Tier 2 persistence (PRs #203-#212+#219)
 ✅ Cycle 25a-25b-1a: Operational ergonomics + diagnostic-dump bundle (PRs #220-#222)
 ✅ Cycle 25c:    SESSION-HANDOFF "Where we left off" refresh (PR #223; doc-only)
-✅ Cycle 25d:    Plan refresh + link sweep (THIS PR; doc-only)
+✅ Cycle 25d:    Plan refresh + link sweep (PR #224; doc-only)
+✅ Cycle 26a:    App menu skeleton + UIA plumbing (PR #225)
+✅ Cycle 26b:    14 AppCommands wired into menu items + Hotkey.Key/Modifiers option-typing
+                 + AppReservedHotkeysMirrorTests F#/C# parity invariant (PR #226)
+✅ Cycle 26c:    First menu-only AppCommand RunProcessCleanupScript surfaced via
+                 Diagnostics → Test Process Cleanup (PR #227)
+✅ Cycle 26d:    Cycle 26 NVDA matrix rows + How-to-add-a-menu-item recipe in
+                 USER-SETTINGS.md (PR #228)
+✅ Cycle 27:     Multi-state menu paradigm canon + EarconsMode/LoggingLevel migration
+                 + dropped Ctrl+Shift+G/M (PR #229; single-PR architectural cycle)
+✅ Cycle 28:     Window menu (Close Window + Exit) + Program.fs Ctrl+Shift+L stale-
+                 comment cleanup + this plan refresh (THIS PR)
 ─────────────────────────────────────────────────────────────────────
-Cycle 26:        App menu (NEXT — maintainer-chosen 2026-05-09)
-                 - Plan-mode cycle resolves hotkey-source-of-truth + NVDA menu patterns.
-                 - 3-5 sequenced PRs ship menu skeleton + command wiring + diagnostic
-                   submenu + NVDA validation row.
-                 - Reduces hotkey-count working-memory pressure for additional features.
-Cycle 27+:       Output framework cycle (Part 3 per the original strategic plan)
+Cycle 29+:       Output framework cycle (Part 3 per the original strategic plan)
                  - Subsumes the original spec/tech-plan.md Stages 8 + 9.
                  - Designed in spec/event-and-output-framework.md.
+                 - First sub-stage: plan-mode RFC consulting STAGE-7-ISSUES.md +
+                   event-and-output-framework.md with framework-design intent.
                  - Multi-cycle work; plan-mode cycle per sub-stage.
+                 - Per-output-class user toggles can land in the menu surface
+                   established by Cycles 26 + 27 (e.g. earcon-volume,
+                   suppression-rules) without burning hotkey slots.
 Cycle X+:        Input framework cycle (Part 4 per the original strategic plan)
                  - Echo correlation; cursor-aware editing; InputPathway protocol;
                    ReplPathway.

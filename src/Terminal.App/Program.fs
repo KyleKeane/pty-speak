@@ -606,6 +606,32 @@ module Program =
             }
         ()
 
+    /// Cycle 28 — Window menu: close the main window. Mirrors
+    /// the OS-level `Alt+F4` gesture, which WPF Window already
+    /// handles natively via `SystemCommands.CloseWindow`. The
+    /// menu path calls `Window.Close()` directly so the close
+    /// event chain (and the existing `app.Exit` cleanup
+    /// pipeline that disposes hostHandle / cts / heartbeat /
+    /// loggerSink in order) fires on either path.
+    let private runCloseWindow (window: MainWindow) : unit =
+        let log = Logger.get "Terminal.App.Program.runCloseWindow"
+        log.LogInformation("Window menu Close Window invoked.")
+        window.Close()
+
+    /// Cycle 28 — Window menu: explicit application shutdown via
+    /// `Application.Current.Shutdown()`. In a single-window app
+    /// the visible behaviour is identical to `runCloseWindow`
+    /// (both trigger the `app.Exit` chain), but the separate
+    /// menu slot keeps the option open for multi-pane Phase 2
+    /// plans where Close-Window-vs-Exit-App becomes meaningful.
+    /// `_window` is unused (Shutdown is a static call) but the
+    /// signature matches `runCloseWindow` for handler-shape
+    /// consistency at the bind call site.
+    let private runExitApp (_window: MainWindow) : unit =
+        let log = Logger.get "Terminal.App.Program.runExitApp"
+        log.LogInformation("Window menu Exit invoked.")
+        Application.Current.Shutdown()
+
     // Cycle 25b-1a — `runCopyLatestLog` (Ctrl+Shift+L) removed.
     // The Ctrl+Shift+D diagnostic battery now bundles the active
     // FileLogger log into its dump-and-clipboard payload (alongside
@@ -679,10 +705,12 @@ module Program =
     let compose (app: Application) (window: MainWindow) : unit =
         // Wire up file-based logging FIRST, before anything else
         // can produce log calls. Default-on (Information level);
-        // Phase 2 user-settings will surface the toggle. Logs go
-        // to %LOCALAPPDATA%\PtySpeak\logs\pty-speak-{date}.log
+        // Cycle 27's View → Logging Level → Information / Debug
+        // multi-state menu items flip the level at runtime. Logs
+        // go to %LOCALAPPDATA%\PtySpeak\logs\pty-speak-{date}.log
         // with daily rolling and 7-day retention; the
-        // `Ctrl+Shift+L` hotkey opens the folder.
+        // `Ctrl+Shift+P` hotkey (Data → Open Data Folder) opens
+        // the parent of the logs folder.
         let logOptions = FileLoggerOptions.createDefault ()
         let sink = new FileLoggerSink(logOptions)
         loggerSink <- Some sink
@@ -751,6 +779,14 @@ module Program =
         // still creates the CommandBinding so the menu can
         // dispatch via the captured RoutedCommand.
         bind HotkeyRegistry.RunProcessCleanupScript (fun () -> runTestProcessCleanup window)
+        // Cycle 28 — Window menu commands. Both menu-only.
+        // CloseWindow's MenuItem in MainWindow.xaml carries
+        // `InputGestureText="Alt+F4"` directly (the
+        // reflection-driven wiring loop only assigns
+        // InputGestureText for `Some`-key entries, leaving
+        // hardcoded XAML values for None-key commands alone).
+        bind HotkeyRegistry.CloseWindow (fun () -> runCloseWindow window)
+        bind HotkeyRegistry.ExitApp (fun () -> runExitApp window)
 
         // Cycle 25b-1a — `SetCopyLogToClipboardHandler` defense-in-
         // depth wiring removed alongside the Ctrl+Shift+L hotkey

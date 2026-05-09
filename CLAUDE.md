@@ -359,6 +359,16 @@ keyboard accelerator):
 - View → Earcons → Enabled / Muted — toggles WASAPI earcons
   (migrated from `Ctrl+Shift+M`).
 
+Window-management menu items (Cycle 28; menu-only):
+
+- Window → Close Window — `Window.Close()`. Visual
+  `InputGestureText="Alt+F4"` since the OS-level Alt+F4 is
+  handled by WPF Window natively, not via
+  `AppReservedHotkeys`.
+- Window → Exit — `Application.Current.Shutdown()`. Identical
+  visible behaviour to Close Window in today's single-window
+  app; separate slot future-proofs multi-pane Phase 2 plans.
+
 Reserved (not yet bound):
 
 - `Alt+Shift+R` — Stage 10 review-mode toggle

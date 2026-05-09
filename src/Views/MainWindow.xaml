@@ -117,6 +117,23 @@
                           x:FieldModifier="public"
                           Header="Test Process _Cleanup" />
             </MenuItem>
+            <!-- Cycle 28 — Window menu. Both items are menu-only
+                 commands (no keyboard accelerator registered with
+                 HotkeyRegistry). Close Window's
+                 InputGestureText="Alt+F4" is hardcoded here so
+                 NVDA reads "Close Window, Alt plus F4, menu item"
+                 — the gesture string is purely visual since the
+                 OS-level Alt+F4 is handled by WPF Window
+                 natively, not by an entry in AppReservedHotkeys. -->
+            <MenuItem Header="_Window">
+                <MenuItem x:Name="MenuItem_CloseWindow"
+                          x:FieldModifier="public"
+                          Header="_Close Window"
+                          InputGestureText="Alt+F4" />
+                <MenuItem x:Name="MenuItem_ExitApp"
+                          x:FieldModifier="public"
+                          Header="E_xit" />
+            </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem x:Name="MenuItem_CheckForUpdates"
                           x:FieldModifier="public"
