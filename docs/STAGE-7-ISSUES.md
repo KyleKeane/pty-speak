@@ -386,15 +386,21 @@ the Output framework cycle's Selection profile.
 [`spec/tech-plan.md`](../spec/tech-plan.md) §7.4 known issue
 #2 → Stage 8). Empirical confirmation pending.
 
-**Status (2026-05-09).** Code-complete via Cycles 29a + 29b
-(Stage 8e-A parts 1+2 of 3): NVDA reads selection prompts
-as text ("selection prompt: Edit, Yes, Always, No (selected:
-Yes)" + "selected: Yes, 2 of 4" on highlight movement +
-"selection dismissed" on dismissal). UIA listbox semantics —
+**Status (post-Cycle 32a).** Stage 8e-A is fully shipped
+(Cycle 29a substrate + Cycle 29b consumer-side wiring +
+**Cycle 32a `[profile.selection]` TOML loader**). NVDA reads
+selection prompts as text ("selection prompt: Edit, Yes,
+Always, No (selected: Yes)" + "selected: Yes, 2 of 4" on
+highlight movement + "selection dismissed" on dismissal); the
+four detector thresholds (`HighlightDetectionThresholdMs`,
+`DismissalGraceMs`, `KeystrokeCorrelationWindowMs`,
+`MinConfidence`) are now overridable via `[profile.selection]`
+in `config.toml` (per
+[`docs/USER-SETTINGS.md`](USER-SETTINGS.md) "Selection prompt
+thresholds and confidence modes"). UIA listbox semantics —
 the full fix that gives NVDA `1 of 4` navigation + ListItem
 control type — arrives in Stage 8e-B (separate plan-mode
-pass). Cycle 29c finalises the substrate with
-`[profile.selection]` TOML loader.
+pass).
 
 **Validation gotcha — Claude auto-trust mode skips the
 prompt UI** (discovered during Cycle 29b NVDA test

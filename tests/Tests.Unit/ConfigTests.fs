@@ -690,3 +690,121 @@ let ``writeDefaults creates parent directory tree if missing`` () =
     let wrote = Config.writeDefaults nestedPath
     Assert.True(wrote)
     Assert.True(File.Exists(nestedPath))
+
+// ---------------------------------------------------------------------
+// Cycle 32a — `[profile.selection]` TOML loader
+// ---------------------------------------------------------------------
+//
+// Pins the SelectionParameterOverrides parser + resolver added in
+// Cycle 32a. The detector itself (`SelectionDetector.Parameters` +
+// `defaultParameters` shipped in Cycle 29a) is unchanged; tests
+// here only exercise the Config-side plumbing.
+
+[<Fact>]
+let ``[profile.selection] absent — resolveSelectionParameters returns SelectionDetector.defaultParameters`` () =
+    let toml = "schema_version = 1\n"
+    let config, _ = loadFromText toml
+    let resolved = Config.resolveSelectionParameters config
+    Assert.Equal(SelectionDetector.defaultParameters, resolved)
+
+[<Fact>]
+let ``[profile.selection] all four keys present override all defaults`` () =
+    let toml =
+        String.concat "\n"
+            [ "schema_version = 1"
+              "[profile.selection]"
+              "highlight_detection_threshold_ms = 200"
+              "dismissal_grace_ms = 300"
+              "keystroke_correlation_window_ms = 500"
+              "min_confidence = \"heuristic_sgr_with_keystroke\""
+              "" ]
+    let config, _ = loadFromText toml
+    let resolved = Config.resolveSelectionParameters config
+    Assert.Equal(200, resolved.HighlightDetectionThresholdMs)
+    Assert.Equal(300, resolved.DismissalGraceMs)
+    Assert.Equal(500, resolved.KeystrokeCorrelationWindowMs)
+    Assert.Equal(
+        SelectionDetector.HeuristicSGRWithKeystroke,
+        resolved.MinConfidence)
+
+[<Fact>]
+let ``[profile.selection] single key overrides; others fall back to defaults`` () =
+    let toml =
+        String.concat "\n"
+            [ "schema_version = 1"
+              "[profile.selection]"
+              "keystroke_correlation_window_ms = 400"
+              "" ]
+    let config, _ = loadFromText toml
+    let resolved = Config.resolveSelectionParameters config
+    let defaults = SelectionDetector.defaultParameters
+    Assert.Equal(
+        defaults.HighlightDetectionThresholdMs,
+        resolved.HighlightDetectionThresholdMs)
+    Assert.Equal(defaults.DismissalGraceMs, resolved.DismissalGraceMs)
+    Assert.Equal(400, resolved.KeystrokeCorrelationWindowMs)
+    Assert.Equal(defaults.MinConfidence, resolved.MinConfidence)
+
+[<Fact>]
+let ``[profile.selection] unrecognised min_confidence string logs Warning and defaults`` () =
+    let toml =
+        String.concat "\n"
+            [ "schema_version = 1"
+              "[profile.selection]"
+              "min_confidence = \"fictional_tier\""
+              "" ]
+    let config, logger = loadFromText toml
+    let resolved = Config.resolveSelectionParameters config
+    Assert.Equal(SelectionDetector.HeuristicSGR, resolved.MinConfidence)
+    Assert.True(
+        logger.MessagesAtLevel(LogLevel.Warning)
+        |> Seq.exists (fun msg ->
+            msg.Contains("min_confidence") && msg.Contains("fictional_tier")),
+        sprintf
+            "expected a Warning mentioning min_confidence + fictional_tier; got: %A"
+            (logger.MessagesAtLevel(LogLevel.Warning) |> Seq.toList))
+
+[<Fact>]
+let ``[profile.selection] non-integer threshold logs Warning and defaults`` () =
+    let toml =
+        String.concat "\n"
+            [ "schema_version = 1"
+              "[profile.selection]"
+              "highlight_detection_threshold_ms = \"not_a_number\""
+              "" ]
+    let config, logger = loadFromText toml
+    let resolved = Config.resolveSelectionParameters config
+    Assert.Equal(
+        SelectionDetector.defaultParameters.HighlightDetectionThresholdMs,
+        resolved.HighlightDetectionThresholdMs)
+    Assert.True(
+        logger.MessagesAtLevel(LogLevel.Warning)
+        |> Seq.exists (fun msg ->
+            msg.Contains("highlight_detection_threshold_ms")),
+        "expected a Warning mentioning highlight_detection_threshold_ms")
+
+[<Fact>]
+let ``[profile.selection] non-positive threshold logs Warning and defaults`` () =
+    let toml =
+        String.concat "\n"
+            [ "schema_version = 1"
+              "[profile.selection]"
+              "dismissal_grace_ms = 0"
+              "keystroke_correlation_window_ms = -50"
+              "" ]
+    let config, logger = loadFromText toml
+    let resolved = Config.resolveSelectionParameters config
+    let defaults = SelectionDetector.defaultParameters
+    Assert.Equal(defaults.DismissalGraceMs, resolved.DismissalGraceMs)
+    Assert.Equal(
+        defaults.KeystrokeCorrelationWindowMs,
+        resolved.KeystrokeCorrelationWindowMs)
+    // parsePositiveInt logs "non-positive; clamping to default"
+    // for both 0 and negative values; both keys triggered it.
+    let warningCount =
+        logger.MessagesAtLevel(LogLevel.Warning)
+        |> Seq.filter (fun msg ->
+            msg.Contains("[profile.selection]")
+            && msg.Contains("non-positive"))
+        |> Seq.length
+    Assert.Equal(2, warningCount)

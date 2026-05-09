@@ -856,6 +856,68 @@ is. Other power-user knobs:
   Stream profile during Part 3 Stage A; nothing in the
   pipeline (parser, screen, drain, peer) needs to move.
 
+### Selection prompt thresholds and confidence modes (Cycle 32a)
+
+#### Current state
+
+The `SelectionDetector` (Cycle 29a substrate; `src/Terminal.Core/SelectionDetector.fs`) watches the screen substrate for SGR-styled rows that look like interactive-list selection prompts (e.g., Claude tool-use confirmations, cmd `choice`, fzf in non-alt-screen mode). It emits `SelectionShown` / `SelectionItem` / `SelectionDismissed` semantic events that the `SelectionProfile` (Cycle 29b) translates into NVDA announcements.
+
+Four tunable parameters live in the detector's `Parameters` record (`SelectionDetector.fs:128-148`):
+
+- `HighlightDetectionThresholdMs` — milliseconds a row must remain visually styled before counting as a stable selection candidate. Default **100**.
+- `DismissalGraceMs` — milliseconds the candidate must remain absent before emitting `SelectionDismissed`. Default **150**.
+- `KeystrokeCorrelationWindowMs` — milliseconds after a user keystroke (arrow key) inside which an SGR change counts as keystroke-correlated. Default **250**.
+- `MinConfidence` — minimum confidence tier required for emission. Either `HeuristicSGR` (signals 1+2 only — more permissive; surfaces gaps quickly) or `HeuristicSGRWithKeystroke` (signals 1+2+3 — strict; requires arrow-key correlation observed within the keystroke window). Default `HeuristicSGR`.
+
+Cycle 32a externalises all four via TOML.
+
+#### Why hardcoded before Cycle 32a
+
+The defaults are spec-derived (`spec/tech-plan.md` §8.1; `spec/event-and-output-framework.md` §B.3.3). Cycle 29b NVDA validation 2026-05-09 surfaced acute regressions elsewhere (spinner storms, red-tone misfires) but did not surface a need to tune the selection thresholds — the gotcha that surfaced was that Claude's auto-trust mode skipped the confirmation prompt entirely (per `docs/STAGE-7-ISSUES.md` `[output-selection]` section), not that the thresholds were wrong.
+
+Cycle 32a externalises the knobs without changing defaults. Power users (or future per-shell tuning) can override.
+
+#### What configurability looks like
+
+```toml
+schema_version = 1
+
+[profile.selection]
+# Milliseconds a row's SGR-styled run must remain stable before
+# the detector treats it as a selection candidate. Defaults to 100.
+highlight_detection_threshold_ms = 100
+
+# Milliseconds the candidate must remain absent before emitting
+# SelectionDismissed. Defaults to 150.
+dismissal_grace_ms = 150
+
+# Milliseconds after a user keystroke (arrow key) inside which an
+# SGR change counts as keystroke-correlated. Defaults to 250.
+keystroke_correlation_window_ms = 250
+
+# Minimum confidence required to emit SelectionShown. Either
+# "heuristic_sgr" (signals 1+2 only) or
+# "heuristic_sgr_with_keystroke" (signals 1+2+3 — arrow-key
+# correlation observed within the keystroke window).
+# Default: "heuristic_sgr".
+min_confidence = "heuristic_sgr_with_keystroke"
+```
+
+All four keys are optional; absent keys fall back to detector defaults. Unknown keys log a Warning and are dropped. Non-positive integer values log a Warning and fall back to default. Unrecognised `min_confidence` strings log a Warning and fall back to `"heuristic_sgr"`.
+
+Tuning use cases:
+
+- **Slow synthesiser / slow user** — raise `highlight_detection_threshold_ms` to 200-300ms so transient SGR repaints don't trigger spurious "selection prompt" announcements.
+- **Strict mode (Claude tool-use only)** — set `min_confidence = "heuristic_sgr_with_keystroke"` to suppress non-keystroke-correlated selections (e.g., a `git status` line that happens to be SGR-styled but isn't a real prompt).
+- **Faster dismissal** — lower `dismissal_grace_ms` to 50ms if the maintainer wants `SelectionDismissed` to fire immediately when a prompt clears.
+
+#### Implementation notes
+
+- Cycle 32a-only scope: `src/Terminal.Core/Config.fs` adds `SelectionParameterOverrides` record + `parseProfileSelectionOverrides` parser + `resolveSelectionParameters` helper. `src/Terminal.App/Program.fs:1186` composition cutover (3-line change). `tests/Tests.Unit/ConfigTests.fs` adds 6 facts covering: section absent → defaults; all four keys present override; single key present overrides + others default; unrecognised `min_confidence` logs Warning + defaults; non-integer threshold logs Warning + defaults; non-positive threshold logs Warning + defaults.
+- **No hot-reload** — the detector is constructed once at startup with the resolved parameters; mid-session config changes require a restart. This matches every other section except `[session_model.persistence]` (which gets reloaded on shell-switch via `Program.fs:2488-2500`). Hot-reload could be added in a future cycle by plumbing into the existing shell-switch reload handler.
+- **No detector internal changes** — the `Parameters` record + `defaultParameters` value already exist (Cycle 29a shipped them); Cycle 32a only adds Config-side overrides + composition-root wiring.
+- **Validation** — per `docs/STAGE-7-ISSUES.md` `[output-selection]`, manual NVDA testing requires a Claude tool-use prompt that requires user confirmation (force a prompt by writing a file in an untrusted directory; Claude auto-trust mode skips the prompt for trusted workspaces). The Cycle 29b NVDA matrix is the authoritative test surface; Cycle 32a does not add a new row.
+
 ### Stopgap: announce-length cap (Stage 7-followup PR-H)
 
 `src/Terminal.App/Program.fs`'s drain task currently caps every
