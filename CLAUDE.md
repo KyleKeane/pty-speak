@@ -96,6 +96,21 @@ minutes of wasted CI cycle plus a noisier git history.
   CI failures, comments, and merges land in the conversation
   automatically). Other PR-creation channels do not trigger the
   subscription.
+- **Webhook events are unreliable in this maintainer's environment —
+  poll CI every 30 seconds.** Confirmed across many sessions: PR
+  activity webhooks frequently fail to arrive when CI completes,
+  leaving the agent stuck in "waiting for events that won't come".
+  The workaround: after pushing a PR (or a fixup commit), start a
+  poll loop that calls `mcp__github__pull_request_read` with
+  `method: get_check_runs` every 30 seconds until every check's
+  `status` is `completed`. Implementation: `Bash` with
+  `run_in_background: true` running `sleep 30`; the harness
+  notifies on completion; check status; repeat. **Don't poll faster
+  than 30s** — it wastes API calls and the actual CI feedback
+  cadence is multi-minute. **Don't sleep longer between polls** —
+  the maintainer's working rhythm depends on prompt CI follow-up.
+  Webhook events still arrive sometimes; treat them as a free
+  early-exit signal but don't depend on them.
 - **Standing merge rule:** once CI is green on a PR, merge it
   without re-asking (per maintainer authorization). Use squash-merge.
   Update local main + delete the local branch after.
