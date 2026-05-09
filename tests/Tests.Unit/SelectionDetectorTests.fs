@@ -228,6 +228,9 @@ let ``SelectionShown extensions carry ItemCount, SelectedIndex, AllItems, TopRow
     Assert.Equal(box 18, shown.Extensions.[SelectionExtensions.TopRow])
     Assert.Equal(box 21, shown.Extensions.[SelectionExtensions.BottomRow])
     Assert.True(shown.Extensions.ContainsKey(SelectionExtensions.AllItems))
+    // Cycle 29b — payload is now empty (empty-payload trick;
+    // text constructed by SelectionProfile from Extensions).
+    Assert.Equal("", shown.Payload)
     Assert.Equal(
         box "HeuristicSGR",
         shown.Extensions.[SelectionExtensions.Source])
@@ -235,6 +238,31 @@ let ``SelectionShown extensions carry ItemCount, SelectedIndex, AllItems, TopRow
 // ---------------------------------------------------------------------
 // Selection-index update
 // ---------------------------------------------------------------------
+
+[<Fact>]
+let ``initial-burst SelectionItem events carry ItemIndex (per-item position) and constant SelectedIndex (Cycle 29b)`` () =
+    // Cycle 29b — burst SelectionItems each carry their OWN
+    // ItemIndex (0/1/2/3) but share the GLOBAL SelectedIndex
+    // (1, since "Yes" at row 19 is highlighted in fourItemSnap).
+    let snap = fourItemSnap ()
+    let detector = SelectionDetector.create SelectionDetector.defaultParameters
+    let _, s1 =
+        SelectionDetector.tryDetect snap noCursor t0 "claude" detector
+    let events, _ =
+        SelectionDetector.tryDetect snap noCursor (after 150) "claude" s1
+    let items =
+        events
+        |> Array.filter (fun e -> e.Semantic = SemanticCategory.SelectionItem)
+    Assert.Equal(4, items.Length)
+    // SelectedIndex constant across the burst.
+    for item in items do
+        Assert.Equal(box 1, item.Extensions.[SelectionExtensions.SelectedIndex])
+    // ItemIndex enumerates 0..3 in burst order.
+    for idx in 0 .. items.Length - 1 do
+        Assert.Equal(box idx, items.[idx].Extensions.[SelectionExtensions.ItemIndex])
+    // Payload is empty (Cycle 29b empty-payload trick).
+    for item in items do
+        Assert.Equal("", item.Payload)
 
 [<Fact>]
 let ``selection-index change emits one SelectionItem update, no fresh Shown`` () =

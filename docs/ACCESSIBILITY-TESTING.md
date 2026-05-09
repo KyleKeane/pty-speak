@@ -858,6 +858,58 @@ natively.
   `AppReservedHotkeys` rows; existing behaviour should be
   unchanged.
 
+### Cycle 29b — SelectionProfile (NVDA reads selection prompts as text)
+
+Cycle 29b wires `SelectionDetector` (shipped in 29a) into the
+output dispatcher via the new `SelectionProfile`. NVDA now reads
+Claude's tool-use selection prompts as text — the detector
+recognises the highlighted-row pattern and emits structured
+events; the profile constructs user-facing text from the
+event's Extensions data and routes it to the NVDA + FileLogger
+channels. UIA listbox semantics arrive in Stage 8e-B; arrow-key
+round-trip in 8e-C.
+
+**Pre-requisites.** Set `PTYSPEAK_SHELL=claude` (or
+`Ctrl+Shift+3` to switch to Claude in-session). Selection
+detection is claude-only in 29b — cmd / PowerShell sessions
+short-circuit the detector entirely.
+
+| Test                                                                      | Procedure                                                                       | Expected behaviour                                                                                                                                                                                              |
+|---------------------------------------------------------------------------|---------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 29b.1 First detection (Cycle 29b)                                         | In Claude, ask it to edit a file. When the "Edit / Yes / Always / No" prompt appears, wait ~250ms.   | NVDA speaks "selection prompt: Edit, Yes, Always, No (selected: Yes)" once the heuristic-stability window elapses (~100ms after first paint). Each line of `Ctrl+Shift+D`'s log bundle shows `Semantic=SelectionShown` + a single `selection-detector` Producer entry. |
+| 29b.2 Selection navigation (Cycle 29b)                                    | Press the down-arrow key on the prompt.                                         | NVDA speaks "selected: Always, 3 of 4" within ~200ms (one paint + tick cadence). Subsequent down-arrows announce each new selection. The prefix "selected: " applies because the SelectionItem update event has `ItemIndex == SelectedIndex`. |
+| 29b.3 Selection dismissal (Cycle 29b)                                     | Press `Esc`, or accept the selection with `Enter` and watch the prompt vanish. | NVDA speaks "selection dismissed" within `DismissalGraceMs` (~150ms) of the highlighted-region disappearing. FileLogger shows a `Semantic=SelectionDismissed` entry with empty Payload + the rendered text on the SelectionProfile-emitted entry. |
+| 29b.4 Non-Claude shell short-circuit (Cycle 29b)                          | Switch to cmd (`Ctrl+Shift+1`) or PowerShell (`Ctrl+Shift+2`); type for 5 minutes. | FileLogger shows ZERO `Semantic=SelectionShown` rows during the cmd / PowerShell session. The detector returns `([||], state)` immediately for non-claude shellKey, so no detection cost is paid.                |
+| 29b.5 No PassThroughProfile double-emission (Cycle 29b)                  | Trigger any selection event in 29b.1 / 29b.2 / 29b.3.                            | NVDA speaks the user-facing text exactly ONCE per event. The empty-payload trick (detector emits with `Payload=""`) makes `NvdaChannel` skip PassThroughProfile's catch-all `RenderText ""` decision; only the SelectionProfile-rendered text reaches NVDA. |
+
+**Diagnostic decoders for Cycle 29b:**
+
+- **NVDA stays silent on selection prompts** → detector
+  may be short-circuiting because `currentShellId` isn't
+  Claude. Verify with `Ctrl+Shift+H` (announces the active
+  shell). If shell is Claude but no announce: check
+  `Ctrl+Shift+D` log for `Semantic=SelectionShown` entries
+  — if absent, the detection heuristic isn't firing
+  (highlight contrast may be too low; check `selection.source`
+  Extensions value if present).
+- **NVDA speaks selection text TWICE** → empty-payload trick
+  not working. The detector may be emitting with non-empty
+  Payload (regression vs. Cycle 29b's contract); check the
+  `Payload` field on the FileLogger structured-log entry
+  for SelectionShown events. Should be empty.
+- **Selection text reads but with wrong "selected: " prefix
+  on non-selected items** → `ItemIndex == SelectedIndex`
+  comparison may be failing because of an Extensions
+  schema-key drift between detector + profile. Check both
+  files reference `SelectionExtensions.ItemIndex` (Cycle 29b
+  added) and `SelectionExtensions.SelectedIndex` (Cycle 29a).
+- **Cycle 29c will replace** the hardcoded
+  `SelectionDetector.defaultParameters` in `Program.fs:1184`
+  with TOML-loaded values from `[profile.selection]`. The
+  Cycle 29b NVDA matrix exercises the detector at default
+  thresholds; 29c lets the maintainer tune them via
+  `Ctrl+Shift+E` (open config.toml).
+
 ## Recording results
 
 For each release tag:

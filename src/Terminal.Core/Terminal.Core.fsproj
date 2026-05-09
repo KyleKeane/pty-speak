@@ -32,6 +32,7 @@
     <Compile Include="Config.fs" />
     <Compile Include="EarconChannel.fs" />
     <Compile Include="EarconProfile.fs" />
+    <Compile Include="SelectionProfile.fs" />
     <Compile Include="PassThroughProfile.fs" />
     <Compile Include="OutputDispatcher.fs" />
     <Compile Include="KeyEncoding.fs" />
