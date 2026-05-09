@@ -15,6 +15,44 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed (Cycle 24f): SessionModel persistence config diagnostic + matrix section-name typo
+
+Two paired fixes surfaced during the first manual NVDA-matrix
+walkthrough of Cycle 24:
+
+- **`docs/ACCESSIBILITY-TESTING.md` — section-name typo.** The
+  Cycle 24 matrix (PR #211) instructed the maintainer to write
+  `[session_persistence]` in `config.toml`. The actual TOML
+  schema (Cycle 24a, PR #203) uses the **nested** form
+  `[session_model.persistence]`. The maintainer's TOML was
+  effectively invisible and the persistence silently fell
+  through to `memory_only`. Matrix updated to use the canonical
+  section name; the matrix's "Diagnostic decoder" entry now
+  enumerates the new Cycle 24f log lines and the legacy
+  `[session_persistence]` typo as the most-likely culprit.
+- **`SessionPersistence.parseFromTable` — diagnostic gap.** All
+  three parse-branches (no `[session_model]`, `[session_model]`
+  present but no `.persistence` sub-section,
+  `[session_model.persistence]` present and parsed) now emit a
+  distinct **Information** log line so a maintainer can grep
+  `Config:` in the FileLogger log and immediately distinguish
+  "section absent → silent defaults" from "section parsed
+  cleanly to memory_only" from "value rejected → fell back".
+  Pre-24f all three were observationally identical (only the
+  composition root's `SessionModel persistence mode: ...` line
+  was emitted). New messages:
+  - `Config: no [session_model] section in TOML; using
+    session-persistence defaults (mode=memory_only).`
+  - `Config: [session_model] present but no
+    [session_model.persistence] sub-section; using
+    session-persistence defaults (mode=memory_only).`
+  - `Config: [session_model.persistence] section parsed;
+    mode=<X>, output_dir=<Y>, format=jsonl,
+    max_session_size_mb=<N>.`
+
+`SessionPersistenceTests.fs` updated (3 existing tests extended
++ 1 new test) to pin each branch's Information message.
+
 ### Added (Cycle 24e): diagnostic hotkey + NVDA matrix for SessionModel persistence
 
 Closes Cycle 24 with three small operational deliverables on
