@@ -1,5 +1,7 @@
 module PtySpeak.Tests.Unit.IOutputSinkTests
 
+open System
+open Microsoft.Extensions.Logging
 open Xunit
 open Terminal.Core
 
@@ -79,26 +81,43 @@ let ``EarconChannel via IOutputSink preserves non-Earcon skip`` () =
 // ---- FileLoggerChannel coerces to IOutputSink ------------------
 
 /// Tiny ILogger fake — captures `LogInformation` calls without
-/// pulling in the full RecordingLogger from FileLoggerChannelTests.
+/// pulling in the `private` RecordingLogger from
+/// FileLoggerChannelTests.fs. Uses the same F# 9 + .NET 9
+/// nullness-correct signatures (per CONTRIBUTING.md "F# 9
+/// nullness annotations bite at .NET-API boundaries"):
+///
+/// - `BeginScope<'TState when 'TState : not null>` — F# requires
+///   the constraint to match the C# `where TState : notnull`.
+/// - `Log<'TState>` does NOT carry the constraint (F#'s reading
+///   of the metadata).
+/// - `ex: exn | null` — the C# parameter is `Exception?`; F# 9
+///   requires the `| null` annotation to compile under
+///   `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`.
+/// - `formatter: System.Func<'TState, exn | null, string>` —
+///   same nullness requirement on the formatter delegate.
+type private NoopScope() =
+    interface System.IDisposable with
+        member _.Dispose() = ()
+
 type private CapturingLogger() =
     let entries = ResizeArray<string>()
     member _.Entries = entries
-    interface Microsoft.Extensions.Logging.ILogger with
-        member _.BeginScope<'TState>(_state: 'TState) : System.IDisposable =
-            { new System.IDisposable with member _.Dispose() = () }
-        member _.IsEnabled(_logLevel) = true
-        member _.Log<'TState>(
-                _logLevel,
-                _eventId,
-                state: 'TState,
-                _exn: exn,
-                formatter: System.Func<'TState, exn, string>) =
-            entries.Add(formatter.Invoke(state, _exn))
+    interface ILogger with
+        member _.BeginScope<'TState when 'TState : not null>(_state: 'TState) : System.IDisposable =
+            (new NoopScope()) :> System.IDisposable
+        member _.IsEnabled(_: LogLevel) : bool = true
+        member _.Log<'TState>
+                (_level: LogLevel,
+                 _eventId: EventId,
+                 state: 'TState,
+                 ex: exn | null,
+                 formatter: System.Func<'TState, exn | null, string>) : unit =
+            entries.Add(formatter.Invoke(state, ex))
 
 [<Fact>]
 let ``FileLoggerChannel record coerces to IOutputSink and emits a structured log entry`` () =
     let logger = CapturingLogger()
-    let channel = FileLoggerChannel.create (logger :> Microsoft.Extensions.Logging.ILogger)
+    let channel = FileLoggerChannel.create (logger :> ILogger)
     let sink = channel :> IOutputSink
     Assert.Equal(FileLoggerChannel.id, sink.Id)
     let event = buildEvent SemanticCategory.StreamChunk "diag-payload"
