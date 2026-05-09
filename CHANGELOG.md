@@ -15,6 +15,57 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Docs (Cycle 29b NVDA-test follow-up): captured three lessons from 2026-05-09 validation pass
+
+Doc-only follow-up to Cycle 29b's NVDA validation. Three
+captured artefacts for future-session benefit; no behaviour
+change.
+
+- **`CLAUDE.md`** — new "Diagnostic logs — request chunks, not
+  full bundles" guidance. The Cycle 29b NVDA test produced a
+  diagnostic bundle large enough to crash the maintainer's iOS
+  chat app on paste. Future Claude sessions are now told to
+  prefer chunk-first requests (specific `Semantic=...`
+  greps via `findstr` / `Select-String`, time-bounded
+  windows, named bundle sections like `--- DIAGNOSTIC BATTERY
+  LOG ---` / `--- FILELOGGER ACTIVE LOG ---` / `--- CONFIG.TOML
+  ---` / `--- ENVIRONMENT ---`) over the whole snapshot.
+- **`docs/STAGE-7-ISSUES.md`** — empirical confirmation notes
+  on three entries from the 2026-05-09 test:
+  - `[output-stream]` spinner storm: Claude's thinking-state
+    spinners (`✻ Transmuting…` / glyph rotates `✻✶✽✢·` +
+    incrementing token counter) defeat the existing
+    identical-hash spinner gate; ~80 announces per Claude
+    turn measured. Fix sketch: change suppression from
+    "identical hash" to "high-frequency low-edit-distance".
+    ~50-100 LOC in `StreamPathway`.
+  - `[output-earcon]` red-tone misfire: same spinner glyphs
+    are red-coloured, so the `StreamPathway` color-detection
+    fires `ErrorLine` events for every spinner frame; ~30
+    `error-tone` earcons per Claude turn. Fix sketches:
+    skip ErrorLine for known-spinner glyphs OR add per-shell
+    TOML toggle OR raise red-character-count threshold.
+    ~30-50 LOC.
+  - `[output-selection]` validation gotcha: Claude's
+    auto-trust mode for known directories skips the
+    tool-use confirmation prompt entirely. Cycle 29b's
+    `SelectionDetector` per-shell short-circuit DID confirm
+    working (zero `SelectionShown` events across a
+    5-minute cmd session) but the prompt-rendering path
+    didn't get exercised. To force a prompt for testing,
+    ask Claude to write/edit (not just read) a file, or
+    run pty-speak from a directory Claude hasn't been
+    granted trust in.
+- **`docs/SESSION-HANDOFF.md`** — refreshes "In-flight branch"
+  + "Next stage" cells. NVDA validation status now reads:
+  Cycle 27 multi-state menus validated; Cycle 28 Window menu
+  validated; Cycle 29b SelectionProfile code-clean-but-not-
+  exercised. Two near-term path candidates surfaced for
+  decision: Path A (Cycle 29c TOML loader, scope completion)
+  vs. Path B (spinner-storm + red-tone fixes, immediate UX
+  unblock for Claude). Maintainer's 2026-05-09 recommendation
+  was Path B first.
+
 ### Added (Cycle 29b, Stage 8e-A part 2): SelectionProfile + Program.fs wiring — NVDA starts speaking selection prompts as text
 
 Second of three sequenced PRs (29a/29b/29c) closing spec

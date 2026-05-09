@@ -90,6 +90,51 @@ user isn't around, queue the question and wait. **Do not push
 speculative fixups** — the cost of one wrong fix is multiple
 minutes of wasted CI cycle plus a noisier git history.
 
+### Diagnostic logs — request chunks, not full bundles
+
+`Ctrl+Shift+D`'s diagnostic snapshot is comprehensive: FileLogger
+log + config.toml + redacted env + session-log summary +
+diagnostic-battery log, all combined. **The full bundle can be
+multi-megabyte, especially after a Claude session.** Cycle 29b
+NVDA validation 2026-05-09 produced a bundle that crashed the
+maintainer's iOS chat app on paste. Sharing the whole thing back
+is sometimes infeasible.
+
+**Default to chunk-first requests.** Tell the maintainer the
+specific strings or sections you need:
+
+- Specific Semantic categories — `findstr "Semantic=SelectionShown" "<bundle>"` from cmd
+  or `Select-String -Pattern "Semantic=SelectionShown" "<bundle>"` from PowerShell.
+- Time-bounded windows — "the lines around 18:52 when the prompt
+  appeared" with ±10 lines of context.
+- Specific log sections — `--- DIAGNOSTIC BATTERY LOG ---` /
+  `--- FILELOGGER ACTIVE LOG ---` / `--- CONFIG.TOML ---` /
+  `--- ENVIRONMENT ---` are clearly delimited; ask for one
+  section by name rather than the whole snapshot.
+- Single-line counts — "how many `Earcon play started` lines
+  with `error-tone` in the last minute?" is a one-line answer
+  that often tells you what you need.
+
+When you DO need a wider grep, push the heavy lifting onto the
+maintainer's shell rather than the chat:
+
+```
+:: cmd
+findstr /C:"Semantic=ErrorLine" "%LOCALAPPDATA%\PtySpeak\logs\<file>.log" > excerpt.txt
+:: then have the maintainer paste excerpt.txt (typically much smaller)
+```
+
+```
+# PowerShell
+Select-String -Pattern "Color=red" -Path "$env:LOCALAPPDATA\PtySpeak\logs\<file>.log" -Context 3,3 |
+    Out-File excerpt.txt -Encoding utf8
+```
+
+If the bundle is genuinely needed in full, ask whether the
+maintainer can share via a different channel (gist, file
+attachment, paste service) rather than inline chat — paste-into-chat
+is the failure mode.
+
 ### PR creation and webhook subscription
 
 - **Create PRs via `mcp__github__create_pull_request`**, not
