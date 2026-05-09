@@ -1938,6 +1938,47 @@ module Program =
                 }
             ()
 
+        // Cycle 24e — `Ctrl+Shift+S`: announce the active
+        // session-log file path. Reads `sessionLogWriter` (post
+        // -Cycle-24c) + `persistenceConfig.Mode` (post-Cycle-24a)
+        // from compose-local state. The closure is defined here
+        // (rather than as a module-level handler) for the same
+        // reason as `runHealthCheck` — it captures mutable
+        // compose-local references that don't exist at
+        // module-load time.
+        let runAnnounceSessionLogPath () : unit =
+            try
+                let modeStr =
+                    SessionPersistence.modeToString
+                        persistenceConfig.Mode
+                let summary =
+                    match sessionLogWriter with
+                    | None ->
+                        sprintf
+                            "Session log mode %s; no file."
+                            modeStr
+                    | Some sink ->
+                        sprintf
+                            "Session log mode %s; path %s."
+                            modeStr
+                            sink.ActiveLogPath
+                log.LogInformation(
+                    "Session log path requested. {Summary}",
+                    summary)
+                window.TerminalSurface.Announce(
+                    summary,
+                    ActivityIds.sessionLogPath)
+            with ex ->
+                let safe = AnnounceSanitiser.sanitise ex.Message
+                log.LogError(
+                    ex,
+                    "Session log path announce raised exception.")
+                window.TerminalSurface.Announce(
+                    sprintf
+                        "Session log path announce failed: %s"
+                        safe,
+                    ActivityIds.error)
+
         // Stage 7-followup PR-F — wire Ctrl+Shift+H and Ctrl+Shift+B
         // through the unified `bindHotkey` helper (PR-O). Both
         // closures capture compose-local state (lastReadUtc,
@@ -1951,6 +1992,10 @@ module Program =
             window
             HotkeyRegistry.CopyHistoryToClipboard
             runCopyHistoryToClipboard
+        bindHotkey
+            window
+            HotkeyRegistry.AnnounceSessionLogPath
+            runAnnounceSessionLogPath
 
         // Stage 7-followup PR-F — background heartbeat. Every 5
         // seconds, log a single Information-level "Heartbeat" line

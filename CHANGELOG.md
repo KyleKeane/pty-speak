@@ -15,6 +15,57 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 24e): diagnostic hotkey + NVDA matrix for SessionModel persistence
+
+Closes Cycle 24 with three small operational deliverables on
+top of the substrate shipped in 24a-24d:
+
+- **`Ctrl+Shift+S`** — announce the active session-log file
+  path via NVDA. Verbose format: `Session log mode <mode>;
+  path <full-path>.` for `session_log` / `always`;
+  `Session log mode memory_only; no file.` for
+  `memory_only`. Long but unambiguous — the screen-reader
+  user can pause/repeat NVDA to capture the path. The
+  alternative (opening Explorer to find the file) is a
+  dialog-tree GUI walk and is unacceptable per the
+  screen-reader contract. Mnemonic: **S** for **S**ession
+  log. Companion to `Ctrl+Shift+L` (open file-logger root)
+  and `Ctrl+Shift+;` (copy active log to clipboard).
+- **Six new rows in `docs/ACCESSIBILITY-TESTING.md`** under
+  a new "Cycle 24 — SessionModel persistence" subsection:
+  mode change at startup, file creation in `session_log`
+  mode, `Always` synchronous-flush perceptibility,
+  diagnostic hotkey output, env-var redaction in persisted
+  file, `Ctrl+Shift+Y` substrate honesty (in-memory History
+  stays unsanitised; only the persistence layer redacts).
+  Each row includes a `Diagnostic decoder` entry tying
+  failures to likely subsystems for triage.
+- **`docs/CHECKPOINTS.md`** — adds
+  `baseline/cycle-24-sessionmodel-persistence` to both the
+  "Current checkpoints" table (with PR links #203 / #206 /
+  #208 / #209 / #210 + the 24e PR) and the
+  "Pending checkpoint tags" table (sandbox blocks
+  `refs/tags/`; maintainer pushes from their workstation).
+
+Implementation notes:
+
+- New `HotkeyRegistry.AnnounceSessionLogPath` AppCommand;
+  exhaustive `nameOf` match catches forgotten cases at
+  compile-time under `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`.
+- Parallel C# mirror in `src/Views/TerminalView.cs
+  AppReservedHotkeys` keeps the hot-path keystroke filter
+  in sync.
+- New `ActivityIds.sessionLogPath = "pty-speak.session-log
+  -path"` so consecutive presses dedupe at the NVDA-channel
+  layer (per-tag dedupe behaviour mirrors `healthCheck`
+  and `incidentMarker`).
+- 1 new xUnit `[<Fact>]` in `HotkeyRegistryTests.fs`
+  pinning the binding (`Letter 'S'` + `Ctrl+Shift`).
+  The handler logic is too intertwined with the composition
+  root's mutable state to unit-test directly without a
+  major refactor; the NVDA matrix row is the integration
+  test for the announcement text.
+
 ### Added (Cycle 24d-2): env-var value sanitisation for SessionTuple persistence
 
 Closes the Cycle 24d sub-cycle. Adds VALUE-based redaction

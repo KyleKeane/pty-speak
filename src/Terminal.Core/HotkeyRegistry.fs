@@ -94,6 +94,8 @@ module HotkeyRegistry =
         | MuteEarcons
         // Cycle 22b — copy SessionModel history to clipboard.
         | CopyHistoryToClipboard
+        // Cycle 24e — announce active session-log file path.
+        | AnnounceSessionLogPath
 
     /// Stable string name for a command, used as the
     /// `RoutedCommand` name passed to WPF and as a TOML key
@@ -115,6 +117,7 @@ module HotkeyRegistry =
         | SwitchToClaude -> "SwitchToClaude"
         | MuteEarcons -> "MuteEarcons"
         | CopyHistoryToClipboard -> "CopyHistoryToClipboard"
+        | AnnounceSessionLogPath -> "AnnounceSessionLogPath"
 
     /// Default key binding for a command. Mirrors the
     /// `AppReservedHotkeys` table in
@@ -188,7 +191,11 @@ module HotkeyRegistry =
           { Command = CopyHistoryToClipboard
             Key = Letter 'Y'
             Modifiers = ctrlShift
-            Description = "Copy SessionModel history to clipboard (Cycle 22b)" } ]
+            Description = "Copy SessionModel history to clipboard (Cycle 22b)" }
+          { Command = AnnounceSessionLogPath
+            Key = Letter 'S'
+            Modifiers = ctrlShift
+            Description = "Announce the active session-log file path (Cycle 24e)" } ]
 
     /// Look up the default Hotkey for a command. Throws
     /// `KeyNotFoundException` if the registry is incomplete —
@@ -233,4 +240,5 @@ module HotkeyRegistry =
           SwitchToPowerShell
           SwitchToClaude
           MuteEarcons
-          CopyHistoryToClipboard ]
+          CopyHistoryToClipboard
+          AnnounceSessionLogPath ]

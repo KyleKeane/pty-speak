@@ -332,6 +332,12 @@ Currently shipped (orientation reference; spec section 6 is canonical):
   tuples + any in-flight active tuple. Companion to
   `Ctrl+Shift+D` (which announces a substrate summary);
   `Ctrl+Shift+Y` dumps the full content for analysis.
+- `Ctrl+Shift+S` — announce the active session-log file path
+  (Cycle 24e); verbose format `Session log mode <mode>; path
+  <full-path>.` for `session_log` / `always`;
+  `Session log mode memory_only; no file.` for `memory_only`.
+  Companion to `Ctrl+Shift+L` (open file-logger root) and
+  `Ctrl+Shift+;` (copy active log to clipboard).
 
 Reserved (not yet bound):
 

@@ -470,3 +470,13 @@ module ActivityIds =
     /// announcement isn't suppressed by streaming-output
     /// processing.
     let incidentMarker = "pty-speak.incident-marker"
+
+    /// Session-log path announcements (Cycle 24e
+    /// `Ctrl+Shift+S`). Emits the active session-log file path
+    /// (or "no file" for `MemoryOnly` mode) so a screen-reader
+    /// user can discover where their session is being persisted
+    /// in one keystroke without walking a file-explorer GUI
+    /// dialog tree. Distinct ActivityId so consecutive presses
+    /// dedupe at the NVDA-channel layer (per-tag dedupe
+    /// behaviour mirrors `healthCheck` and `incidentMarker`).
+    let sessionLogPath = "pty-speak.session-log-path"

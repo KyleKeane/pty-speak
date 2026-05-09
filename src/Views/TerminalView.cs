@@ -497,6 +497,20 @@ public class TerminalView : FrameworkElement
             // analysis.
             (Key.Y, ModifierKeys.Control | ModifierKeys.Shift, "Copy SessionModel history to clipboard"),
 
+            // Cycle 24e — announce the active session-log file
+            // path via NVDA. Mnemonic: S for *S*ession log. Verbose
+            // format: announces "Session log mode <mode>;
+            // path <full-path>." for SessionLog/Always or
+            // "Session log mode memory_only; no file." for
+            // MemoryOnly. Companion to Ctrl+Shift+L (open logs
+            // folder) — Ctrl+Shift+L opens the file-logger root;
+            // Ctrl+Shift+S surfaces the active SessionModel
+            // persistence file. NVDA collision check: no default
+            // NVDA binding for Ctrl+Shift+S; Windows reserves S
+            // only inside specific apps (Photoshop), not at the
+            // OS level.
+            (Key.S, ModifierKeys.Control | ModifierKeys.Shift, "Announce session-log file path"),
+
             // Future entries (NOT yet bound; commented for
             // forward-planning):
             //   (Key.R, ModifierKeys.Alt | ModifierKeys.Shift,
