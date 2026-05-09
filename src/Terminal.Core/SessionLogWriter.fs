@@ -210,13 +210,25 @@ type SessionLogWriterSink
                 let writeOne (request: SessionLogWriteRequest) =
                     let tuple = request.Tuple
                     try
+                        // Cycle 24d-2 — sanitise env-var values
+                        // out of tuple text fields BEFORE
+                        // serialization. The substrate's
+                        // in-memory History keeps unsanitised
+                        // text (the user can recover their own
+                        // commands via Ctrl+Shift+Y); only the
+                        // persistence layer redacts. This is
+                        // the layered design — substrate stays
+                        // honest, persistence boundary applies
+                        // the privacy policy.
+                        let sanitised =
+                            SessionSanitiser.sanitiseTuple tuple
                         // Serialize THEN open the writer; if the
                         // serializer throws (lone-surrogate
                         // contract per Cycle 24b), we don't waste
                         // a file handle. Sync caller (if any)
                         // gets the exception via the TCS so they
                         // learn the write failed.
-                        let line = SessionModel.formatTupleAsJsonl tuple
+                        let line = SessionModel.formatTupleAsJsonl sanitised
                         ensureWriter ()
                         match writer with
                         | null -> ()
