@@ -71,7 +71,9 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               // Stage 8d.1 — earcon mute toggle.
               HotkeyRegistry.MuteEarcons
               // Cycle 22b — copy SessionModel history to clipboard.
-              HotkeyRegistry.CopyHistoryToClipboard ]
+              HotkeyRegistry.CopyHistoryToClipboard
+              // Cycle 24e — announce session-log file path.
+              HotkeyRegistry.AnnounceSessionLogPath ]
     let actual = Set.ofList HotkeyRegistry.allCommands
     Assert.Equal<Set<HotkeyRegistry.AppCommand>>(expected, actual)
 
@@ -190,3 +192,17 @@ let ``shell-switch hotkeys are bound to Ctrl+Shift+ digits 1, 2, 3 in PR-J order
     Assert.Equal(HotkeyRegistry.Digit 2, ps.Key)
     let claude = HotkeyRegistry.hotkeyOf HotkeyRegistry.SwitchToClaude
     Assert.Equal(HotkeyRegistry.Digit 3, claude.Key)
+
+[<Fact>]
+let ``AnnounceSessionLogPath is bound to Ctrl+Shift+S (Cycle 24e)`` () =
+    // Cycle 24e — diagnostic hotkey announces the active
+    // session-log file path. Mnemonic: S for Session log.
+    let hk =
+        HotkeyRegistry.hotkeyOf HotkeyRegistry.AnnounceSessionLogPath
+    Assert.Equal(HotkeyRegistry.Letter 'S', hk.Key)
+    Assert.Equal<Set<HotkeyRegistry.Modifier>>(
+        Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ],
+        hk.Modifiers)
+    Assert.Equal(
+        "AnnounceSessionLogPath",
+        HotkeyRegistry.nameOf HotkeyRegistry.AnnounceSessionLogPath)

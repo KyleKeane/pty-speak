@@ -453,6 +453,63 @@ surface, not solve.**
   loop didn't restart. If neither is present,
   `ConPtyHost.start` failed.
 
+### Cycle 24 — SessionModel persistence
+
+Cycle 24 ships the SessionModel persistence substrate end-to-end:
+TOML config schema (24a), pure JSONL serializer (24b),
+bounded-channel async file writer (24c), `Always`-mode
+synchronous flush (24d-1), env-var VALUE sanitisation (24d-2),
+and a diagnostic hotkey + this matrix (24e). The rows below
+verify each layer's user-facing contract.
+
+| Test                              | Procedure                                       | Expected behaviour                                               |
+|-----------------------------------|-------------------------------------------------|------------------------------------------------------------------|
+| Mode change at startup            | Edit `%LOCALAPPDATA%\PtySpeak\config.toml` to set `[session_persistence]\nmode = "session_log"`; relaunch | App starts cleanly; active session log (open via `Ctrl+Shift+L` → today's folder) contains the line `SessionModel persistence mode: session_log (output_dir=..., format=jsonl, max_session_size_mb=...)`; no Warning about "not yet implemented" |
+| File creation in `session_log` mode | With mode set as above, run `echo hello`        | File `%LOCALAPPDATA%\PtySpeak\sessions\session-<UUID>.jsonl` exists; first line is one valid JSON object containing `"commandText":"echo hello"` and `"schemaVersion":1` |
+| `Always` mode synchronous flush   | Set `mode = "always"`; relaunch; run `echo one` | The JSONL file contains the `echo one` tuple BEFORE the next prompt is announced (perceptually durable; verify by inspecting the file immediately after the prompt comes back via Notepad → File → Open) |
+| Diagnostic hotkey announces session-log path | Press `Ctrl+Shift+S` in any of the three modes | NVDA announces `Session log mode <mode>; path <full-path>.` for `session_log`/`always`; `Session log mode memory_only; no file.` for `memory_only`. Repeated presses dedupe via the `pty-speak.session-log-path` ActivityId |
+| Env-var values redacted in persisted file | From cmd: `set BANK_API_KEY=test_value_long_enough_to_register` then launch pty-speak from that same cmd window (process-local — does NOT use `setx`, which would persist to the user environment); run `echo %BANK_API_KEY%` | Session-log file contains `<REDACTED:BANK_API_KEY>` rather than the literal value. On-screen output still shows the literal value (only the persisted artefact redacts) |
+| `Ctrl+Shift+Y` substrate honesty  | With the same env var active, after the redacted command lands, press `Ctrl+Shift+Y`; paste into Notepad | Clipboard contains the UNSANITISED literal value `test_value_long_enough_to_register` (the in-memory History stays honest; only the persistence layer redacts — substrate/persistence boundary contract) |
+
+**Diagnostic decoder for Cycle 24:**
+
+- **Mode change ignored at startup** → TOML parser fell back
+  to default. Check the active session log for
+  `Failed to parse SessionPersistence config; using defaults`
+  + the inner exception message. Likely culprits: malformed
+  TOML, key typo (`mode` vs `Mode` — case matters),
+  unrecognised value (anything other than the three accepted
+  strings).
+- **File NOT created in `session_log` mode** → composition
+  root never instantiated the sink. Grep the log for
+  `SessionLogWriter` lines; absence of any such line means
+  `sessionLogWriterFactory` was bypassed (likely a config
+  parse error fell through to `MemoryOnly`). Presence of
+  `SessionLogWriter: failed to create output directory` is
+  a permission-denied / path-too-long fault — try a
+  shorter `output_dir`.
+- **`Always` mode hitches but file not durable** → the 10s
+  timeout fired. Grep the active log for
+  `EnqueueSync timed out (10s)`. Likely cause: disk stall
+  or anti-virus scanning the file. The state machine
+  continued (the maintainer can keep using pty-speak); the
+  tuple lands eventually.
+- **Diagnostic hotkey says "no file" in `session_log` mode**
+  → the sink construction failed silently. Same root cause
+  as the second bullet above; grep the log for
+  `SessionLogWriter`.
+- **Redaction marker missing from the file** → the env var
+  was either too short (< 16 chars) or not on the deny-list
+  pattern (`*_TOKEN`, `*_SECRET`, `*_KEY`, `*_PASSWORD`;
+  `ANTHROPIC_API_KEY` exempted). Check the active session
+  log for the `SessionSanitiser: registered N env-var-value
+  redaction patterns from process environment` line; `N`
+  should be ≥ 1 if your test env var matched.
+- **`Ctrl+Shift+Y` clipboard ALSO redacts** → bug; the
+  substrate/persistence boundary leaked. Substrate must
+  stay honest. File an issue with the clipboard contents
+  + the active session log.
+
 ### Stage 8 — selection lists
 
 | Test                              | Procedure                                       | Expected behaviour                                               |
