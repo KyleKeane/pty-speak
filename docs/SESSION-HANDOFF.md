@@ -32,8 +32,8 @@ discipline),
 |---|---|
 | **Last merged stages** | **Stages 0 → 7 + 11** all merged to `main`, plus the retroactively-formalized Stages 4a / 4b / 5a. Stage 7 shipped 2026-05-03 across 11 sequenced PRs (A → K, #131-#143) + PR-L #144 (doc-purpose audit + Stage 7 wrap-up) + PR-M #145 (coalescer cross-row spinner gate fix). **Post-Stage-7 substrate cycle 2026-05-04 → 2026-05-07** (PRs #146-#184) shipped: event-and-output framework spec (#151); Stages 8a/8b/8c/8d.1/8d.2 (#152-#157, #155); display-pathway substrate Phase A + Phase A.1 + Phase B subset + Phase A.2 + #166 suffix-diff + #167 atlas + #168 Tier 1 parameters + #169 shell-switch flush fix (#159-#169); five research-stage docs: PIPELINE-NARRATIVE (#170), SESSION-MODEL (#171), INTERACTION-MODEL (#173), PANE-MODEL (#174), CUSTOMIZATION-MODEL (#181); six-track audit phase (#172, #175-#180); post-audit cleanup (#181-#184). **Tier 1 SessionModel implementation cycle 2026-05-07 → 2026-05-08** (PRs #185-#199) shipped substrate end-to-end: skeleton (#185), OSC 133 producer + cursor field (#186), state machine + composition (#187), heuristic fallback + alt-screen wiring (#189), PromptText capture (#190), diagnostic battery extension (#191), tick-driven detector via channel-driven actor model (#192), CHANNEL-ARCHITECTURE doc (#193), default-shell config + detector consolidation (#194), row-index-aware emission (#195) + announce-wording followup (#196), CommandText + OutputText extraction (#197), multi-match flap fix (#198), Ctrl+Shift+Y clipboard hotkey (#199). Maintainer NVDA-validation green throughout. |
 | **Last shipped release** | Maintainer cuts release builds from `main` whenever convenient. The last release predating Tier 1 was `v0.0.1-preview.43`; subsequent previews have shipped through the substrate + Tier 1 cycles. |
-| **In-flight branch** | `claude/review-project-scope-Gep0e` — Cycle 24a (Tier 2 SessionModel persistence — TOML plumbing only). |
-| **Next stage** | **Cycle 24a** (this PR) ships the `[session_model.persistence]` TOML schema + composition-root log line; no I/O. Cycles 24b → 24e wire the JSONL serializer, file writer, `always` mode + secrets sanitisation, and NVDA matrix rows in turn. After Cycle 24 closes, the next maintainer fork is **Phase 2 input framework cycle** vs. **CustomizationModel implementation** (TBD). Predecessor cycles: Cycle 23 doc cleanup + Q&A shipped 2026-05-08 via PRs #200 + #201; Tier 1 SessionModel substrate shipped 2026-05-07/08 via PRs #185-#199. SESSION-MODEL Q1-Q8, INTERACTION-MODEL Q1-Q6, PANE-MODEL Q1-Q5, CUSTOMIZATION-MODEL Q1-Q7 all resolved + shipped. Open follow-ups: (a) Screen-buffer runtime resize (Phase 2 stage). (b) Stable-baseline tag pushes including `baseline/stage-7-claude-roundtrip` per [`docs/CHECKPOINTS.md`](CHECKPOINTS.md). (c) MAY-4.md Concern 3 (navigable streaming response queue) — naturally subsumed by SessionModel + ReplPathway (Phase 2). (d) `Tier 2` (planning-doc) vs `Tier 6` (`SESSION-MODEL.md` §6) vocabulary reconciliation — separate doc-currency PR, not blocking. |
+| **In-flight branch** | (none) — Cycles 24a + 24b shipped 2026-05-09 via PRs #203 + #206. **Cycle 24c** (file writer) is the next pickup; doc-currency cleanup PR shipping in parallel resolves the Tier 2 / Tier 6 vocabulary collision. |
+| **Next stage** | **Cycle 24c — bounded-channel async file writer** that consumes `SessionModel.formatTupleAsJsonl` (shipped in 24b) and persists JSONL lines to `%LOCALAPPDATA%\PtySpeak\sessions\session-<SessionId>.jsonl` on the Active→History transition. Locked design: `BoundedChannelFullMode.Wait` (back-pressure into the state machine; data-durability bias); `MemoryOnly` mode never opens a file; `Always` mode logs a Warning + behaves as `SessionLog` for this cycle (true sync flush ships in 24d). Hook point: `SessionModel.apply` returns `(T * SessionTuple option)` so the composition root pattern-matches and dispatches to the writer. Mirrors `FileLogger.fs:120-455` sink-class pattern. Followed by **Cycle 24d** (`Always` sync flush + secrets sanitisation) and **Cycle 24e** (NVDA matrix rows + diagnostic helper). Predecessor cycles: Cycle 23 (doc cleanup + Q&A) shipped 2026-05-08 via PRs #200 + #201; Tier 1 SessionModel substrate shipped 2026-05-07/08 via PRs #185-#199; **Cycles 24a (TOML schema, PR #203) + 24b (JSONL serializer, PR #206) shipped 2026-05-09**. SESSION-MODEL Q1-Q8, INTERACTION-MODEL Q1-Q6, PANE-MODEL Q1-Q5, CUSTOMIZATION-MODEL Q1-Q7 all resolved + shipped. Open follow-ups: (a) Screen-buffer runtime resize (Phase 2 stage). (b) Stable-baseline tag pushes including `baseline/stage-7-claude-roundtrip` per [`docs/CHECKPOINTS.md`](CHECKPOINTS.md). (c) MAY-4.md Concern 3 (navigable streaming response queue) — naturally subsumed by SessionModel + ReplPathway (Phase 2). |
 
 ## Cycle 23 in-flight handoff (✅ shipped 2026-05-08; retained for historical reference)
 
@@ -43,8 +43,13 @@ discipline),
 > walk-through) ran 2026-05-08; the resolutions it produced are
 > already merged into `docs/CUSTOMIZATION-MODEL.md`. Phase 4
 > resolved with the maintainer's pick of **Tier 2 SessionModel
-> persistence**, which is now in flight as **Cycle 24** (see
-> the Cycle 24 in-flight handoff section below).
+> persistence** — now tracked as **Cycle 24** (sub-cycles
+> 24a–24e). Cycles 24a (TOML schema, PR #203) and 24b (JSONL
+> serializer, PR #206) shipped 2026-05-09; Cycle 24c (file
+> writer) is in flight. See the Cycle 24 in-flight handoff
+> section below for the original sub-cycle planning sketch
+> (now partly historical — 24a + 24b are shipped; 24c–24e
+> remain).
 >
 > The original cross-session-bridge content for Cycle 23 is
 > preserved verbatim below for the audit trail (Q1–Q7 verbatim
@@ -273,15 +278,21 @@ for the full sequencing rationale; the per-stage detail in this
 file's "Stage N implementation sketch" sections remains useful
 historical reference but is no longer the active plan.
 
-## Cycle 24 in-flight handoff (for new-agent pickup)
+## Cycle 24 in-flight handoff (✅ Cycles 24a + 24b shipped 2026-05-09; Cycle 24c next; retained for reference)
 
-> This section is the cross-session bridge for Cycle 24
-> (SessionModel persistence cycle). The previous Claude session
-> closed Cycle 23 end-to-end (PRs #200 + #201 merged 2026-05-08),
-> opened the Cycle 24-pre tone-note commit (`40aaf60`, awaiting
-> manual PR open due to a GitHub MCP disconnect), and captured
-> the Cycle 24 scope decisions here so a new agent can resume
-> without reconstruction.
+> **Status (2026-05-09):** Cycles 24a (TOML schema) and 24b
+> (JSONL serializer) shipped via PRs #203 and #206. Cycle 24c
+> (file writer) is in flight; the locked design is captured in
+> the "Next stage" cell at the top of this doc. Cycles 24d–24e
+> (Always-mode + secrets sanitisation; NVDA matrix) follow.
+>
+> The original Cycle 24 sub-cycle planning sketch is preserved
+> below verbatim for the audit trail. New agents picking up
+> Cycle 24c work should read the "Next stage" cell at the top
+> of this doc + the (just-merged) cleanup PR's commit message
+> for the locked decisions; the sub-cycle table below remains
+> useful as a roadmap for 24c→24e but the per-PR file lists
+> below are now historical.
 
 ### Cycle 24 status
 
@@ -290,15 +301,15 @@ historical reference but is no longer the active plan.
 - **Phase 4 fork resolved by maintainer 2026-05-08**: chose
   **Tier 2 SessionModel persistence** (the default), not Phase 2
   input framework cycle.
-- **Cycle 24-pre** (CLAUDE.md tone-note) — commit `40aaf60`
-  pushed to `claude/continue-project-setup-2LepM`; PR not yet
-  opened (GitHub MCP disconnect; maintainer-confirmed re-auth
-  flow does not work for this maintainer's environment). Manual
-  PR open via
-  `https://github.com/KyleKeane/pty-speak/compare/main...claude/continue-project-setup-2LepM?expand=1`.
-- **Cycle 24a** (TOML plumbing) — scoped + planned, not yet
-  started. New agent picks up here.
-- **Cycles 24b-24e** — sketched (see sub-cycle table below);
+- **Cycle 24-pre** (CLAUDE.md tone-note) — ✅ shipped via PR #202
+  (resolved manual MCP-reconnect path).
+- **Cycle 24a** (TOML plumbing) — ✅ shipped via PR #203
+  (2026-05-09).
+- **Cycle 24b** (JSONL serializer) — ✅ shipped via PR #206
+  (2026-05-09).
+- **Cycle 24c** (file writer) — in flight; design locked, see
+  "Next stage" cell at the top of this doc.
+- **Cycles 24d-24e** — sketched (see sub-cycle table below);
   detailed planning at execute-time per sub-cycle.
 
 ### Cycle naming convention (chosen 2026-05-08)
@@ -309,22 +320,30 @@ CHANGELOG entries. Avoid "Tier 2" / "Tier 6" framings in user-
 facing artifacts because the docs collide on that vocabulary
 (see next subsection).
 
-### Vocabulary note: SESSION-MODEL Tier 6 vs planning-doc Tier 2
+### Vocabulary note: SESSION-MODEL Tier 6 vs planning-doc Tier 2 (✅ resolved 2026-05-09)
 
-The two vocabularies coexist on `main`:
+**Resolution**: persistence work is now tracked under
+**cycle-number naming** as `Cycle 24a–24e`. Both the
+SESSION-MODEL.md §6 "Tier 6" framing and the
+planning-doc / SESSION-HANDOFF "Tier 2 persistence" framing
+are preserved as historical decision-context, with
+in-place vocabulary notes pointing at the active labels.
+
+The original collision (preserved for context):
 
 - `docs/SESSION-MODEL.md` §6 calls Tier 2 the **heuristic-fallback**
   stage (already shipped via Cycles 11-22b) and lists
-  **persistence as Tier 6** (lines 1269-1274).
+  **persistence as Tier 6** (now annotated with a vocabulary
+  note pointing at Cycle 24).
 - `docs/PROJECT-PLAN-2026-05-revision.md`,
   `docs/SESSION-HANDOFF.md`,
-  `docs/AUDIT-BACKLOG-VALIDATION.md` (item 28) all call the next
+  `docs/AUDIT-BACKLOG-VALIDATION.md` (item 28) called the next
   implementation cycle **"Tier 2 SessionModel persistence"**.
 
-Reconciling these is a **separate doc-currency PR** (PR-200-
-shape) and **not a blocker** for Cycle 24. New agent: prefer
-cycle-number naming; if asked about "Tier N", clarify by quoting
-both vocabularies.
+The cycle-number convention wins for user-facing artifacts
+(PR titles, branch names, CHANGELOG entries, body text).
+Tier-N labels remain in design docs as historical
+decision-context only.
 
 ### Cycle 24a scope (the immediate next PR)
 

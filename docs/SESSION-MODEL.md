@@ -1376,6 +1376,21 @@ Estimated scope: ~3000-5000 LOC across all three.
 
 ### Tier 6 — persistence + cross-session loading (multi-PR cycle)
 
+> **Vocabulary note (added 2026-05-09):** persistence is
+> now tracked under **cycle-number naming** as **Cycle 24**
+> (sub-cycles `24a–24e`) per the convention chosen in PR
+> #202. The "Tier 6" label below was the design-time
+> grouping; the user-facing canonical labels are
+> `Cycle 24a` (TOML schema, PR #203 — shipped),
+> `Cycle 24b` (JSONL serializer, PR #206 — shipped),
+> `Cycle 24c` (file writer — in flight), `Cycle 24d`
+> (`Always` sync flush + secrets sanitisation), `Cycle 24e`
+> (NVDA matrix + diagnostic helper). See
+> `docs/PROJECT-PLAN-2026-05-revision.md` and
+> `docs/SESSION-HANDOFF.md` for the active sequencing. The
+> "Tier 6" framing is preserved here for decision-history
+> continuity.
+
 JSONL session-log writer, pty-speak-replay CLI tool
 (item 4), config plumbing for persistence modes.
 
