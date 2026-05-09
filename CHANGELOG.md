@@ -15,6 +15,100 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 26c): RunProcessCleanupScript menu-only AppCommand + handler
+
+Third PR of Cycle 26 (the multi-PR app-menu mini-cycle). Lands the
+**first menu-only `AppCommand`** — `RunProcessCleanupScript` —
+proving the option-typed `Hotkey` plumbing introduced in Cycle 26b
+works end-to-end. Surfaces `scripts/test-process-cleanup.ps1` via
+**Diagnostics → Test Process Cleanup**, with no default keyboard
+accelerator (relieving the noted hotkey-count working-memory
+ceiling).
+
+The script needs the maintainer to physically close pty-speak via
+Alt+F4 to verify Job Object cascade-kill cleanup — that's why the
+autonomous in-process diagnostic battery (Ctrl+Shift+D) doesn't
+cover it. PowerShell launches with `-NoExit` so the PASS/FAIL
+output stays visible after the script exits.
+
+**Architectural changes**:
+
+- **`src/Terminal.Core/HotkeyRegistry.fs`** — new
+  `RunProcessCleanupScript` case in the `AppCommand` DU
+  (`nameOf` arm + `builtIns` row with `Key = None; Modifiers =
+  None` + `allCommands` entry). Lines 70-104, 109-125, 146-202,
+  234-249.
+- **`src/Terminal.Core/Types.fs`** — new
+  `ActivityIds.processCleanup = "pty-speak.process-cleanup"`.
+  Distinct ActivityId so consecutive presses dedupe at the
+  NVDA-channel layer.
+- **`src/Terminal.App/Program.fs`** — new
+  `runTestProcessCleanup` handler near `runOpenConfig`. Mirrors
+  the announce-before-focus-grab pattern from
+  `runOpenNewRelease` / `runOpenDataFolder` / `runOpenConfig`:
+  announces "Launching process-cleanup test in a separate
+  PowerShell window.", waits 700ms (so NVDA finishes speaking),
+  then `ProcessStartInfo { FileName = "powershell.exe";
+  Arguments = "-NoExit -ExecutionPolicy Bypass -File
+  \"<path>\""; UseShellExecute = true }`. Script-path resolution
+  via `Path.Combine(AppContext.BaseDirectory,
+  "test-process-cleanup.ps1")`. File-not-found falls through to
+  a sanitised announcement instead of throwing. Wraps in
+  `try/with`; sanitises exception messages via
+  `AnnounceSanitiser.sanitise`. Bind call added alongside the
+  other module-level binds.
+- **`src/Terminal.App/Terminal.App.fsproj`** —
+  `<Content Include>` for the script was already present (PR
+  #81 / Stage 4b precedent); only the inline comment is updated
+  to cite the Cycle 26c menu surface instead of the obsolete
+  `Ctrl+Shift+D` reference.
+- **`src/Views/MainWindow.xaml`** — new
+  `<MenuItem x:Name="MenuItem_RunProcessCleanupScript"
+   x:FieldModifier="public" Header="Test Process _Cleanup" />`
+  under the Diagnostics menu. No `InputGestureText` — compose's
+  reflection-driven wiring assigns it from
+  `HotkeyRegistry.gestureText`, which returns `None` for
+  menu-only commands.
+
+**Three-edit-extension recipe in action**:
+
+This PR exercises the recipe the Cycle 26b CHANGELOG documented
+verbatim:
+
+1. ✅ AppCommand DU case + nameOf arm + allCommands row.
+2. ✅ builtIns row (with `None, None` for menu-only).
+3. ✅ Named `MenuItem` in XAML.
+
+Compose's reflection-driven wiring picks up the new entry
+automatically. No changes to `Program.fs compose()`, no changes
+to `bindHotkey`, no changes to the menu-wiring loop. The handler
+addition + bind call are the only `Program.fs` edits.
+
+**New tests**:
+
+- `tests/Tests.Unit/HotkeyRegistryTests.fs` — extends "allCommands
+  contains exactly the documented commands" set with
+  `RunProcessCleanupScript`. New fixture
+  `RunProcessCleanupScript is menu-only (Cycle 26c)` pins
+  `(None, None)` shape + asserts `gestureText` returns `None`
+  for it (so MenuItem.InputGestureText is left blank in XAML).
+- `tests/Tests.Unit/AppReservedHotkeysMirrorTests.fs` — no change
+  needed; the existing `gesture-bearing` filter
+  (`List.choose (fun h -> match h.Key, h.Modifiers with Some k,
+  Some m -> ...)`) already excludes menu-only commands from the
+  parity check.
+
+**No NVDA validation row in this PR** (the matrix-row PR is Cycle
+26d). Manual NVDA gate to verify in 26d:
+
+- Diagnostics → Test Process _Cleanup → Enter announces
+  "Launching process-cleanup test in a separate PowerShell
+  window."; a new PowerShell window opens with the script
+  running; closing pty-speak via Alt+F4 produces PASS/FAIL
+  output in that window.
+- Menu item is focusable but reads no `InputGestureText` (no
+  shortcut → blank suffix).
+
 ### Added (Cycle 26b): wire 14 existing AppCommands into menu items via shared RoutedCommand
 
 Second PR of Cycle 26 (the multi-PR app-menu mini-cycle). Replaces

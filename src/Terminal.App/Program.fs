@@ -546,6 +546,66 @@ module Program =
             }
         ()
 
+    /// Launch the interactive process-cleanup test
+    /// (`scripts/test-process-cleanup.ps1`) in a separate
+    /// PowerShell window. Triggered by Diagnostics → Test Process
+    /// Cleanup menu item (Cycle 26c — first menu-only command;
+    /// no keyboard accelerator).
+    ///
+    /// The script needs the user to physically close pty-speak
+    /// (Alt+F4) so it can verify Job Object cascade-kill cleanup
+    /// — autonomous in-process diagnostic batteries can't drive
+    /// that. PowerShell launches with `-NoExit` so the script's
+    /// PASS/FAIL output stays visible after the script exits.
+    /// Script path resolves via `AppContext.BaseDirectory` —
+    /// `Terminal.App.fsproj`'s `<Content Include>` copies the
+    /// script next to `Terminal.App.exe` at build time, and
+    /// Velopack packs it for distribution.
+    ///
+    /// Mirrors `runOpenNewRelease` / `runOpenDataFolder` /
+    /// `runOpenConfig`'s announce-before-focus-grab pattern:
+    /// announce first, 700ms delay so NVDA finishes speaking,
+    /// then launch the new process.
+    let private runTestProcessCleanup (window: MainWindow) : unit =
+        let log = Logger.get "Terminal.App.Program.runTestProcessCleanup"
+        let scriptPath =
+            System.IO.Path.Combine(
+                System.AppContext.BaseDirectory,
+                "test-process-cleanup.ps1")
+        log.LogInformation(
+            "Process-cleanup script launch requested. ScriptPath={Path}",
+            scriptPath)
+        window.TerminalSurface.Announce(
+            "Launching process-cleanup test in a separate PowerShell window.",
+            ActivityIds.processCleanup)
+        let _ =
+            task {
+                do! Task.Delay(700)
+                let action () =
+                    try
+                        if not (System.IO.File.Exists scriptPath) then
+                            window.TerminalSurface.Announce(
+                                "Process-cleanup script not found in install directory.",
+                                ActivityIds.error)
+                        else
+                            let psi = System.Diagnostics.ProcessStartInfo()
+                            psi.FileName <- "powershell.exe"
+                            psi.Arguments <-
+                                sprintf
+                                    "-NoExit -ExecutionPolicy Bypass -File \"%s\""
+                                    scriptPath
+                            psi.UseShellExecute <- true
+                            System.Diagnostics.Process.Start(psi) |> ignore
+                    with ex ->
+                        let safe = AnnounceSanitiser.sanitise ex.Message
+                        window.TerminalSurface.Announce(
+                            sprintf "Could not launch process-cleanup test: %s" safe,
+                            ActivityIds.error)
+                do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                ()
+            }
+        ()
+
     // Cycle 25b-1a — `runCopyLatestLog` (Ctrl+Shift+L) removed.
     // The Ctrl+Shift+D diagnostic battery now bundles the active
     // FileLogger log into its dump-and-clipboard payload (alongside
@@ -684,6 +744,11 @@ module Program =
         bind HotkeyRegistry.OpenConfig (fun () -> runOpenConfig window)
         bind HotkeyRegistry.ToggleDebugLog (fun () -> runToggleDebugLog window)
         bind HotkeyRegistry.MuteEarcons (fun () -> runMuteEarcons window)
+        // Cycle 26c — first menu-only command. `bindHotkey`
+        // skips the KeyBinding installation (no gesture) but
+        // still creates the CommandBinding so the menu can
+        // dispatch via the captured RoutedCommand.
+        bind HotkeyRegistry.RunProcessCleanupScript (fun () -> runTestProcessCleanup window)
 
         // Cycle 25b-1a — `SetCopyLogToClipboardHandler` defense-in-
         // depth wiring removed alongside the Ctrl+Shift+L hotkey

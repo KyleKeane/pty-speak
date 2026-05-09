@@ -492,3 +492,13 @@ module ActivityIds =
     /// freshly written) before the default-app launch grabs
     /// focus.
     let openConfig = "pty-speak.open-config"
+
+    /// Process-cleanup-script launch announcements (Cycle 26c
+    /// Diagnostics → Test Process Cleanup menu item — no
+    /// keyboard accelerator). Emits "Launching process-cleanup
+    /// test in a separate PowerShell window." before
+    /// `powershell.exe` launch grabs focus, then either an OK
+    /// confirmation or a sanitised error path. Distinct
+    /// ActivityId so consecutive presses dedupe at the
+    /// NVDA-channel layer.
+    let processCleanup = "pty-speak.process-cleanup"

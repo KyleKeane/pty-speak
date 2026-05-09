@@ -35,11 +35,13 @@
     <!--
       Bundle the process-cleanup diagnostic script next to the
       Terminal.App.exe in the publish output. Velopack pack picks
-      it up automatically. The Ctrl+Shift+D hotkey in Program.fs
-      resolves the script via AppContext.BaseDirectory so the
-      install path doesn't need to be hardcoded. `<Link>` keeps
-      the file flat in the output directory rather than nesting
-      under `..\..\scripts\`.
+      it up automatically. Cycle 26c surfaces the script via the
+      Diagnostics → Test Process Cleanup menu item (no keyboard
+      accelerator); `runTestProcessCleanup` in Program.fs resolves
+      the script via AppContext.BaseDirectory so the install path
+      doesn't need to be hardcoded. `<Link>` keeps the file flat
+      in the output directory rather than nesting under
+      `..\..\scripts\`.
     -->
     <Content Include="..\..\scripts\test-process-cleanup.ps1">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
