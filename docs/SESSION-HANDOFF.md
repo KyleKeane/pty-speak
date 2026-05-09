@@ -32,15 +32,26 @@ discipline),
 |---|---|
 | **Last merged stages** | **Stages 0 → 7 + 11** all merged to `main`, plus the retroactively-formalized Stages 4a / 4b / 5a. Stage 7 shipped 2026-05-03 across 11 sequenced PRs (A → K, #131-#143) + PR-L #144 (doc-purpose audit + Stage 7 wrap-up) + PR-M #145 (coalescer cross-row spinner gate fix). **Post-Stage-7 substrate cycle 2026-05-04 → 2026-05-07** (PRs #146-#184) shipped: event-and-output framework spec (#151); Stages 8a/8b/8c/8d.1/8d.2 (#152-#157, #155); display-pathway substrate Phase A + Phase A.1 + Phase B subset + Phase A.2 + #166 suffix-diff + #167 atlas + #168 Tier 1 parameters + #169 shell-switch flush fix (#159-#169); five research-stage docs: PIPELINE-NARRATIVE (#170), SESSION-MODEL (#171), INTERACTION-MODEL (#173), PANE-MODEL (#174), CUSTOMIZATION-MODEL (#181); six-track audit phase (#172, #175-#180); post-audit cleanup (#181-#184). **Tier 1 SessionModel implementation cycle 2026-05-07 → 2026-05-08** (PRs #185-#199) shipped substrate end-to-end: skeleton (#185), OSC 133 producer + cursor field (#186), state machine + composition (#187), heuristic fallback + alt-screen wiring (#189), PromptText capture (#190), diagnostic battery extension (#191), tick-driven detector via channel-driven actor model (#192), CHANNEL-ARCHITECTURE doc (#193), default-shell config + detector consolidation (#194), row-index-aware emission (#195) + announce-wording followup (#196), CommandText + OutputText extraction (#197), multi-match flap fix (#198), Ctrl+Shift+Y clipboard hotkey (#199). Maintainer NVDA-validation green throughout. |
 | **Last shipped release** | Maintainer cuts release builds from `main` whenever convenient. The last release predating Tier 1 was `v0.0.1-preview.43`; subsequent previews have shipped through the substrate + Tier 1 cycles. |
-| **In-flight branch** | (none) — Tier 1 substrate cycle closed 2026-05-08 with PR #199 (Cycle 22b clipboard hotkey). Manual NVDA validation green; default-shell TOML config resolved the long-running "opens into Claude" issue. |
-| **Next stage** | **Cycle 23 doc cleanup + maintainer Q&A** (in flight; this work) → then **Tier 2 SessionModel persistence OR Phase 2 input framework** (maintainer's choice). Tier 1 substrate is structurally + content-complete; SessionModel populates `History` end-to-end for cmd / PowerShell sessions. The 7 still-open CUSTOMIZATION-MODEL questions (Q1-Q7) await maintainer input via the Cycle 23 walk-through (see "**Cycle 23 in-flight handoff**" section below for the verbatim questions + tentative recommendations a new agent can pick up directly). SESSION-MODEL Q1-Q8, INTERACTION-MODEL Q1-Q6, PANE-MODEL Q1-Q5 all resolved 2026-05-07/08 + shipped through Tier 1. Open follow-ups: (a) Screen-buffer runtime resize (Phase 2 stage). (b) Stable-baseline tag pushes including `baseline/stage-7-claude-roundtrip` per [`docs/CHECKPOINTS.md`](CHECKPOINTS.md). (c) MAY-4.md Concern 3 (navigable streaming response queue) — naturally subsumed by SessionModel + ReplPathway (Phase 2). |
+| **In-flight branch** | `claude/review-project-scope-Gep0e` — Cycle 24a (Tier 2 SessionModel persistence — TOML plumbing only). |
+| **Next stage** | **Cycle 24a** (this PR) ships the `[session_model.persistence]` TOML schema + composition-root log line; no I/O. Cycles 24b → 24e wire the JSONL serializer, file writer, `always` mode + secrets sanitisation, and NVDA matrix rows in turn. After Cycle 24 closes, the next maintainer fork is **Phase 2 input framework cycle** vs. **CustomizationModel implementation** (TBD). Predecessor cycles: Cycle 23 doc cleanup + Q&A shipped 2026-05-08 via PRs #200 + #201; Tier 1 SessionModel substrate shipped 2026-05-07/08 via PRs #185-#199. SESSION-MODEL Q1-Q8, INTERACTION-MODEL Q1-Q6, PANE-MODEL Q1-Q5, CUSTOMIZATION-MODEL Q1-Q7 all resolved + shipped. Open follow-ups: (a) Screen-buffer runtime resize (Phase 2 stage). (b) Stable-baseline tag pushes including `baseline/stage-7-claude-roundtrip` per [`docs/CHECKPOINTS.md`](CHECKPOINTS.md). (c) MAY-4.md Concern 3 (navigable streaming response queue) — naturally subsumed by SessionModel + ReplPathway (Phase 2). (d) `Tier 2` (planning-doc) vs `Tier 6` (`SESSION-MODEL.md` §6) vocabulary reconciliation — separate doc-currency PR, not blocking. |
 
-## Cycle 23 in-flight handoff (for new-agent pickup)
+## Cycle 23 in-flight handoff (✅ shipped 2026-05-08; retained for historical reference)
 
-> This section is the cross-session bridge for Cycle 23. The
-> previous Claude session shipped Phase 1 (this PR — doc
-> cleanup) and captured Phase 2-4 details here so a new agent
-> can resume without reconstruction.
+> **Status (2026-05-09):** all four Cycle 23 phases shipped.
+> Phase 1 = PR #200 (doc-currency refresh); Phase 3 = PR #201
+> (CUSTOMIZATION-MODEL Q1–Q7 resolutions). Phase 2 (in-session
+> walk-through) ran 2026-05-08; the resolutions it produced are
+> already merged into `docs/CUSTOMIZATION-MODEL.md`. Phase 4
+> resolved with the maintainer's pick of **Tier 2 SessionModel
+> persistence**, which is now in flight as **Cycle 24** (see
+> the Cycle 24 in-flight handoff section below).
+>
+> The original cross-session-bridge content for Cycle 23 is
+> preserved verbatim below for the audit trail (Q1–Q7 verbatim
+> prompts + the tentative recommendations the maintainer
+> reviewed). New agents picking up SessionModel persistence
+> work should read the Cycle 24 in-flight handoff section, not
+> this one.
 
 ### Cycle 23 phase status
 

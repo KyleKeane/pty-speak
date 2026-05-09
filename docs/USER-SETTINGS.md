@@ -498,6 +498,88 @@ diagnosis via log capture is trivial.
   ignores those sections).
 - Config validator binary or CLI.
 
+## SessionModel persistence (substrate shipped — Cycle 24a)
+
+The SessionModel substrate (PRs #185–#199, "Cycles 11–22b")
+populates `History` with completed `SessionTuple` values for
+cmd / PowerShell sessions. **Cycle 24a** introduces the TOML
+schema for opting `History` into disk persistence; the actual
+file writer ships in **Cycle 24c**, and **Cycle 24d** adds
+synchronous-flush + secrets sanitisation for the audit-grade
+`always` mode.
+
+### Current state
+
+- Config file: `%LOCALAPPDATA%\PtySpeak\config.toml` (same file
+  the pathway-selection schema reads).
+- Schema:
+
+  ```toml
+  [session_model.persistence]
+  mode = "memory_only"        # memory_only / session_log / always
+  output_dir = ""              # empty → default %LOCALAPPDATA%\PtySpeak\sessions\
+  format = "jsonl"             # jsonl (only value today)
+  max_session_size_mb = 64
+  ```
+
+- Defaults table:
+
+  | Setting | Default | What it controls |
+  |---|---|---|
+  | `[session_model.persistence] mode` | `"memory_only"` | When (and whether) tuples are flushed to disk. `memory_only` keeps `History` in RAM only; `session_log` flushes each tuple on Active→History; `always` flushes synchronously (audit-grade durability, blocks the transition). |
+  | `[session_model.persistence] output_dir` | `""` (resolves to `%LOCALAPPDATA%\PtySpeak\sessions\`) | Directory holding `session-<SessionId>.jsonl` files. |
+  | `[session_model.persistence] format` | `"jsonl"` | Wire format. Single value today; reserved as a DU so future binary / sqlite backends can land without a schema bump. |
+  | `[session_model.persistence] max_session_size_mb` | `64` | Per-session-file size cap before rotation (rotation logic ships with the writer in Cycle 24c). |
+
+- Loader: `src/Terminal.Core/SessionPersistence.fs` parses the
+  table; `src/Terminal.Core/Config.fs` invokes it from the
+  same `tryLoad` flow as `[startup]` and `[pathway.stream]`.
+- Composition root: `src/Terminal.App/Program.fs` logs the
+  resolved mode at startup at `Information` level (one line:
+  `SessionModel persistence mode: memory_only (output_dir=<default>, format=jsonl, max_session_size_mb=64)`)
+  so post-hoc diagnosis via `Ctrl+Shift+;` log capture confirms
+  the user's TOML actually took effect.
+
+### Why hardcoded now
+
+`memory_only` is the privacy-by-default choice that protects a
+brand-new install from accidentally writing prompt content +
+command output to disk. Users who want audit-grade durability
+opt in explicitly via TOML. The TOML schema lands first
+(Cycle 24a) so Cycles 24b–d can wire the JSONL serializer +
+file writer + sanitiser against a stable config surface.
+
+### Error semantics
+
+The loader **never** crashes pty-speak — it mirrors
+`Config.parseStartupOverrides`'s warn-and-fall-back pattern.
+
+| Condition | Log level | Effect |
+|---|---|---|
+| Missing `[session_model]` or `[session_model.persistence]` table | (silent) | Use defaults |
+| Unknown key under `[session_model.persistence]` | Warning | Drop the value |
+| Unknown `mode` value (e.g. `"verbose"`) | Warning | Fall back to `memory_only` |
+| Non-string `mode` value | Warning | Fall back to `memory_only` |
+| Unknown `format` value | Warning | Fall back to `jsonl` |
+| Empty `output_dir` string | (silent) | Treated as "no override" |
+| Non-positive / out-of-range `max_session_size_mb` | Warning | Fall back to `64` |
+
+### Out of scope (deferred to later sub-cycles)
+
+- **Cycle 24b** — pure JSONL serializer
+  (`formatTupleAsJsonl : SessionTuple -> string`).
+- **Cycle 24c** — bounded-channel async file writer +
+  `memory_only` / `session_log` modes wired against the
+  Active→History transition seam at `Program.fs`'s shell-switch
+  / SessionModel-recreate site.
+- **Cycle 24d** — `always` mode (synchronous flush) + secrets
+  sanitisation via env-var deny-list.
+- **Cycle 24e** — NVDA matrix rows for the "verify persistence
+  is on" flow + diagnostic helpers.
+- **Cycle 25+** — read-back / query API per
+  `docs/SESSION-MODEL.md` §7 and the `pty-speak-replay` CLI per
+  `SESSION-MODEL.md` Tier 6.
+
 ## Keybindings
 
 ### Current state

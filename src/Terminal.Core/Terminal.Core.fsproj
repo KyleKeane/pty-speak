@@ -20,6 +20,7 @@
     <Compile Include="FileLoggerChannel.fs" />
     <Compile Include="CanonicalState.fs" />
     <Compile Include="SessionModel.fs" />
+    <Compile Include="SessionPersistence.fs" />
     <Compile Include="HeuristicPromptDetector.fs" />
     <Compile Include="DisplayPathway.fs" />
     <Compile Include="StreamPathway.fs" />
