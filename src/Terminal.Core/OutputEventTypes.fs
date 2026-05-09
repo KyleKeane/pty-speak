@@ -277,9 +277,20 @@ module SelectionExtensions =
 
     /// 0-based index of the currently-selected item (`int`).
     /// Set on `SelectionShown` and `SelectionItem`. Absent on
-    /// `SelectionDismissed`.
+    /// `SelectionDismissed`. **Note**: on burst `SelectionItem`
+    /// events this is the GLOBAL selected index (constant
+    /// across the burst); use `ItemIndex` for the per-item
+    /// position.
     [<Literal>]
     let SelectedIndex = "selection.selectedIndex"
+
+    /// 0-based index of THIS item within the selection list
+    /// (`int`). Set on `SelectionItem` events only — varies
+    /// across burst items. The Cycle 29b SelectionProfile uses
+    /// `(ItemIndex == SelectedIndex)` to decide whether to
+    /// prefix the rendered text with "selected: ".
+    [<Literal>]
+    let ItemIndex = "selection.itemIndex"
 
     /// Single item's text (`string`). Set on `SelectionItem`
     /// only — for the row that was newly highlighted or

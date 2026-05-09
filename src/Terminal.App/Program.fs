@@ -933,15 +933,27 @@ module Program =
         OutputDispatcher.ProfileRegistry.register passThroughProfile
         let earconProfile = EarconProfile.create ()
         OutputDispatcher.ProfileRegistry.register earconProfile
-        // Phase A — active set: [ passThroughProfile;
-        // earconProfile ]. The pass-through fans every event
-        // to NVDA + FileLogger; EarconProfile additionally
-        // claims BellRang for the bell-ping earcon. NvdaChannel
-        // skips empty payloads (so BellRang's empty Payload
-        // doesn't double-announce); FileLogger records every
-        // event regardless (audit trail).
+        // Cycle 29b — SelectionProfile registers alongside the
+        // pass-through + earcon profiles. SelectionDetector
+        // emits `SelectionShown` / `SelectionItem` /
+        // `SelectionDismissed` events with empty Payload (the
+        // empty-payload trick — `NvdaChannel` skips
+        // `RenderText ""` per `NvdaChannel.fs:87`, so
+        // PassThroughProfile's catch-all doesn't double-emit
+        // an NVDA announcement). SelectionProfile then reads
+        // `Extensions[AllItems]` / `[ItemText]` / `[ItemIndex]`
+        // / `[SelectedIndex]` / `[ItemCount]` to construct the
+        // user-facing text and emit a NVDA + FileLogger pair.
+        let selectionProfile = SelectionProfile.create ()
+        OutputDispatcher.ProfileRegistry.register selectionProfile
+        // Active set: [ passThroughProfile; earconProfile;
+        // selectionProfile ]. PassThrough fans non-empty
+        // payloads to NVDA + FileLogger; Earcon claims
+        // BellRang / ErrorLine / WarningLine; Selection claims
+        // SelectionShown / SelectionItem / SelectionDismissed
+        // and emits the user-facing text rendering for them.
         OutputDispatcher.ProfileRegistry.setActiveProfileSet
-            [ passThroughProfile; earconProfile ]
+            [ passThroughProfile; earconProfile; selectionProfile ]
 
         // Phase B (subset, "C2") — load the user's TOML config
         // once at startup. `Config.tryLoad` never throws; on
@@ -1163,6 +1175,16 @@ module Program =
         let mutable promptDetector : HeuristicPromptDetector.T =
             HeuristicPromptDetector.create ()
 
+        // Cycle 29b — selection-prompt detector. Same actor-
+        // model contract as `promptDetector`: mutated on the
+        // PathwayPump worker thread, captured by closures that
+        // stay in this scope. Defaults loaded inline (Cycle 29c
+        // will load from `[profile.selection]` TOML). Reset on
+        // shell-switch + alt-screen entry alongside
+        // `promptDetector`.
+        let mutable selectionDetector : SelectionDetector.T =
+            SelectionDetector.create SelectionDetector.defaultParameters
+
         // PathwayPump — Phase A replacement for TranslatorPump.
         // Reads raw ScreenNotifications and routes by case:
         //   - RowsChanged: snapshot the screen → build a
@@ -1301,6 +1323,23 @@ module Program =
             match boundary with
             | Some data -> handlePromptBoundary data snapshot
             | None -> ()
+            // Cycle 29b — also drive the SelectionDetector on
+            // the same snapshot+cursor+now triple. The detector
+            // short-circuits internally when shellKey ≠ "claude"
+            // (per its `shouldDetect` gate), so cmd / PowerShell
+            // sessions pay only the function-call cost. Each
+            // emitted OutputEvent flows directly to the
+            // dispatcher, which fans it through the active
+            // profile set (PassThrough's catch-all → empty NVDA
+            // payload skipped + FileLogger logs the structured
+            // event; SelectionProfile renders the user-facing
+            // text and emits NVDA + FileLogger pair).
+            let selectionEvents, nextSelectionDetector =
+                SelectionDetector.tryDetect
+                    snapshot cursorPos now shellKey selectionDetector
+            selectionDetector <- nextSelectionDetector
+            for event in selectionEvents do
+                OutputDispatcher.dispatch event
 
         let handleRowsChanged () : unit =
             let seq, cursorPos, snapshot = screen.SnapshotRows(0, screen.Rows)
@@ -1378,6 +1417,14 @@ module Program =
                     SessionModel.enterAltScreen currentSession
                 promptDetector <-
                     HeuristicPromptDetector.reset promptDetector
+                // Cycle 29b — also reset the selection detector
+                // on alt-screen entry. Selection prompts can't
+                // appear inside alt-screen TUIs (vim / less /
+                // top); a stale candidate would emit a phantom
+                // SelectionDismissed on alt-screen exit if not
+                // reset.
+                selectionDetector <-
+                    SelectionDetector.reset selectionDetector
                 swapPathwayForAltScreen (TuiPathway.create ())
             | PathwaySelector.SwapToShellDefault ->
                 // SessionModel Tier 1.D — Q3 wiring
@@ -1389,6 +1436,9 @@ module Program =
                     SessionModel.exitAltScreen currentSession
                 promptDetector <-
                     HeuristicPromptDetector.reset promptDetector
+                // Cycle 29b — companion reset on alt-screen exit.
+                selectionDetector <-
+                    SelectionDetector.reset selectionDetector
                 swapPathwayForAltScreen (selectPathwayForShell currentShellId)
             // Step 3 — dispatch the barrier OutputEvent so the
             // FileLogger captures the mode transition in the
@@ -2467,6 +2517,15 @@ module Program =
                                         promptDetector <-
                                             HeuristicPromptDetector.reset
                                                 promptDetector
+                                        // Cycle 29b — companion
+                                        // reset on shell-switch
+                                        // so a stale candidate
+                                        // from the prior shell
+                                        // doesn't leak into the
+                                        // new one.
+                                        selectionDetector <-
+                                            SelectionDetector.reset
+                                                selectionDetector
                                         // Phase A — swap the active
                                         // pathway for the new shell.
                                         // `Reset` clears any pending

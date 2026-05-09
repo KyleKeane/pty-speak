@@ -368,6 +368,16 @@ the Output framework cycle's Selection profile.
 [`spec/tech-plan.md`](../spec/tech-plan.md) §7.4 known issue
 #2 → Stage 8). Empirical confirmation pending.
 
+**Status (2026-05-09).** Partially addressed by Cycles 29a +
+29b (Stage 8e-A parts 1+2 of 3): NVDA now reads selection
+prompts as text ("selection prompt: Edit, Yes, Always, No
+(selected: Yes)" + "selected: Yes, 2 of 4" on highlight
+movement + "selection dismissed" on dismissal). UIA listbox
+semantics — the full fix that gives NVDA `1 of 4` navigation
++ ListItem control type — arrives in Stage 8e-B (separate
+plan-mode pass). Cycle 29c finalises the substrate with
+`[profile.selection]` TOML loader.
+
 ### [output-earcon] Red error text reads as plain text (no severity signal)
 
 **What broke.** Claude (and other shells) emits red-coloured

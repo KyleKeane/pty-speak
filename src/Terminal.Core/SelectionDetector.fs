@@ -470,7 +470,13 @@ module SelectionDetector =
             Extensions = extensions }
 
     /// Build the initial-burst events for a freshly-detected
-    /// region: one `SelectionShown` + N `SelectionItem`s.
+    /// region: one `SelectionShown` + N `SelectionItem`s. All
+    /// events emit empty `Payload` per the Cycle 29b
+    /// empty-payload-trick — the user-facing text is constructed
+    /// at render time by `SelectionProfile` from the structured
+    /// `Extensions` data (matches the 8d.2 ErrorLine /
+    /// WarningLine precedent and prevents `PassThroughProfile`'s
+    /// catch-all from double-emitting an NVDA announcement).
     let private buildShownBurst
             (group: RegionGroup)
             (confidence: SelectionSource)
@@ -487,40 +493,49 @@ module SelectionDetector =
                   SelectionExtensions.TopRow, boxNN group.TopRow
                   SelectionExtensions.BottomRow, boxNN group.BottomRow
                   SelectionExtensions.Source, boxNN sourceStr ]
-        let shownPayload =
-            sprintf "selection prompt, %d items" itemCount
         let shown =
             baseEvent
                 SemanticCategory.SelectionShown
                 Priority.Assertive
-                shownPayload
+                ""
                 correlationId
                 shownExtensions
         let items =
             group.ItemTexts
             |> Array.mapi (fun idx text ->
-                let payload =
-                    if idx = selectedIdx then
-                        sprintf "selected: %s, %d of %d" text (idx + 1) itemCount
-                    else
-                        sprintf "%s, %d of %d" text (idx + 1) itemCount
+                // Each burst SelectionItem carries:
+                //   * SelectedIndex = the GLOBAL selected index
+                //     (constant across the burst; matches the
+                //     SelectionShown event for cross-event
+                //     correlation).
+                //   * ItemIndex = THIS item's 0-based position
+                //     within the list (varies across the burst).
+                //   * ItemText = THIS item's text.
+                // SelectionProfile uses
+                // `(ItemIndex == SelectedIndex)` to decide
+                // whether to prefix "selected: " in the rendered
+                // text.
                 let itemExtensions =
                     Map.ofList
                         [ SelectionExtensions.ItemCount, boxNN itemCount
-                          SelectionExtensions.SelectedIndex, boxNN idx
+                          SelectionExtensions.SelectedIndex, boxNN selectedIdx
+                          SelectionExtensions.ItemIndex, boxNN idx
                           SelectionExtensions.ItemText, boxNN text
                           SelectionExtensions.Source, boxNN sourceStr ]
                 baseEvent
                     SemanticCategory.SelectionItem
                     Priority.Polite
-                    payload
+                    ""
                     correlationId
                     itemExtensions)
         Array.append [| shown |] items
 
     /// Build a single `SelectionItem` event for a
     /// selection-index update (same items, different
-    /// selectedIdx).
+    /// selectedIdx). The newly-highlighted item IS the
+    /// selected one, so `ItemIndex == SelectedIndex` here —
+    /// `SelectionProfile` will prefix "selected: " when
+    /// rendering.
     let private buildItemUpdate
             (group: RegionGroup)
             (confidence: SelectionSource)
@@ -530,18 +545,17 @@ module SelectionDetector =
         let selectedIdx = group.HighlightedRowIdx
         let text = group.ItemTexts.[selectedIdx]
         let sourceStr = sourceToString confidence
-        let payload =
-            sprintf "%s, %d of %d" text (selectedIdx + 1) itemCount
         let extensions =
             Map.ofList
                 [ SelectionExtensions.ItemCount, boxNN itemCount
                   SelectionExtensions.SelectedIndex, boxNN selectedIdx
+                  SelectionExtensions.ItemIndex, boxNN selectedIdx
                   SelectionExtensions.ItemText, boxNN text
                   SelectionExtensions.Source, boxNN sourceStr ]
         baseEvent
             SemanticCategory.SelectionItem
             Priority.Polite
-            payload
+            ""
             correlationId
             extensions
 

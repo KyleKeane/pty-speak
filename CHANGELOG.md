@@ -15,6 +15,89 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 29b, Stage 8e-A part 2): SelectionProfile + Program.fs wiring — NVDA starts speaking selection prompts as text
+
+Second of three sequenced PRs (29a/29b/29c) closing spec
+Stage 8e for `[output-selection]` per
+`docs/STAGE-7-ISSUES.md:337` (Claude tool-use prompt reads as
+flat text instead of listbox). 29a shipped the detector substrate;
+29b ships the consumer side + the wiring that connects detector
+output to the dispatcher. **NVDA now reads selection prompts as
+text** when running Claude — the user-visible payoff of the
+sub-cycle. 29c will add the `[profile.selection]` TOML loader.
+8e-B introduces the UIA listbox peer (lifts text-only RenderText
+to UIA listbox semantics with `1 of 4` navigation).
+
+What ships in 29b:
+
+- **`src/Terminal.Core/SelectionProfile.fs`** — cousin of
+  `EarconProfile.fs`. Pattern-matches on
+  `SemanticCategory.SelectionShown / SelectionItem /
+  SelectionDismissed`; constructs user-facing text from
+  structured `Extensions` data and emits NVDA + FileLogger
+  ChannelDecisions. Empty-payload trick (mirrors the 8d.2
+  ErrorLine / WarningLine precedent): the detector emits with
+  empty `Payload` so PassThroughProfile's catch-all NVDA
+  decision is skipped (NvdaChannel.fs:87 drops `RenderText ""`),
+  preventing double-emission. SelectionProfile then renders
+  text from Extensions and emits the ONE NVDA + FileLogger
+  pair the user actually hears.
+- **`src/Terminal.Core/SelectionDetector.fs`** — adjusted to
+  emit empty `Payload` (was non-empty in 29a; would have
+  double-emitted via PassThroughProfile catch-all). Added
+  `ItemIndex` extension key on burst SelectionItem events
+  (was conflated with `SelectedIndex` in 29a). Now: each
+  burst SelectionItem carries `SelectedIndex` (constant
+  global selected index across the burst) AND `ItemIndex`
+  (THIS item's 0-based position; varies). SelectionProfile
+  uses `(ItemIndex == SelectedIndex)` to prefix "selected: "
+  in the rendered text.
+- **`src/Terminal.Core/OutputEventTypes.fs`** — extended
+  `SelectionExtensions` constants module with `ItemIndex` key
+  + clarified `SelectedIndex` doc-comment.
+- **`src/Terminal.App/Program.fs`** composition-root wiring:
+  - Profile registration: `selectionProfile = SelectionProfile.create()`
+    + `OutputDispatcher.ProfileRegistry.register selectionProfile`
+    + extended `setActiveProfileSet` to include selection.
+  - Detector mutable: `let mutable selectionDetector` adjacent
+    to `promptDetector` (~line 1175). Same actor-model contract
+    (mutated only on the PathwayPump worker thread).
+  - `runDetector` extension: after the existing
+    `HeuristicPromptDetector.tryDetect` invocation, call
+    `SelectionDetector.tryDetect` and route each emitted
+    `OutputEvent` directly to `OutputDispatcher.dispatch`.
+  - Reset hooks at all 3 sites that already reset
+    `promptDetector`: alt-screen entry, alt-screen exit,
+    shell-switch.
+- **`tests/Tests.Unit/SelectionProfileTests.fs`** — 13 facts
+  pinning the profile contract: identity, SelectionShown
+  rendering with full-list + selected-item prefix,
+  fall-back to count-only summary when AllItems missing,
+  SelectionItem rendering with "selected: " prefix when
+  `ItemIndex == SelectedIndex`, plain "%s, %d of %d" when
+  not, SelectionDismissed renders literal "selection
+  dismissed", foreign Semantic categories return `[||]`,
+  Tick + Reset are no-ops.
+- **`tests/Tests.Unit/SelectionDetectorTests.fs`** — added
+  `ItemIndex` schema fact + payload-empty assertions on
+  SelectionShown / SelectionItem (the empty-payload trick).
+- Project file registrations: `Terminal.Core.fsproj` registers
+  `SelectionProfile.fs` after `EarconProfile.fs`;
+  `Tests.Unit.fsproj` registers `SelectionProfileTests.fs`
+  after `EarconProfileTests.fs`.
+
+**Keystroke wiring deferred** (per maintainer's plan-mode
+choice 2026-05-09). The detector emits at default
+`HeuristicSGR` confidence without keystroke input — Signals
+#1 (stable region) + #2 (SGR-distinct) alone meet the default
+`MinConfidence` threshold so emission flows end-to-end. Signal
+#3 confidence upgrade (arrow-key correlation) is purely a
+debug-confidence indicator visible only as the
+`selection.source` Extensions value; not user-facing in 29b.
+Keystroke wiring lands in 8e-C alongside the arrow-key
+round-trip (`ISelectionItemProvider.Select` → PTY arrow byte
+sequence) where it belongs architecturally.
+
 ### Added (Cycle 29a, Stage 8e-A part 1): SelectionDetector substrate + SelectionExtensions schema (not yet wired to dispatcher)
 
 First of three sequenced PRs (29a / 29b / 29c) that close the
