@@ -426,6 +426,15 @@ module SelectionDetector =
     [<Literal>]
     let private producerId = "selection-detector"
 
+    /// F# 9 strict-nullness coercion. `box x` returns
+    /// `obj | null`, but `OutputEvent.Extensions` is
+    /// `Map<string, obj>` (non-nullable obj). Each value we
+    /// box (int / string / string[] / etc.) is provably
+    /// non-null at the call site, so `nonNull` is safe — the
+    /// only way `box` of a non-null primitive returns `null`
+    /// is on a `null` reference type, which we never pass.
+    let private boxNN (value: 'T) : obj = nonNull (box value)
+
     /// Construct a base `OutputEvent` for selection events.
     /// Builds via `OutputEvent.create` (v1 defaults factory)
     /// then layers Shell + CorrelationId + Extensions on top.
@@ -463,12 +472,12 @@ module SelectionDetector =
         let sourceStr = sourceToString confidence
         let shownExtensions =
             Map.ofList
-                [ SelectionExtensions.ItemCount, box itemCount
-                  SelectionExtensions.SelectedIndex, box selectedIdx
-                  SelectionExtensions.AllItems, box group.ItemTexts
-                  SelectionExtensions.TopRow, box group.TopRow
-                  SelectionExtensions.BottomRow, box group.BottomRow
-                  SelectionExtensions.Source, box sourceStr ]
+                [ SelectionExtensions.ItemCount, boxNN itemCount
+                  SelectionExtensions.SelectedIndex, boxNN selectedIdx
+                  SelectionExtensions.AllItems, boxNN group.ItemTexts
+                  SelectionExtensions.TopRow, boxNN group.TopRow
+                  SelectionExtensions.BottomRow, boxNN group.BottomRow
+                  SelectionExtensions.Source, boxNN sourceStr ]
         let shownPayload =
             sprintf "selection prompt, %d items" itemCount
         let shown =
@@ -488,10 +497,10 @@ module SelectionDetector =
                         sprintf "%s, %d of %d" text (idx + 1) itemCount
                 let itemExtensions =
                     Map.ofList
-                        [ SelectionExtensions.ItemCount, box itemCount
-                          SelectionExtensions.SelectedIndex, box idx
-                          SelectionExtensions.ItemText, box text
-                          SelectionExtensions.Source, box sourceStr ]
+                        [ SelectionExtensions.ItemCount, boxNN itemCount
+                          SelectionExtensions.SelectedIndex, boxNN idx
+                          SelectionExtensions.ItemText, boxNN text
+                          SelectionExtensions.Source, boxNN sourceStr ]
                 baseEvent
                     SemanticCategory.SelectionItem
                     Priority.Polite
@@ -516,10 +525,10 @@ module SelectionDetector =
             sprintf "%s, %d of %d" text (selectedIdx + 1) itemCount
         let extensions =
             Map.ofList
-                [ SelectionExtensions.ItemCount, box itemCount
-                  SelectionExtensions.SelectedIndex, box selectedIdx
-                  SelectionExtensions.ItemText, box text
-                  SelectionExtensions.Source, box sourceStr ]
+                [ SelectionExtensions.ItemCount, boxNN itemCount
+                  SelectionExtensions.SelectedIndex, boxNN selectedIdx
+                  SelectionExtensions.ItemText, boxNN text
+                  SelectionExtensions.Source, boxNN sourceStr ]
         baseEvent
             SemanticCategory.SelectionItem
             Priority.Polite
