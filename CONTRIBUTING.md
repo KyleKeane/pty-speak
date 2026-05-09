@@ -13,8 +13,16 @@ to not relearn.
    [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md).
 2. **Honor the spec.** [`spec/overview.md`](spec/overview.md) is the
    architectural rationale; [`spec/tech-plan.md`](spec/tech-plan.md) is
-   the stage-by-stage implementation plan. Changes that contradict
-   either need an issue and discussion first.
+   the stage-by-stage implementation plan;
+   [`docs/CORE-ABSTRACTION-BOUNDARY.md`](docs/CORE-ABSTRACTION-BOUNDARY.md)
+   (recorded as
+   [`docs/adr/0001-substrate-channel-dichotomy.md`](docs/adr/0001-substrate-channel-dichotomy.md))
+   is the **non-negotiable substrate / channel boundary** every
+   downstream stage builds against — substrate code (`Terminal.Core`)
+   may not import channel concerns (`Terminal.Accessibility`) and
+   vice versa, and channels may not produce new semantic events.
+   Changes that contradict any of the three need an issue and
+   discussion first.
 3. **Walking-skeleton discipline.** We add Stage N only when Stage N-1
    ships and is validated end-to-end. Don't merge Stage 5 streaming
    notifications before Stage 4 text exposure works in Inspect.exe.

@@ -15,6 +15,66 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Docs (Cycle 30): substrate / channel boundary doc + ADR 0001 + PANE-MODEL refinement
+
+Doc-only foundation cycle landing the architectural framing
+locked in PROJECT-PLAN-2026-05-09 §A. No behaviour change. The
+boundary is a non-negotiable design constraint going forward;
+all subsequent linear-text-substrate work (Cycles 33-35) builds
+against it.
+
+- **`docs/CORE-ABSTRACTION-BOUNDARY.md`** (new) — canonical
+  statement of the substrate / channel dichotomy. §1 records
+  the maintainer-blessed four-part assertion verbatim. §2-§3
+  define what substrate code (`Terminal.Core`) and channel code
+  (`Terminal.Accessibility`) may and may not do. §4 names the
+  NLP-style parser pipeline layering. §5 catalogs the **three
+  exemplar canonical displays** (raw text / interactive list /
+  form with text input) that seed the canonical-display
+  vocabulary; severity alert / progress / status / tabular /
+  tree are named extension points but not specified. §6
+  formalises the **three-sub-pane interaction paradigm**
+  (command-input / current-output / history) for the shell
+  pane plus three reserved peer panes (notification queue /
+  contextual keyword info / input assistant). §7 specifies the
+  streaming-incomplete protocol. §8 codifies the portability
+  invariant.
+- **`docs/adr/0001-substrate-channel-dichotomy.md`** (new) —
+  ADR recording the four-part assertion as accepted. Documents
+  context (today's screen-grid substrate breaks down on linear
+  workloads — confirmed Cycle 29b spinner storms, red-tone
+  misfires, `extractCommandAndOutput` fragility), decision (the
+  boundary is non-negotiable), and consequences (positive +
+  costs, including the multi-cycle inversion and parallel-
+  substrate transition window).
+- **`docs/PANE-MODEL.md`** (updated) — bumped snapshot to
+  2026-05-09. Catalog table extended with the three new
+  reserved peer panes (notification queue / contextual keyword
+  info / input assistant). Inserted "Shell pane internal
+  structure" subsection that points at
+  CORE-ABSTRACTION-BOUNDARY.md §6 for the three-sub-pane
+  decomposition. Three new pane sections appended after AI
+  assistance — each one paragraph with content source, user
+  interaction sketch, cross-pane coordination, UIA mapping,
+  reserved decisions. CORE-ABSTRACTION-BOUNDARY.md is now the
+  canonical source for all four refinements.
+- **`CLAUDE.md`** (updated) — reading order at session start
+  expanded to insert CORE-ABSTRACTION-BOUNDARY.md as item 5
+  (between strategic plan and spec/tech-plan). Read before
+  working on substrate or channel code.
+- **`CONTRIBUTING.md`** (updated) — "Honor the spec" rule
+  extended to add the boundary doc + ADR 0001 as a third
+  non-negotiable: substrate code (`Terminal.Core`) may not
+  import channel concerns (`Terminal.Accessibility`); channels
+  may not produce new semantic events.
+
+The Claude-research handoffs originally drafted (canonical-
+display taxonomy survey + streaming partial-emit prior-art
+survey) are deferred per the maintainer's 2026-05-09
+redirect; the three exemplar canonical displays establish
+the abstraction without requiring full taxonomy scoping.
+Research can be commissioned later if extension demand arises.
+
 ### Docs (Cycle 29b NVDA-test follow-up): captured three lessons from 2026-05-09 validation pass
 
 Doc-only follow-up to Cycle 29b's NVDA validation. Three

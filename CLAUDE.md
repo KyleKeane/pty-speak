@@ -29,9 +29,20 @@ before deviating.
    revision, preserved verbatim) and the original
    `PROJECT-PLAN-2026-05.md` per Track E E5 dated-snapshot
    discipline.
-5. **[`spec/tech-plan.md`](spec/tech-plan.md)** §N for the canonical
+5. **[`docs/CORE-ABSTRACTION-BOUNDARY.md`](docs/CORE-ABSTRACTION-BOUNDARY.md)**
+   — architectural framing that locks the substrate / channel
+   dichotomy; recorded as
+   [`docs/adr/0001-substrate-channel-dichotomy.md`](docs/adr/0001-substrate-channel-dichotomy.md).
+   **Non-negotiable design constraint going forward.** Names the
+   three exemplar canonical displays (raw text / interactive
+   list / form with text input), the three-sub-pane interaction
+   paradigm (input / current-output / history), and the three
+   reserved peer panes (notification queue, contextual keyword
+   info, input assistant). Read before working on substrate or
+   channel code.
+6. **[`spec/tech-plan.md`](spec/tech-plan.md)** §N for the canonical
    spec of whatever stage you're working on.
-6. **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — canonical PR shape,
+7. **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — canonical PR shape,
    branch naming, F# / .NET 9 gotchas, accessibility
    non-negotiables, P/Invoke conventions, test conventions.
 
