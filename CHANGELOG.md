@@ -15,6 +15,58 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 32b): first `IDisplayBuffer` consumer — TerminalView render path
+
+`TerminalView`'s UI render path (`OnRender`) now consumes the
+`IDisplayBuffer` boundary interface (Cycle 31b) instead of
+calling `Screen.SnapshotRows` directly. The composition root
+constructs an inline F# object expression wrapping the existing
+`Screen` instance; the C# render loop receives an injected
+`IDisplayBuffer` via a new `SetDisplayBuffer` method that mirrors
+the existing `SetScreen` / `SetPtyHost` post-construction-injection
+pattern. **Pure refactor — visual rendering identical;** the
+`System.Tuple<long, Tuple<int, int>, Cell[][]>` shape returned by
+`Snapshot` is byte-identical to the prior `SnapshotRows`, so
+`.Item3` access in C# is unchanged.
+
+This is the **first consumer cutover** for the four boundary
+interfaces declared in Cycle 31. The other six `Screen.SnapshotRows`
+call sites (`Program.fs:1258/1345/1375/1480/1534/2574`,
+`TerminalAutomationPeer.fs:742`) remain on direct `Screen`
+access — future cycles can migrate as concrete value motivation
+surfaces.
+
+- **`src/Views/TerminalView.cs`** — adds `using Terminal.Core.Channels;`,
+  a new `private IDisplayBuffer? _displayBuffer;` field after the
+  existing `_screen` field, a new `SetDisplayBuffer(IDisplayBuffer)`
+  setter mirroring `SetScreen`, and a 1-line cutover at the render
+  call site (now line 1011 post-edits): `_screen.SnapshotRows(0, _screen.Rows)`
+  becomes `_displayBuffer.Snapshot(0, _screen.Rows)`. The
+  `_screen.Cols` access on the next line stays direct — `IDisplayBuffer`
+  is a snapshot-only contract; grid sizing is host-surface metadata
+  that future renderers will read from their own surface
+  dimensions.
+- **`src/Terminal.App/Program.fs`** — adds `open Terminal.Core.Channels`
+  at the top; immediately after the existing
+  `window.TerminalSurface.SetScreen(screen)` at line 731, adds
+  an inline `IDisplayBuffer` object expression wrapping the
+  same `screen` instance plus a `SetDisplayBuffer(displayBuffer)`
+  call. ~10 LOC. No new file (YAGNI principle — extract to a
+  named `DefaultDisplayBuffer` class when a second consumer
+  surfaces).
+
+**No tests changed.** No `TerminalView*Tests` exist (per
+CONTRIBUTING.md "Tests" §"NVDA: manual for each release", the
+render path is NVDA-validated manually). The Cycle 31a / 31b /
+32a unit-test surface stays green by construction (no public
+API changed; `IDisplayBuffer` was declared in Cycle 31b with
+no consumers, and Cycle 32b wires the first one).
+
+**Validation:** maintainer launches pty-speak via `dotnet run` (or
+the installed Velopack build) and verifies the terminal renders
+normally on a real PTY session. The cutover is a pure refactor —
+if rendering looks correct, the abstraction layer is sound.
+
 ### Added (Cycle 32a): `[profile.selection]` TOML loader — closes Stage 8e-A scope
 
 The four `SelectionDetector` tunable thresholds (`HighlightDetectionThresholdMs`,

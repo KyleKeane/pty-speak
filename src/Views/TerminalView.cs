@@ -8,6 +8,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Terminal.Accessibility;
 using Terminal.Core;
+using Terminal.Core.Channels;
 
 namespace PtySpeak.Views;
 
@@ -43,6 +44,17 @@ public class TerminalView : FrameworkElement
     private double _cellHeight;
 
     private Screen? _screen;
+
+    /// <summary>
+    /// Cycle 32b — first consumer of the <see cref="IDisplayBuffer"/>
+    /// boundary interface declared in Cycle 31b. Composition root
+    /// constructs an adapter wrapping the same <see cref="Screen"/>
+    /// passed to <see cref="SetScreen"/>, then calls
+    /// <see cref="SetDisplayBuffer"/>. Future renderers (Avalonia,
+    /// GTK, AppKit) inject a different <c>IDisplayBuffer</c>
+    /// implementation; the C# render loop is unchanged.
+    /// </summary>
+    private IDisplayBuffer? _displayBuffer;
 
     /// <summary>
     /// Stage 6 PR-B — sink for keyboard / paste / focus bytes. Set
@@ -187,6 +199,20 @@ public class TerminalView : FrameworkElement
         _screen = screen ?? throw new ArgumentNullException(nameof(screen));
         InvalidateMeasure();
         InvalidateVisual();
+    }
+
+    /// <summary>
+    /// Cycle 32b — wires the <see cref="IDisplayBuffer"/> snapshot
+    /// surface for the UI render path. Composition root calls this
+    /// immediately after <see cref="SetScreen"/> with an adapter
+    /// that wraps the same <see cref="Screen"/> instance. Mirrors
+    /// the existing <see cref="SetScreen"/> / <see cref="SetPtyHost"/>
+    /// post-construction-injection pattern.
+    /// </summary>
+    public void SetDisplayBuffer(IDisplayBuffer displayBuffer)
+    {
+        _displayBuffer = displayBuffer
+            ?? throw new ArgumentNullException(nameof(displayBuffer));
     }
 
     /// <summary>
@@ -999,7 +1025,15 @@ public class TerminalView : FrameworkElement
         // F# 3-tuple becomes `Tuple<long, Tuple<int, int>, Cell[][]>`
         // — the Cell[][] moves from `.Item2` to `.Item3`. UI rendering
         // doesn't need cursor position, so `.Item2` is discarded.
-        var snap = _screen.SnapshotRows(0, _screen.Rows);
+        //
+        // Cycle 32b: snapshot now flows through the IDisplayBuffer
+        // boundary (Cycle 31b interface) instead of direct Screen
+        // access. Identical tuple shape — `.Item3` access unchanged.
+        // `_screen.Cols` stays direct (IDisplayBuffer is a
+        // snapshot-only contract; grid sizing is host-surface
+        // metadata that future renderers will read from their own
+        // surface dimensions).
+        var snap = _displayBuffer.Snapshot(0, _screen.Rows);
         var rows = snap.Item3;
         var cols = _screen.Cols;
 
