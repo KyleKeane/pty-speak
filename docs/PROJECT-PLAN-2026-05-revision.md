@@ -194,6 +194,11 @@ Cycle 11: SessionModel Tier 1 implementation
   - NVDA validation per ACCESSIBILITY-TESTING matrix.
 Cycle 12-15: SessionModel Tier 2-3 (persistence; query
   API; pathway integration).
+  - Note (added 2026-05-09): persistence sub-cycles are
+    tracked as `Cycle 24a–24e` per the convention chosen
+    in PR #202; the macro-row label here is preserved as
+    the original 2026-05-07 grouping. Cycles 24a + 24b
+    have shipped (PRs #203 + #206); 24c–24e remain.
 Cycle 16+: Phase 2 input framework cycle
   (echo correlation; cursor-aware editing; InputPathway
   protocol; ReplPathway).
@@ -263,3 +268,4 @@ gets preserved in the same way.
 |---|---|---|
 | 2026-05-07 | Cycle 10 (Track E E5 Option B resolution) | Initial successor doc. Captures substrate-first shift; reflects shipped substrate cycle (#146-#184); enumerates audit phase (Tracks A-F); points next stage at SessionModel Tier 1 implementation. |
 | 2026-05-09 | Cycle 23 doc cleanup | Tier 1 SessionModel implementation cycle shipped end-to-end via PRs #185-#199 (Cycles 11-22b inclusive). The "Next stage" pointer in the body text dates to 2026-05-07; current state is "Tier 2 persistence OR Phase 2 input framework — maintainer's choice". The "Sequencing post-audit" block's `Cycle 11` row corresponds to the multi-PR Tier 1 implementation cycle that shipped 2026-05-07/08; `Cycle 12-15` (Tier 2-3) and `Cycle 16+` (Phase 2) remain forward-looking. Body preserved per dated-snapshot discipline; re-snapshot will land as a future successor doc when the next major phase begins. |
+| 2026-05-09 | Cycle 24 doc-currency cleanup (this PR) | Maintainer chose Tier 2 SessionModel persistence as the post-Cycle-23 fork. Persistence work is now tracked under cycle-number naming as **Cycle 24a–24e**: 24a (TOML schema, PR #203) and 24b (JSONL serializer, PR #206) shipped 2026-05-09; 24c (file writer) is in flight; 24d (`Always` sync flush + secrets sanitisation) and 24e (NVDA matrix + diagnostic helper) follow. The "Sequencing post-audit" block's `Cycle 12-15` macro-row maps to this work in aggregate but is preserved verbatim per dated-snapshot discipline; the cycle-number naming is the active vocabulary. The Tier 2 (planning-doc) vs Tier 6 (`SESSION-MODEL.md` §6) collision is resolved in favour of cycle-number naming for user-facing artifacts; bridging notes added to both docs in this same PR. |
