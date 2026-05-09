@@ -64,7 +64,8 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               // and OpenConfig take its slot.
               HotkeyRegistry.OpenDataFolder
               HotkeyRegistry.OpenConfig
-              HotkeyRegistry.CopyLatestLog
+              // Cycle 25b-1a — CopyLatestLog removed (D's bundle
+              // subsumes it).
               HotkeyRegistry.ToggleDebugLog
               HotkeyRegistry.HealthCheck
               HotkeyRegistry.IncidentMarker
@@ -181,12 +182,15 @@ let ``CheckForUpdates is bound to Ctrl+Shift+U`` () =
         hk.Modifiers)
 
 [<Fact>]
-let ``CopyLatestLog is bound to Ctrl+Shift+L (Cycle 25a moved from Ctrl+Shift+;)`` () =
-    let hk = HotkeyRegistry.hotkeyOf HotkeyRegistry.CopyLatestLog
-    Assert.Equal(HotkeyRegistry.Letter 'L', hk.Key)
-    Assert.Equal<Set<HotkeyRegistry.Modifier>>(
-        Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ],
-        hk.Modifiers)
+let ``Ctrl+Shift+L is unbound (Cycle 25b-1a removed CopyLatestLog)`` () =
+    // Cycle 25b-1a — CopyLatestLog removed entirely. The
+    // Ctrl+Shift+D diagnostic battery's bundle now includes the
+    // active FileLogger log slice, making a dedicated "copy just
+    // the log" hotkey redundant. The L gesture must now flow
+    // through to the shell as plain text.
+    let modifiers = Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ]
+    let result = HotkeyRegistry.tryFind (HotkeyRegistry.Letter 'L') modifiers
+    Assert.Equal(None, result)
 
 [<Fact>]
 let ``OpenDataFolder is bound to Ctrl+Shift+P (Cycle 25a)`` () =

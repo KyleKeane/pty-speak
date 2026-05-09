@@ -15,6 +15,38 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 25b-1a): bundle gains session-log section + Ctrl+Shift+L removed
+
+Follow-up to 25b-1 (PR #221) after the maintainer validated the
+bundle format on a real Ctrl+Shift+D press:
+
+- **New `--- SESSION LOG ---` section** in the bundle, between
+  `CONFIG.TOML` and `ENVIRONMENT`. Carries the same
+  `Session log mode <mode>; path <full-path>.` line that
+  `Ctrl+Shift+S` announces, surfaced as a first-class
+  triage line so the maintainer doesn't have to grep the
+  FileLogger log slice for the active session-log path.
+  Single source of truth: `Program.fs.buildSessionLogSummary`
+  is consumed by both the S handler and D's
+  `resolveSessionLogSummary` closure.
+
+- **`Ctrl+Shift+L` (CopyLatestLog) removed entirely**. The D
+  bundle's `--- FILELOGGER ACTIVE LOG ---` section subsumes
+  L's payload — having a dedicated copy-just-the-log hotkey
+  was redundant given the bundle's coverage. Removed:
+  `HotkeyRegistry.AppCommand.CopyLatestLog` DU case + `nameOf`
+  arm + `builtIns` row + `allCommands` entry; the
+  `runCopyLatestLog` handler in `Program.fs` (~135 lines
+  including the dispatcher-deadlock-fix Task wrapper); the
+  `bindHotkey` line; the `SetCopyLogToClipboardHandler`
+  defense-in-depth wiring; the C# `_copyActiveLogToClipboard`
+  field, `SetCopyLogToClipboardHandler` setter, the
+  `Key.OemSemicolon` direct handler in `OnPreviewKeyDown`,
+  and the `(Key.L, ...)` row in `AppReservedHotkeys`. Tests
+  and `CLAUDE.md` / `ACCESSIBILITY-TESTING.md` updated to
+  point at D for log-paste flows. Per the maintainer's
+  hotkey-count-pressure feedback (working-memory ceiling).
+
 ### Changed (Cycle 25b-1): Ctrl+Shift+D bundles diagnostic dump + Ctrl+Shift+T placeholder removed
 
 `Ctrl+Shift+D` (autonomous diagnostic battery) now writes a

@@ -387,7 +387,7 @@ surface, not solve.**
 
 | Test                              | Procedure                                       | Expected behaviour                                               |
 |-----------------------------------|-------------------------------------------------|------------------------------------------------------------------|
-| **Default-shell launch (PR-B)**     | Launch pty-speak with `PTYSPEAK_SHELL` unset    | cmd.exe spawns; NVDA reads the cmd prompt; log line "Startup shell: Command Prompt (command line: cmd.exe)" appears in the active session log (press `Ctrl+Shift+L` to copy the log to clipboard, or `Ctrl+Shift+P` to open the data folder and navigate into `\logs`) |
+| **Default-shell launch (PR-B)**     | Launch pty-speak with `PTYSPEAK_SHELL` unset    | cmd.exe spawns; NVDA reads the cmd prompt; log line "Startup shell: Command Prompt (command line: cmd.exe)" appears in the active session log (press `Ctrl+Shift+D` to bundle the log into clipboard + a dated snapshot file, or `Ctrl+Shift+P` to open the data folder and navigate into `\logs`) |
 | **Env-scrub empirical check (PR-A)** | At the cmd prompt, type `set` and press Enter | Output enumerates the child's env block. Confirm sensitive vars from the deny-list are ABSENT: `GITHUB_TOKEN`, `OPENAI_API_KEY` (any `*_TOKEN`/`*_SECRET`/`*_PASSWORD`/non-Anthropic `*_KEY`). Confirm allow-list vars are PRESENT: `PATH`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `HOME`, `TERM=xterm-256color`, `COLORTERM=truecolor`. Active session log includes "Env-scrub: stripped {N} variables before child spawn." (count only; never names or values) |
 | **Claude-shell launch (PR-B)**      | Quit pty-speak; relaunch with `PTYSPEAK_SHELL=claude` (or with claude.exe on PATH and PR-C's hotkey approach below) | claude.exe spawns; NVDA reads the welcome screen; log line "Startup shell: Claude Code (command line: <resolved path>)" |
 | **Welcome screen (Claude)**         | After Claude spawns, listen                     | NVDA reads the welcome screen                                    |
@@ -464,7 +464,7 @@ verify each layer's user-facing contract.
 
 | Test                              | Procedure                                       | Expected behaviour                                               |
 |-----------------------------------|-------------------------------------------------|------------------------------------------------------------------|
-| Mode change at startup            | Press `Ctrl+Shift+E` to open `config.toml` (auto-creates with defaults if missing); set `[session_model.persistence] mode = "session_log"`; save; relaunch (or press `Ctrl+Shift+1` to reload persistence config without restart per Cycle 25a's reload-on-switch) | App starts cleanly; active session log (press `Ctrl+Shift+L` to copy to clipboard) contains `Config: [session_model.persistence] section parsed; mode=session_log, ...` immediately followed by `SessionModel persistence mode: session_log (output_dir=..., format=jsonl, max_session_size_mb=...)`; no Warning about "not yet implemented" |
+| Mode change at startup            | Press `Ctrl+Shift+E` to open `config.toml` (auto-creates with defaults if missing); set `[session_model.persistence] mode = "session_log"`; save; relaunch (or press `Ctrl+Shift+1` to reload persistence config without restart per Cycle 25a's reload-on-switch) | App starts cleanly; active session log (press `Ctrl+Shift+D` and inspect the bundle's `--- FILELOGGER ACTIVE LOG ---` section in clipboard) contains `Config: [session_model.persistence] section parsed; mode=session_log, ...` immediately followed by `SessionModel persistence mode: session_log (output_dir=..., format=jsonl, max_session_size_mb=...)`; no Warning about "not yet implemented" |
 | Open-config auto-create (Cycle 25a) | Delete `%LOCALAPPDATA%\PtySpeak\config.toml` if present; press `Ctrl+Shift+E` | NVDA announces "Created config file with defaults; opening." Default text editor opens to a fresh `config.toml` containing all four documented sections (`[session_model.persistence]`, `[startup]`, `[logging]`, plus `schema_version = 1`) with inline comments describing each value. Re-pressing `Ctrl+Shift+E` re-opens the existing file with the announcement "Opening config file." (no overwrite) |
 | Open-data-folder hotkey (Cycle 25a) | Press `Ctrl+Shift+P` | Explorer opens at `%LOCALAPPDATA%\PtySpeak\` showing `\logs`, `\sessions`, and `config.toml` — single jumping-off point for any of them. NVDA announces "Opening data folder." beforehand |
 | File creation in `session_log` mode | With mode set as above, run `echo hello`        | File `%LOCALAPPDATA%\PtySpeak\sessions\session-<UUID>.jsonl` exists; first line is one valid JSON object containing `"commandText":"echo hello"` and `"schemaVersion":1` |
@@ -476,7 +476,8 @@ verify each layer's user-facing contract.
 **Diagnostic decoder for Cycle 24:**
 
 - **Mode change ignored at startup** → grep the FileLogger
-  log (press `Ctrl+Shift+L` to copy to clipboard) for
+  log (press `Ctrl+Shift+D` and inspect the bundle's
+  `--- FILELOGGER ACTIVE LOG ---` section in clipboard) for
   `Config: ` lines. Cycle
   24f added explicit per-branch diagnostic logging:
   - `Config: no [session_model] section in TOML; using

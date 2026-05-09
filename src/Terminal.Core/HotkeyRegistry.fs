@@ -82,11 +82,6 @@ module HotkeyRegistry =
         // Cycle 25a — auto-create config.toml with defaults if
         // missing, then open in default app.
         | OpenConfig
-        // Logging-restructure PR (#111) — copy active log to clipboard.
-        // Cycle 25a — moved from `Ctrl+Shift+;` to `Ctrl+Shift+L`
-        // (mnemonic: L for Log; the old `Ctrl+Shift+L` opened the
-        // logs folder, which was deleted in favor of OpenDataFolder).
-        | CopyLatestLog
         // Stage 7-followup PR-E — toggle FileLogger min-level.
         | ToggleDebugLog
         // Stage 7-followup PR-F + PR-J liveness probe — health check.
@@ -118,7 +113,6 @@ module HotkeyRegistry =
         | DraftNewRelease -> "DraftNewRelease"
         | OpenDataFolder -> "OpenDataFolder"
         | OpenConfig -> "OpenConfig"
-        | CopyLatestLog -> "CopyLatestLog"
         | ToggleDebugLog -> "ToggleDebugLog"
         | HealthCheck -> "HealthCheck"
         | IncidentMarker -> "IncidentMarker"
@@ -170,10 +164,6 @@ module HotkeyRegistry =
             Key = Letter 'E'
             Modifiers = ctrlShift
             Description = "Edit config.toml (Cycle 25a; auto-creates with defaults if missing)" }
-          { Command = CopyLatestLog
-            Key = Letter 'L'
-            Modifiers = ctrlShift
-            Description = "Copy active session log to clipboard (Cycle 25a moved from Ctrl+Shift+;)" }
           { Command = ToggleDebugLog
             Key = Letter 'G'
             Modifiers = ctrlShift
@@ -247,7 +237,6 @@ module HotkeyRegistry =
           DraftNewRelease
           OpenDataFolder
           OpenConfig
-          CopyLatestLog
           ToggleDebugLog
           HealthCheck
           IncidentMarker

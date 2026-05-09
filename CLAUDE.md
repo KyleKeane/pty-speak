@@ -321,10 +321,6 @@ Currently shipped (orientation reference; spec section 6 is canonical):
   to clipboard, so a paste-back to triage chat carries the full
   triage context in one block)
 - `Ctrl+Shift+R` — draft-a-new-release form launcher
-- `Ctrl+Shift+L` — copy active session log to clipboard
-  (Cycle 25a moved from `Ctrl+Shift+;` for the L-as-Log
-  mnemonic; the old "open logs folder" binding is replaced
-  by `Ctrl+Shift+P` below)
 - `Ctrl+Shift+P` — open the pty-speak data folder
   (`%LOCALAPPDATA%\PtySpeak\`, parent of `\logs`,
   `\sessions`, and `config.toml`) (Cycle 25a; replaces the
@@ -351,7 +347,9 @@ Currently shipped (orientation reference; spec section 6 is canonical):
   <full-path>.` for `session_log` / `always`;
   `Session log mode memory_only; no file.` for `memory_only`.
   Companion to `Ctrl+Shift+P` (open the data-folder root)
-  and `Ctrl+Shift+L` (copy active log to clipboard).
+  and `Ctrl+Shift+D` (which folds the same summary into the
+  bundle's `--- SESSION LOG ---` section so a paste-back
+  carries it without a separate keystroke).
 
 Reserved (not yet bound):
 
@@ -442,9 +440,11 @@ The 5s background heartbeat
 (`runHeartbeat` in `Program.fs`) writes a line per tick to the
 active log including `Pid={Pid} Alive={Alive}`. When triaging
 "why did NVDA stop reading?" post-hoc, ask for the log slice
-covering that time window (`Ctrl+Shift+L` copies the active log)
-and grep `Heartbeat` to find the moment `Alive=False` first
-appears. That's the precise wedge timestamp.
+covering that time window (`Ctrl+Shift+D` bundles the active
+FileLogger log into clipboard + a dated snapshot file) and
+grep `Heartbeat` in the bundle's `--- FILELOGGER ACTIVE LOG ---`
+section to find the moment `Alive=False` first appears. That's
+the precise wedge timestamp.
 
 **Process tree diagnostic:**
 

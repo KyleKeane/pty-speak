@@ -523,171 +523,16 @@ module Program =
             }
         ()
 
-    /// Copy the active session's log file content to the
-    /// system clipboard so the maintainer can paste it into a
-    /// bug report without navigating File Explorer. Triggered
-    /// by `Ctrl+Shift+;` (the semicolon / colon key, immediately
-    /// to the right of `L` on a US-layout keyboard). Pairs by
-    /// physical proximity with the `Ctrl+Shift+L` open-folder
-    /// primary: same hand position, two adjacent keys, "open
-    /// the folder | copy the active file". Reads the file
-    /// pointed to by `FileLoggerSink.ActiveLogPath`, copies the
-    /// entire content as a single string, and announces the
-    /// byte count via NVDA on success.
-    ///
-    /// Hotkey-choice history. The original binding was
-    /// `Ctrl+Alt+L` (paired with `Ctrl+Shift+L` open-folder).
-    /// Two production issues forced the move:
-    ///
-    /// 1. `Ctrl+Alt+L` is the Windows Magnifier "zoom-in"
-    ///    shortcut on some default Magnifier configurations,
-    ///    so the OS swallowed the gesture before it reached
-    ///    pty-speak.
-    /// 2. The `Alt`-modifier path through WPF's input pipeline
-    ///    delivers `e.Key = Key.System` + `e.SystemKey = Key.L`,
-    ///    which required a SystemKey-aware filter throughout
-    ///    `OnPreviewKeyDown` — and that filter then intercepted
-    ///    `Alt+F4`, breaking the OS window-close gesture.
-    ///
-    /// `Ctrl+Shift+C` was considered but reserved for a future
-    /// copy-latest-command-output feature (the cross-terminal
-    /// convention for that gesture). Layout caveat: on non-US
-    /// keyboards the `OemSemicolon` virtual-key sits in a
-    /// different physical position; remap when configurable
-    /// keybindings ship in Phase 2.
-    let private runCopyLatestLog (window: MainWindow) : unit =
-        let log = Logger.get "Terminal.App.Program.runCopyLatestLog"
-        log.LogInformation("Ctrl+Shift+; pressed — copying active log to clipboard.")
-        match loggerSink with
-        | None ->
-            window.TerminalSurface.Announce(
-                "Logging is not initialised yet; nothing to copy.",
-                ActivityIds.error)
-        | Some sink ->
-            // Stage 7-followup PR-G — fix dispatcher deadlock that
-            // wedged the WPF window when this hotkey ran while NVDA
-            // had a long readout queued.
-            //
-            // The previous implementation called
-            // `sink.FlushPending(500).Result` on the dispatcher.
-            // `FlushPending` is `task { ... let! winner =
-            // Task.WhenAny(...) ... }`; the `let!` captures the
-            // WPF dispatcher's `SynchronizationContext`. When the
-            // dispatcher thread calls `.Result`, it blocks waiting
-            // for the task. The task's continuation needs to
-            // resume on the captured context — which is the
-            // dispatcher itself. Permanent deadlock; the 500ms
-            // timeout never fires because the timeout's
-            // continuation can't run on the wedged dispatcher.
-            // Empirical confirmation: 2026-05-03 NVDA pass log
-            // showed `Ctrl+Shift+;` entry-log fired at 19:13:51.861
-            // followed by zero subsequent dispatcher events for
-            // 2.5+ minutes (heartbeats kept firing on the
-            // background timer, confirming the runtime was alive
-            // but the WPF dispatcher was stuck).
-            //
-            // Additional concern: `Clipboard.SetText` requires the
-            // STA apartment AND can hang on contention with NVDA's
-            // clipboard hooks / antivirus / clipboard managers.
-            // Both issues are fixed by running the whole copy
-            // operation off the dispatcher in a Task: FlushPending
-            // is awaited normally (no `.Result`), the clipboard
-            // SetText runs on a dedicated STA thread with a 3s
-            // timeout, and the announcement dispatches back to the
-            // WPF thread on completion. The hotkey handler returns
-            // immediately; the dispatcher never blocks.
-            let _ =
-                task {
-                    try
-                        let! drained = sink.FlushPending(500)
-                        if not drained then
-                            log.LogInformation(
-                                "FlushPending timed out after 500ms; clipboard may be missing entries enqueued in the last few hundred ms.")
-                        let path = sink.ActiveLogPath
-                        if not (System.IO.File.Exists path) then
-                            let action () =
-                                window.TerminalSurface.Announce(
-                                    "Active log file does not exist yet; press a key or wait for an event first.",
-                                    ActivityIds.error)
-                            do! window.Dispatcher.InvokeAsync(Action(action)).Task
-                        else
-                            // FileShare.ReadWrite matches the
-                            // FileLogger writer's open mode (the
-                            // writer holds the file with FileAccess.Write
-                            // + FileShare.ReadWrite, so a reader
-                            // with FileShare.ReadWrite is granted
-                            // by the OS).
-                            let content =
-                                use stream =
-                                    new System.IO.FileStream(
-                                        path,
-                                        System.IO.FileMode.Open,
-                                        System.IO.FileAccess.Read,
-                                        System.IO.FileShare.ReadWrite)
-                                use reader =
-                                    new System.IO.StreamReader(
-                                        stream, System.Text.Encoding.UTF8)
-                                reader.ReadToEnd()
-                            // System.Windows.Clipboard.SetText
-                            // requires STA apartment. Thread-pool
-                            // threads are MTA, so we spin up a
-                            // dedicated STA thread for this single
-                            // operation. Bounded by a 3s timeout
-                            // so clipboard contention can't hang
-                            // the workflow indefinitely.
-                            let setOk = TaskCompletionSource<bool>()
-                            let staBody = ThreadStart(fun () ->
-                                try
-                                    System.Windows.Clipboard.SetText(content)
-                                    setOk.TrySetResult(true) |> ignore
-                                with ex ->
-                                    log.LogWarning(
-                                        ex,
-                                        "Clipboard.SetText threw: {Message}",
-                                        ex.Message)
-                                    setOk.TrySetResult(false) |> ignore)
-                            let staThread = new Thread(staBody)
-                            staThread.SetApartmentState(ApartmentState.STA)
-                            staThread.IsBackground <- true
-                            staThread.Start()
-                            let! winner =
-                                Task.WhenAny(
-                                    setOk.Task :> Task,
-                                    Task.Delay(3000))
-                            let succeeded =
-                                obj.ReferenceEquals(winner, setOk.Task)
-                                && setOk.Task.Result
-                            let bytes =
-                                System.Text.Encoding.UTF8.GetByteCount(content)
-                            let msg, activityId =
-                                if succeeded then
-                                    log.LogInformation(
-                                        "Copied active log to clipboard. Path={Path} Bytes={Bytes}",
-                                        path, bytes)
-                                    sprintf
-                                        "Log copied to clipboard. %d bytes; ready to paste."
-                                        bytes,
-                                    ActivityIds.diagnostic
-                                else
-                                    log.LogWarning(
-                                        "Clipboard.SetText timed out or failed after 3s; clipboard may not contain log content.")
-                                    "Clipboard copy timed out. Try again, or open the logs folder via Ctrl+Shift+L.",
-                                    ActivityIds.error
-                            let action () =
-                                window.TerminalSurface.Announce(msg, activityId)
-                            do! window.Dispatcher.InvokeAsync(Action(action)).Task
-                    with ex ->
-                        let safe = AnnounceSanitiser.sanitise ex.Message
-                        log.LogError(ex, "Failed to copy active log to clipboard.")
-                        let action () =
-                            window.TerminalSurface.Announce(
-                                sprintf "Could not copy log: %s" safe,
-                                ActivityIds.error)
-                        try
-                            do! window.Dispatcher.InvokeAsync(Action(action)).Task
-                        with _ -> ()
-                }
-            ()
+    // Cycle 25b-1a — `runCopyLatestLog` (Ctrl+Shift+L) removed.
+    // The Ctrl+Shift+D diagnostic battery now bundles the active
+    // FileLogger log into its dump-and-clipboard payload (alongside
+    // the battery log, config.toml, session-log summary, and
+    // redacted env), so a separate "copy just the log" hotkey is
+    // redundant and contributed to working-memory hotkey-count
+    // pressure. The defense-in-depth `OemSemicolon` direct handler
+    // in `TerminalView.OnPreviewKeyDown` and the
+    // `SetCopyLogToClipboardHandler` plumbing are deleted in the
+    // same change.
 
     /// Stage 7-followup PR-E — toggle the active `FileLoggerSink`'s
     /// min-level between Information (default) and Debug, and
@@ -798,21 +643,13 @@ module Program =
         bindHotkey window HotkeyRegistry.DraftNewRelease (fun () -> runOpenNewRelease window)
         bindHotkey window HotkeyRegistry.OpenDataFolder (fun () -> runOpenDataFolder window)
         bindHotkey window HotkeyRegistry.OpenConfig (fun () -> runOpenConfig window)
-        bindHotkey window HotkeyRegistry.CopyLatestLog (fun () -> runCopyLatestLog window)
         bindHotkey window HotkeyRegistry.ToggleDebugLog (fun () -> runToggleDebugLog window)
         bindHotkey window HotkeyRegistry.MuteEarcons (fun () -> runMuteEarcons window)
 
-        // Direct dispatch via TerminalView.OnPreviewKeyDown is
-        // kept as a defence-in-depth path because Window-level
-        // KeyBinding routing for custom FrameworkElements has
-        // been observed to flake (the Ctrl+V family of bugs).
-        // Both paths are wired; whichever fires first wins.
-        // Ctrl+Shift+; is a plain Ctrl+Shift gesture so no
-        // SystemKey unwrap is needed in the filter chain — the
-        // PR #108 SystemKey filter was removed in this PR
-        // because it intercepted Alt+F4.
-        window.TerminalSurface.SetCopyLogToClipboardHandler(
-            Action(fun () -> runCopyLatestLog window))
+        // Cycle 25b-1a — `SetCopyLogToClipboardHandler` defense-in-
+        // depth wiring removed alongside the Ctrl+Shift+L hotkey
+        // itself. The Ctrl+Shift+D bundle is now the single
+        // paste-the-log path.
 
         // Phase A — display-pathway pipeline:
         //
@@ -1900,6 +1737,27 @@ module Program =
                     sprintf "Health check failed: %s" safe,
                     ActivityIds.error)
 
+        // Cycle 25b-1a — single source of truth for the
+        // session-log mode/path triage line. Both Ctrl+Shift+S
+        // (verbal announce, via runAnnounceSessionLogPath below)
+        // and Ctrl+Shift+D's bundle (via the resolveSessionLogSummary
+        // closure passed into runFullBattery) read this. Defined
+        // before runDiagnostic so the closure can capture it.
+        let buildSessionLogSummary () : string =
+            let modeStr =
+                SessionPersistence.modeToString
+                    persistenceConfig.Mode
+            match sessionLogWriter with
+            | None ->
+                sprintf
+                    "Session log mode %s; no file."
+                    modeStr
+            | Some sink ->
+                sprintf
+                    "Session log mode %s; path %s."
+                    modeStr
+                    sink.ActiveLogPath
+
         // PR #165 — Ctrl+Shift+D (extended diagnostic battery).
         // The closure is defined here (not at module top) because
         // it reads `hostHandle`, `currentShell`, and the live
@@ -1939,6 +1797,13 @@ module Program =
                 // closure is captured.
                 (fun () ->
                     loggerSink |> Option.map (fun s -> s.ActiveLogPath))
+                // Cycle 25b-1a — session-log summary line for the
+                // bundle's `--- SESSION LOG ---` section. Same
+                // string Ctrl+Shift+S announces. Closure captures
+                // `buildSessionLogSummary` (defined above) so the
+                // mode/path are resolved at press-time and reflect
+                // any reload-on-shell-switch that happened since.
+                buildSessionLogSummary
 
         // Cycle 22b — Ctrl+Shift+Y. Closure captures
         // `currentSession` from compose-local scope. Resolves
@@ -2048,20 +1913,7 @@ module Program =
         // module-load time.
         let runAnnounceSessionLogPath () : unit =
             try
-                let modeStr =
-                    SessionPersistence.modeToString
-                        persistenceConfig.Mode
-                let summary =
-                    match sessionLogWriter with
-                    | None ->
-                        sprintf
-                            "Session log mode %s; no file."
-                            modeStr
-                    | Some sink ->
-                        sprintf
-                            "Session log mode %s; path %s."
-                            modeStr
-                            sink.ActiveLogPath
+                let summary = buildSessionLogSummary ()
                 log.LogInformation(
                     "Session log path requested. {Summary}",
                     summary)
