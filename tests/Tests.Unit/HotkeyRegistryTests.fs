@@ -60,7 +60,10 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
             [ HotkeyRegistry.CheckForUpdates
               HotkeyRegistry.RunDiagnostic
               HotkeyRegistry.DraftNewRelease
-              HotkeyRegistry.OpenLogsFolder
+              // Cycle 25a — OpenLogsFolder removed; OpenDataFolder
+              // and OpenConfig take its slot.
+              HotkeyRegistry.OpenDataFolder
+              HotkeyRegistry.OpenConfig
               HotkeyRegistry.CopyLatestLog
               HotkeyRegistry.ToggleDebugLog
               HotkeyRegistry.HealthCheck
@@ -73,7 +76,10 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               // Cycle 22b — copy SessionModel history to clipboard.
               HotkeyRegistry.CopyHistoryToClipboard
               // Cycle 24e — announce session-log file path.
-              HotkeyRegistry.AnnounceSessionLogPath ]
+              HotkeyRegistry.AnnounceSessionLogPath
+              // Cycle 25b — automated test runner (placeholder
+              // handler in 25a; full implementation in 25b).
+              HotkeyRegistry.RunTestMatrix ]
     let actual = Set.ofList HotkeyRegistry.allCommands
     Assert.Equal<Set<HotkeyRegistry.AppCommand>>(expected, actual)
 
@@ -178,9 +184,45 @@ let ``CheckForUpdates is bound to Ctrl+Shift+U`` () =
         hk.Modifiers)
 
 [<Fact>]
-let ``CopyLatestLog is bound to Ctrl+Shift+;`` () =
+let ``CopyLatestLog is bound to Ctrl+Shift+L (Cycle 25a moved from Ctrl+Shift+;)`` () =
     let hk = HotkeyRegistry.hotkeyOf HotkeyRegistry.CopyLatestLog
-    Assert.Equal(HotkeyRegistry.Semicolon, hk.Key)
+    Assert.Equal(HotkeyRegistry.Letter 'L', hk.Key)
+    Assert.Equal<Set<HotkeyRegistry.Modifier>>(
+        Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ],
+        hk.Modifiers)
+
+[<Fact>]
+let ``OpenDataFolder is bound to Ctrl+Shift+P (Cycle 25a)`` () =
+    let hk = HotkeyRegistry.hotkeyOf HotkeyRegistry.OpenDataFolder
+    Assert.Equal(HotkeyRegistry.Letter 'P', hk.Key)
+    Assert.Equal<Set<HotkeyRegistry.Modifier>>(
+        Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ],
+        hk.Modifiers)
+
+[<Fact>]
+let ``OpenConfig is bound to Ctrl+Shift+E (Cycle 25a)`` () =
+    let hk = HotkeyRegistry.hotkeyOf HotkeyRegistry.OpenConfig
+    Assert.Equal(HotkeyRegistry.Letter 'E', hk.Key)
+    Assert.Equal<Set<HotkeyRegistry.Modifier>>(
+        Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ],
+        hk.Modifiers)
+
+[<Fact>]
+let ``RunTestMatrix is bound to Ctrl+Shift+T (Cycle 25b)`` () =
+    let hk = HotkeyRegistry.hotkeyOf HotkeyRegistry.RunTestMatrix
+    Assert.Equal(HotkeyRegistry.Letter 'T', hk.Key)
+    Assert.Equal<Set<HotkeyRegistry.Modifier>>(
+        Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ],
+        hk.Modifiers)
+
+[<Fact>]
+let ``Ctrl+Shift+; is unbound (Cycle 25a vacated)`` () =
+    // Cycle 25a — Ctrl+Shift+; was CopyLatestLog; the binding
+    // moved to Ctrl+Shift+L. The semicolon gesture must now
+    // return None from tryFind.
+    let modifiers = Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ]
+    let result = HotkeyRegistry.tryFind HotkeyRegistry.Semicolon modifiers
+    Assert.Equal(None, result)
 
 [<Fact>]
 let ``shell-switch hotkeys are bound to Ctrl+Shift+ digits 1, 2, 3 in PR-J order`` () =

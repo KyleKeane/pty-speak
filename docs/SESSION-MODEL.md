@@ -1198,6 +1198,43 @@ can add per-tuple env re-scan if demand surfaces. Pattern-
 based detection (e.g. AWS-key regex `^AKIA[0-9A-Z]{16}$`)
 is also out of scope today.
 
+### Config reload on shell switch (Cycle 25a)
+
+The composition root re-reads `%LOCALAPPDATA%\PtySpeak\config.toml`
+on every `Ctrl+Shift+1` / `+2` / `+3` shell switch and
+applies any change to `[session_model.persistence]` to the
+new shell session's writer. This lets a maintainer edit the
+TOML mid-session and validate the change with a single
+keystroke instead of relaunching pty-speak.
+
+**What reloads:**
+
+- `[session_model.persistence] mode` / `output_dir` /
+  `max_session_size_mb` — the new sink is constructed with
+  the fresh values; the per-shell-session file path may
+  change (`session_log` → `always` mid-session is
+  supported).
+- `SessionSanitiser.registerFromEnvironment` is re-run; any
+  new deny-listed env vars set since startup register their
+  values for redaction. Existing registrations stay
+  (idempotent).
+
+**What does NOT reload (documented; revisit in a future cycle):**
+
+- `[startup] default_shell` — the target shell is already
+  chosen on switch.
+- `[logging] min_level` — the FileLogger sink starts with
+  the env-var-or-Information level + the TOML override
+  (Cycle 25a's startup-time apply); `Ctrl+Shift+G` is the
+  runtime path for adjusting verbosity.
+- `[pathway.stream]` — pathway parameters bake into
+  pathway state at construction; safe-reload is a
+  follow-up.
+
+A reload failure (TOML parse error mid-session, file
+deleted, etc.) logs a Warning and keeps the prior
+`persistenceConfig` so the new shell session still works.
+
 ### Cross-session loading
 
 Future read API: pty-speak exposes a CLI command (or

@@ -422,38 +422,32 @@ module Program =
     /// `app.Exit.Add` so the writer task flushes pending entries.
     let mutable private loggerSink : FileLoggerSink option = None
 
-    /// Open the active logs folder in File Explorer. Triggered
-    /// by `Ctrl+Shift+L`. Useful so the user can grab the latest
-    /// log file (e.g. to send to a maintainer when reporting a
-    /// bug) without leaving pty-speak.
-    let private runOpenLogs (window: MainWindow) : unit =
-        let log = Logger.get "Terminal.App.Program.runOpenLogs"
-        log.LogInformation("Ctrl+Shift+L pressed — opening logs folder.")
-        let dir =
-            match loggerSink with
-            | Some s -> s.LogDirectory
-            | None ->
-                // Logger hasn't initialised — fall back to the
-                // default directory so the explorer at least
-                // opens a sensible parent folder.
-                let baseDir =
-                    System.Environment.GetFolderPath(
-                        System.Environment.SpecialFolder.LocalApplicationData)
-                System.IO.Path.Combine(baseDir, "PtySpeak", "logs")
+    /// Cycle 25a — open the pty-speak data folder
+    /// (`%LOCALAPPDATA%\PtySpeak\`, the parent of `\logs`,
+    /// `\sessions`, and `config.toml`) in File Explorer.
+    /// Triggered by `Ctrl+Shift+P`. Replaces the prior
+    /// "open logs folder" hotkey because the parent gives
+    /// one-keystroke access to all three first-tier
+    /// directories the maintainer cares about; navigating into
+    /// `\logs` or `\sessions` from there is a single arrow-key
+    /// step in Explorer.
+    let private runOpenDataFolder (window: MainWindow) : unit =
+        let log = Logger.get "Terminal.App.Program.runOpenDataFolder"
+        log.LogInformation("Ctrl+Shift+P pressed — opening pty-speak data folder.")
+        let baseDir =
+            System.Environment.GetFolderPath(
+                System.Environment.SpecialFolder.LocalApplicationData)
+        let dir = System.IO.Path.Combine(baseDir, "PtySpeak")
         // Same announce-before-focus-grab pattern as the other
         // hotkeys that launch a separate window.
         window.TerminalSurface.Announce(
-            "Opening logs folder.",
-            ActivityIds.diagnostic)
+            "Opening data folder.",
+            ActivityIds.openDataFolder)
         let _ =
             task {
                 do! Task.Delay(700)
                 let action () =
                     try
-                        // Ensure the folder exists before we ask
-                        // explorer to open it; on a fresh install
-                        // before any logs have been written, the
-                        // directory may not yet exist.
                         System.IO.Directory.CreateDirectory(dir) |> ignore
                         let psi = System.Diagnostics.ProcessStartInfo()
                         psi.FileName <- "explorer.exe"
@@ -463,12 +457,87 @@ module Program =
                     with ex ->
                         let safe = AnnounceSanitiser.sanitise ex.Message
                         window.TerminalSurface.Announce(
-                            sprintf "Could not open logs folder: %s" safe,
+                            sprintf "Could not open data folder: %s" safe,
                             ActivityIds.error)
                 do! window.Dispatcher.InvokeAsync(Action(action)).Task
                 ()
             }
         ()
+
+    /// Cycle 25a — auto-create `config.toml` with sensible
+    /// defaults if no file exists, then open in the default app
+    /// (Notepad on a stock Windows install). Triggered by
+    /// `Ctrl+Shift+E`. Designed for screen-reader workflow:
+    /// instead of the maintainer hand-typing TOML headers
+    /// (which during the Cycle 24 walkthrough produced a typo
+    /// — `[sessionmodel._persistence]` instead of
+    /// `[session_model.persistence]` — that took multiple debug
+    /// rounds to pin), the app writes a known-correct boilerplate
+    /// they can edit by changing values rather than authoring
+    /// from scratch.
+    let private runOpenConfig (window: MainWindow) : unit =
+        let log = Logger.get "Terminal.App.Program.runOpenConfig"
+        log.LogInformation("Ctrl+Shift+E pressed — opening config file.")
+        let filePath = Config.defaultConfigFilePath ()
+        // Same announce-before-focus-grab pattern as
+        // runOpenDataFolder. The announcement text differs based
+        // on whether we created a fresh file so the maintainer
+        // knows what to expect when their editor opens.
+        let createdFresh =
+            try
+                Config.writeDefaults filePath
+            with ex ->
+                let safe = AnnounceSanitiser.sanitise ex.Message
+                log.LogError(
+                    ex,
+                    "Failed to write default config file at {Path}.",
+                    filePath)
+                window.TerminalSurface.Announce(
+                    sprintf "Could not create config file: %s" safe,
+                    ActivityIds.error)
+                false
+        let announceText =
+            if createdFresh then
+                "Created config file with defaults; opening."
+            else
+                "Opening config file."
+        window.TerminalSurface.Announce(
+            announceText,
+            ActivityIds.openConfig)
+        let _ =
+            task {
+                do! Task.Delay(700)
+                let action () =
+                    try
+                        let psi = System.Diagnostics.ProcessStartInfo()
+                        psi.FileName <- filePath
+                        psi.UseShellExecute <- true
+                        System.Diagnostics.Process.Start(psi) |> ignore
+                    with ex ->
+                        let safe = AnnounceSanitiser.sanitise ex.Message
+                        window.TerminalSurface.Announce(
+                            sprintf "Could not open config file: %s" safe,
+                            ActivityIds.error)
+                do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                ()
+            }
+        ()
+
+    /// Cycle 25a — placeholder for the test-runner hotkey.
+    /// PR 25b replaces this with the FlaUI-driver launcher.
+    /// Until then, pressing `Ctrl+Shift+T` announces that the
+    /// runner isn't yet implemented (rather than silently
+    /// no-op-ing, which would be confusing — the binding is
+    /// reachable via the routed-command surface and the user
+    /// has every reason to think pressing it should do
+    /// something).
+    let private runRunTestMatrix (window: MainWindow) : unit =
+        let log = Logger.get "Terminal.App.Program.runRunTestMatrix"
+        log.LogInformation(
+            "Ctrl+Shift+T pressed — test-matrix runner not yet implemented (Cycle 25b).")
+        window.TerminalSurface.Announce(
+            "Test matrix runner not yet implemented; ships in Cycle 25b.",
+            ActivityIds.runTestMatrix)
 
     /// Copy the active session's log file content to the
     /// system clipboard so the maintainer can paste it into a
@@ -743,10 +812,12 @@ module Program =
         // mutables (`hostHandle`, `currentShell`, `screen`) that
         // aren't in scope here yet.
         bindHotkey window HotkeyRegistry.DraftNewRelease (fun () -> runOpenNewRelease window)
-        bindHotkey window HotkeyRegistry.OpenLogsFolder (fun () -> runOpenLogs window)
+        bindHotkey window HotkeyRegistry.OpenDataFolder (fun () -> runOpenDataFolder window)
+        bindHotkey window HotkeyRegistry.OpenConfig (fun () -> runOpenConfig window)
         bindHotkey window HotkeyRegistry.CopyLatestLog (fun () -> runCopyLatestLog window)
         bindHotkey window HotkeyRegistry.ToggleDebugLog (fun () -> runToggleDebugLog window)
         bindHotkey window HotkeyRegistry.MuteEarcons (fun () -> runMuteEarcons window)
+        bindHotkey window HotkeyRegistry.RunTestMatrix (fun () -> runRunTestMatrix window)
 
         // Direct dispatch via TerminalView.OnPreviewKeyDown is
         // kept as a defence-in-depth path because Window-level
@@ -922,13 +993,47 @@ module Program =
         let config =
             Config.tryLoad log (Config.defaultConfigFilePath ())
 
+        // Cycle 25a — apply `[logging] min_level` from TOML to
+        // the FileLogger sink. The sink was constructed with
+        // env-var-or-Information at line ~706 (BEFORE Config
+        // loads, because Config loading itself emits log lines
+        // that need a sink). Now that Config is loaded, apply
+        // the TOML-resolved level IF the env var was NOT set
+        // (env wins over TOML, mirroring the established
+        // `[startup] default_shell` / `PTYSPEAK_SHELL` pattern).
+        match config.LoggingOverrides.MinLevel, loggerSink with
+        | Some tomlLevel, Some s ->
+            let envLevel =
+                Environment.GetEnvironmentVariable("PTYSPEAK_LOG_LEVEL")
+            let envSet =
+                match envLevel with
+                | null -> false
+                | "" -> false
+                | _ -> true
+            if envSet then
+                log.LogInformation(
+                    "Config: [logging] min_level = {Toml} ignored because PTYSPEAK_LOG_LEVEL env var is set (env-var-overrides-TOML precedence).",
+                    tomlLevel)
+            else
+                log.LogInformation(
+                    "Config: applying [logging] min_level = {Level} from TOML.",
+                    tomlLevel)
+                s.SetMinLevel(tomlLevel)
+        | _ -> ()
+
         // Cycle 24a — log the resolved SessionModel persistence
         // mode once at startup. Pure observability; no I/O was
         // wired in 24a. Cycle 24c (this PR) actually persists
         // tuples for `session_log` mode using the
         // `applyAndCapture` / `finalizeIncompleteAndCapture`
         // seams below.
-        let persistenceConfig = config.SessionPersistence
+        // Cycle 25a — `mutable` so the shell-switch handler can
+        // reload after a TOML edit without a full restart. All
+        // downstream references go through this binding (the
+        // closures `sessionLogWriterFactory`, `dispatchTupleToWriter`,
+        // and the runAnnounceSessionLogPath handler all read the
+        // live value).
+        let mutable persistenceConfig = config.SessionPersistence
         let persistenceOutputDir =
             match persistenceConfig.OutputDir with
             | Some dir -> dir
@@ -2330,6 +2435,36 @@ module Program =
                                             (sink :> System.IDisposable).Dispose()
                                         | None -> ()
                                         sessionLogWriter <- None
+                                        // Cycle 25a — reload TOML
+                                        // before constructing the
+                                        // new shell's sink so any
+                                        // mid-session edit takes
+                                        // effect on the next switch.
+                                        // Persistence + sanitiser are
+                                        // the only knobs that
+                                        // meaningfully change between
+                                        // shell sessions; default_shell
+                                        // is moot (target shell is
+                                        // already chosen), [logging]
+                                        // honors its established
+                                        // startup-only ephemerality
+                                        // (Ctrl+Shift+G is the runtime
+                                        // path), and [pathway.stream]
+                                        // stays startup-only this
+                                        // cycle.
+                                        try
+                                            let freshConfig =
+                                                Config.tryLoad
+                                                    log
+                                                    (Config.defaultConfigFilePath ())
+                                            persistenceConfig <-
+                                                freshConfig.SessionPersistence
+                                            SessionSanitiser.registerFromEnvironment log
+                                            |> ignore
+                                        with ex ->
+                                            log.LogWarning(
+                                                ex,
+                                                "Cycle 25a: config reload on shell-switch failed; keeping prior persistenceConfig.")
                                         currentSession <-
                                             SessionModel.createDefault
                                                 (shellIdToConfigKey shell.Id)

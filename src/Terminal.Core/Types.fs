@@ -480,3 +480,19 @@ module ActivityIds =
     /// dedupe at the NVDA-channel layer (per-tag dedupe
     /// behaviour mirrors `healthCheck` and `incidentMarker`).
     let sessionLogPath = "pty-speak.session-log-path"
+
+    /// Open-data-folder announcements (Cycle 25a
+    /// `Ctrl+Shift+P`). Emits "Opening data folder." before
+    /// the explorer.exe launch grabs focus.
+    let openDataFolder = "pty-speak.open-data-folder"
+
+    /// Open-config announcements (Cycle 25a `Ctrl+Shift+E`).
+    /// Emits "Opening config file." (file pre-existed) or
+    /// "Created config file with defaults; opening." (file
+    /// freshly written) before the default-app launch grabs
+    /// focus.
+    let openConfig = "pty-speak.open-config"
+
+    /// Run-test-matrix announcements (Cycle 25b
+    /// `Ctrl+Shift+T`). Emits launch + completion summary.
+    let runTestMatrix = "pty-speak.run-test-matrix"

@@ -316,8 +316,18 @@ Currently shipped (orientation reference; spec section 6 is canonical):
 - `Ctrl+Shift+D` — process-cleanup diagnostic launcher with
   inline shell-process snapshot announce (PR-J)
 - `Ctrl+Shift+R` — draft-a-new-release form launcher
-- `Ctrl+Shift+L` — open logs folder
-- `Ctrl+Shift+;` — copy active log to clipboard
+- `Ctrl+Shift+L` — copy active session log to clipboard
+  (Cycle 25a moved from `Ctrl+Shift+;` for the L-as-Log
+  mnemonic; the old "open logs folder" binding is replaced
+  by `Ctrl+Shift+P` below)
+- `Ctrl+Shift+P` — open the pty-speak data folder
+  (`%LOCALAPPDATA%\PtySpeak\`, parent of `\logs`,
+  `\sessions`, and `config.toml`) (Cycle 25a; replaces the
+  old `Ctrl+Shift+L`)
+- `Ctrl+Shift+E` — edit `config.toml` in the default app;
+  auto-creates with sensible defaults if missing (Cycle 25a)
+- `Ctrl+Shift+T` — run automated NVDA-matrix test runner
+  (Cycle 25b; placeholder handler in 25a)
 - `Ctrl+Shift+1` / `+2` / `+3` — hot-switch the spawned shell
   (`+1`=cmd / `+2`=PowerShell / `+3`=Claude; PR-J reordered to
   put PowerShell next to cmd as the diagnostic control shell)
@@ -336,8 +346,8 @@ Currently shipped (orientation reference; spec section 6 is canonical):
   (Cycle 24e); verbose format `Session log mode <mode>; path
   <full-path>.` for `session_log` / `always`;
   `Session log mode memory_only; no file.` for `memory_only`.
-  Companion to `Ctrl+Shift+L` (open file-logger root) and
-  `Ctrl+Shift+;` (copy active log to clipboard).
+  Companion to `Ctrl+Shift+P` (open the data-folder root)
+  and `Ctrl+Shift+L` (copy active log to clipboard).
 
 Reserved (not yet bound):
 
@@ -427,7 +437,7 @@ The 5s background heartbeat
 (`runHeartbeat` in `Program.fs`) writes a line per tick to the
 active log including `Pid={Pid} Alive={Alive}`. When triaging
 "why did NVDA stop reading?" post-hoc, ask for the log slice
-covering that time window (`Ctrl+Shift+;` copies the active log)
+covering that time window (`Ctrl+Shift+L` copies the active log)
 and grep `Heartbeat` to find the moment `Alive=False` first
 appears. That's the precise wedge timestamp.
 
