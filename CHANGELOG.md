@@ -15,6 +15,112 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 34b): producer composition wiring + Ctrl+Shift+D bundle integration + cross-thread locking
+
+Wires the Cycle 34a `LinearTextStream` producer at the parser-
+emit edge (`Program.fs:108`), constructs the producer instance
+in the composition root (`Program.fs:~731`), adds the
+`--- LINEAR STREAM (last 64KB) ---` section to the
+`Ctrl+Shift+D` diagnostic bundle, and adds a `lock state.Gate`
+guard around the producer's `Committed` buffer access for
+cross-thread safety.
+
+**No user-visible behaviour change** for typical sessions —
+the producer's emitted `CommitNotification`s are still
+discarded (Cycle 35 wires the Stream profile to subscribe).
+The only observable effect is the new bundle section
+populating with whatever bytes the producer captured during
+the session.
+
+- **`src/Terminal.Core/LinearTextStream.fs`** — adds
+  `member val internal Gate: obj = obj () with get` to the `T`
+  class. Wraps `appendCommittedWithCap`, `getLastBytes`, and
+  `finalizeHighWaterMark` in `lock state.Gate (fun () -> ...)`.
+  Pattern mirrors `Screen.SnapshotRows` at `Screen.fs:541-553`.
+  Without the gate, the diagnostic-bundle's background-task
+  call to `getLastBytes` could race with PathwayPump's
+  `appendCommittedWithCap` (`ResizeArray.AddRange` /
+  `RemoveRange` shifts indices mid-iteration → potential
+  `IndexOutOfRangeException`). The 25 producer tests
+  continue to pass unchanged (single-threaded test
+  assertions don't exercise the race).
+- **`src/Terminal.App/Program.fs:~731`** — constructs the
+  producer:
+  ```fsharp
+  let mutable linearStream =
+      LinearTextStream.create LinearTextStream.defaultParameters
+  ```
+- **`src/Terminal.App/Program.fs:108`** (inside
+  `startReaderLoop`) — feeds bytes + parser events to the
+  producer immediately after `Parser.feedArray`:
+  ```fsharp
+  let _, _ =
+      LinearTextStream.append
+          linearStream
+          DateTime.UtcNow
+          chunk
+          events
+  ```
+  Returned notifications + state are intentionally discarded
+  (Cycle 35 wires the Stream profile to consume).
+- **`src/Terminal.App/Program.fs:85-93`** — `startReaderLoop`
+  signature gains a `linearStream: LinearTextStream.T`
+  parameter (8th of 9). Composition-root call site at
+  `Program.fs:~2266` passes the new argument.
+- **`src/Terminal.App/Diagnostics.fs:~779-790`** — adds
+  `resolveLinearStreamPath` mirroring the existing
+  `resolveSnapshotPath` (lines 772-777). Sibling file lands
+  at `%LOCALAPPDATA%\PtySpeak\diagnostic-snapshots\linear-
+  stream-<yyyy-MM-dd-HH-mm-ss-fff>.txt` with the same
+  timestamp as the bundle for mechanical cross-referencing.
+- **`src/Terminal.App/Diagnostics.fs:860-867`** —
+  `formatDiagnosticBundle` signature gains a 7th parameter
+  `linearStreamSection: string`. The body emits a new
+  `--- LINEAR STREAM (last 64KB) ---` section between
+  `--- SESSION LOG ---` and `--- ENVIRONMENT ---`.
+- **`src/Terminal.App/Diagnostics.fs:958-966`** —
+  `runFullBattery` signature gains an 8th resolver parameter
+  `resolveLinearStream: unit -> LinearTextStream.T`. Inside
+  the task block (~line 1124), the resolver is called; the
+  full stream bytes are written to the sibling file
+  (defensively, with try/log on failure); the last 64 KB
+  are UTF-8-decoded + sanitised via
+  `AnnounceSanitiser.sanitise` (strips C0 controls, DEL,
+  C1 controls; preserves printable Unicode); the resulting
+  inline section text is passed to `formatDiagnosticBundle`.
+- **`src/Terminal.App/Program.fs:~2015`** — the
+  `runDiagnostic` closure gains an 8th resolver `(fun () ->
+  linearStream)` that captures the producer cell at
+  hotkey-press time (mirrors the existing resolver pattern
+  for hot-switch resilience).
+
+**Cycle 29b iOS-paste-crash prevention:** the bundle's inline
+LinearTextStream section is hard-capped at 64 KB. Bundles
+stay paste-friendly; full forensic content lives in the
+sibling file referenced by the `(source: <path>)` line at
+the start of the section.
+
+**Sanitisation rationale:** raw PTY bytes include ANSI
+escape sequences, bell characters, etc. Without
+sanitisation the bundle would render as a mangled mess in
+chat / triage tools. `AnnounceSanitiser.sanitise` (declared
+at `AnnounceSanitiser.fs:53-68`) strips control characters
+while preserving printable Unicode (including the U+FFFD
+replacement char that `Encoding.UTF8.GetString` may produce
+for partial multi-byte sequences at the 64 KB boundary).
+
+**Cycle 34 stage complete.** With 34a (producer module +
+tests) and 34b (composition wiring + diagnostic
+integration), the LinearTextStream substrate is live in
+the running app — capturing PTY bytes parallel-to-screen,
+emitting CommitNotifications nothing yet consumes, and
+exposing a sanitised tail through the diagnostic bundle.
+Cycle 35 (Stream profile rebuild on linear substrate) is
+the next push; it wires the first consumer for the
+producer's CommitNotifications and flips
+`SessionModel.applyAndCapture` from `extractContent` to
+`LinearTextStream.finalizeHighWaterMark`.
+
 ### Added (Cycle 34a): `LinearTextStream` producer module + tests (substrate-only, parallel-to-screen)
 
 First code cycle of the substrate-inversion arc that started
