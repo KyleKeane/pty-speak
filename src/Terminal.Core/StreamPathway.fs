@@ -113,6 +113,32 @@ module StreamPathway =
         /// `SummaryOnly` but stays silent under `Suppressed`).
         | Suppressed
 
+    /// Cycle 35a — substrate mode selection. Controls which
+    /// path produces the announce string in
+    /// `processCanonicalState`:
+    ///
+    /// - `Linear` — read from the LinearTextStream producer
+    ///   (Cycle 34a; RFC 0001) via `assembleSuffixFromStream`.
+    ///   The byte stream is the substrate-of-truth; suffix
+    ///   tracking via `LastLinearWatermark`.
+    /// - `ScreenDiff` — existing PR #166 row-by-row suffix
+    ///   diff over `Cell[][]` snapshots via
+    ///   `assembleSuffixPayload`. Baselines via
+    ///   `LastEmittedRowHashes` + `LastEmittedRowText`.
+    /// - `Auto` — `Linear` for non-alt-screen frames,
+    ///   `ScreenDiff` for alt-screen TUIs (where the grid is
+    ///   canonical per CORE-ABSTRACTION-BOUNDARY.md §1.4).
+    ///
+    /// Default in 35a: `ScreenDiff` (existing behaviour);
+    /// 35b flips default to `Auto` after the §3 advanced-CMD
+    /// 8-row matrix passes manual NVDA validation. TOML key:
+    /// `[pathway.stream] substrate_mode` =
+    /// "linear" | "screen-diff" | "auto".
+    type SubstrateMode =
+        | Linear
+        | ScreenDiff
+        | Auto
+
     type Parameters =
         { DebounceWindowMs: int
           SpinnerWindowMs: int
@@ -149,7 +175,12 @@ module StreamPathway =
           /// See `ModeBarrierFlushPolicy`. Default
           /// `SummaryOnly`. TOML key:
           /// `[pathway.stream] mode_barrier_flush_policy`.
-          ModeBarrierFlushPolicy: ModeBarrierFlushPolicy }
+          ModeBarrierFlushPolicy: ModeBarrierFlushPolicy
+          /// Cycle 35a — substrate mode selection. See
+          /// `SubstrateMode` DU above. Default in 35a:
+          /// `ScreenDiff` (existing behaviour). TOML key:
+          /// `[pathway.stream] substrate_mode`.
+          SubstrateMode: SubstrateMode }
 
     let defaultParameters: Parameters =
         { DebounceWindowMs = 200
@@ -159,7 +190,8 @@ module StreamPathway =
           ColorDetection = true
           BulkChangeThreshold = 3
           BackspacePolicy = AnnounceDeletedCharacter
-          ModeBarrierFlushPolicy = SummaryOnly }
+          ModeBarrierFlushPolicy = SummaryOnly
+          SubstrateMode = ScreenDiff }
 
     type private SpinnerKey = int * uint64
 
@@ -207,6 +239,16 @@ module StreamPathway =
           /// stays alive only for the debounce window.
           mutable PendingSnapshot: Cell[][] voption
           mutable LastRowHashes: uint64[] voption
+          /// Cycle 35a — last byte offset emitted via the
+          /// linear substrate path (Cycle 34a producer's
+          /// committed buffer). Updated after every successful
+          /// linear-mode emit; reset to 0 in `resetState`.
+          /// Independent of `LastEmittedRowHashes` (which
+          /// gates the screen-diff path). When SubstrateMode
+          /// resolves to Linear, `assembleSuffixFromStream`
+          /// reads `LinearTextStream.suffixSince` from this
+          /// watermark and updates it on emit.
+          mutable LastLinearWatermark: int64
           PerRowHistory: Dictionary<SpinnerKey, ResizeArray<DateTimeOffset>>
           HashHistory: Dictionary<uint64, ResizeArray<DateTimeOffset>> }
 
@@ -220,6 +262,7 @@ module StreamPathway =
           PendingColor = ValueNone
           PendingSnapshot = ValueNone
           LastRowHashes = ValueNone
+          LastLinearWatermark = 0L
           PerRowHistory = Dictionary()
           HashHistory = Dictionary() }
 
@@ -575,6 +618,63 @@ module StreamPathway =
                     | Silent -> ()
             String.concat "\n" parts
 
+    /// Cycle 35a — assemble the announce payload from the
+    /// LinearTextStream producer's committed buffer, slicing
+    /// from the last announce watermark. Returns the
+    /// `(payloadText, newWatermark)` tuple; the caller updates
+    /// `state.LastLinearWatermark` to `newWatermark` only when
+    /// it actually emits the payload (so a suppressed emit
+    /// doesn't lose the bytes).
+    ///
+    /// The producer's tail-mask semantics (RFC §5.3) already
+    /// collapse spinner overwrites; this function just decodes
+    /// the resulting bytes (UTF-8) and applies the existing
+    /// `MaxAnnounceChars` cap. Sanitisation is applied via
+    /// `AnnounceSanitiser.sanitise` — strips C0 / DEL / C1
+    /// controls so raw ANSI escape sequences don't reach
+    /// downstream channels.
+    ///
+    /// Returns `("", lastWatermark)` if no new bytes since
+    /// last emit (caller suppresses); else
+    /// `(capped-sanitised text, newWatermark)`.
+    let private assembleSuffixFromStream
+            (parameters: Parameters)
+            (linearStream: LinearTextStream.T)
+            (lastWatermark: int64)
+            : string * int64
+            =
+        let bytes = LinearTextStream.suffixSince linearStream lastWatermark
+        if bytes.Length = 0 then "", lastWatermark
+        else
+            let text = System.Text.Encoding.UTF8.GetString(bytes)
+            let cleaned = AnnounceSanitiser.sanitise text
+            // Cap to MaxAnnounceChars; the existing screen-diff
+            // path applies the cap downstream via the same
+            // helper. Inline here for symmetry.
+            let capped =
+                if cleaned.Length > parameters.MaxAnnounceChars then
+                    cleaned.Substring(0, parameters.MaxAnnounceChars)
+                else
+                    cleaned
+            let newWatermark = lastWatermark + int64 bytes.Length
+            capped, newWatermark
+
+    /// Cycle 35a — resolve the runtime substrate mode from the
+    /// configured `SubstrateMode` + the canonical's alt-screen
+    /// flag. `Auto` routes to `Linear` for non-alt-screen
+    /// frames (where the byte stream is canonical) and
+    /// `ScreenDiff` for alt-screen frames (where the grid is
+    /// canonical per CORE-ABSTRACTION-BOUNDARY.md §1.4).
+    let private resolveSubstrateMode
+            (configured: SubstrateMode)
+            (isAltScreenActive: bool)
+            : SubstrateMode
+            =
+        match configured with
+        | Linear -> Linear
+        | ScreenDiff -> ScreenDiff
+        | Auto -> if isAltScreenActive then ScreenDiff else Linear
+
     /// Phase A.2 — build the supplementary colour-event for a
     /// flushed diff. Returns `None` for plain frames (caller
     /// emits only the StreamChunk); `Some ErrorLine` for red,
@@ -613,6 +713,7 @@ module StreamPathway =
             (state: State)
             (now: DateTimeOffset)
             (canonical: CanonicalState.Canonical)
+            (linearStream: LinearTextStream.T)
             : OutputEvent[]
             =
         let logger = Logger.get "Terminal.Core.StreamPathway.processCanonicalState"
@@ -688,12 +789,36 @@ module StreamPathway =
                         // the payload BEFORE updating
                         // LastEmittedRowText (which is the
                         // baseline the suffix-diff reads).
-                        let payload =
-                            assembleSuffixPayload
-                                parameters
-                                canonical.Snapshot
-                                diff
-                                state.LastEmittedRowText
+                        // Cycle 35a — dispatch by SubstrateMode.
+                        // Linear: read from LinearTextStream
+                        // since last watermark. ScreenDiff:
+                        // existing row-by-row suffix diff.
+                        // Auto: Linear if non-alt-screen; else
+                        // ScreenDiff. Watermark advance happens
+                        // only on emit (suppressed/empty payloads
+                        // don't lose bytes).
+                        let resolvedMode =
+                            resolveSubstrateMode
+                                parameters.SubstrateMode
+                                canonical.IsAltScreenActive
+                        let payload, watermarkUpdate =
+                            match resolvedMode with
+                            | Linear ->
+                                let text, newWm =
+                                    assembleSuffixFromStream
+                                        parameters
+                                        linearStream
+                                        state.LastLinearWatermark
+                                text, ValueSome newWm
+                            | ScreenDiff
+                            | Auto ->  // unreachable; resolved above
+                                let text =
+                                    assembleSuffixPayload
+                                        parameters
+                                        canonical.Snapshot
+                                        diff
+                                        state.LastEmittedRowText
+                                text, ValueNone
                         state.LastEmittedRowHashes <- rowHashes
                         state.LastEmittedRowText <- renderAllRows canonical.Snapshot
                         let capped = capAnnounce parameters payload
@@ -715,6 +840,14 @@ module StreamPathway =
                                 "Emit StreamChunk (leading-edge). FrameHash=0x{Hash:X16} ChangedRows={Rows} TextLen={Len} Color={Color}",
                                 frameHash, diff.ChangedRows.Length, capped.Length,
                                 (match dominantColor with Some c -> c | None -> "none"))
+                            // Cycle 35a — advance the linear
+                            // watermark only on actual emit.
+                            // ScreenDiff path leaves watermark
+                            // unchanged (ValueNone).
+                            match watermarkUpdate with
+                            | ValueSome wm ->
+                                state.LastLinearWatermark <- wm
+                            | ValueNone -> ()
                             // Phase A.2 — emit a supplementary
                             // ErrorLine/WarningLine event when the
                             // diff's changed rows are colour-dominant.
@@ -761,6 +894,7 @@ module StreamPathway =
             (parameters: Parameters)
             (state: State)
             (now: DateTimeOffset)
+            (linearStream: LinearTextStream.T)
             : OutputEvent[]
             =
         let logger = Logger.get "Terminal.Core.StreamPathway.onTimerTick"
@@ -802,15 +936,43 @@ module StreamPathway =
                     // absent (defensive — should always be set
                     // when PendingDiff is set), fall back to the
                     // pre-PR-166 verbose `ChangedText`.
-                    let payload =
-                        match pendingSnapshot with
-                        | ValueSome snap ->
+                    // Cycle 35a — trailing-edge dispatch by
+                    // SubstrateMode. The pendingSnapshot's
+                    // alt-screen state from the original frame
+                    // is captured in `pendingAltScreen` (added
+                    // by Cycle 35a alongside PendingSnapshot in
+                    // the leading-edge accumulate path). For
+                    // simplicity in 35a, the trailing-edge
+                    // dispatch uses the configured mode without
+                    // alt-screen autoresolution — matches
+                    // typical usage (alt-screen toggles are
+                    // rare during a single debounce window).
+                    let resolvedMode =
+                        match parameters.SubstrateMode with
+                        | Linear -> Linear
+                        | ScreenDiff -> ScreenDiff
+                        | Auto -> Linear  // default to Linear in trailing edge
+                    let payload, watermarkUpdate =
+                        match resolvedMode with
+                        | Linear ->
+                            let text, newWm =
+                                assembleSuffixFromStream
+                                    parameters
+                                    linearStream
+                                    state.LastLinearWatermark
+                            text, ValueSome newWm
+                        | ScreenDiff
+                        | Auto ->  // unreachable
                             let p =
-                                assembleSuffixPayload parameters snap diff state.LastEmittedRowText
-                            state.LastEmittedRowText <- renderAllRows snap
-                            p
-                        | ValueNone ->
-                            diff.ChangedText
+                                match pendingSnapshot with
+                                | ValueSome snap ->
+                                    let pp =
+                                        assembleSuffixPayload parameters snap diff state.LastEmittedRowText
+                                    state.LastEmittedRowText <- renderAllRows snap
+                                    pp
+                                | ValueNone ->
+                                    diff.ChangedText
+                            p, ValueNone
                     let capped = capAnnounce parameters payload
                     if String.IsNullOrEmpty capped then
                         logger.LogDebug(
@@ -818,6 +980,12 @@ module StreamPathway =
                             hash, diff.ChangedRows.Length)
                         [||]
                     else
+                        // Cycle 35a — advance linear watermark
+                        // only on actual emit (matches leading-
+                        // edge contract).
+                        match watermarkUpdate with
+                        | ValueSome wm -> state.LastLinearWatermark <- wm
+                        | ValueNone -> ()
                         let colorEvt =
                             match pendingColor with
                             | ValueSome c -> colorOutputEvent c
@@ -933,6 +1101,10 @@ module StreamPathway =
         state.PendingColor <- ValueNone
         state.PendingSnapshot <- ValueNone
         state.LastRowHashes <- ValueNone
+        // Cycle 35a — reset linear watermark so the next emit
+        // treats the producer's entire committed buffer as
+        // unreceived suffix.
+        state.LastLinearWatermark <- 0L
         state.PerRowHistory.Clear()
         state.HashHistory.Clear()
 
@@ -966,19 +1138,30 @@ module StreamPathway =
             result
 
     /// Construct a StreamPathway. The pathway captures
-    /// `parameters` in its closure; v1 ships a single
-    /// pathway-instance per shell session, recycled via
-    /// `Reset` on shell-switch.
-    let create (parameters: Parameters) : DisplayPathway.T =
+    /// `parameters` + `linearStream` in its closure; v1 ships
+    /// a single pathway-instance per shell session, recycled
+    /// via `Reset` on shell-switch.
+    ///
+    /// Cycle 35a — `linearStream` is the LinearTextStream
+    /// producer (Cycle 34a) used by the Linear / Auto
+    /// substrate-mode dispatch. Required even when SubstrateMode
+    /// = ScreenDiff (the closure captures it for symmetry; the
+    /// ScreenDiff branch never reads it). Composition root
+    /// constructs the producer once and passes the same
+    /// reference to both pathways at hot-switch time.
+    let create
+            (parameters: Parameters)
+            (linearStream: LinearTextStream.T)
+            : DisplayPathway.T =
         let state = createState ()
         { Id = id
           Consume =
             fun canonical ->
                 let now = DateTimeOffset.UtcNow
-                processCanonicalState parameters state now canonical
+                processCanonicalState parameters state now canonical linearStream
           Tick =
             fun now ->
-                onTimerTick parameters state now
+                onTimerTick parameters state now linearStream
           OnModeBarrier =
             fun now ->
                 onModeBarrier parameters state now
@@ -997,6 +1180,7 @@ module StreamPathway =
     /// the test harness. Production code never calls this.
     let internal createWithExposedState
             (parameters: Parameters)
+            (linearStream: LinearTextStream.T)
             : DisplayPathway.T * State
             =
         let state = createState ()
@@ -1014,10 +1198,10 @@ module StreamPathway =
               Consume =
                 fun canonical ->
                     let now = DateTimeOffset.UtcNow
-                    processCanonicalState parameters state now canonical
+                    processCanonicalState parameters state now canonical linearStream
               Tick =
                 fun now ->
-                    onTimerTick parameters state now
+                    onTimerTick parameters state now linearStream
               OnModeBarrier =
                 fun now ->
                     onModeBarrier parameters state now

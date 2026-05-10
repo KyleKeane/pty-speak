@@ -786,3 +786,29 @@ module LinearTextStream =
                 for i in 0 .. take - 1 do
                     result.[i] <- state.Committed.[start + i]
                 result)
+
+    /// Cycle 35a — return bytes from the committed buffer
+    /// starting at the given watermark offset up to the
+    /// current end. Used by StreamPathway's announce path
+    /// (Cycle 35a's `assembleSuffixFromStream`) to emit
+    /// "bytes I haven't yet announced" when SubstrateMode
+    /// resolves to Linear.
+    ///
+    /// If `watermark >= committed.Count`, returns empty
+    /// array. If `watermark < 0`, clamps to 0 (safety for
+    /// stale watermarks; should not happen in practice).
+    ///
+    /// Cycle 34b — `lock state.Gate` ensures atomic read of
+    /// Committed even when PathwayPump's `append`
+    /// concurrently mutates (see T.Gate doc).
+    let suffixSince (state: T) (watermark: int64) : byte[] =
+        lock state.Gate (fun () ->
+            let total = state.Committed.Count
+            let start = max 0 (int watermark)
+            if start >= total then [||]
+            else
+                let len = total - start
+                let result = Array.zeroCreate len
+                for i in 0 .. len - 1 do
+                    result.[i] <- state.Committed.[start + i]
+                result)

@@ -113,7 +113,15 @@ module Config =
           /// `"verbose"`, `"summary_only"`, `"suppressed"`.
           /// Unknown / non-string values log a Warning and
           /// fall back.
-          ModeBarrierFlushPolicy: StreamPathway.ModeBarrierFlushPolicy option }
+          ModeBarrierFlushPolicy: StreamPathway.ModeBarrierFlushPolicy option
+          /// Cycle 35a — substrate mode override. `None`
+          /// falls back to default `ScreenDiff` (existing
+          /// behaviour; 35b flips default to `Auto` after
+          /// the §3 advanced-CMD 8-row matrix passes manual
+          /// NVDA validation). TOML values: `"linear"`,
+          /// `"screen-diff"`, `"auto"`. Unknown / non-string
+          /// values log a Warning and fall back.
+          SubstrateMode: StreamPathway.SubstrateMode option }
 
     /// Cycle 19 — `[startup]` TOML section: composition-root
     /// startup-shell override. When `DefaultShell` is `Some`,
@@ -214,7 +222,8 @@ module Config =
               // parameters" section.
               BulkChangeThreshold = None
               BackspacePolicy = None
-              ModeBarrierFlushPolicy = None }
+              ModeBarrierFlushPolicy = None
+              SubstrateMode = None }
           StartupOverrides =
             { DefaultShell = None }
           SessionPersistence = SessionPersistence.defaultConfig
@@ -379,7 +388,9 @@ module Config =
               // PR #168 — Tier 1 parameters.
               "bulk_change_threshold"
               "backspace_policy"
-              "mode_barrier_flush_policy" ]
+              "mode_barrier_flush_policy"
+              // Cycle 35a — substrate mode selection.
+              "substrate_mode" ]
 
     /// Cycle 24g — emit a JSON-shaped hierarchical dump of a
     /// parsed `TomlTable` so a maintainer can compare what
@@ -601,6 +612,25 @@ module Config =
                     "Config: [pathway.stream] {Key} = '{Value}' is not one of 'verbose' / 'summary_only' / 'suppressed'; ignored.",
                     key, other)
                 None
+        // Cycle 35a — substrate mode enum-string parser.
+        let readSubstrateMode (key: string) : StreamPathway.SubstrateMode option =
+            match tryGetString table key with
+            | None ->
+                if table.ContainsKey(key) then
+                    logger.LogWarning(
+                        "Config: [pathway.stream] {Key} is non-string; ignored.",
+                        key)
+                None
+            | Some raw ->
+                match raw.Trim().ToLowerInvariant() with
+                | "linear" -> Some StreamPathway.Linear
+                | "screen-diff" -> Some StreamPathway.ScreenDiff
+                | "auto" -> Some StreamPathway.Auto
+                | other ->
+                    logger.LogWarning(
+                        "Config: [pathway.stream] {Key} = '{Value}' is not one of 'linear' / 'screen-diff' / 'auto'; ignored.",
+                        key, other)
+                    None
         { DebounceWindowMs = readField "debounce_window_ms"
           SpinnerWindowMs = readField "spinner_window_ms"
           SpinnerThreshold = readField "spinner_threshold"
@@ -608,7 +638,8 @@ module Config =
           ColorDetection = readBool "color_detection"
           BulkChangeThreshold = readField "bulk_change_threshold"
           BackspacePolicy = readBackspacePolicy "backspace_policy"
-          ModeBarrierFlushPolicy = readModeBarrierFlushPolicy "mode_barrier_flush_policy" }
+          ModeBarrierFlushPolicy = readModeBarrierFlushPolicy "mode_barrier_flush_policy"
+          SubstrateMode = readSubstrateMode "substrate_mode" }
 
     /// Internal — parse the `[shell.X]` family into
     /// `Map<string, ShellPathwayConfig>`. Unknown shell keys
@@ -991,7 +1022,9 @@ module Config =
           BackspacePolicy =
             Option.defaultValue defaults.BackspacePolicy ov.BackspacePolicy
           ModeBarrierFlushPolicy =
-            Option.defaultValue defaults.ModeBarrierFlushPolicy ov.ModeBarrierFlushPolicy }
+            Option.defaultValue defaults.ModeBarrierFlushPolicy ov.ModeBarrierFlushPolicy
+          SubstrateMode =
+            Option.defaultValue defaults.SubstrateMode ov.SubstrateMode }
 
     /// Cycle 32a — resolve the SelectionDetector parameters from
     /// a Config. Each field that's `None` in `SelectionOverrides`

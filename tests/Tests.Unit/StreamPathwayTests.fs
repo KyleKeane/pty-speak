@@ -58,7 +58,17 @@ let private at (msFromEpoch: int) : DateTimeOffset =
     epoch + TimeSpan.FromMilliseconds(float msFromEpoch)
 
 let private canonicalAt (snapshot: Cell[][]) (seq: int64) : CanonicalState.Canonical =
-    CanonicalState.create snapshot (0, 0) seq
+    // Cycle 35a — alt-screen default `false` (non-alt-screen)
+    // for existing tests; new linear-mode tests can use
+    // `canonicalAtAlt` if alt-screen routing is exercised.
+    CanonicalState.create snapshot (0, 0) seq false
+
+let private canonicalAtAlt
+        (snapshot: Cell[][])
+        (seq: int64)
+        (isAltScreenActive: bool)
+        : CanonicalState.Canonical =
+    CanonicalState.create snapshot (0, 0) seq isAltScreenActive
 
 // PR #168 — many existing tests were written against PR #166's
 // verbose-flush mode-barrier default. Tier 1 parameters change
@@ -79,6 +89,34 @@ let private suppressShrinkParameters : StreamPathway.Parameters =
     { StreamPathway.defaultParameters with
         BackspacePolicy = StreamPathway.SuppressShrink }
 
+// Cycle 35a — test wrappers that inject a fresh LinearTextStream
+// per call so existing tests don't need to thread the new
+// parameter explicitly. Default SubstrateMode is ScreenDiff
+// (so the linear stream isn't read at runtime); the fresh
+// instance is harmless. New linear-mode tests construct their
+// own shared stream + call StreamPathway.X directly.
+let private freshLinearStream () : LinearTextStream.T =
+    LinearTextStream.create LinearTextStream.defaultParameters
+
+let private processCanonicalState
+        parameters
+        state
+        now
+        canonical
+        : OutputEvent[] =
+    StreamPathway.processCanonicalState parameters state now canonical (freshLinearStream ())
+
+let private onTimerTick parameters state now : OutputEvent[] =
+    StreamPathway.onTimerTick parameters state now (freshLinearStream ())
+
+let private create parameters : DisplayPathway.T =
+    StreamPathway.create parameters (freshLinearStream ())
+
+let private createWithExposedState
+        parameters
+        : DisplayPathway.T * StreamPathway.State =
+    StreamPathway.createWithExposedState parameters (freshLinearStream ())
+
 // ---- Frame dedup ----------------------------------------------------
 
 [<Fact>]
@@ -86,12 +124,12 @@ let ``two identical canonical frames in a row → only first emits`` () =
     let state = StreamPathway.createState ()
     let snap = snapshotOf 3 5 [ "hello" ]
     let first =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0)
             (canonicalAt snap 0L)
     Assert.Equal(1, first.Length)
     let second =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 500)
             (canonicalAt snap 1L)
     Assert.Equal(0, second.Length)
@@ -102,10 +140,10 @@ let ``frame dedup releases when content actually changes`` () =
     let snap1 = snapshotOf 3 5 [ "hello" ]
     let snap2 = snapshotOf 3 5 [ "world" ]
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0) (canonicalAt snap1 0L)
     let next =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 500) (canonicalAt snap2 1L)
     Assert.Equal(1, next.Length)
 
@@ -116,7 +154,7 @@ let ``first canonical state in idle period emits immediately (leading edge)`` ()
     let state = StreamPathway.createState ()
     let snap = snapshotOf 3 20 [ "echo hello" ]
     let result =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0) (canonicalAt snap 0L)
     Assert.Equal(1, result.Length)
     Assert.Contains("echo hello", result.[0].Payload)
@@ -126,7 +164,7 @@ let ``leading-edge emit produces a StreamChunk OutputEvent`` () =
     let state = StreamPathway.createState ()
     let snap = snapshotOf 1 10 [ "abc" ]
     let result =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0) (canonicalAt snap 0L)
     Assert.Equal(SemanticCategory.StreamChunk, result.[0].Semantic)
     Assert.Equal(Priority.Polite, result.[0].Priority)
@@ -149,20 +187,20 @@ let ``burst within debounce window collapses to leading + trailing emit`` () =
     let snap2 = snapshotOf 3 5 [ "ab" ]
     let snap3 = snapshotOf 3 5 [ "abc" ]
     let r1 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0) (canonicalAt snap1 0L)
     Assert.Equal(1, r1.Length)
     Assert.Equal("a", r1.[0].Payload)
     let r2 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 50) (canonicalAt snap2 1L)
     Assert.Equal(0, r2.Length)
     let r3 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 100) (canonicalAt snap3 2L)
     Assert.Equal(0, r3.Length)
     let tick =
-        StreamPathway.onTimerTick
+        onTimerTick
             StreamPathway.defaultParameters state (at 250)
     Assert.Equal(1, tick.Length)
     Assert.Equal("bc", tick.[0].Payload)
@@ -176,10 +214,10 @@ let ``trailing-edge tick with nothing pending is a no-op`` () =
     let state = StreamPathway.createState ()
     let snap = snapshotOf 3 5 [ "x" ]
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0) (canonicalAt snap 0L)
     let tick =
-        StreamPathway.onTimerTick
+        onTimerTick
             StreamPathway.defaultParameters state (at 250)
     Assert.Equal(0, tick.Length)
 
@@ -196,14 +234,14 @@ let ``second emit ships diff text only, not the entire snapshot`` () =
     let snap2 = snapshotOf 3 10 [ "banner1"; "banner2"; "echo hi" ]
     // Leading-edge first emit — full snapshot.
     let r1 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0) (canonicalAt snap1 0L)
     Assert.Equal(1, r1.Length)
     Assert.Contains("banner1", r1.[0].Payload)
     Assert.Contains("banner2", r1.[0].Payload)
     // After 200ms+ idle, second leading-edge emit at row 2 only.
     let r2 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 500) (canonicalAt snap2 1L)
     Assert.Equal(1, r2.Length)
     Assert.Contains("echo hi", r2.[0].Payload)
@@ -218,14 +256,14 @@ let ``per-key spinner gate fires after threshold same-row-hash hits in window`` 
     let frameA = snapshotOf 1 1 [ "A" ]
     let frameB = snapshotOf 1 1 [ "B" ]
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0) (canonicalAt frameA 0L)
     let mutable suppressedCount = 0
     let mutable emittedCount = 0
     for i in 1 .. 14 do
         let frame = if i % 2 = 1 then frameB else frameA
         let result =
-            StreamPathway.processCanonicalState
+            processCanonicalState
                 StreamPathway.defaultParameters state (at (i * 60))
                 (canonicalAt frame (int64 i))
         if i % 2 = 1 then
@@ -245,7 +283,7 @@ let ``cross-row gate accumulates content-hash recurrence as spinner moves betwee
             else rowOf cols (sprintf "PAD%d-%d" i frameNum))
         arr
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0)
             (canonicalAt (buildFrame 0 0) 0L)
     let times = [| 100; 200; 300; 400; 500; 600 |]
@@ -253,7 +291,7 @@ let ``cross-row gate accumulates content-hash recurrence as spinner moves betwee
     for i in 0 .. times.Length - 1 do
         let frame = buildFrame (i + 1) bars.[i]
         let _ =
-            StreamPathway.processCanonicalState
+            processCanonicalState
                 StreamPathway.defaultParameters state (at times.[i])
                 (canonicalAt frame (int64 (i + 1)))
         ()
@@ -282,13 +320,13 @@ let ``static rows do not trip per-key gate at fast typing cadence (PR-M, Issue #
         arr.[0] <- rowOf cols typed
         arr
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0)
             (canonicalAt (buildFrame "a") 0L)
     let typeSeq = [ "ab"; "abc"; "abcd"; "abcde"; "abcdef"; "abcdefg" ]
     for i in 0 .. typeSeq.Length - 1 do
         let _ =
-            StreamPathway.processCanonicalState
+            processCanonicalState
                 StreamPathway.defaultParameters state (at ((i + 1) * 50))
                 (canonicalAt (buildFrame typeSeq.[i]) (int64 (i + 1)))
         ()
@@ -316,12 +354,12 @@ let ``cross-row HashHistory ignores static blank rows (PR-M, Issue #117)`` () =
         arr.[0] <- rowOf cols typed
         arr
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0)
             (canonicalAt (buildFrame "a") 0L)
     for i in 0 .. 5 do
         let _ =
-            StreamPathway.processCanonicalState
+            processCanonicalState
                 StreamPathway.defaultParameters state (at ((i + 1) * 50))
                 (canonicalAt (buildFrame (sprintf "x%d" i)) (int64 (i + 1)))
         ()
@@ -338,7 +376,7 @@ let ``onModeBarrier resets LastRowHashes and HashHistory (PR-M, Issue #117)`` ()
     let state = StreamPathway.createState ()
     let snap = snapshotOf 1 5 [ "hello" ]
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0) (canonicalAt snap 0L)
     Assert.True(state.LastRowHashes.IsSome,
         "LastRowHashes should be populated after first frame")
@@ -356,18 +394,18 @@ let ``spinner per-key history is GC'd after spinnerWindow elapses`` () =
     let frameA = snapshotOf 1 1 [ "A" ]
     let frameB = snapshotOf 1 1 [ "B" ]
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0) (canonicalAt frameA 0L)
     for i in 1 .. 14 do
         let frame = if i % 2 = 1 then frameB else frameA
         let _ =
-            StreamPathway.processCanonicalState
+            processCanonicalState
                 StreamPathway.defaultParameters state (at (i * 60))
                 (canonicalAt frame (int64 i))
         ()
     let frameC = snapshotOf 1 1 [ "C" ]
     let result =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 5000) (canonicalAt frameC 100L)
     Assert.True(result.Length >= 1,
         "Expected emit to recover after spinnerWindow of quiet")
@@ -386,11 +424,11 @@ let ``onModeBarrier flushes pending accumulator first`` () =
     let snap2 = snapshotOf 1 5 [ "world" ]
     // Leading-edge emit at t=0.
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             verboseFlushParameters state (at 0) (canonicalAt snap1 0L)
     // Within debounce — accumulates.
     let r2 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             verboseFlushParameters state (at 50) (canonicalAt snap2 1L)
     Assert.Equal(0, r2.Length)
     // Mode barrier flushes the pending diff (Verbose policy).
@@ -417,18 +455,18 @@ let ``onModeBarrier resets frame-dedup state under Verbose policy`` () =
     let state = StreamPathway.createState ()
     let snap = snapshotOf 1 5 [ "hello" ]
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             verboseFlushParameters state (at 0) (canonicalAt snap 0L)
     // Frame dedup would normally suppress this repeat...
     let dup =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             verboseFlushParameters state (at 500) (canonicalAt snap 1L)
     Assert.Equal(0, dup.Length)
     // ...but a mode barrier (Verbose) resets the dedup state,
     // so the same content emits again afterward.
     let _ = StreamPathway.onModeBarrier verboseFlushParameters state (at 600)
     let after =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             verboseFlushParameters state (at 1000) (canonicalAt snap 2L)
     Assert.Equal(1, after.Length)
 
@@ -447,7 +485,7 @@ let ``onModeBarrier under SummaryOnly preserves per-row baselines so unchanged c
     let state = StreamPathway.createState ()
     let snap = snapshotOf 1 5 [ "hello" ]
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0) (canonicalAt snap 0L)
     // Mode barrier (SummaryOnly default) preserves per-row
     // baselines.
@@ -456,7 +494,7 @@ let ``onModeBarrier under SummaryOnly preserves per-row baselines so unchanged c
     // This is the post-barrier "transition window" case
     // where the new shell hasn't painted yet.
     let after =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 1000) (canonicalAt snap 2L)
     Assert.Empty(after)
 
@@ -471,11 +509,11 @@ let ``onModeBarrier under SummaryOnly emits new content when post-barrier screen
     let snapPre = snapshotOf 1 20 [ "old shell content" ]
     let snapPost = snapshotOf 1 20 [ "new shell content" ]
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0) (canonicalAt snapPre 0L)
     let _ = StreamPathway.onModeBarrier StreamPathway.defaultParameters state (at 600)
     let after =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 1000) (canonicalAt snapPost 2L)
     Assert.Equal(1, after.Length)
     // The diff is per-row suffix vs the preserved baseline.
@@ -487,9 +525,9 @@ let ``onModeBarrier under SummaryOnly emits new content when post-barrier screen
 
 [<Fact>]
 let ``Consume emits the first canonical frame in full`` () =
-    let pathway = StreamPathway.create StreamPathway.defaultParameters
+    let pathway = create StreamPathway.defaultParameters
     let snap = snapshotOf 2 10 [ "row1"; "row2" ]
-    let canonical = CanonicalState.create snap (0, 0) 0L
+    let canonical = CanonicalState.create snap (0, 0) 0L false
     let result = pathway.Consume canonical
     Assert.Equal(1, result.Length)
     Assert.Contains("row1", result.[0].Payload)
@@ -497,20 +535,20 @@ let ``Consume emits the first canonical frame in full`` () =
 
 [<Fact>]
 let ``Reset clears state so next Consume re-emits in full`` () =
-    let pathway, state = StreamPathway.createWithExposedState StreamPathway.defaultParameters
+    let pathway, state = createWithExposedState StreamPathway.defaultParameters
     let snap = snapshotOf 1 5 [ "hello" ]
-    let _ = pathway.Consume (CanonicalState.create snap (0, 0) 0L)
+    let _ = pathway.Consume (CanonicalState.create snap (0, 0) 0L false)
     Assert.True(state.LastRowHashes.IsSome)
     pathway.Reset ()
     Assert.True(state.LastRowHashes.IsNone)
     Assert.Equal<uint64[]>([||], state.LastEmittedRowHashes)
-    let result = pathway.Consume (CanonicalState.create snap (0, 0) 1L)
+    let result = pathway.Consume (CanonicalState.create snap (0, 0) 1L false)
     Assert.Equal(1, result.Length)
     Assert.Contains("hello", result.[0].Payload)
 
 [<Fact>]
 let ``pathway Id is "stream"`` () =
-    let pathway = StreamPathway.create StreamPathway.defaultParameters
+    let pathway = create StreamPathway.defaultParameters
     Assert.Equal("stream", pathway.Id)
 
 // ---- SetBaseline (hot-switch baseline-seed) ------------------------
@@ -520,9 +558,9 @@ let ``SetBaseline seeds LastEmittedRowHashes from the supplied canonical state``
     // Use createWithExposedState so the test can inspect the
     // mutable State directly — SetBaseline writes through the
     // closure, not through any observable return value.
-    let pathway, state = StreamPathway.createWithExposedState StreamPathway.defaultParameters
+    let pathway, state = createWithExposedState StreamPathway.defaultParameters
     let snap = snapshotOf 3 10 [ "claude prompt"; "row two"; "row three" ]
-    let canonical = CanonicalState.create snap (0, 0) 0L
+    let canonical = CanonicalState.create snap (0, 0) 0L false
     pathway.SetBaseline canonical
     Assert.Equal<uint64[]>(canonical.RowHashes, state.LastEmittedRowHashes)
     Assert.True(state.LastRowHashes.IsSome)
@@ -534,9 +572,9 @@ let ``SetBaseline emits no events`` () =
     // The signature returns `unit`; this test pins that the
     // state mutation doesn't piggy-back on Consume's emission
     // path.
-    let pathway = StreamPathway.create StreamPathway.defaultParameters
+    let pathway = create StreamPathway.defaultParameters
     let snap = snapshotOf 2 10 [ "stale claude content" ]
-    let canonical = CanonicalState.create snap (0, 0) 0L
+    let canonical = CanonicalState.create snap (0, 0) 0L false
     pathway.SetBaseline canonical  // returns unit; no events to inspect
     // A subsequent Consume of the SAME snapshot should now
     // return zero events because the baseline matches.
@@ -548,7 +586,7 @@ let ``SetBaseline + Consume of changed frame emits diff-only`` () =
     // The headline hot-switch fix: after SetBaseline against
     // the pre-switch screen, the next Consume emits only the
     // rows the new shell painted, not the entire stale screen.
-    let pathway = StreamPathway.create StreamPathway.defaultParameters
+    let pathway = create StreamPathway.defaultParameters
     // Pre-switch screen — claude content.
     let preSwitch =
         snapshotOf 5 20
@@ -557,7 +595,7 @@ let ``SetBaseline + Consume of changed frame emits diff-only`` () =
               "blah blah blah"
               ""
               "" ]
-    pathway.SetBaseline (CanonicalState.create preSwitch (0, 0) 100L)
+    pathway.SetBaseline (CanonicalState.create preSwitch (0, 0) 100L false)
     // New cmd shell paints its prompt at row 4 (assume cmd
     // overwrites only that row); rows 0-3 still hold claude
     // content because the screen buffer isn't cleared.
@@ -568,7 +606,7 @@ let ``SetBaseline + Consume of changed frame emits diff-only`` () =
               "blah blah blah"
               ""
               "C:\\>" ]
-    let result = pathway.Consume (CanonicalState.create postSwitch (0, 0) 101L)
+    let result = pathway.Consume (CanonicalState.create postSwitch (0, 0) 101L false)
     Assert.Equal(1, result.Length)
     // The user should hear "C:\>" — NOT the claude content.
     Assert.Contains("C:\\>", result.[0].Payload)
@@ -580,11 +618,11 @@ let ``SetBaseline overrides a prior baseline`` () =
     // If the user hot-switches twice in quick succession,
     // SetBaseline must always take the latest canonical's
     // hashes (not mix with prior state).
-    let pathway, state = StreamPathway.createWithExposedState StreamPathway.defaultParameters
+    let pathway, state = createWithExposedState StreamPathway.defaultParameters
     let snap1 = snapshotOf 1 5 [ "first" ]
     let snap2 = snapshotOf 1 5 [ "second" ]
-    let canonical1 = CanonicalState.create snap1 (0, 0) 0L
-    let canonical2 = CanonicalState.create snap2 (0, 0) 1L
+    let canonical1 = CanonicalState.create snap1 (0, 0) 0L false
+    let canonical2 = CanonicalState.create snap2 (0, 0) 1L false
     pathway.SetBaseline canonical1
     pathway.SetBaseline canonical2
     Assert.Equal<uint64[]>(canonical2.RowHashes, state.LastEmittedRowHashes)
@@ -750,7 +788,7 @@ let ``red snapshot leading-edge emit returns 2 events with ErrorLine`` () =
     let state = StreamPathway.createState ()
     let snap = redSnapshotOf 1 10 [ "Error" ]
     let result =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0)
             (canonicalAt snap 0L)
     Assert.Equal(2, result.Length)
@@ -765,7 +803,7 @@ let ``yellow snapshot leading-edge emit returns 2 events with WarningLine`` () =
     let state = StreamPathway.createState ()
     let snap = yellowSnapshotOf 1 10 [ "Warn" ]
     let result =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0)
             (canonicalAt snap 0L)
     Assert.Equal(2, result.Length)
@@ -777,7 +815,7 @@ let ``plain snapshot leading-edge emit returns 1 event (regression guard)`` () =
     let state = StreamPathway.createState ()
     let snap = snapshotOf 1 10 [ "hello" ]
     let result =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0)
             (canonicalAt snap 0L)
     Assert.Equal(1, result.Length)
@@ -790,7 +828,7 @@ let ``ColorDetection = false suppresses second event on red snapshot`` () =
     let parameters =
         { StreamPathway.defaultParameters with ColorDetection = false }
     let result =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             parameters state (at 0) (canonicalAt snap 0L)
     Assert.Equal(1, result.Length)
     Assert.Equal(SemanticCategory.StreamChunk, result.[0].Semantic)
@@ -802,17 +840,17 @@ let ``red snapshot accumulated within debounce → onTimerTick emits both events
     let snap2 = redSnapshotOf 1 10 [ "Err" ]
     // Leading-edge at t=0 — emits 2 events for snap1.
     let r1 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0) (canonicalAt snap1 0L)
     Assert.Equal(2, r1.Length)
     // Within debounce — accumulates snap2, no immediate emit.
     let r2 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 50) (canonicalAt snap2 1L)
     Assert.Equal(0, r2.Length)
     // Trailing-edge at t=300 — flushes pending diff + colour.
     let tick =
-        StreamPathway.onTimerTick StreamPathway.defaultParameters state (at 300)
+        onTimerTick StreamPathway.defaultParameters state (at 300)
     Assert.Equal(2, tick.Length)
     Assert.Equal(SemanticCategory.StreamChunk, tick.[0].Semantic)
     Assert.Equal(SemanticCategory.ErrorLine, tick.[1].Semantic)
@@ -833,11 +871,11 @@ let ``onModeBarrier with PendingColor clears it without emitting colour event`` 
     let snap2 = redSnapshotOf 1 10 [ "Err" ]
     // Leading-edge emit (resets PendingColor inside).
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             verboseFlushParameters state (at 0) (canonicalAt snap1 0L)
     // Within debounce — accumulates with PendingColor = ValueSome "red".
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             verboseFlushParameters state (at 50) (canonicalAt snap2 1L)
     Assert.Equal(ValueSome "red", state.PendingColor)
     // Mode barrier flushes the pending diff but NOT the colour event.
@@ -885,13 +923,13 @@ let ``red row outside diff scope produces no ErrorLine emit`` () =
     let snap1 = [| row0; row1Original |]
     let snap2 = [| row0; row1Changed |]
     let r1 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0)
             (canonicalAt snap1 0L)
     Assert.Equal(2, r1.Length)
     Assert.Equal(SemanticCategory.ErrorLine, r1.[1].Semantic)
     let r2 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 500)
             (canonicalAt snap2 1L)
     Assert.Equal(1, r2.Length)
@@ -1018,7 +1056,7 @@ let ``typing at prompt: suffix-diff emits only new character, not full row`` () 
     let snap1 = snapshotOf 1 20 [ "> echo h" ]
     let snap2 = snapshotOf 1 20 [ "> echo hi" ]
     let r1 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0)
             (canonicalAt snap1 0L)
     Assert.Equal(1, r1.Length)
@@ -1026,7 +1064,7 @@ let ``typing at prompt: suffix-diff emits only new character, not full row`` () 
     // Wait past debounce window so the next emit is leading-edge,
     // not accumulate.
     let r2 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 500)
             (canonicalAt snap2 1L)
     Assert.Equal(1, r2.Length)
@@ -1044,24 +1082,24 @@ let ``multi-keystroke debounce accumulates suffix at trailing-edge flush`` () =
     let snap2 = snapshotOf 1 20 [ "> echo hi" ]
     let snap3 = snapshotOf 1 20 [ "> echo hi " ]
     let r1 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0)
             (canonicalAt snap1 0L)
     Assert.Equal(1, r1.Length)
     Assert.Equal("> echo h", r1.[0].Payload)
     // Within debounce — accumulates.
     let r2 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 50)
             (canonicalAt snap2 1L)
     Assert.Empty(r2)
     let r3 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 100)
             (canonicalAt snap3 2L)
     Assert.Empty(r3)
     // Trailing-edge tick after debounce window elapses.
-    let tick = StreamPathway.onTimerTick StreamPathway.defaultParameters state (at 250)
+    let tick = onTimerTick StreamPathway.defaultParameters state (at 250)
     Assert.Equal(1, tick.Length)
     // Cumulative suffix from the last-emitted "> echo h" to
     // current "> echo hi ": just "i ". Note trailing space is
@@ -1081,12 +1119,12 @@ let ``bulk-change fallback engages when more than 3 rows change`` () =
     let snap2 = snapshotOf 5 10 [ "row0"; "row1"; "row2"; "row3"; "row4" ]
     // First emit primes the cache.
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0)
             (canonicalAt snap1 0L)
     // Second emit — 5 rows change, above threshold of 3.
     let r2 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 500)
             (canonicalAt snap2 1L)
     Assert.Equal(1, r2.Length)
@@ -1110,12 +1148,12 @@ let ``backspace case under SuppressShrink policy produces empty payload and no e
     let snap1 = snapshotOf 1 20 [ "> echo hi" ]
     let snap2 = snapshotOf 1 20 [ "> echo h" ]
     let r1 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             suppressShrinkParameters state (at 0)
             (canonicalAt snap1 0L)
     Assert.Equal(1, r1.Length)
     let r2 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             suppressShrinkParameters state (at 500)
             (canonicalAt snap2 1L)
     // No emit — empty payload short-circuits.
@@ -1132,12 +1170,12 @@ let ``backspace case under default AnnounceDeletedCharacter policy emits the del
     let snap1 = snapshotOf 1 20 [ "> echo hi" ]
     let snap2 = snapshotOf 1 20 [ "> echo h" ]
     let r1 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0)
             (canonicalAt snap1 0L)
     Assert.Equal(1, r1.Length)
     let r2 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 500)
             (canonicalAt snap2 1L)
     Assert.Equal(1, r2.Length)
@@ -1151,7 +1189,7 @@ let ``first emit on a fresh pathway treats every row as Initial`` () =
     let state = StreamPathway.createState ()
     let snap = snapshotOf 1 20 [ "Hello world" ]
     let r =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0)
             (canonicalAt snap 0L)
     Assert.Equal(1, r.Length)
@@ -1173,12 +1211,12 @@ let ``onModeBarrier under Verbose policy flushes pending, then clears LastEmitte
     let snap2 = snapshotOf 1 20 [ "> echo hi" ]
     // Leading-edge emit primes the cache.
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             verboseFlushParameters state (at 0)
             (canonicalAt snap1 0L)
     // Within debounce — accumulate (PendingDiff set).
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             verboseFlushParameters state (at 50)
             (canonicalAt snap2 1L)
     // Mode barrier flushes pending. Verbose payload
@@ -1202,10 +1240,10 @@ let ``onModeBarrier under SummaryOnly default returns no flush events`` () =
     let snap1 = snapshotOf 1 5 [ "hello" ]
     let snap2 = snapshotOf 1 5 [ "world" ]
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0) (canonicalAt snap1 0L)
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 50) (canonicalAt snap2 1L)
     // Default ModeBarrierFlushPolicy = SummaryOnly. Flush
     // suppressed — pending diff is cleared without an emit.
@@ -1224,7 +1262,7 @@ let ``onModeBarrier under Suppressed policy returns no flush events`` () =
     let state = StreamPathway.createState ()
     let snap = snapshotOf 1 5 [ "hello" ]
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             suppressedParameters state (at 0) (canonicalAt snap 0L)
     let result = StreamPathway.onModeBarrier suppressedParameters state (at 100)
     Assert.Empty(result)
@@ -1241,10 +1279,10 @@ let ``BulkChangeThreshold is configurable via Parameters`` () =
     let snap1 = snapshotOf 2 5 [ ""; "" ]
     let snap2 = snapshotOf 2 5 [ "row0"; "row1" ]
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             aggressiveParameters state (at 0) (canonicalAt snap1 0L)
     let r2 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             aggressiveParameters state (at 500) (canonicalAt snap2 1L)
     Assert.Equal(1, r2.Length)
     // Bulk-change fallback engaged because 2 > threshold 1.
@@ -1268,7 +1306,7 @@ let ``BulkChangeThreshold = 30 keeps even large diffs on suffix-diff path`` () =
     let state = StreamPathway.createState ()
     let snap = snapshotOf 5 10 [ "a"; "b"; "c"; "d"; "e" ]
     let r =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             permissiveParameters state (at 0) (canonicalAt snap 0L)
     Assert.Equal(1, r.Length)
     Assert.Contains("a", r.[0].Payload)
@@ -1292,7 +1330,7 @@ let ``post-barrier first emit under SummaryOnly does NOT re-announce stale scree
     let snap = snapshotOf 5 10 [ "row0"; "row1"; "row2"; "row3"; "row4" ]
     // Initial emit primes the cache.
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0) (canonicalAt snap 0L)
     // Mode barrier (e.g. shell-switch) — under SummaryOnly
     // default, returns no events.
@@ -1303,7 +1341,7 @@ let ``post-barrier first emit under SummaryOnly does NOT re-announce stale scree
     // painted yet). Diff against preserved cache = 0 rows
     // changed → no emit.
     let r2 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 600) (canonicalAt snap 1L)
     Assert.Empty(r2)
 
@@ -1317,14 +1355,14 @@ let ``post-barrier first emit under SummaryOnly emits new content when screen ac
     let oldShellSnap = snapshotOf 5 10 [ "old0"; "old1"; "old2"; "old3"; "old4" ]
     let newShellSnap = snapshotOf 5 10 [ "new0"; "new1"; "new2"; "new3"; "new4" ]
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0) (canonicalAt oldShellSnap 0L)
     let _ = StreamPathway.onModeBarrier StreamPathway.defaultParameters state (at 100)
     // New shell paints — all rows differ from cached
     // baseline. Bulk-change fallback engages (5 > 3),
     // emits ChangedText with the new content.
     let r =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 600) (canonicalAt newShellSnap 1L)
     Assert.Equal(1, r.Length)
     Assert.Contains("new0", r.[0].Payload)
@@ -1340,13 +1378,13 @@ let ``post-barrier first emit under Verbose policy does re-announce (Initial) pe
     let state = StreamPathway.createState ()
     let snap = snapshotOf 2 10 [ "row0"; "row1" ]
     let _ =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             verboseFlushParameters state (at 0) (canonicalAt snap 0L)
     let _ = StreamPathway.onModeBarrier verboseFlushParameters state (at 100)
     // Post-barrier under Verbose: cache cleared. Next pass
     // sees all rows as Initial → emits full content.
     let r =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             verboseFlushParameters state (at 600) (canonicalAt snap 1L)
     Assert.Equal(1, r.Length)
     Assert.Contains("row0", r.[0].Payload)
@@ -1367,7 +1405,7 @@ let ``backspace with pause emits the deleted character (Tier 1 baseline test)`` 
     let snap2 = snapshotOf 1 20 [ "echo h" ]
     // Initial emit; cache primed with "echo hi".
     let r1 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0)
             (canonicalAt snap1 0L)
     Assert.Equal(1, r1.Length)
@@ -1376,7 +1414,7 @@ let ``backspace with pause emits the deleted character (Tier 1 baseline test)`` 
     // call is past debounce window). Emit should be the
     // deleted character.
     let r2 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 500)
             (canonicalAt snap2 1L)
     Assert.Equal(1, r2.Length)
@@ -1408,13 +1446,13 @@ let ``backspace + retype within debounce window collapses to Replace (debounce-c
     // and previous lengths equal, not Shrink).
     let snap2 = snapshotOf 1 20 [ "echo XY" ]
     let r1 =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 0)
             (canonicalAt snap1 0L)
     Assert.Equal(1, r1.Length)
     // Within debounce — accumulates.
     let r2a =
-        StreamPathway.processCanonicalState
+        processCanonicalState
             StreamPathway.defaultParameters state (at 50)
             (canonicalAt snap2 1L)
     Assert.Empty(r2a)
@@ -1422,10 +1460,208 @@ let ``backspace + retype within debounce window collapses to Replace (debounce-c
     // Computes suffix-diff against last-emitted "echo hi".
     // Both 7 chars, common prefix "echo " (5), suffix "XY".
     // The deleted "hi" is silenced under the Replace branch.
-    let tick = StreamPathway.onTimerTick StreamPathway.defaultParameters state (at 250)
+    let tick = onTimerTick StreamPathway.defaultParameters state (at 250)
     Assert.Equal(1, tick.Length)
     Assert.Equal("XY", tick.[0].Payload)
     // Documented limitation: "hi" (the deleted segment)
     // is NOT in the announced payload, even though
     // semantically the user deleted "hi" and added "XY".
     Assert.DoesNotContain("hi", tick.[0].Payload)
+
+// =====================================================================
+// Cycle 35a — Substrate-mode dispatch (linear / screen-diff / auto)
+// =====================================================================
+//
+// These facts pin the new `processCanonicalState` dispatch
+// branch introduced in Cycle 35a. They construct a real
+// LinearTextStream, feed bytes through it via the public
+// `append` API, then drive `StreamPathway.processCanonicalState`
+// directly (bypassing the wrappers above so each fact threads
+// its own stream + parameters).
+//
+// Default `SubstrateMode = ScreenDiff` is exercised by the
+// rest of the file via the test wrappers; these facts cover:
+//   * Linear mode — payload sourced from suffixSince.
+//   * ScreenDiff mode (explicit) — linear stream IS unread.
+//   * Auto mode — alt-screen routes to ScreenDiff,
+//     non-alt-screen routes to Linear.
+//   * Watermark advance + reset.
+//   * Sanitisation + MaxAnnounceChars cap on linear payload.
+
+let private linearParameters : StreamPathway.Parameters =
+    { StreamPathway.defaultParameters with
+        SubstrateMode = StreamPathway.Linear }
+
+let private autoParameters : StreamPathway.Parameters =
+    { StreamPathway.defaultParameters with
+        SubstrateMode = StreamPathway.Auto }
+
+let private dt0 = DateTime(2026, 5, 10, 12, 0, 0, DateTimeKind.Utc)
+
+/// Push bytes into a linear stream so subsequent `suffixSince`
+/// observes them. Mirrors the LinearTextStream test helper —
+/// we parse the bytes via Parser.feedArray, then call append.
+let private feedStream
+        (stream: LinearTextStream.T)
+        (now: DateTime)
+        (bytes: byte[])
+        : LinearTextStream.T =
+    let parser = Terminal.Parser.Parser.create ()
+    let events = Terminal.Parser.Parser.feedArray parser bytes
+    let (_notifs, next) = LinearTextStream.append stream now bytes events
+    next
+
+let private canonicalAtAlt2
+        (snapshot: Cell[][])
+        (seq: int64)
+        (alt: bool)
+        : CanonicalState.Canonical =
+    CanonicalState.create snapshot (0, 0) seq alt
+
+[<Fact>]
+let ``Cycle 35a — SubstrateMode=Linear with populated stream emits suffix payload`` () =
+    let state = StreamPathway.createState ()
+    let stream = LinearTextStream.create LinearTextStream.defaultParameters
+    let stream = feedStream stream dt0 (System.Text.Encoding.ASCII.GetBytes "hello world\n")
+    let snap = snapshotOf 1 5 [ "ignored" ]  // ScreenDiff content; should NOT appear
+    let result =
+        StreamPathway.processCanonicalState
+            linearParameters state (at 0) (canonicalAt snap 0L) stream
+    Assert.Equal(1, result.Length)
+    Assert.Contains("hello world", result.[0].Payload)
+    Assert.DoesNotContain("ignored", result.[0].Payload)
+
+[<Fact>]
+let ``Cycle 35a — SubstrateMode=Linear with empty stream emits nothing`` () =
+    let state = StreamPathway.createState ()
+    let stream = LinearTextStream.create LinearTextStream.defaultParameters
+    let snap = snapshotOf 1 5 [ "hello" ]
+    let result =
+        StreamPathway.processCanonicalState
+            linearParameters state (at 0) (canonicalAt snap 0L) stream
+    Assert.Empty(result)
+
+[<Fact>]
+let ``Cycle 35a — SubstrateMode=Linear advances LastLinearWatermark by emitted byte count`` () =
+    let _, state = createWithExposedState linearParameters
+    let stream = LinearTextStream.create LinearTextStream.defaultParameters
+    let stream = feedStream stream dt0 (System.Text.Encoding.ASCII.GetBytes "abc\n")
+    let snap = snapshotOf 1 5 [ "x" ]
+    Assert.Equal(0L, state.LastLinearWatermark)
+    let _ =
+        StreamPathway.processCanonicalState
+            linearParameters state (at 0) (canonicalAt snap 0L) stream
+    // 4 bytes ("abc\n") consumed.
+    Assert.Equal(4L, state.LastLinearWatermark)
+
+[<Fact>]
+let ``Cycle 35a — SubstrateMode=Linear emits only post-watermark bytes on second call`` () =
+    // Both calls need the screen-diff to detect a change so the
+    // dispatch reaches the Linear branch. The `ChangedRows = 0`
+    // short-circuit at the top of processCanonicalState's
+    // leading-edge branch is a screen-side concern; Linear mode
+    // payload is still gated by "screen changed". Cycle 35b can
+    // revisit if dropping the gate proves necessary for the §3
+    // matrix (notably row 6 / `dir /s | more`).
+    let state = StreamPathway.createState ()
+    let stream = LinearTextStream.create LinearTextStream.defaultParameters
+    let stream = feedStream stream dt0 (System.Text.Encoding.ASCII.GetBytes "first\n")
+    let snap1 = snapshotOf 1 5 [ "a" ]
+    let r1 =
+        StreamPathway.processCanonicalState
+            linearParameters state (at 0) (canonicalAt snap1 0L) stream
+    Assert.Equal(1, r1.Length)
+    Assert.Contains("first", r1.[0].Payload)
+    let stream = feedStream stream (dt0.AddMilliseconds(100.0)) (System.Text.Encoding.ASCII.GetBytes "second\n")
+    let snap2 = snapshotOf 1 5 [ "b" ]
+    let r2 =
+        StreamPathway.processCanonicalState
+            linearParameters state (at 500) (canonicalAt snap2 1L) stream
+    Assert.Equal(1, r2.Length)
+    Assert.Contains("second", r2.[0].Payload)
+    Assert.DoesNotContain("first", r2.[0].Payload)
+
+[<Fact>]
+let ``Cycle 35a — SubstrateMode=ScreenDiff (default) does NOT consult linear stream`` () =
+    let state = StreamPathway.createState ()
+    let stream = LinearTextStream.create LinearTextStream.defaultParameters
+    let stream = feedStream stream dt0 (System.Text.Encoding.ASCII.GetBytes "linear-only\n")
+    let snap = snapshotOf 1 10 [ "screen" ]
+    let result =
+        StreamPathway.processCanonicalState
+            StreamPathway.defaultParameters state (at 0)
+            (canonicalAt snap 0L) stream
+    Assert.Equal(1, result.Length)
+    Assert.Contains("screen", result.[0].Payload)
+    Assert.DoesNotContain("linear-only", result.[0].Payload)
+
+[<Fact>]
+let ``Cycle 35a — SubstrateMode=Auto with alt-screen routes to ScreenDiff`` () =
+    let state = StreamPathway.createState ()
+    let stream = LinearTextStream.create LinearTextStream.defaultParameters
+    let stream = feedStream stream dt0 (System.Text.Encoding.ASCII.GetBytes "linear-only\n")
+    let snap = snapshotOf 1 10 [ "alt-screen" ]
+    let result =
+        StreamPathway.processCanonicalState
+            autoParameters state (at 0)
+            (canonicalAtAlt2 snap 0L true) stream
+    Assert.Equal(1, result.Length)
+    Assert.Contains("alt-screen", result.[0].Payload)
+    Assert.DoesNotContain("linear-only", result.[0].Payload)
+
+[<Fact>]
+let ``Cycle 35a — SubstrateMode=Auto without alt-screen routes to Linear`` () =
+    let state = StreamPathway.createState ()
+    let stream = LinearTextStream.create LinearTextStream.defaultParameters
+    let stream = feedStream stream dt0 (System.Text.Encoding.ASCII.GetBytes "from-stream\n")
+    let snap = snapshotOf 1 10 [ "from-screen" ]
+    let result =
+        StreamPathway.processCanonicalState
+            autoParameters state (at 0)
+            (canonicalAtAlt2 snap 0L false) stream
+    Assert.Equal(1, result.Length)
+    Assert.Contains("from-stream", result.[0].Payload)
+    Assert.DoesNotContain("from-screen", result.[0].Payload)
+
+[<Fact>]
+let ``Cycle 35a — Reset zeroes LastLinearWatermark`` () =
+    let pathway, state = createWithExposedState linearParameters
+    let stream = LinearTextStream.create LinearTextStream.defaultParameters
+    let stream = feedStream stream dt0 (System.Text.Encoding.ASCII.GetBytes "abc\n")
+    let snap = snapshotOf 1 5 [ "x" ]
+    let _ =
+        StreamPathway.processCanonicalState
+            linearParameters state (at 0) (canonicalAt snap 0L) stream
+    Assert.Equal(4L, state.LastLinearWatermark)
+    pathway.Reset ()
+    Assert.Equal(0L, state.LastLinearWatermark)
+
+[<Fact>]
+let ``Cycle 35a — Linear payload is sanitised (control chars stripped)`` () =
+    let state = StreamPathway.createState ()
+    let stream = LinearTextStream.create LinearTextStream.defaultParameters
+    let bytes = System.Text.Encoding.ASCII.GetBytes "ok\x07go\n"
+    let stream = feedStream stream dt0 bytes
+    let snap = snapshotOf 1 5 [ "x" ]
+    let result =
+        StreamPathway.processCanonicalState
+            linearParameters state (at 0) (canonicalAt snap 0L) stream
+    Assert.Equal(1, result.Length)
+    Assert.DoesNotContain("\x07", result.[0].Payload)
+
+[<Fact>]
+let ``Cycle 35a — Linear payload respects MaxAnnounceChars cap`` () =
+    let state = StreamPathway.createState ()
+    let stream = LinearTextStream.create LinearTextStream.defaultParameters
+    let bytes = System.Text.Encoding.ASCII.GetBytes (String.replicate 100 "a" + "\n")
+    let stream = feedStream stream dt0 bytes
+    let snap = snapshotOf 1 5 [ "x" ]
+    let parameters =
+        { StreamPathway.defaultParameters with
+            SubstrateMode = StreamPathway.Linear
+            MaxAnnounceChars = 30 }
+    let result =
+        StreamPathway.processCanonicalState
+            parameters state (at 0) (canonicalAt snap 0L) stream
+    Assert.Equal(1, result.Length)
+    Assert.Equal(30, result.[0].Payload.Length)
