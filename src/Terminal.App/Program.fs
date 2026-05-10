@@ -88,6 +88,7 @@ module Program =
             (parser: Parser)
             (screen: Screen)
             (view: TerminalView)
+            (linearStream: LinearTextStream.T)
             (notifications: System.Threading.Channels.ChannelWriter<PumpInput>)
             (onChunkRead: int -> unit)
             (ct: CancellationToken) : Task =
@@ -106,6 +107,20 @@ module Program =
                             // shell).
                             onChunkRead chunk.Length
                             let events = Parser.feedArray parser chunk
+                            // Cycle 34b — feed the LinearTextStream
+                            // producer parallel-to-screen. Emitted
+                            // CommitNotifications are intentionally
+                            // discarded here (Cycle 35 wires the
+                            // Stream profile to subscribe). The
+                            // returned T is the same class reference
+                            // as `linearStream` (state mutates
+                            // in-place); discard.
+                            let _, _ =
+                                LinearTextStream.append
+                                    linearStream
+                                    DateTime.UtcNow
+                                    chunk
+                                    events
                             if events.Length > 0 then
                                 let action () =
                                     for e in events do screen.Apply(e)
@@ -729,6 +744,15 @@ module Program =
         let cts = new CancellationTokenSource()
         let screen = Screen(rows = ScreenRows, cols = ScreenCols)
         let parser = Parser.create ()
+        // Cycle 34b — construct the LinearTextStream producer
+        // (Cycle 34a's `LinearTextStream.fs`). Runs parallel-
+        // to-screen with no consumers in 34b; Cycle 35 wires
+        // the Stream profile to subscribe to its emitted
+        // CommitNotifications. Held in a `mutable` cell for
+        // clarity; the underlying class reference is stable
+        // across `append` calls (T is mutable internally).
+        let mutable linearStream =
+            LinearTextStream.create LinearTextStream.defaultParameters
         window.TerminalSurface.SetScreen(screen)
 
         // Cycle 32b — first consumer of the IDisplayBuffer boundary
@@ -2013,6 +2037,13 @@ module Program =
                 // mode/path are resolved at press-time and reflect
                 // any reload-on-shell-switch that happened since.
                 buildSessionLogSummary
+                // Cycle 34b — LinearTextStream resolver for the
+                // bundle's `--- LINEAR STREAM (last 64KB) ---`
+                // section. The producer's class reference is
+                // stable across the session (no shell-switch
+                // reconstruction yet), so the closure captures
+                // the same `linearStream` cell on every press.
+                (fun () -> linearStream)
 
         // Cycle 22b — Ctrl+Shift+Y. Closure captures
         // `currentSession` from compose-local scope. Resolves
@@ -2259,6 +2290,7 @@ module Program =
                     parser
                     screen
                     window.TerminalSurface
+                    linearStream
                     pumpChannel.Writer
                     (fun _ -> lastReadUtc <- DateTimeOffset.UtcNow)
                     cts.Token

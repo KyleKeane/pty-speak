@@ -776,6 +776,20 @@ module Diagnostics =
         let dir = Path.Combine(root, "PtySpeak", "diagnostic-snapshots")
         Path.Combine(dir, sprintf "snapshot-%s.txt" stamp)
 
+    /// Cycle 34b — sibling-file path for the LinearTextStream
+    /// FULL stream content (the bundle inlines only the last
+    /// 64 KB; the full stream goes here so a maintainer can
+    /// reference it for forensics without bloating the
+    /// clipboard payload). Mirrors `resolveSnapshotPath`'s
+    /// pattern with the same timestamp so the two files are
+    /// mechanically cross-referenceable.
+    let private resolveLinearStreamPath (now: DateTime) : string =
+        let root =
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
+        let stamp = now.ToString("yyyy-MM-dd-HH-mm-ss-fff")
+        let dir = Path.Combine(root, "PtySpeak", "diagnostic-snapshots")
+        Path.Combine(dir, sprintf "linear-stream-%s.txt" stamp)
+
     // ---------------------------------------------------------------
     // Cycle 25b — diagnostic-dump bundle
     // ---------------------------------------------------------------
@@ -864,6 +878,7 @@ module Diagnostics =
             (fileLoggerLogPath: string option)
             (configPath: string)
             (sessionLogSummary: string)
+            (linearStreamSection: string)
             : string =
         let sb = StringBuilder()
         let appendLine (s: string) = sb.AppendLine(s) |> ignore
@@ -905,6 +920,17 @@ module Diagnostics =
 
         appendLine "--- SESSION LOG ---"
         appendLine sessionLogSummary
+        appendLine ""
+
+        // Cycle 34b — LinearTextStream tail (last 64 KB inline;
+        // full stream lives in a sibling `linear-stream-<ts>.txt`
+        // file referenced by the section header). The 64 KB cap
+        // is hard per the Cycle 29b iOS-paste-crash incident:
+        // bundles must stay paste-friendly. Caller pre-formats
+        // the section text (UTF-8 decode + AnnounceSanitiser
+        // strip controls) before passing here.
+        appendLine "--- LINEAR STREAM (last 64KB) ---"
+        appendLine linearStreamSection
         appendLine ""
 
         appendLine "--- ENVIRONMENT (deny-listed values redacted) ---"
@@ -963,6 +989,7 @@ module Diagnostics =
             (resolveSessionSnapshot: unit -> SessionModelSnapshot)
             (resolveFileLoggerLogPath: unit -> string option)
             (resolveSessionLogSummary: unit -> string)
+            (resolveLinearStream: unit -> LinearTextStream.T)
             : unit =
         let log = Logger.get "Terminal.App.Diagnostics.runFullBattery"
         let _ =
@@ -1120,6 +1147,49 @@ module Diagnostics =
                     let fileLoggerLogPath = resolveFileLoggerLogPath ()
                     let sessionLogSummary = resolveSessionLogSummary ()
                     let snapshotPath = resolveSnapshotPath now
+
+                    // Cycle 34b — capture the LinearTextStream
+                    // tail for the bundle's `--- LINEAR STREAM
+                    // (last 64KB) ---` section + write the FULL
+                    // stream to a sibling `linear-stream-<ts>.txt`
+                    // file. The 64KB inline cap protects the
+                    // clipboard payload from the Cycle 29b iOS-
+                    // paste-crash failure mode; the sibling file
+                    // gives forensics access to the full content.
+                    let linearStream = resolveLinearStream ()
+                    let linearStreamSiblingPath =
+                        resolveLinearStreamPath now
+                    let allLinearBytes =
+                        LinearTextStream.getLastBytes linearStream Int32.MaxValue
+                    try
+                        // F# 9 nullness: Path.GetDirectoryName
+                        // returns string? (null for root paths
+                        // or empty input). Narrow per the
+                        // existing `DiagnosticLogWriter` pattern
+                        // (`Diagnostics.fs:328-332`).
+                        match Path.GetDirectoryName(linearStreamSiblingPath) with
+                        | null -> ()
+                        | dir when String.IsNullOrEmpty dir -> ()
+                        | dir ->
+                            Directory.CreateDirectory(dir) |> ignore
+                        File.WriteAllBytes(
+                            linearStreamSiblingPath,
+                            allLinearBytes)
+                    with ex ->
+                        log.LogWarning(
+                            ex,
+                            "Diagnostic: failed to write linear-stream sibling file at {Path}",
+                            linearStreamSiblingPath)
+                    let tailBytes =
+                        LinearTextStream.getLastBytes linearStream 64
+                    let tailText =
+                        try
+                            System.Text.Encoding.UTF8.GetString(tailBytes)
+                            |> AnnounceSanitiser.sanitise
+                        with _ -> "(UTF-8 decode failed)"
+                    let linearStreamSection =
+                        sprintf "(source: %s)\n%s" linearStreamSiblingPath tailText
+
                     let bundle =
                         formatDiagnosticBundle
                             now
@@ -1128,6 +1198,7 @@ module Diagnostics =
                             fileLoggerLogPath
                             configPath
                             sessionLogSummary
+                            linearStreamSection
                     let writtenPath = writeSnapshotFile log snapshotPath bundle
                     let savedFragment =
                         match writtenPath with

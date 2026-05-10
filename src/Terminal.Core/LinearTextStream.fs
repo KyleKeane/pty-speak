@@ -176,6 +176,18 @@ module LinearTextStream =
     /// property setters and `ResizeArray` in-place mutation.
     [<Sealed>]
     type T internal (parameters: Parameters) =
+        /// Cycle 34b — synchronization gate for cross-thread
+        /// access. The producer is single-threaded for `append`
+        /// / `tick` (PathwayPump worker), but the diagnostic
+        /// bundle (`Ctrl+Shift+D`, runs on a background task
+        /// thread per `Diagnostics.runFullBattery:958-969`)
+        /// reads `Committed` via `getLastBytes`. Without the
+        /// gate, concurrent `ResizeArray.AddRange` /
+        /// `RemoveRange` (eviction) shifts indices mid-read.
+        /// Pattern mirrors `Screen.SnapshotRows` at
+        /// `Screen.fs:541-553` (`lock gate (fun () -> ...)`).
+        /// All Committed mutations + reads MUST hold this gate.
+        member val internal Gate: obj = obj () with get
         member val internal Committed: ResizeArray<byte> = ResizeArray<byte>() with get
         member val internal Pending: ResizeArray<byte> = ResizeArray<byte>() with get
         member val internal Parameters: Parameters = parameters with get
@@ -333,13 +345,18 @@ module LinearTextStream =
     /// cap is reached, drop the oldest excess bytes from the
     /// head and flag truncation. Mutates `state.Committed` and
     /// may set `state.Truncated`.
+    ///
+    /// Cycle 34b — wrapped in `lock state.Gate` for cross-
+    /// thread safety with the `Ctrl+Shift+D` `getLastBytes`
+    /// reader. See T type's Gate doc for rationale.
     let private appendCommittedWithCap (state: T) (bytes: byte[]) : unit =
-        state.Committed.AddRange(bytes)
-        let cap = state.Parameters.PerTupleCapBytes
-        if state.Committed.Count > cap then
-            let excess = state.Committed.Count - cap
-            state.Committed.RemoveRange(0, excess)
-            state.Truncated <- true
+        lock state.Gate (fun () ->
+            state.Committed.AddRange(bytes)
+            let cap = state.Parameters.PerTupleCapBytes
+            if state.Committed.Count > cap then
+                let excess = state.Committed.Count - cap
+                state.Committed.RemoveRange(0, excess)
+                state.Truncated <- true)
 
     /// Drain the pending buffer into a sealed/unsealed
     /// EmittedChunk. Returns the chunk + clears pending.
@@ -697,47 +714,51 @@ module LinearTextStream =
     /// `PromptStartOffset` / `OutputStartOffset` markers set
     /// during OSC 133 parsing.
     let finalizeHighWaterMark (state: T) : FinalizedChunk * T =
-        let totalBytes = state.Committed.Count
-        let promptStart = int state.PromptStartOffset
-        let outputStart = int state.OutputStartOffset
+        // Cycle 34b — `lock state.Gate` ensures the slice
+        // `Array.sub` reads + the offset markers see a
+        // consistent buffer state. See T.Gate doc.
+        lock state.Gate (fun () ->
+            let totalBytes = state.Committed.Count
+            let promptStart = int state.PromptStartOffset
+            let outputStart = int state.OutputStartOffset
 
-        let commandText =
-            if outputStart > promptStart && promptStart >= 0 then
-                let cmdLen = outputStart - promptStart
-                if cmdLen > 0 && promptStart + cmdLen <= totalBytes then
+            let commandText =
+                if outputStart > promptStart && promptStart >= 0 then
+                    let cmdLen = outputStart - promptStart
+                    if cmdLen > 0 && promptStart + cmdLen <= totalBytes then
+                        let bytes =
+                            Array.sub
+                                (state.Committed.ToArray())
+                                promptStart
+                                cmdLen
+                        System.Text.Encoding.UTF8.GetString(bytes)
+                    else ""
+                else ""
+
+            let outputText =
+                if outputStart >= 0 && outputStart < totalBytes then
+                    let outLen = totalBytes - outputStart
                     let bytes =
                         Array.sub
                             (state.Committed.ToArray())
-                            promptStart
-                            cmdLen
+                            outputStart
+                            outLen
                     System.Text.Encoding.UTF8.GetString(bytes)
                 else ""
-            else ""
 
-        let outputText =
-            if outputStart >= 0 && outputStart < totalBytes then
-                let outLen = totalBytes - outputStart
-                let bytes =
-                    Array.sub
-                        (state.Committed.ToArray())
-                        outputStart
-                        outLen
-                System.Text.Encoding.UTF8.GetString(bytes)
-            else ""
+            let chunk =
+                { CommandText = commandText
+                  OutputText = outputText
+                  Truncated = state.Truncated
+                  Sealed = true
+                  ProducerWaterMark = state.HighWaterMark }
 
-        let chunk =
-            { CommandText = commandText
-              OutputText = outputText
-              Truncated = state.Truncated
-              Sealed = true
-              ProducerWaterMark = state.HighWaterMark }
+            // Reset per-tuple state for the next command.
+            state.PromptStartOffset <- state.HighWaterMark
+            state.OutputStartOffset <- state.HighWaterMark
+            state.Truncated <- false
 
-        // Reset per-tuple state for the next command.
-        state.PromptStartOffset <- state.HighWaterMark
-        state.OutputStartOffset <- state.HighWaterMark
-        state.Truncated <- false
-
-        (chunk, state)
+            (chunk, state))
 
     // --------------------------------------------------------
     // Diagnostic accessor (for Cycle 34b Ctrl+Shift+D)
@@ -748,15 +769,20 @@ module LinearTextStream =
     /// Cycle 34b uses this for the `--- LINEAR STREAM ---`
     /// section of the diagnostic bundle.
     let getLastBytes (state: T) (kilobytes: int) : byte[] =
-        let want = kilobytes * 1024
-        let available = state.Committed.Count
-        let take = min want available
-        let start = available - take
-        if take <= 0 then [||]
-        else
-            let result = Array.zeroCreate take
-            // ResizeArray.CopyTo doesn't take a slice; use
-            // index-based copy.
-            for i in 0 .. take - 1 do
-                result.[i] <- state.Committed.[start + i]
-            result
+        // Cycle 34b — `lock state.Gate` ensures atomic copy
+        // even when PathwayPump's `append` is concurrently
+        // mutating `Committed` (cross-thread call from the
+        // diagnostic bundle's background task; see T.Gate doc).
+        lock state.Gate (fun () ->
+            let want = kilobytes * 1024
+            let available = state.Committed.Count
+            let take = min want available
+            let start = available - take
+            if take <= 0 then [||]
+            else
+                let result = Array.zeroCreate take
+                // ResizeArray.CopyTo doesn't take a slice; use
+                // index-based copy.
+                for i in 0 .. take - 1 do
+                    result.[i] <- state.Committed.[start + i]
+                result)
