@@ -321,7 +321,7 @@ module CanonicalCorpus =
                                             id shell command
                                             mustInclude mustNotInclude
                                             regex tuple pane
-                                            table)))))))))
+                                            table))))))))
 
     // -----------------------------------------------------------
     // Public API
