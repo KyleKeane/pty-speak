@@ -412,14 +412,28 @@ module SessionModel =
     /// dispatches off the `Some` branch; persisting tuples
     /// the user explicitly opted out of tracking would be a
     /// surprise.
-    /// Cycle 35b — `linearOverride`: when `Some (cmd, out)`, the
-    /// caller has authoritative CommandText/OutputText from the
-    /// LinearTextStream substrate (OSC 133 markers were observed
-    /// during the tuple's lifetime). When `None`, fall back to
-    /// the legacy `extractContent` row-walk so OSC-133-less
-    /// shells (vanilla cmd, vanilla PowerShell) keep working.
-    /// See Section 13 of the strategic plan for the eventual-
-    /// removal sketch.
+    /// Cycle 35b — `linearOverride`: a THUNK that, when invoked,
+    /// returns `Some (commandText, outputText)` if the linear
+    /// substrate has authoritative content (OSC 133 markers
+    /// observed since the last finalize) OR `None` if the caller
+    /// should fall back to the legacy `extractContent` row-walk
+    /// for OSC-133-less shells (vanilla cmd, vanilla PowerShell).
+    ///
+    /// The thunk is essential because `LinearTextStream.finalizeHighWaterMark`
+    /// has the SIDE EFFECT of resetting per-tuple state (offsets
+    /// + the OSC 133 marker flag). If the override were eagerly
+    /// constructed at `applyAndCaptureWithSubstrate` entry, every
+    /// call (including non-finalize boundaries like CommandStart
+    /// and OutputStart) would drain the stream and lose the
+    /// markers before the actual CommandFinished arm fires.
+    /// Deferring evaluation to inside `finalizeAndEnqueue` means
+    /// the stream is finalized exactly when the SessionTuple is
+    /// finalized — semantically aligned, no premature drain.
+    ///
+    /// `applyAndCapture` (legacy) passes `None` (always uses
+    /// `extractContent`). `applyAndCaptureWithSubstrate` (Cycle
+    /// 35b) passes `Some thunk`.
+    ///
     /// TODO(Cycle 39): remove the linearOverride None branch +
     /// `extractContent` itself once OSC 133 coverage is broad
     /// enough (or an OSC-133-injecting shim ships) per
@@ -432,11 +446,15 @@ module SessionModel =
             (oldPromptRowIndex: int option)
             (newPromptRowIndex: int option)
             (snapshot: Cell[][])
-            (linearOverride: (string * string) option)
+            (linearOverride: (unit -> (string * string) option) option)
             : T * SessionTuple option
             =
         let commandText, outputText =
-            match linearOverride with
+            let fromLinear =
+                match linearOverride with
+                | Some thunk -> thunk ()
+                | None -> None
+            match fromLinear with
             | Some (cmd, out) -> cmd, out
             | None ->
                 extractContent
@@ -566,18 +584,19 @@ module SessionModel =
         applyAndCaptureCore state boundary snapshot None
 
     /// Cycle 35b — the shared body. Takes an optional
-    /// `linearOverride: (commandText, outputText)` that, when
-    /// `Some`, replaces the `extractContent` row-walk inside
-    /// `finalizeAndEnqueue`. `applyAndCapture` (legacy) passes
-    /// `None`; `applyAndCaptureWithSubstrate` (substrate-aware)
-    /// computes the override from `LinearTextStream` when
-    /// substrate-mode resolves to Linear AND OSC 133 markers
-    /// were observed.
+    /// `linearOverride` THUNK that, when invoked, returns
+    /// `Some (cmd, out)` (linear path authoritative) or `None`
+    /// (fall back to `extractContent`). The thunk is
+    /// evaluated lazily inside `finalizeAndEnqueue` so the
+    /// linear stream is only drained when an actual
+    /// SessionTuple finalize occurs (NOT on intermediate
+    /// PromptStart / CommandStart / OutputStart boundaries
+    /// that don't enqueue a tuple).
     and private applyAndCaptureCore
             (state: T)
             (boundary: PromptBoundaryData)
             (snapshot: Cell[][])
-            (linearOverride: (string * string) option)
+            (linearOverride: (unit -> (string * string) option) option)
             : T * SessionTuple option
             =
         if state.IsAltScreenActive then
@@ -774,9 +793,17 @@ module SessionModel =
             (useLinear: bool)
             : T * SessionTuple option
             =
-        let linearOverride =
+        // Cycle 35b — the override is a THUNK so the linear
+        // stream's `finalizeHighWaterMark` (which has the side
+        // effect of resetting per-tuple offsets + the OSC 133
+        // marker flag) is only invoked when `finalizeAndEnqueue`
+        // actually fires inside `applyAndCaptureCore`.
+        // Non-finalize boundaries (CommandStart, OutputStart,
+        // and PromptStart-with-no-Active) leave the linear
+        // stream untouched.
+        let linearOverride : (unit -> (string * string) option) option =
             if useLinear then
-                extractContentFromLinearStream linearStream
+                Some (fun () -> extractContentFromLinearStream linearStream)
             else
                 None
         applyAndCaptureCore state boundary snapshot linearOverride
