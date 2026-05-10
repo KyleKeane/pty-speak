@@ -492,3 +492,37 @@ let ``Fact 25 — create with custom parameters honors overrides`` () =
     let (_, state2') = feed state2 t0 (ascii "ab")
     let (tickNotifs, _) = LinearTextStream.tick state2' (after 60)
     Assert.NotEmpty(tickNotifs |> List.choose extractEmittedChunk)
+
+// =====================================================================
+// Cycle 35b — `hasOsc133Markers` accessor for SessionModel hybrid
+// finalize. SessionModel uses this signal to pick between the
+// linear-stream finalize (when markers are present) and the
+// `extractContent` row-walk fallback (for OSC-133-less shells).
+// =====================================================================
+
+[<Fact>]
+let ``Cycle 35b — hasOsc133Markers is false for a fresh producer`` () =
+    let state = freshProducer ()
+    Assert.False(LinearTextStream.hasOsc133Markers state)
+
+[<Fact>]
+let ``Cycle 35b — hasOsc133Markers becomes true after PromptStart`` () =
+    let state = freshProducer ()
+    let (_, state) = feed state t0 (osc133Prompt ())
+    Assert.True(LinearTextStream.hasOsc133Markers state)
+
+[<Fact>]
+let ``Cycle 35b — hasOsc133Markers stays false for plain bytes (no OSC 133)`` () =
+    let state = freshProducer ()
+    let (_, state) = feed state t0 (ascii "hello\n")
+    Assert.False(LinearTextStream.hasOsc133Markers state)
+
+[<Fact>]
+let ``Cycle 35b — hasOsc133Markers resets to false after finalizeHighWaterMark`` () =
+    let state = freshProducer ()
+    let (_, state) = feed state t0 (osc133Prompt ())
+    let (_, state) = feed state (after 5) (ascii "cmd\n")
+    let (_, state) = feed state (after 10) (osc133OutputStart ())
+    Assert.True(LinearTextStream.hasOsc133Markers state)
+    let (_, state) = LinearTextStream.finalizeHighWaterMark state
+    Assert.False(LinearTextStream.hasOsc133Markers state)

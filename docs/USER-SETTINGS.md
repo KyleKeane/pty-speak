@@ -498,6 +498,112 @@ diagnosis via log capture is trivial.
   ignores those sections).
 - Config validator binary or CLI.
 
+## Substrate mode (Cycle 35a/35b)
+
+The Stream pathway can announce from one of two substrates:
+the **linear-text producer** (`LinearTextStream` —
+`docs/rfc/0001-linear-text-substrate.md`) which captures the
+byte stream emitted by the shell, OR the **screen-diff path**
+(PR #166's row-by-row suffix-diff over the Cell-grid
+snapshot) which infers content from the visual screen state.
+Cycle 35a shipped both paths side-by-side behind a TOML flag;
+Cycle 35b flipped the default to `auto` so most users get the
+linear path automatically.
+
+### Current state
+
+- Config file: `%LOCALAPPDATA%\PtySpeak\config.toml`.
+- Schema:
+
+  ```toml
+  [pathway.stream]
+  substrate_mode = "auto"       # auto / linear / screen-diff
+  ```
+
+- Behaviour:
+  - **`auto`** (Cycle 35b default) — linear substrate for
+    non-alt-screen frames (where the byte stream is the
+    canonical representation per
+    [`docs/CORE-ABSTRACTION-BOUNDARY.md`](CORE-ABSTRACTION-BOUNDARY.md)
+    §1.4); screen-diff for alt-screen TUIs (vim, less, top —
+    where the grid is canonical because the byte stream
+    doesn't capture the rendered screen state).
+  - **`linear`** — always read announce content from the
+    `LinearTextStream` producer's committed buffer. Useful
+    for forced testing or for users who prefer the byte-
+    stream behaviour even inside alt-screen apps. NOTE: vim
+    / less / top will not announce sensibly under this mode
+    (alt-screen TUIs have no linear byte representation).
+  - **`screen-diff`** — always use the legacy PR #166
+    suffix-diff. Use this as the regression escape hatch if
+    the linear path causes a problem.
+- Hot-reload: NO. Edit `config.toml`, save, restart pty-speak
+  (the `[pathway.stream]` section reads at startup only;
+  matches every other section except
+  `[session_model.persistence]`).
+- Validation: invalid string (e.g. `substrate_mode = "x"`)
+  or non-string (e.g. `substrate_mode = 123`) logs a Warning
+  and falls back to the default (`auto`).
+
+### Why this configurability ships now
+
+- The substrate-inversion arc (Cycles 30–35) replaced the
+  screen-grid model with the byte-stream model as the
+  canonical representation for stream-profile workloads
+  (cmd, PowerShell, Claude). The flag exists so users can
+  revert to the prior behaviour without a downgrade if the
+  new path causes a regression in their environment.
+- Cycle 35b's default flip happens AFTER manual NVDA
+  validation of an 8-row content matrix (cmd `dir`,
+  PowerShell `gci`, Claude tool-use, npm install spinner,
+  cmd tab-completion, etc.) — see
+  [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
+  for the matrix.
+- The flag is durable. Even after Cycle 39's cleanup
+  removes the screen-diff legacy code from `SessionModel`
+  and `StreamPathway` (per Section 13 of the strategic
+  plan), the `auto` / `linear` choice remains; what gets
+  removed is the `screen-diff` option (alt-screen frames
+  internally still use a screen-diff-like model but it
+  isn't user-selectable).
+
+### When to override the default
+
+- **Hit a Linear-mode regression**: set
+  `substrate_mode = "screen-diff"`. Restart pty-speak. File
+  an issue describing the regression so the fix can land
+  before the screen-diff escape hatch is removed.
+- **Want to force the linear path everywhere** (e.g. for
+  development or accessibility testing of the
+  `LinearTextStream` substrate against a TUI app where the
+  alt-screen detection is uncertain): set
+  `substrate_mode = "linear"`. Be aware that vim / less /
+  top will not announce sensibly under this mode.
+- **Default install**: leave `substrate_mode` unset (or set
+  to `"auto"` for explicitness). The `auto` resolution
+  handles the alt-screen / linear split correctly.
+
+### Implementation notes
+
+- Resolution: `Config.resolveStreamParameters` returns
+  `StreamPathway.Parameters` with `SubstrateMode` populated.
+  The composition root passes that to `StreamPathway.create`
+  for the announce path AND uses the same value to decide
+  `useLinear` for `SessionModel.applyAndCaptureWithSubstrate`
+  (which controls SessionTuple finalize semantics for
+  `Ctrl+Shift+Y` and the in-memory History queue).
+- SessionTuple finalize is hybrid: when `useLinear = true`
+  AND the linear stream observed OSC 133 markers
+  (`PromptStart` / `OutputStart` / `CommandFinished`) since
+  the last finalize, `CommandText` and `OutputText` flow
+  from the linear stream. Otherwise (no markers — vanilla
+  cmd, vanilla PowerShell — or `useLinear = false`),
+  `SessionModel.extractContent` does the legacy row-walk
+  against the screen snapshot. This preserves
+  `Ctrl+Shift+Y` behaviour for OSC-133-less shells until
+  the cleanup cycle removes `extractContent` per Section 13
+  of the strategic plan.
+
 ## SessionModel persistence (substrate shipped — Cycle 24a)
 
 The SessionModel substrate (PRs #185–#199, "Cycles 11–22b")

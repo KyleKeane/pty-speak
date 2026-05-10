@@ -191,7 +191,14 @@ module StreamPathway =
           BulkChangeThreshold = 3
           BackspacePolicy = AnnounceDeletedCharacter
           ModeBarrierFlushPolicy = SummaryOnly
-          SubstrateMode = ScreenDiff }
+          // Cycle 35b — flipped from `ScreenDiff` to `Auto` so
+          // all users get linear-substrate announces for non-
+          // alt-screen content + screen-diff for alt-screen TUIs
+          // without a TOML opt-in. Users who hit a Linear-mode
+          // regression can revert via
+          // `[pathway.stream] substrate_mode = "screen-diff"`.
+          // See `docs/USER-SETTINGS.md` for details.
+          SubstrateMode = Auto }
 
     type private SpinnerKey = int * uint64
 
@@ -587,6 +594,16 @@ module StreamPathway =
     /// processing (FileLoggerChannel logs it; NvdaChannel
     /// short-circuits empty per `NvdaChannel.fs:87` but the
     /// CONTRACT is to not emit empty payloads).
+    ///
+    /// TODO(Cycle 39): screen-diff-substrate legacy. Cycle 35b's
+    /// default flip routes most non-alt-screen frames through
+    /// `assembleSuffixFromStream` instead; this row-walk
+    /// machinery survives only for the ScreenDiff branch of
+    /// Auto mode (alt-screen TUIs) and for users who explicitly
+    /// opt into `substrate_mode = "screen-diff"`. Removable
+    /// when alt-screen TUI handling moves to Linear (or to a
+    /// dedicated TuiPathway-internal screen-diff module). See
+    /// Section 13 of `we-do-not-need-fluffy-simon.md`.
     let private assembleSuffixPayload
             (parameters: Parameters)
             (snapshot: Cell[][])
