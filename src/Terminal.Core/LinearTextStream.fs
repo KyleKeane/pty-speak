@@ -167,65 +167,33 @@ module LinearTextStream =
 
     /// Mutable producer state. The `T` opaque type wraps this.
     /// Buffers are `ResizeArray<byte>` for O(1) append + O(N)
-    /// drop-oldest; remaining fields use F# `mutable` for
-    /// in-place updates. The state record itself is held by
-    /// the caller; `append` / `tick` mutate the record's
-    /// fields and return the same reference + accumulated
-    /// notifications.
+    /// drop-oldest; remaining fields use F# auto-implemented
+    /// `member val ... with get, set` properties. The class
+    /// reference itself is stable across `append` / `tick`
+    /// calls (caller chains state through the
+    /// `(notifications, T)` tuple); state mutation happens via
+    /// property setters and `ResizeArray` in-place mutation.
     [<Sealed>]
     type T internal (parameters: Parameters) =
-        let committed = ResizeArray<byte>()
-        let pending = ResizeArray<byte>()
-        let mutable tailMask : TailMaskState = Map.empty
-        let mutable tailMaskTimestamps : TailMaskTimestamps = Map.empty
-        let mutable currentRow = 0
-        let mutable highWaterMark = 0L
-        let mutable lastEmittedAt = DateTime.MinValue
-        let mutable lastByteAt = DateTime.MinValue
-        let mutable frozen = false
-        let mutable truncated = false
+        member val internal Committed: ResizeArray<byte> = ResizeArray<byte>() with get
+        member val internal Pending: ResizeArray<byte> = ResizeArray<byte>() with get
+        member val internal Parameters: Parameters = parameters with get
+        member val internal HighWaterMark: int64 = 0L with get, set
+        member val internal LastEmittedAt: DateTime = DateTime.MinValue with get, set
+        member val internal LastByteAt: DateTime = DateTime.MinValue with get, set
+        member val internal Frozen: bool = false with get, set
+        member val internal Truncated: bool = false with get, set
+        member val internal CurrentRow: int = 0 with get, set
+        member val internal TailMask: Map<int, byte[]> = Map.empty with get, set
+        member val internal TailMaskTimestamps: Map<int, DateTime> = Map.empty with get, set
         /// Position in the committed buffer marking the start
         /// of the current command's output (set by OSC 133;C,
         /// cleared by OSC 133;D).
-        let mutable outputStartOffset = 0L
+        member val internal OutputStartOffset: int64 = 0L with get, set
         /// Position in the committed buffer marking the start
         /// of the current command (set by OSC 133;A, cleared
         /// by OSC 133;C).
-        let mutable promptStartOffset = 0L
-
-        member internal _.Committed = committed
-        member internal _.Pending = pending
-        member internal _.Parameters = parameters
-        member internal _.HighWaterMark
-            with get () = highWaterMark
-            and set v = highWaterMark <- v
-        member internal _.LastEmittedAt
-            with get () = lastEmittedAt
-            and set v = lastEmittedAt <- v
-        member internal _.LastByteAt
-            with get () = lastByteAt
-            and set v = lastByteAt <- v
-        member internal _.Frozen
-            with get () = frozen
-            and set v = frozen <- v
-        member internal _.Truncated
-            with get () = truncated
-            and set v = truncated <- v
-        member internal _.CurrentRow
-            with get () = currentRow
-            and set v = currentRow <- v
-        member internal _.TailMask
-            with get () = tailMask
-            and set v = tailMask <- v
-        member internal _.TailMaskTimestamps
-            with get () = tailMaskTimestamps
-            and set v = tailMaskTimestamps <- v
-        member internal _.OutputStartOffset
-            with get () = outputStartOffset
-            and set v = outputStartOffset <- v
-        member internal _.PromptStartOffset
-            with get () = promptStartOffset
-            and set v = promptStartOffset <- v
+        member val internal PromptStartOffset: int64 = 0L with get, set
 
     // --------------------------------------------------------
     // Construction
@@ -448,7 +416,6 @@ module LinearTextStream =
             // substrate; events are still scanned for the
             // exit toggle.
             let mutable notifs = []
-            let mutable previousEvent : VtEvent option = None
             for event in events do
                 match event with
                 | CsiDispatch (parms, intermediates, finalByte, priv) ->
@@ -462,7 +429,6 @@ module LinearTextStream =
                             RegimeSwitch (ExitAltScreen resumeAt) :: notifs
                     | _ -> ()
                 | _ -> ()
-                previousEvent <- Some event
             state.LastByteAt <- now
             (List.rev notifs, state)
         else
@@ -475,7 +441,6 @@ module LinearTextStream =
             //   (c) detect live-region / tail-mask transitions
             //   (d) advance currentRow on newline boundaries
             let mutable notifs = []
-            let mutable seamSealed = false   // any seam crossed?
             let mutable promptSeamCrossed = false
             let mutable encounteredLF = false
             let mutable previousEvent : VtEvent option = None
@@ -496,7 +461,6 @@ module LinearTextStream =
                         notifs <- chunkNotifs @ notifs
                         state.PromptStartOffset <- state.HighWaterMark
                         promptSeamCrossed <- true
-                        seamSealed <- true
                     | CommandInputStart ->
                         // End of prompt zone, start of typed
                         // command. Buffer continues; no seam.
@@ -509,14 +473,12 @@ module LinearTextStream =
                         notifs <- chunkNotifs @ notifs
                         state.OutputStartOffset <- state.HighWaterMark
                         promptSeamCrossed <- true
-                        seamSealed <- true
                     | CommandFinished _ ->
                         // Output zone ends. Drain pending
                         // (output) sealed.
                         let chunkNotifs = drainPending state now true
                         notifs <- chunkNotifs @ notifs
                         promptSeamCrossed <- true
-                        seamSealed <- true
                     | NotOsc133 -> ()
 
                 | CsiDispatch (parms, intermediates, finalByte, priv) ->

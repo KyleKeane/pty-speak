@@ -2,7 +2,6 @@ module PtySpeak.Tests.Unit.LinearTextStreamTests
 
 open System
 open System.Text
-open Microsoft.Extensions.Logging
 open Xunit
 open Terminal.Core
 open Terminal.Parser
