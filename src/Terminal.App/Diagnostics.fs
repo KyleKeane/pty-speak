@@ -1334,17 +1334,58 @@ module Diagnostics =
                                 " SessionModel: %d of %d command history entries, no active state."
                                 sessionSnapshot.HistoryCount
                                 sessionSnapshot.MaxHistorySize
+                    // Cycle 38a-followup — corpus pass/fail counts +
+                    // names of failing scenarios in the spoken
+                    // summary so the maintainer hears which
+                    // canonical-interaction rows misbehaved without
+                    // opening the bundle file. Empty string for
+                    // `Error` (corpus missing/malformed; bundle
+                    // section already explains) and for
+                    // zero-scenarios (e.g. PowerShell/Claude with no
+                    // 38a-baseline rows yet — avoids "Corpus: all 0
+                    // passed.").
+                    let corpusSpoken =
+                        match corpusResultOuter with
+                        | Ok results when results.Length > 0 ->
+                            let passed =
+                                results
+                                |> Array.filter (fun r ->
+                                    match r.Outcome with
+                                    | CanonicalCorpus.Pass -> true
+                                    | _ -> false)
+                                |> Array.length
+                            let scenarioTotal = results.Length
+                            let scenarioFailed = scenarioTotal - passed
+                            if scenarioFailed = 0 then
+                                sprintf
+                                    " Corpus: all %d passed."
+                                    scenarioTotal
+                            else
+                                let failingIds =
+                                    results
+                                    |> Array.choose (fun r ->
+                                        match r.Outcome with
+                                        | CanonicalCorpus.Fail _ ->
+                                            Some r.Scenario.Id
+                                        | _ -> None)
+                                    |> String.concat ", "
+                                sprintf
+                                    " Corpus: %d of %d passed; failing: %s."
+                                    passed scenarioTotal failingIds
+                        | _ -> ""
                     let summaryLine =
                         if total = 0 then
                             sprintf
-                                "Diagnostic complete. Snapshot and earcons logged. Shell %s skipped command battery.%s"
+                                "Diagnostic complete. Snapshot and earcons logged. Shell %s skipped command battery.%s%s"
                                 shell.DisplayName
                                 substrateFragment
+                                corpusSpoken
                         else
                             sprintf
-                                "Diagnostic complete. %d of %d passed.%s"
+                                "Diagnostic complete. %d of %d passed.%s%s"
                                 pass total
                                 substrateFragment
+                                corpusSpoken
                     // Cycle 25b — assemble the combined dump
                     // bundle: diagnostic-battery log + FileLogger
                     // active log + config.toml + redacted env.

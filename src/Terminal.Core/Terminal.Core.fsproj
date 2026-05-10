@@ -42,10 +42,12 @@
     <Compile Include="Channels/IClipboardProvider.fs" />
     <Compile Include="Channels/IHotkeyTranslator.fs" />
     <Compile Include="Channels/IDisplayBuffer.fs" />
+    <Compile Include="ManualTestsHtml.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="FSharp.Core" />
+    <PackageReference Include="Markdig" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Tomlyn" />
   </ItemGroup>

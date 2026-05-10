@@ -115,6 +115,13 @@ module HotkeyRegistry =
         // plans where Close-Window-vs-Exit-App becomes meaningful).
         | CloseWindow
         | ExitApp
+        // Cycle 38a-followup — second menu-only command.
+        // Filters `docs/ACCESSIBILITY-TESTING.md` to sections
+        // marked `<!-- DOGFOOD -->` via `ManualTestsHtml.filterAndConvert`,
+        // writes the HTML to `%LOCALAPPDATA%\PtySpeak\manual-tests.html`,
+        // and opens it in the default browser. NVDA browse-mode H
+        // key jumps headings; D key jumps the `<main>` landmark.
+        | OpenManualTests
 
     /// Stable string name for a command, used as the
     /// `RoutedCommand` name passed to WPF and as a TOML key
@@ -138,6 +145,7 @@ module HotkeyRegistry =
         | RunProcessCleanupScript -> "RunProcessCleanupScript"
         | CloseWindow -> "CloseWindow"
         | ExitApp -> "ExitApp"
+        | OpenManualTests -> "OpenManualTests"
 
     /// Default key binding for a command. Mirrors the
     /// `AppReservedHotkeys` table in
@@ -239,7 +247,14 @@ module HotkeyRegistry =
           { Command = ExitApp
             Key = None
             Modifiers = None
-            Description = "Exit pty-speak (Cycle 28; Application.Current.Shutdown)" } ]
+            Description = "Exit pty-speak (Cycle 28; Application.Current.Shutdown)" }
+          // Cycle 38a-followup — second menu-only command after
+          // RunProcessCleanupScript. Surfaced as Diagnostics →
+          // Open Manual Tests.
+          { Command = OpenManualTests
+            Key = None
+            Modifiers = None
+            Description = "Open the dogfood-filtered manual-tests HTML quickref in the default browser (Cycle 38a-followup)" } ]
 
     /// Look up the default Hotkey for a command. Throws
     /// `KeyNotFoundException` if the registry is incomplete —
@@ -318,7 +333,8 @@ module HotkeyRegistry =
           AnnounceSessionLogPath
           RunProcessCleanupScript
           CloseWindow
-          ExitApp ]
+          ExitApp
+          OpenManualTests ]
 
     // ---------------------------------------------------------------
     // Cycle 27 — Multi-state command paradigm

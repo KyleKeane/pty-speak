@@ -342,8 +342,15 @@ module StreamPathway =
         else
             let head = text.Substring(0, limit)
             let extra = text.Length - limit
+            // Cycle 38a-followup — `Ctrl+Shift+;` was retired in
+            // Cycle 25b-1a. `Ctrl+Shift+D` bundles the diagnostic
+            // snapshot, whose `--- FILELOGGER ACTIVE LOG ---`
+            // section carries the UNTRUNCATED payload via
+            // `FileLoggerChannel` (the announce layer's truncation
+            // doesn't gate the log layer). The bundle is copied to
+            // clipboard for paste-back to triage chat.
             sprintf
-                "%s ...announcement truncated; %d more characters available — press Ctrl+Shift+; to copy full log."
+                "%s ...announcement truncated; %d more characters available — press Ctrl+Shift+D to copy the diagnostic bundle (full payload in the FileLogger log section)."
                 head
                 extra
 

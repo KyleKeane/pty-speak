@@ -87,7 +87,10 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               HotkeyRegistry.RunProcessCleanupScript
               // Cycle 28 — Window menu commands (menu-only).
               HotkeyRegistry.CloseWindow
-              HotkeyRegistry.ExitApp ]
+              HotkeyRegistry.ExitApp
+              // Cycle 38a-followup — second menu-only command;
+              // Diagnostics → Open Manual Tests.
+              HotkeyRegistry.OpenManualTests ]
     let actual = Set.ofList HotkeyRegistry.allCommands
     Assert.Equal<Set<HotkeyRegistry.AppCommand>>(expected, actual)
 
@@ -405,6 +408,19 @@ let ``ExitApp is menu-only (Cycle 28 — None Key, None Modifiers)`` () =
     Assert.Equal(None, hk.Key)
     Assert.Equal<Set<HotkeyRegistry.Modifier> option>(None, hk.Modifiers)
     Assert.Equal("ExitApp", HotkeyRegistry.nameOf HotkeyRegistry.ExitApp)
+    Assert.Equal(None, HotkeyRegistry.gestureText hk)
+
+[<Fact>]
+let ``OpenManualTests is menu-only (Cycle 38a-followup — None Key, None Modifiers)`` () =
+    // Cycle 38a-followup — second menu-only AppCommand after
+    // RunProcessCleanupScript. Surfaced via Diagnostics → Open
+    // Manual Tests. Mirrors the (None, None) shape pin so a
+    // future PR doesn't accidentally promote it to a gesture-
+    // bearing command without an explicit decision.
+    let hk = HotkeyRegistry.hotkeyOf HotkeyRegistry.OpenManualTests
+    Assert.Equal(None, hk.Key)
+    Assert.Equal<Set<HotkeyRegistry.Modifier> option>(None, hk.Modifiers)
+    Assert.Equal("OpenManualTests", HotkeyRegistry.nameOf HotkeyRegistry.OpenManualTests)
     Assert.Equal(None, HotkeyRegistry.gestureText hk)
 
 [<Fact>]

@@ -60,6 +60,19 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>canonical-interactions.toml</Link>
     </Content>
+    <!--
+      Cycle 38a-followup — `Diagnostics → Open Manual Tests`
+      reads the matrix source file at runtime, filters to
+      DOGFOOD-marked sections, and renders Markdig HTML. The
+      markdown is deployed next to Terminal.App.exe and
+      resolved via `AppContext.BaseDirectory`. Maintainer can
+      grow / prune the quickref by editing markers in the
+      source markdown — no code change required.
+    -->
+    <Content Include="..\..\docs\ACCESSIBILITY-TESTING.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>ACCESSIBILITY-TESTING.md</Link>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
