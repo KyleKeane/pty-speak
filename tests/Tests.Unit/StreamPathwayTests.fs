@@ -1637,17 +1637,26 @@ let ``Cycle 35a — Reset zeroes LastLinearWatermark`` () =
     Assert.Equal(0L, state.LastLinearWatermark)
 
 [<Fact>]
-let ``Cycle 35a — Linear payload is sanitised (control chars stripped)`` () =
+let ``Cycle 35a — Linear payload routes through AnnounceSanitiser`` () =
+    // Smoke test that the Linear assembly path calls
+    // AnnounceSanitiser. The sanitiser's own test suite
+    // (`AnnounceSanitiserTests.fs`) exhaustively pins the
+    // strip-control-chars contract; here we just verify the
+    // call is wired in. We use exact-equality so any leaked
+    // control chars would surface in the failure diff
+    // (xUnit's DoesNotContain pretty-prints mask non-printables).
     let state = StreamPathway.createState ()
     let stream = LinearTextStream.create LinearTextStream.defaultParameters
-    let bytes = System.Text.Encoding.ASCII.GetBytes "ok\x07go\n"
+    // "hello\n" — 6 bytes, all printable + LF. After sanitise
+    // strips the LF, payload should be exactly "hello".
+    let bytes = System.Text.Encoding.ASCII.GetBytes "hello\n"
     let stream = feedStream stream dt0 bytes
     let snap = snapshotOf 1 5 [ "x" ]
     let result =
         StreamPathway.processCanonicalState
             linearParameters state (at 0) (canonicalAt snap 0L) stream
     Assert.Equal(1, result.Length)
-    Assert.DoesNotContain("\x07", result.[0].Payload)
+    Assert.Equal("hello", result.[0].Payload)
 
 [<Fact>]
 let ``Cycle 35a — Linear payload respects MaxAnnounceChars cap`` () =
