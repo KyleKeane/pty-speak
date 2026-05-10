@@ -1561,9 +1561,10 @@ let ``Cycle 35b — useLinear=true + OSC 133 markers populates CommandText/Outpu
     let s2 = SessionModel.applyWithSubstrate
                 s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
                 stream true
-    let s3, finalisedOpt = SessionModel.applyAndCaptureWithSubstrate
-                s2 (boundary (BoundaryKind.CommandFinished (Some 0)) (after 200)) [||]
-                stream true
+    let s3, finalisedOpt =
+        SessionModel.applyAndCaptureWithSubstrate
+            s2 (boundary (BoundaryKind.CommandFinished (Some 0)) (after 200)) [||]
+            stream true
     Assert.True(finalisedOpt.IsSome)
     let tuple = finalisedOpt.Value
     // Assert the CommandText / OutputText flowed from the linear
@@ -1586,9 +1587,10 @@ let ``Cycle 35b — useLinear=true but stream has no OSC 133 markers falls back 
     let s2 = SessionModel.applyWithSubstrate
                 s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
                 stream true
-    let s3, finalisedOpt = SessionModel.applyAndCaptureWithSubstrate
-                s2 (boundary (BoundaryKind.CommandFinished (Some 0)) (after 200)) [||]
-                stream true
+    let s3, finalisedOpt =
+        SessionModel.applyAndCaptureWithSubstrate
+            s2 (boundary (BoundaryKind.CommandFinished (Some 0)) (after 200)) [||]
+            stream true
     Assert.True(finalisedOpt.IsSome)
     let tuple = finalisedOpt.Value
     // extractContent fallback against [||] snapshot returns empty
@@ -1614,9 +1616,10 @@ let ``Cycle 35b — useLinear=false ignores OSC 133 markers (linear stream has t
     let s2 = SessionModel.applyWithSubstrate
                 s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
                 stream false
-    let s3, finalisedOpt = SessionModel.applyAndCaptureWithSubstrate
-                s2 (boundary (BoundaryKind.CommandFinished (Some 0)) (after 200)) [||]
-                stream false
+    let s3, finalisedOpt =
+        SessionModel.applyAndCaptureWithSubstrate
+            s2 (boundary (BoundaryKind.CommandFinished (Some 0)) (after 200)) [||]
+            stream false
     Assert.True(finalisedOpt.IsSome)
     let tuple = finalisedOpt.Value
     // ScreenDiff path took the [||] snapshot → extractContent
