@@ -58,6 +58,7 @@
     <Compile Include="MultiStateRegistryTests.fs" />
     <Compile Include="LinearTextStreamTests.fs" />
     <Compile Include="CanonicalCorpusTests.fs" />
+    <Compile Include="ManualTestsHtmlTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

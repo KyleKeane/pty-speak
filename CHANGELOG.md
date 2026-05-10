@@ -15,6 +15,73 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 38a-followup): Post-dogfood UX refresh
+
+Five UX/ergonomics fixes from the 2026-05-10 dogfood session of
+Cycle 38a:
+
+1. **Truncation suffix references an existing shortcut.**
+   [`src/Terminal.Core/StreamPathway.fs:346`](src/Terminal.Core/StreamPathway.fs)
+   previously told the user to press `Ctrl+Shift+;` to copy the
+   full log — but that hotkey was retired in Cycle 25b-1a.
+   Replaced with `Ctrl+Shift+D` (the diagnostic bundle carries
+   the untruncated payload in its `--- FILELOGGER ACTIVE LOG ---`
+   section).
+
+2. **Spoken diagnostic summary now includes corpus results.**
+   The `Ctrl+Shift+D` end-of-battery announce previously said
+   only `"Diagnostic complete. {pass} of {total} passed.{substrate fragment}"`.
+   Corpus results (Cycle 38a) were in the bundle but not spoken.
+   Now the announce includes `"Corpus: {p} of {t} passed; failing: {ids}."`
+   when scenarios fail, or `"Corpus: all {N} passed."` when none
+   do, or no addition when no scenarios match the active shell.
+   The maintainer hears which canonical-interaction rows
+   misbehaved without opening the file.
+
+3. **New `Diagnostics → Open Manual Tests` menu item.**
+   Filters
+   [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
+   to sections marked with an `<!-- DOGFOOD -->` HTML comment,
+   renders Markdig HTML wrapped in an HTML5 document with a
+   `<main>` landmark, writes to
+   `%LOCALAPPDATA%\PtySpeak\manual-tests.html`, and opens it in
+   the default browser via `ShellExecute`. NVDA browse-mode H
+   key jumps section headings; D key jumps the `<main>`
+   landmark. Maintainer can grow / prune the quickref by adding
+   / removing markers in the source markdown — no code change
+   required. Initial markers cover Cycle 38a / 37 / 36 / 29b /
+   28 sections plus the always-run "Artifact integrity" and
+   "Launch and process hygiene" matrices.
+
+   - New module:
+     [`src/Terminal.Core/ManualTestsHtml.fs`](src/Terminal.Core/ManualTestsHtml.fs)
+     (pure `filterAndConvert : markdown -> html`).
+   - New dependency: Markdig 0.38.0 (BSD 2-Clause).
+   - New menu-only AppCommand:
+     `HotkeyRegistry.OpenManualTests` (mirrors
+     `RunProcessCleanupScript`'s Cycle 26c pattern: `Key = None,
+     Modifiers = None`).
+   - Handler: `openManualTests` in
+     [`src/Terminal.App/Program.fs`](src/Terminal.App/Program.fs).
+   - Tests: 8 new facts in
+     [`tests/Tests.Unit/ManualTestsHtmlTests.fs`](tests/Tests.Unit/ManualTestsHtmlTests.fs)
+     pinning the filter + Markdig conversion + HTML wrapper
+     shape; 1 new fact in
+     [`tests/Tests.Unit/HotkeyRegistryTests.fs`](tests/Tests.Unit/HotkeyRegistryTests.fs)
+     pinning the menu-only shape.
+
+4. **Top-level "View" menu renamed to "Display".** Matches
+   maintainer's mental model;
+   [`src/Views/MainWindow.xaml`](src/Views/MainWindow.xaml)
+   line 66.
+
+5. **"Logging Level" multi-state item moved to Diagnostics.**
+   It's a diagnostic verbosity control, not a display setting.
+   Now first in the Diagnostics menu (so it's reachable without
+   arrow-scrolling); the `MultiStateRegistry` registration
+   itself is unchanged. Display now hosts only the Earcons
+   multi-state.
+
 ### Added (Cycle 38a): Canonical interaction-pair corpus + diagnostic battery integration
 
 Regression scaffolding for the cmd / PowerShell / Claude per-shell

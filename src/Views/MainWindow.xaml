@@ -63,17 +63,12 @@
                  option, matching `multiStateNameOf` and the
                  stable `OptionId`s in
                  `HotkeyRegistry.multiStateBuiltIns`. -->
-            <MenuItem Header="_View">
-                <MenuItem x:Name="MenuItem_LoggingLevel"
-                          x:FieldModifier="public"
-                          Header="Logging _Level">
-                    <MenuItem x:Name="MenuItem_LoggingLevel_information"
-                              x:FieldModifier="public"
-                              Header="_Information" />
-                    <MenuItem x:Name="MenuItem_LoggingLevel_debug"
-                              x:FieldModifier="public"
-                              Header="_Debug" />
-                </MenuItem>
+            <!-- Cycle 38a-followup — renamed from "View" to
+                 "Display"; Logging Level moved to Diagnostics
+                 (it's a diagnostic-relevant control, not a
+                 display setting). Display now hosts only the
+                 Earcons multi-state. -->
+            <MenuItem Header="_Display">
                 <MenuItem x:Name="MenuItem_EarconsMode"
                           x:FieldModifier="public"
                           Header="_Earcons">
@@ -100,6 +95,20 @@
                           Header="Announce _Session Log Path" />
             </MenuItem>
             <MenuItem Header="Dia_gnostics">
+                <!-- Cycle 38a-followup — Logging Level moved here
+                     from Display (formerly View). It's a diagnostic
+                     verbosity control, not a display setting. First
+                     item so it's reachable without arrow-scrolling. -->
+                <MenuItem x:Name="MenuItem_LoggingLevel"
+                          x:FieldModifier="public"
+                          Header="Logging _Level">
+                    <MenuItem x:Name="MenuItem_LoggingLevel_information"
+                              x:FieldModifier="public"
+                              Header="_Information" />
+                    <MenuItem x:Name="MenuItem_LoggingLevel_debug"
+                              x:FieldModifier="public"
+                              Header="_Debug" />
+                </MenuItem>
                 <MenuItem x:Name="MenuItem_HealthCheck"
                           x:FieldModifier="public"
                           Header="_Health Check" />
@@ -116,6 +125,14 @@
                 <MenuItem x:Name="MenuItem_RunProcessCleanupScript"
                           x:FieldModifier="public"
                           Header="Test Process _Cleanup" />
+                <!-- Cycle 38a-followup — second menu-only command.
+                     Filters ACCESSIBILITY-TESTING.md to sections
+                     marked `<!-- DOGFOOD -->`, renders Markdig HTML,
+                     and opens in the default browser for NVDA
+                     browse-mode H-key heading navigation. -->
+                <MenuItem x:Name="MenuItem_OpenManualTests"
+                          x:FieldModifier="public"
+                          Header="Open Manual _Tests" />
             </MenuItem>
             <!-- Cycle 28 — Window menu. Both items are menu-only
                  commands (no keyboard accelerator registered with

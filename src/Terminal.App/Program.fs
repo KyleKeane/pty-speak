@@ -622,6 +622,80 @@ module Program =
             }
         ()
 
+    /// Cycle 38a-followup — Diagnostics → Open Manual Tests.
+    /// Reads `ACCESSIBILITY-TESTING.md` (deployed alongside
+    /// Terminal.App.exe via Content + CopyToOutput in
+    /// `Terminal.App.fsproj`), filters to sections marked
+    /// `<!-- DOGFOOD -->`, renders Markdig HTML wrapped in an
+    /// HTML5 document with a `<main>` landmark, writes to
+    /// `%LOCALAPPDATA%\PtySpeak\manual-tests.html`, and opens
+    /// in the default browser via `ShellExecute`. NVDA browse-
+    /// mode H key jumps section headings; D key jumps the
+    /// `<main>` landmark.
+    let private openManualTests (window: MainWindow) : unit =
+        let log = Logger.get "Terminal.App.Program.openManualTests"
+        // Forward-looking announce BEFORE the browser launch so
+        // NVDA has time to speak before focus changes. Mirrors
+        // `runTestProcessCleanup`'s announce-then-Task.Delay-then-
+        // launch pattern.
+        window.TerminalSurface.Announce(
+            "Opening manual tests in default browser.",
+            ActivityIds.diagnostic)
+        let _ =
+            task {
+                do! Task.Delay(700)
+                let action () =
+                    try
+                        let mdPath =
+                            System.IO.Path.Combine(
+                                System.AppContext.BaseDirectory,
+                                "ACCESSIBILITY-TESTING.md")
+                        if not (System.IO.File.Exists mdPath) then
+                            log.LogWarning(
+                                "Manual-tests source markdown not found at {Path}",
+                                mdPath)
+                            window.TerminalSurface.Announce(
+                                "Manual tests source file not found in install directory.",
+                                ActivityIds.error)
+                        else
+                            let mdContent =
+                                System.IO.File.ReadAllText(mdPath)
+                            let html =
+                                ManualTestsHtml.filterAndConvert mdContent
+                            let outDir =
+                                System.IO.Path.Combine(
+                                    System.Environment.GetFolderPath(
+                                        System.Environment.SpecialFolder.LocalApplicationData),
+                                    "PtySpeak")
+                            System.IO.Directory.CreateDirectory(outDir)
+                            |> ignore
+                            let htmlPath =
+                                System.IO.Path.Combine(
+                                    outDir,
+                                    "manual-tests.html")
+                            System.IO.File.WriteAllText(
+                                htmlPath, html, System.Text.Encoding.UTF8)
+                            let psi = System.Diagnostics.ProcessStartInfo()
+                            psi.FileName <- htmlPath
+                            psi.UseShellExecute <- true
+                            System.Diagnostics.Process.Start(psi) |> ignore
+                            log.LogInformation(
+                                "Manual-tests HTML written and opened. Path={Path}",
+                                htmlPath)
+                    with ex ->
+                        log.LogWarning(
+                            ex,
+                            "openManualTests failed: {Message}",
+                            ex.Message)
+                        let safe = AnnounceSanitiser.sanitise ex.Message
+                        window.TerminalSurface.Announce(
+                            sprintf "Could not open manual tests: %s" safe,
+                            ActivityIds.error)
+                do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                ()
+            }
+        ()
+
     /// Cycle 28 — Window menu: close the main window. Mirrors
     /// the OS-level `Alt+F4` gesture, which WPF Window already
     /// handles natively via `SystemCommands.CloseWindow`. The
@@ -825,6 +899,8 @@ module Program =
         // hardcoded XAML values for None-key commands alone).
         bind HotkeyRegistry.CloseWindow (fun () -> runCloseWindow window)
         bind HotkeyRegistry.ExitApp (fun () -> runExitApp window)
+        // Cycle 38a-followup — menu-only; Diagnostics → Open Manual Tests.
+        bind HotkeyRegistry.OpenManualTests (fun () -> openManualTests window)
 
         // Cycle 25b-1a — `SetCopyLogToClipboardHandler` defense-in-
         // depth wiring removed alongside the Ctrl+Shift+L hotkey

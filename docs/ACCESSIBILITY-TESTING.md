@@ -15,6 +15,27 @@ of the matrix, but the scope is **all manual checks every release
 must pass**: artifact integrity, process-launch hygiene, UIA, NVDA,
 earcons, auto-update.
 
+## DOGFOOD markers
+
+Sub-sections preceded by an `<!-- DOGFOOD -->` HTML comment are
+surfaced in the runtime `Diagnostics → Open Manual Tests` quickref
+(Cycle 38a-followup). The menu item reads this file from the
+deployed location next to `Terminal.App.exe`, filters to marked
+`### `-level sub-sections via
+[`src/Terminal.Core/ManualTestsHtml.fs`](../src/Terminal.Core/ManualTestsHtml.fs),
+renders Markdig HTML, and opens it in the default browser for
+NVDA browse-mode heading navigation. Add or remove the marker on a
+per-section basis to grow or prune the quickref — no code change
+required. The marker is a normal HTML comment so it stays invisible
+in any rendered markdown view.
+
+The initial set marks the most-recently-relevant sections: Cycle
+38a (canonical interaction corpus baseline), Cycle 37 (UIA listbox
+peer), Cycle 36 (substrate-inversion arc matrix backfill), Cycle
+29b (SelectionProfile), Cycle 28 (Window menu), plus the standing
+"Artifact integrity" and "Launch and process hygiene" sections that
+run on every release.
+
 ## How to use this document
 
 1. Cut the release per
@@ -74,6 +95,7 @@ These two sections run on every release regardless of stage, because
 they catch regressions in things that don't have a "stage" but break
 loudly when wrong.
 
+<!-- DOGFOOD -->
 ### Artifact integrity (run before installing)
 
 | Test                              | Procedure                                       | Expected                                                          |
@@ -101,6 +123,7 @@ loudly when wrong.
   back per `docs/RELEASE-PROCESS.md` "Workflow changes when signing
   returns".
 
+<!-- DOGFOOD -->
 ### Launch and process hygiene (run on every install)
 
 | Test                              | Procedure                                       | Expected                                                          |
@@ -820,6 +843,7 @@ expected behavioural side-effect.
   immediate-update logic is possible but adds complexity for no
   user-visible benefit since the menu has already closed.)
 
+<!-- DOGFOOD -->
 ### Cycle 28 — Window menu
 
 Cycle 28 adds the top-level `Window` menu with two children:
@@ -858,6 +882,7 @@ natively.
   `AppReservedHotkeys` rows; existing behaviour should be
   unchanged.
 
+<!-- DOGFOOD -->
 ### Cycle 29b — SelectionProfile (NVDA reads selection prompts as text)
 
 Cycle 29b wires `SelectionDetector` (shipped in 29a) into the
@@ -910,6 +935,7 @@ short-circuit the detector entirely.
   thresholds; 29c lets the maintainer tune them via
   `Ctrl+Shift+E` (open config.toml).
 
+<!-- DOGFOOD -->
 ### Cycle 36 — Substrate-inversion arc matrix backfill
 
 Cycles 33-35c shipped the substrate-inversion arc: the canonical
@@ -1034,6 +1060,7 @@ findstr /C:"--- LINEAR STREAM" "<bundle-path>"
 These recipes lean on the existing diagnostic-bundle infrastructure
 shipped in Cycle 34b; no new logging is required.
 
+<!-- DOGFOOD -->
 ### Cycle 37 — UIA listbox peer (interactive-list canonical-display)
 
 Cycle 37 (37a + 37b) replaces SelectionProfile's Cycle 29b
@@ -1235,6 +1262,7 @@ matrix's shrinking surface area over time.
   the producer side (pattern present + GetText returns a snapshot
   with the expected length floor) is now CI-pinned.
 
+<!-- DOGFOOD -->
 ### Cycle 38a — Canonical interaction corpus baseline
 
 Cycle 38a is the **regression scaffolding** for the cmd / PowerShell
