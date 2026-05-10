@@ -343,29 +343,47 @@ public class TerminalView : FrameworkElement
     }
 
     /// <summary>
-    /// Cycle 37a — receives <see cref="Terminal.Core.RenderInstruction.RenderRaw"/>
+    /// Cycle 37b — receives <see cref="Terminal.Core.RenderInstruction.RenderRaw"/>
     /// payloads marshalled from <see cref="Terminal.Core.NvdaChannel"/> via the
-    /// composition root's <c>marshalRawPayload</c> callback. Cycle 37a stubs
-    /// this method as log-only; Cycle 37b promotes it to peer-state update +
-    /// UIA event raise on the active <c>TerminalAutomationPeer</c>.
+    /// composition root's <c>marshalRawPayload</c> callback, and routes
+    /// <see cref="Terminal.Core.SelectionRawPayload"/> to the active
+    /// <see cref="Terminal.Accessibility.TerminalAutomationPeer"/>'s
+    /// <c>UpdateSelectionState</c>, which materializes / mutates / drops the
+    /// virtual list peer and raises UIA events. Cycle 37a stubbed this as
+    /// log-only; Cycle 37b promotes to peer-state update.
     /// </summary>
     /// <remarks>
-    /// Logging metadata only (payload type name + activityId), per SECURITY.md
-    /// "Logging chokepoint" policy. Payload contents (e.g. selection list
-    /// item text) are sanitised at the producer boundary
-    /// (<c>SelectionDetector</c> applies <c>AnnounceSanitiser.sanitise</c>),
-    /// but the stub doesn't forward them to NVDA — Option A bridge keeps the
-    /// existing <c>RenderText</c> NVDA decision active so NVDA continues
-    /// reading the text representation during the 37a interim.
+    /// Threading: this method runs on the WPF UI thread (the composition
+    /// root in <c>Program.fs</c> wraps the call in <c>Dispatcher.Invoke</c>).
+    /// <c>UpdateSelectionState</c> mutates peer fields and calls
+    /// <c>RaiseAutomationEvent</c> directly — both safe on the UI thread
+    /// without further marshalling.
+    ///
+    /// If <c>UIElementAutomationPeer.FromElement</c> returns null (no UIA
+    /// client has connected yet to trigger lazy peer creation), the
+    /// <c>?.</c> null-conditional short-circuits and the update is silently
+    /// dropped. This matches the existing <see cref="Announce"/> path's
+    /// behaviour for the no-UIA-client case.
+    ///
+    /// Unknown payload types fall to the warning-log branch so type drift
+    /// surfaces in <c>Ctrl+Shift+D</c> bundles for triage.
     /// </remarks>
     public void AnnounceRawPayload(object payload, string activityId)
     {
-        var log = Terminal.Core.Logger.get("PtySpeak.Views.TerminalView.AnnounceRawPayload");
-        var typeName = payload?.GetType().Name ?? "null";
-        Microsoft.Extensions.Logging.LoggerExtensions.LogDebug(
-            log,
-            "RawPayload received (Cycle 37a stub). ActivityId={ActivityId} PayloadType={PayloadType}",
-            activityId, typeName);
+        if (payload is Terminal.Core.SelectionRawPayload selPayload)
+        {
+            var peer = UIElementAutomationPeer.FromElement(this) as TerminalAutomationPeer;
+            peer?.UpdateSelectionState(selPayload);
+        }
+        else
+        {
+            var log = Terminal.Core.Logger.get("PtySpeak.Views.TerminalView.AnnounceRawPayload");
+            var typeName = payload?.GetType().Name ?? "null";
+            Microsoft.Extensions.Logging.LoggerExtensions.LogWarning(
+                log,
+                "AnnounceRawPayload received unexpected payload type. ActivityId={ActivityId} PayloadType={PayloadType}",
+                activityId, typeName);
+        }
     }
 
     /// <summary>
@@ -993,7 +1011,20 @@ public class TerminalView : FrameworkElement
     /// the element's lifetime — there's no need to memoize here.
     /// </summary>
     protected override AutomationPeer OnCreateAutomationPeer()
-        => new TerminalAutomationPeer(this, TextProvider);
+        => new TerminalAutomationPeer(this, TextProvider, this.WritePtyBytes);
+
+    /// <summary>
+    /// Cycle 37b — public bridge from
+    /// <see cref="Terminal.Accessibility.TerminalListItemAutomationPeer"/>'s
+    /// <c>IInvokeProvider.Invoke()</c> callback to the View's private
+    /// <c>_writeBytes</c> field. Wraps a null check so an Invoke
+    /// firing before <see cref="SetPtyHost"/> is wired silently no-ops
+    /// rather than throwing — UIA clients (NVDA, Inspect.exe) may
+    /// connect to the peer before the composition root finishes
+    /// wiring the PTY host.
+    /// </summary>
+    public void WritePtyBytes(byte[] bytes)
+        => _writeBytes?.Invoke(bytes);
 
     protected override Size MeasureOverride(Size availableSize)
     {

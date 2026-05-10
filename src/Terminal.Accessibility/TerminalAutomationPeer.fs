@@ -56,14 +56,274 @@ do ()
 /// the peer doesn't have to know about the screen-snapshot
 /// machinery; the view holds the closure over its own `_screen`
 /// field and the peer just hands the provider through to UIA.
-type internal TerminalAutomationPeer(owner: FrameworkElement, textProvider: ITextProvider) =
+///
+/// **Cycle 37b** — constructor extended with `writePtyBytes:
+/// Action<byte[]>` so child `TerminalListItemAutomationPeer`
+/// instances can fire `IInvokeProvider.Invoke()` → `\r` byte
+/// onto the PTY (Claude tool-use prompt accepts the highlighted
+/// choice on Enter). The View's `OnCreateAutomationPeer` passes
+/// `this.WritePtyBytes` (a public method that wraps the
+/// View's private `_writeBytes` field).
+type internal TerminalListAutomationPeer
+    (parent: AutomationPeer,
+     initialPayload: SelectionRawPayload,
+     writePtyBytes: Action<byte[]>) =
+    inherit AutomationPeer()
+
+    let mutable selectedIndex : int = initialPayload.SelectedIndex
+    let itemCount : int = initialPayload.ItemCount
+    let allItems : string[] = initialPayload.AllItems
+
+    /// ListItem peers built lazily on first access (typically
+    /// from the UIA-thread `GetChildrenCore` call) and cached
+    /// for the list's lifetime. Avoiding the `as this` /
+    /// class-let-binding initialization-soundness pattern
+    /// (FS0021 under TreatWarningsAsErrors); deferring
+    /// construction to a `member` ensures `this` is fully bound
+    /// when the items are built.
+    let mutable cachedItems : TerminalListItemAutomationPeer[] | null = null
+
+    member private this.EnsureItems() : TerminalListItemAutomationPeer[] =
+        match cachedItems with
+        | null ->
+            let arr =
+                allItems
+                |> Array.mapi (fun i text ->
+                    TerminalListItemAutomationPeer(this, text, i, writePtyBytes))
+            cachedItems <- arr
+            arr
+        | arr -> arr
+
+    member internal _.SelectedIndex
+        with get () = selectedIndex
+        and set v = selectedIndex <- v
+
+    member internal _.ItemCount = itemCount
+
+    /// Called by the parent peer when a SelectionItem event
+    /// arrives. Mutates state + raises the per-item selection
+    /// event so NVDA shifts focus to the new selected item.
+    member this.UpdateSelection(newSelectedIndex: int) =
+        let items = this.EnsureItems()
+        selectedIndex <- newSelectedIndex
+        if newSelectedIndex >= 0 && newSelectedIndex < items.Length then
+            let target = items.[newSelectedIndex]
+            target.RaiseAutomationEvent(
+                SelectionItemPatternIdentifiers.ElementSelectedEvent)
+
+    interface ISelectionProvider with
+        member _.CanSelectMultiple = false
+        member _.IsSelectionRequired = true
+        member this.GetSelection() : IRawElementProviderSimple[] =
+            // F# interface members typed-as-the-implementing
+            // class via `member this.X`; direct call to private
+            // `EnsureItems` works without downcast.
+            let items = this.EnsureItems()
+            if selectedIndex >= 0 && selectedIndex < items.Length then
+                let peer = items.[selectedIndex] :> AutomationPeer
+                let provider = AutomationPeer.ProviderFromPeer(peer)
+                [| provider |]
+            else
+                Array.empty<IRawElementProviderSimple>
+
+    override this.GetChildrenCore() =
+        let items = this.EnsureItems()
+        let list = ResizeArray<AutomationPeer>(items.Length)
+        for p in items do
+            list.Add(p :> AutomationPeer)
+        list
+
+    override _.GetClassNameCore() = "TerminalList"
+    override _.GetAutomationControlTypeCore() = AutomationControlType.List
+    override _.GetNameCore() = "Selection prompt"
+    override _.IsContentElementCore() = true
+    override _.IsControlElementCore() = true
+
+    // Remaining AutomationPeer abstract overrides. The list peer
+    // is virtual (no FrameworkElement backing) so geometry +
+    // focusability concepts don't directly apply; safe defaults
+    // mirror the document peer's behaviour delegated through
+    // FrameworkElementAutomationPeer in the parent.
+    override _.GetBoundingRectangleCore() = System.Windows.Rect.Empty
+    override _.GetClickablePointCore() = System.Windows.Point()
+    override _.HasKeyboardFocusCore() = false
+    override _.IsEnabledCore() = true
+    override _.IsKeyboardFocusableCore() = true
+    override _.IsOffscreenCore() = false
+    override _.IsPasswordCore() = false
+    override _.IsRequiredForFormCore() = false
+    override _.SetFocusCore() = ()
+
+    /// Returns the parent peer so UIA tree navigation walks back
+    /// to `TerminalAutomationPeer` (Document) → `TerminalView`
+    /// (the FrameworkElement). Without this, the virtual list
+    /// peer is orphaned in the tree.
+    override _.GetParent() = parent
+
+    override this.GetPattern(patternInterface: PatternInterface) : obj | null =
+        match patternInterface with
+        | PatternInterface.Selection ->
+            let result : obj | null = (this :> ISelectionProvider) :> obj
+            result
+        | _ -> null
+
+/// Cycle 37b — virtual UIA peer for a single item within a
+/// detected selection list. Implements `ISelectionItemProvider`
+/// (NVDA's "is this the selected one?" interrogation +
+/// PositionInSet/SizeOfSet) and `IInvokeProvider` (single-key
+/// activation: NVDA in focus mode pressing Enter on the
+/// selected item writes `\r` to the PTY, which Claude
+/// interprets as "press the highlighted choice"). Per
+/// `docs/CANONICAL-DISPLAY-CATALOG.md` §2.14 ConfirmationPrompt
+/// hybrid contract.
+///
+/// `parent` is `TerminalListAutomationPeer` so this peer can
+/// query the parent's mutable `SelectedIndex` (no per-item
+/// state; the listbox owns the cursor). Mutual recursion via
+/// `and` resolves the forward reference from the parent's
+/// `itemPeers` field.
+and internal TerminalListItemAutomationPeer
+    (parent: TerminalListAutomationPeer,
+     text: string,
+     index: int,
+     writePtyBytes: Action<byte[]>) =
+    inherit AutomationPeer()
+
+    interface ISelectionItemProvider with
+        member _.IsSelected = parent.SelectedIndex = index
+        member _.SelectionContainer =
+            AutomationPeer.ProviderFromPeer(parent :> AutomationPeer)
+        // Selection mutation from UIA is read-only in 37b — the
+        // PTY drives selection via arrow-key echoes, which the
+        // detector re-fires as SelectionItem events. Stage 8e-C
+        // generalizes this to UIA-driven Select() that writes
+        // arrow bytes to the PTY.
+        member _.Select() = ()
+        member _.AddToSelection() = ()
+        member _.RemoveFromSelection() = ()
+
+    interface IInvokeProvider with
+        member _.Invoke() =
+            // Send Enter byte (`\r` = 0x0D) to PTY. Claude's
+            // tool-use prompt accepts the highlighted choice on
+            // Enter. cmd `choice` and other shells with
+            // different activation keys are out of scope for
+            // 37b (SelectionDetector is shellKey-gated to
+            // "claude").
+            writePtyBytes.Invoke([| 0x0Duy |])
+
+    override _.GetClassNameCore() = "TerminalListItem"
+    override _.GetAutomationControlTypeCore() = AutomationControlType.ListItem
+    override _.GetNameCore() = text
+    override _.IsContentElementCore() = true
+    override _.IsControlElementCore() = true
+    override _.GetPositionInSetCore() = index + 1
+    override _.GetSizeOfSetCore() = parent.ItemCount
+
+    // Remaining AutomationPeer abstract overrides. ListItem peers
+    // are virtual; focus semantics defer to the PTY-side cursor.
+    override _.GetBoundingRectangleCore() = System.Windows.Rect.Empty
+    override _.GetClickablePointCore() = System.Windows.Point()
+    override _.HasKeyboardFocusCore() = false
+    override _.IsEnabledCore() = true
+    override _.IsKeyboardFocusableCore() = true
+    override _.IsOffscreenCore() = false
+    override _.IsPasswordCore() = false
+    override _.IsRequiredForFormCore() = false
+    override _.SetFocusCore() = ()
+
+    /// Returns the parent list peer so UIA tree navigation walks
+    /// ListItem → List → Document.
+    override _.GetParent() = parent :> AutomationPeer
+
+    override this.GetPattern(patternInterface: PatternInterface) : obj | null =
+        match patternInterface with
+        | PatternInterface.SelectionItem ->
+            let result : obj | null = (this :> ISelectionItemProvider) :> obj
+            result
+        | PatternInterface.Invoke ->
+            let result : obj | null = (this :> IInvokeProvider) :> obj
+            result
+        | _ -> null
+
+/// Stage 4 / Cycle 37b — UIA peer that exposes `TerminalView`
+/// to the WPF Automation tree as a Document with the Text
+/// pattern, plus (Cycle 37b) child `TerminalListAutomationPeer`
+/// instances when a Claude tool-use selection prompt is active.
+type internal TerminalAutomationPeer
+    (owner: FrameworkElement,
+     textProvider: ITextProvider,
+     writePtyBytes: Action<byte[]>) =
     inherit FrameworkElementAutomationPeer(owner)
+
+    /// Cycle 37b — currently-active list peer, materialized when
+    /// `UpdateSelectionState` receives a `"shown"` payload + dropped
+    /// when it receives a `"dismissed"` payload. The peer's
+    /// presence drives `IsContentElementCore` (false while
+    /// active per spec §8.5 dedup) and `GetChildrenCore` (returns
+    /// the list peer as the sole child while active).
+    let mutable currentListPeer : TerminalListAutomationPeer option = None
 
     override _.GetAutomationControlTypeCore() = AutomationControlType.Document
     override _.GetClassNameCore() = "TerminalView"
     override _.GetNameCore() = "Terminal"
     override _.IsControlElementCore() = true
-    override _.IsContentElementCore() = true
+
+    /// Cycle 37b — full-document content-element suppression
+    /// while a list peer is materialized. Per
+    /// `spec/tech-plan.md` §8.5 dedup: NVDA reads the list peer
+    /// (and only the list peer) for the selection rows. The
+    /// pragmatic full-document form (chosen 2026-05-10) trades
+    /// off NVDA reading-cursor history browse during a prompt;
+    /// per-range exclusion via `GetVisibleRanges` can iterate
+    /// post-merge if the trade-off bites.
+    override _.IsContentElementCore() =
+        match currentListPeer with
+        | Some _ -> false
+        | None -> true
+
+    /// Cycle 37b — return the active list peer as the sole
+    /// child while a selection is active; defer to base
+    /// implementation otherwise. This is the hook that makes
+    /// the virtual list peer visible in NVDA's UIA tree walk.
+    override this.GetChildrenCore() =
+        match currentListPeer with
+        | Some lp ->
+            let list = ResizeArray<AutomationPeer>(1)
+            list.Add(lp :> AutomationPeer)
+            list
+        | None -> base.GetChildrenCore()
+
+    /// Cycle 37b — promotes the 37a stub to peer-state update.
+    /// Called from `TerminalView.AnnounceRawPayload` on the WPF
+    /// UI thread (via the 37a `Dispatcher.Invoke` wrapper).
+    /// Mutates `currentListPeer` + raises StructureChanged on
+    /// the parent + delegates per-item selection to the active
+    /// list peer.
+    member this.UpdateSelectionState(payload: SelectionRawPayload) =
+        match payload.Kind with
+        | "shown" ->
+            let lp = TerminalListAutomationPeer(this, payload, writePtyBytes)
+            currentListPeer <- Some lp
+            this.RaiseAutomationEvent(AutomationEvents.StructureChanged)
+        | "item" ->
+            match currentListPeer with
+            | Some lp -> lp.UpdateSelection(payload.SelectedIndex)
+            | None ->
+                // SelectionItem arrived without a preceding
+                // SelectionShown — defensive skip. Per the
+                // detector burst protocol, SelectionShown
+                // always precedes SelectionItem; this branch
+                // catches state drift only.
+                ()
+        | "dismissed" ->
+            currentListPeer <- None
+            this.RaiseAutomationEvent(AutomationEvents.StructureChanged)
+        | _ ->
+            // Unknown Kind — forward-compat: future selection
+            // kinds (e.g. multi-select pickers) land here without
+            // throwing.
+            ()
 
     /// Add the Text pattern to this peer. For every other
     /// pattern interface we defer to the base implementation

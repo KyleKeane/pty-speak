@@ -4,21 +4,19 @@ open System
 open Xunit
 open Terminal.Core
 
-/// Stage 8e-A part 2 (Cycle 29b) — pins the SelectionProfile's
-/// Apply contract:
+/// Stage 8e-A part 2 (Cycle 29b) / Cycle 37b — pins the
+/// SelectionProfile's Apply contract:
 ///   * id is "selection".
 ///   * SelectionShown / SelectionItem / SelectionDismissed each
-///     emit one pair with THREE ChannelDecisions: NVDA RenderText
-///     (Option A bridge so NVDA continues reading text during the
-///     37a interim window), FileLogger RenderText (audit trail),
-///     and NVDA RenderRaw carrying the SelectionRawPayload UIA-
-///     free metadata for Cycle 37b's Terminal.Accessibility peer
-///     to consume.
-///   * The first two decisions carry `RenderText` payloads
-///     constructed from `Extensions` data (empty-payload trick
-///     mirrors 8d.2's EarconProfile pattern).
-///   * The third decision carries a `RenderRaw` payload of type
-///     `SelectionRawPayload` per Cycle 37a contract.
+///     emit one pair with TWO ChannelDecisions: FileLogger
+///     RenderText (audit trail) + NVDA RenderRaw carrying the
+///     SelectionRawPayload UIA-free metadata. Cycle 37b dropped
+///     the duplicate NVDA RenderText decision now that
+///     Terminal.Accessibility's TerminalListAutomationPeer
+///     takes over the announce semantics — keeping it would
+///     cause double-announce (text + listbox).
+///   * Decision[0] is FileLogger RenderText; Decision[1] is
+///     NVDA RenderRaw.
 ///   * Foreign Semantic categories return `[||]` (purely
 ///     additive observer).
 ///   * Tick + Reset are no-ops.
@@ -143,17 +141,16 @@ let ``create returns a Profile whose Id matches the module-level id`` () =
 // ---------------------------------------------------------------------
 
 [<Fact>]
-let ``SelectionShown Apply emits one pair with three ChannelDecisions (NVDA text + FileLogger text + NVDA raw, Cycle 37a)`` () =
+let ``SelectionShown Apply emits one pair with two ChannelDecisions (FileLogger text + NVDA raw, Cycle 37b)`` () =
     let profile = SelectionProfile.create ()
     let event =
         selectionShownEvent [| "Edit"; "Yes"; "Always"; "No" |] 1
     let pairs = profile.Apply event
     Assert.Equal(1, pairs.Length)
     let _, decisions = pairs.[0]
-    Assert.Equal(3, decisions.Length)
-    Assert.Equal(NvdaChannel.id, decisions.[0].Channel)
-    Assert.Equal(FileLoggerChannel.id, decisions.[1].Channel)
-    Assert.Equal(NvdaChannel.id, decisions.[2].Channel)
+    Assert.Equal(2, decisions.Length)
+    Assert.Equal(FileLoggerChannel.id, decisions.[0].Channel)
+    Assert.Equal(NvdaChannel.id, decisions.[1].Channel)
 
 [<Fact>]
 let ``SelectionShown rendered text formats list with selected item highlighted`` () =
@@ -185,13 +182,13 @@ let ``SelectionShown falls back to count summary when AllItems missing`` () =
     Assert.Equal("selection prompt, 4 items", text)
 
 [<Fact>]
-let ``SelectionShown emits RenderRaw with Kind="shown" and AllItems populated (Cycle 37a)`` () =
+let ``SelectionShown emits RenderRaw with Kind="shown" and AllItems populated (Cycle 37b)`` () =
     let profile = SelectionProfile.create ()
     let event =
         selectionShownEvent [| "Edit"; "Yes"; "Always"; "No" |] 1
     let pairs = profile.Apply event
     let _, decisions = pairs.[0]
-    let payload = renderRaw decisions.[2]
+    let payload = renderRaw decisions.[1]
     Assert.Equal("shown", payload.Kind)
     Assert.Equal(4, payload.ItemCount)
     Assert.Equal(1, payload.SelectedIndex)
@@ -226,25 +223,24 @@ let ``SelectionItem (this item != selected) renders "%s, %d of %d"`` () =
     Assert.Equal("Edit, 1 of 4", text)
 
 [<Fact>]
-let ``SelectionItem emits NVDA text + FileLogger text + NVDA raw triple (Cycle 37a)`` () =
+let ``SelectionItem emits FileLogger text + NVDA raw pair (Cycle 37b)`` () =
     let profile = SelectionProfile.create ()
     let event = selectionItemEvent "Yes" 1 1 4
     let pairs = profile.Apply event
     Assert.Equal(1, pairs.Length)
     let _, decisions = pairs.[0]
-    Assert.Equal(3, decisions.Length)
-    Assert.Equal(NvdaChannel.id, decisions.[0].Channel)
-    Assert.Equal(FileLoggerChannel.id, decisions.[1].Channel)
-    Assert.Equal(NvdaChannel.id, decisions.[2].Channel)
+    Assert.Equal(2, decisions.Length)
+    Assert.Equal(FileLoggerChannel.id, decisions.[0].Channel)
+    Assert.Equal(NvdaChannel.id, decisions.[1].Channel)
 
 [<Fact>]
-let ``SelectionItem emits RenderRaw with Kind="item" and ItemText/ItemIndex populated (Cycle 37a)`` () =
+let ``SelectionItem emits RenderRaw with Kind="item" and ItemText/ItemIndex populated (Cycle 37b)`` () =
     let profile = SelectionProfile.create ()
     // selectedIdx = 1, itemIdx = 0 → "Edit", not the selected item.
     let event = selectionItemEvent "Edit" 0 1 4
     let pairs = profile.Apply event
     let _, decisions = pairs.[0]
-    let payload = renderRaw decisions.[2]
+    let payload = renderRaw decisions.[1]
     Assert.Equal("item", payload.Kind)
     Assert.Equal(4, payload.ItemCount)
     Assert.Equal(1, payload.SelectedIndex)
@@ -257,19 +253,17 @@ let ``SelectionItem emits RenderRaw with Kind="item" and ItemText/ItemIndex popu
 // ---------------------------------------------------------------------
 
 [<Fact>]
-let ``SelectionDismissed renders literal "selection dismissed" + RenderRaw with Kind="dismissed" (Cycle 37a)`` () =
+let ``SelectionDismissed renders literal "selection dismissed" + RenderRaw with Kind="dismissed" (Cycle 37b)`` () =
     let profile = SelectionProfile.create ()
     let event = selectionDismissedEvent ()
     let pairs = profile.Apply event
     Assert.Equal(1, pairs.Length)
     let _, decisions = pairs.[0]
-    Assert.Equal(3, decisions.Length)
-    Assert.Equal(NvdaChannel.id, decisions.[0].Channel)
-    Assert.Equal(FileLoggerChannel.id, decisions.[1].Channel)
-    Assert.Equal(NvdaChannel.id, decisions.[2].Channel)
+    Assert.Equal(2, decisions.Length)
+    Assert.Equal(FileLoggerChannel.id, decisions.[0].Channel)
+    Assert.Equal(NvdaChannel.id, decisions.[1].Channel)
     Assert.Equal("selection dismissed", renderText decisions.[0])
-    Assert.Equal("selection dismissed", renderText decisions.[1])
-    let payload = renderRaw decisions.[2]
+    let payload = renderRaw decisions.[1]
     Assert.Equal("dismissed", payload.Kind)
     Assert.Equal(0, payload.ItemCount)
     Assert.Equal(-1, payload.SelectedIndex)
