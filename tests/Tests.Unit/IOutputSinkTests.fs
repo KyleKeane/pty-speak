@@ -33,7 +33,7 @@ let private buildEvent (semantic: SemanticCategory) (payload: string) : OutputEv
 let ``NvdaChannel record coerces to IOutputSink and round-trips RenderText`` () =
     let calls = ResizeArray<string * string>()
     let recorder (msg, activityId) = calls.Add((msg, activityId))
-    let channel = NvdaChannel.create recorder
+    let channel = NvdaChannel.create recorder (fun _ -> ())
     let sink = channel :> IOutputSink
     Assert.Equal(NvdaChannel.id, sink.Id)
     let event = buildEvent SemanticCategory.StreamChunk "hello"
@@ -46,7 +46,7 @@ let ``NvdaChannel record coerces to IOutputSink and round-trips RenderText`` () 
 let ``NvdaChannel via IOutputSink preserves empty-payload skip`` () =
     let calls = ResizeArray<string * string>()
     let recorder (msg, activityId) = calls.Add((msg, activityId))
-    let channel = NvdaChannel.create recorder
+    let channel = NvdaChannel.create recorder (fun _ -> ())
     let sink = channel :> IOutputSink
     let event = buildEvent SemanticCategory.StreamChunk ""
     sink.Send event (RenderText "")

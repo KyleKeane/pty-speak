@@ -343,6 +343,32 @@ public class TerminalView : FrameworkElement
     }
 
     /// <summary>
+    /// Cycle 37a — receives <see cref="Terminal.Core.RenderInstruction.RenderRaw"/>
+    /// payloads marshalled from <see cref="Terminal.Core.NvdaChannel"/> via the
+    /// composition root's <c>marshalRawPayload</c> callback. Cycle 37a stubs
+    /// this method as log-only; Cycle 37b promotes it to peer-state update +
+    /// UIA event raise on the active <c>TerminalAutomationPeer</c>.
+    /// </summary>
+    /// <remarks>
+    /// Logging metadata only (payload type name + activityId), per SECURITY.md
+    /// "Logging chokepoint" policy. Payload contents (e.g. selection list
+    /// item text) are sanitised at the producer boundary
+    /// (<c>SelectionDetector</c> applies <c>AnnounceSanitiser.sanitise</c>),
+    /// but the stub doesn't forward them to NVDA — Option A bridge keeps the
+    /// existing <c>RenderText</c> NVDA decision active so NVDA continues
+    /// reading the text representation during the 37a interim.
+    /// </remarks>
+    public void AnnounceRawPayload(object payload, string activityId)
+    {
+        var log = Terminal.Core.Logger.get("PtySpeak.Views.TerminalView.AnnounceRawPayload");
+        var typeName = payload?.GetType().Name ?? "null";
+        Microsoft.Extensions.Logging.LoggerExtensions.LogDebug(
+            log,
+            "RawPayload received (Cycle 37a stub). ActivityId={ActivityId} PayloadType={PayloadType}",
+            activityId, typeName);
+    }
+
+    /// <summary>
     /// App-reserved hotkey list. Stage 6 (keyboard input to PTY)
     /// MUST preserve every entry here — its <c>PreviewKeyDown</c>
     /// filter must NOT mark these key combinations

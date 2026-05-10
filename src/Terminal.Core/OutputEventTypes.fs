@@ -330,6 +330,53 @@ module SelectionExtensions =
     [<Literal>]
     let Source = "selection.source"
 
+/// Cycle 37a (Stage 8e-B substrate) — UIA-free snapshot of a
+/// Selection event, carried as the payload of
+/// `RenderInstruction.RenderRaw` for `SelectionShown` /
+/// `SelectionItem` / `SelectionDismissed`. Cycle 37b's
+/// `Terminal.Accessibility` peer reads these fields and
+/// translates them to UIA `ControlType.List` /
+/// `ControlType.ListItem` peer state; substrate code stays
+/// free of UIA references per `docs/CORE-ABSTRACTION-BOUNDARY.md`
+/// §1.6.
+///
+/// `Kind` is the discriminator: `"shown"` / `"item"` /
+/// `"dismissed"`. Values are pinned as string literals for
+/// stable cross-assembly pattern-matching from
+/// `Terminal.Accessibility` (which reads this record at the
+/// channel boundary). The catch-all guard in 37b's
+/// `UpdateSelectionState` ignores unknown `Kind` values rather
+/// than throwing — forward-compatible with future selection
+/// kinds.
+///
+/// Field invariants (mirror the `SelectionExtensions` schema):
+/// * `"shown"`: `AllItems` populated; `SelectedIndex` >= 0 (or
+///   -1 for missing-data fallback); `ItemIndex` = -1;
+///   `ItemText` = "".
+/// * `"item"`: `AllItems` = `[||]`; `ItemIndex` >= 0;
+///   `ItemText` populated.
+/// * `"dismissed"`: all numeric fields = -1 / 0; `AllItems` =
+///   `[||]`; `ItemText` = "".
+type SelectionRawPayload =
+    { /// Discriminator: "shown" | "item" | "dismissed".
+      Kind: string
+      /// Total item count in the selection list. Zero for
+      /// "dismissed".
+      ItemCount: int
+      /// 0-based index of the currently-selected item across
+      /// the list. -1 for "dismissed" (or missing-data
+      /// fallback on "shown" / "item").
+      SelectedIndex: int
+      /// 0-based index of THIS event's item. Populated for
+      /// "item" only; -1 for "shown" / "dismissed".
+      ItemIndex: int
+      /// Full ordered list of item rendered text. Populated
+      /// for "shown" only; `[||]` for "item" / "dismissed".
+      AllItems: string[]
+      /// THIS item's rendered text. Populated for "item"
+      /// only; "" for "shown" / "dismissed".
+      ItemText: string }
+
 /// First-class boundary surface for output channels — the
 /// "channel" side of the substrate / channel dichotomy per
 /// `docs/CORE-ABSTRACTION-BOUNDARY.md` §3 + ADR 0001.

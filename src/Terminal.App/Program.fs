@@ -927,10 +927,18 @@ module Program =
         // worker. Behaviour-identical to Stage 7 / Stage 8a in
         // throughput + ordering.
         let nvdaChannel =
-            NvdaChannel.create (fun (msg, activityId) ->
-                let action () =
-                    window.TerminalSurface.Announce(msg, activityId)
-                window.Dispatcher.Invoke(Action(action)))
+            NvdaChannel.create
+                (fun (msg, activityId) ->
+                    let action () =
+                        window.TerminalSurface.Announce(msg, activityId)
+                    window.Dispatcher.Invoke(Action(action)))
+                (fun (payload, activityId) ->
+                    // Cycle 37a — RenderRaw routing. View stub logs only;
+                    // Cycle 37b promotes to peer-state update on the
+                    // active TerminalAutomationPeer.
+                    let action () =
+                        window.TerminalSurface.AnnounceRawPayload(payload, activityId)
+                    window.Dispatcher.Invoke(Action(action)))
         OutputDispatcher.ChannelRegistry.register nvdaChannel
         // Stage 8c — FileLogger as a first-class channel. Every
         // event the Stream profile emits now lands in the rolling

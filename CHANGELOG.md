@@ -15,6 +15,45 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 37a): SelectionProfile emits RenderRaw substrate alongside RenderText
+
+Opens the Stage 8e-B canonical-display arc (interactive-list UIA
+listbox peer). `SelectionProfile.Apply` now emits a third
+`ChannelDecision` per Selection event: an NVDA-channel
+`RenderRaw` decision carrying a new
+[`SelectionRawPayload`](src/Terminal.Core/OutputEventTypes.fs)
+record (UIA-free snapshot of the selection state — discriminator,
+item count, indices, item text array). The pre-existing NVDA
+`RenderText` decision is kept for the bridge interval between
+37a and 37b — NVDA continues to read the rendered text as it has
+since Cycle 29b. Cycle 37b promotes the substrate to a
+`Terminal.Accessibility` UIA peer (drops the duplicate NVDA
+`RenderText` decision; the FileLogger `RenderText` decision
+stays as the audit trail).
+
+[`Terminal.Core.NvdaChannel`](src/Terminal.Core/NvdaChannel.fs)
+gains a second `marshalRawPayload` callback parameter alongside
+the existing `marshalAnnounce`. The composition root in
+[`Program.fs`](src/Terminal.App/Program.fs) wires it via the WPF
+dispatcher to a new
+[`TerminalView.AnnounceRawPayload`](src/Views/TerminalView.cs)
+method (Cycle 37a stub: log-only; Cycle 37b: peer-state update +
+UIA event raise).
+
+No behaviour change visible to NVDA users in 37a — the
+`RenderRaw` decisions feed the View stub which logs and
+no-ops. Sets up Cycle 37b's peer types
+(`TerminalListAutomationPeer` + `TerminalListItemAutomationPeer`)
+to consume the substrate without further substrate churn.
+
+Tests: 6 new `SelectionProfileTests` facts (3 cover the
+3-decision shape per event; 3 cover `SelectionRawPayload`
+field invariants for `Kind` ∈ {"shown", "item", "dismissed"});
+1 updated `NvdaChannelTests` fact (`RenderRaw` now routes to
+the second marshal callback rather than skipping silently);
+14 mechanical `NvdaChannel.create` call-site updates to thread
+the new parameter (no behaviour change to those tests).
+
 ### Documented (Cycle 36): substrate-inversion arc validation matrix backfilled into ACCESSIBILITY-TESTING.md
 
 Closes the substrate-inversion arc's documentation work. Adds a
