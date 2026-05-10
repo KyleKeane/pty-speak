@@ -1690,3 +1690,103 @@ let ``Cycle 35a — Linear payload respects MaxAnnounceChars cap`` () =
             parameters state (at 0) (canonicalAt snap 0L) stream
     Assert.Equal(1, result.Length)
     Assert.Equal(30, result.[0].Payload.Length)
+
+// =====================================================================
+// Cycle 35c — isSpinnerSuppressed gate scoped to ScreenDiff path
+// =====================================================================
+//
+// The Path B Levenshtein gate (Cycle 11+) was a defensive
+// measure for the screen-diff substrate where every spinner
+// frame produces a row-hash difference. On the linear
+// substrate, RFC 0001 §5.3 #3 tail-mask classifier already
+// collapses spinner-class output (\r-without-\n, ESC[K
+// transition the current row to LATEST semantics). Cycle 35c
+// gates the spinner-suppress check on `resolvedMode`: only
+// invokes `isSpinnerSuppressed` when ScreenDiff. Linear path
+// returns `suppress = false` unconditionally, letting all
+// frames flow through to the dispatch.
+//
+// These two facts pin both halves: Linear bypasses (new
+// behaviour); ScreenDiff still gates (regression check
+// against future refactors weakening the screen-diff path).
+
+let private spinnerLinearParameters : StreamPathway.Parameters =
+    { StreamPathway.defaultParameters with
+        SubstrateMode = StreamPathway.Linear }
+
+let private spinnerScreenDiffParameters : StreamPathway.Parameters =
+    { StreamPathway.defaultParameters with
+        SubstrateMode = StreamPathway.ScreenDiff }
+
+[<Fact>]
+let ``Cycle 35c — SubstrateMode=Linear bypasses isSpinnerSuppressed gate`` () =
+    // Mirror the existing per-key spinner gate fact (line 263)
+    // but with SubstrateMode=Linear. The gate must NOT fire —
+    // every alternating frame should flow through the dispatch.
+    // (The Linear payload may be empty since the linearStream
+    // is fresh, but `result.Length` reflects whether the
+    // dispatch executed; suppression returns [||] BEFORE
+    // dispatch, so we're checking that it did not.)
+    let state = StreamPathway.createState ()
+    let stream = LinearTextStream.create LinearTextStream.defaultParameters
+    let frameA = snapshotOf 1 1 [ "A" ]
+    let frameB = snapshotOf 1 1 [ "B" ]
+    let _ =
+        StreamPathway.processCanonicalState
+            spinnerLinearParameters state (at 0) (canonicalAt frameA 0L) stream
+    let mutable suppressedCount = 0
+    for i in 1 .. 14 do
+        let frame = if i % 2 = 1 then frameB else frameA
+        let result =
+            StreamPathway.processCanonicalState
+                spinnerLinearParameters state (at (i * 60))
+                (canonicalAt frame (int64 i)) stream
+        // result.Length = 0 happens for two distinct reasons on
+        // the Linear path: (a) spinner-suppress fired (the bug
+        // we're guarding against), (b) the linear stream's
+        // suffixSince returned empty (legitimate; the stream
+        // got no bytes between calls). To distinguish, check
+        // the FileLogger pattern the suppress arm emits — but
+        // the simpler test is to assert the suppression-related
+        // state didn't move: PerRowHistory + HashHistory should
+        // remain empty because isSpinnerSuppressed (which
+        // populates them) was never invoked.
+        if result.Length = 0 then suppressedCount <- suppressedCount + 1
+    // The empty linear stream means many frames will return
+    // empty payloads, but they should NOT count as
+    // suppression-by-gate. The load-bearing assertion is the
+    // PerRowHistory + HashHistory state below — those would
+    // be populated only if isSpinnerSuppressed ran.
+    Assert.Empty(state.PerRowHistory)
+    Assert.Empty(state.HashHistory)
+
+[<Fact>]
+let ``Cycle 35c — SubstrateMode=ScreenDiff still gates spinners (regression)`` () =
+    // Sentinel: the existing screen-diff path's spinner gate
+    // must keep firing. This guards against future refactors
+    // accidentally weakening the screen-diff fallback. Mirrors
+    // the original `per-key spinner gate fires after threshold`
+    // fact (line 263) with explicit ScreenDiff parameters.
+    let state = StreamPathway.createState ()
+    let stream = LinearTextStream.create LinearTextStream.defaultParameters
+    let frameA = snapshotOf 1 1 [ "A" ]
+    let frameB = snapshotOf 1 1 [ "B" ]
+    let _ =
+        StreamPathway.processCanonicalState
+            spinnerScreenDiffParameters state (at 0) (canonicalAt frameA 0L) stream
+    let mutable suppressedCount = 0
+    let mutable emittedCount = 0
+    for i in 1 .. 14 do
+        let frame = if i % 2 = 1 then frameB else frameA
+        let result =
+            StreamPathway.processCanonicalState
+                spinnerScreenDiffParameters state (at (i * 60))
+                (canonicalAt frame (int64 i)) stream
+        if i % 2 = 1 then
+            if result.Length = 0 then suppressedCount <- suppressedCount + 1
+            else emittedCount <- emittedCount + 1
+    Assert.True(suppressedCount >= 1,
+        sprintf "Expected screen-diff spinner-suppression to still fire; got %d suppressed, %d emitted"
+            suppressedCount emittedCount)
+    // Sanity: the gate's state machine WAS engaged on this path.
+    Assert.NotEmpty(state.PerRowHistory)

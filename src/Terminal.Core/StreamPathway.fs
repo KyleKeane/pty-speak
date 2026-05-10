@@ -759,8 +759,25 @@ module StreamPathway =
             [||]
         | _ ->
             gcHistory parameters state now
+            // Cycle 35c — resolve substrate mode early so the
+            // spinner gate can be skipped on the Linear path.
+            // Per RFC 0001 §5.3 #3, LinearTextStream's tail-mask
+            // already collapses spinner-class output (bare \r,
+            // ESC[K transition the current row to LATEST
+            // semantics). The Path B Levenshtein gate is a
+            // defensive measure for the screen-diff substrate
+            // where every spinner frame produces a row-hash
+            // difference; on Linear it's redundant and could
+            // mask legitimate rapid-repeat content (e.g.,
+            // heartbeat lines a tool intentionally prints
+            // every N ms).
+            let resolvedMode =
+                resolveSubstrateMode
+                    parameters.SubstrateMode
+                    canonical.IsAltScreenActive
             let suppress =
-                isSpinnerSuppressed parameters state now rowHashes contentHashes
+                if resolvedMode = Linear then false
+                else isSpinnerSuppressed parameters state now rowHashes contentHashes
             state.LastRowHashes <- ValueSome rowHashes
             if suppress then
                 state.LastFrameHash <- ValueSome frameHash
@@ -813,11 +830,10 @@ module StreamPathway =
                         // Auto: Linear if non-alt-screen; else
                         // ScreenDiff. Watermark advance happens
                         // only on emit (suppressed/empty payloads
-                        // don't lose bytes).
-                        let resolvedMode =
-                            resolveSubstrateMode
-                                parameters.SubstrateMode
-                                canonical.IsAltScreenActive
+                        // don't lose bytes). Cycle 35c — the
+                        // outer `resolvedMode` (hoisted before
+                        // the spinner gate) is reused here; no
+                        // need to recompute.
                         let payload, watermarkUpdate =
                             match resolvedMode with
                             | Linear ->

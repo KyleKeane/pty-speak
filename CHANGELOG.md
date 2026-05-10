@@ -15,6 +15,70 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 35c): Path B Levenshtein spinner gate scoped to ScreenDiff path only
+
+Closes the substrate-inversion arc (Cycles 33-35). The
+`isSpinnerSuppressed` gate (Cycle 11+ Levenshtein heuristic
+on row-hash recurrence) now only fires when `resolveSubstrateMode`
+returns `ScreenDiff`. On the Linear path, the gate is bypassed
+entirely — RFC 0001 §5.3 #3 tail-mask classifier already
+collapses spinner-class output (bare `\r`, `ESC[K` transition
+the current row to LATEST semantics), making the gate redundant.
+
+**Why scope rather than delete:** the gate stays compiled in
+because alt-screen TUIs and explicit `substrate_mode = "screen-diff"`
+opt-in still use the screen-diff substrate. Full deletion lives
+in the Cycle 39 cleanup once the screen-diff path itself is
+removable (per Section 13 of the strategic plan).
+
+**Why this matters:** the previous gating cost was small in
+the typical case but masked a real bug surface. A user's
+command that genuinely produces N rapid identical announces
+(e.g., a tool intentionally printing a heartbeat line every
+200ms) would get suppressed by the gate on the Linear path
+even though the user wants to hear each beat. Linear's
+tail-mask only suppresses overwrite-class bytes (`\r`-without-
+`\n`); append-class content flows through.
+
+- **`src/Terminal.Core/StreamPathway.fs:processCanonicalState`**
+  — hoist `resolveSubstrateMode` call BEFORE the spinner-suppress
+  check. Gate the `isSpinnerSuppressed` invocation on
+  `resolvedMode`: `if resolvedMode = Linear then false else
+  isSpinnerSuppressed parameters state now rowHashes contentHashes`.
+  The duplicate `resolveSubstrateMode` call previously inside
+  the leading-edge dispatch (line 817-820) is removed; the
+  hoisted value is reused. ~10 LOC.
+- **`tests/Tests.Unit/StreamPathwayTests.fs`** — 2 new facts:
+  - `Cycle 35c — SubstrateMode=Linear bypasses isSpinnerSuppressed
+    gate` — drives the alternating-frame sequence with
+    `SubstrateMode = Linear` and asserts `state.PerRowHistory`
+    + `state.HashHistory` remain empty (the gate's state
+    machine was never invoked).
+  - `Cycle 35c — SubstrateMode=ScreenDiff still gates spinners
+    (regression)` — sentinel: same alternating-frame sequence
+    with explicit `SubstrateMode = ScreenDiff`, asserts ≥1
+    suppression fires AND `state.PerRowHistory` is populated.
+- **`onTimerTick`**: unchanged — the trailing-edge dispatch
+  has no `isSpinnerSuppressed` call (the gate is leading-edge
+  only).
+- Existing 4 spinner-suppression facts (per-key, cross-row,
+  static-rows, GC-after-window) stay green via the
+  `legacyDefaultParameters` test wrapper which forces
+  `SubstrateMode = ScreenDiff`.
+
+**Substrate-inversion arc complete** with 35c. The Cycle 33-35
+sequence delivered:
+- Cycle 33: RFC + canonical-display catalog (doc).
+- Cycle 34a/b: `LinearTextStream` producer module + composition wiring + diagnostic bundle integration.
+- Cycle 35a: parallel linear-substrate path behind default-off TOML flag.
+- Cycle 35b: default flip to `Auto` + SessionModel hybrid cutover (linear path for OSC-133 shells; `extractContent` fallback for vanilla cmd / PowerShell).
+- Cycle 35c: Levenshtein spinner gate scoped to ScreenDiff fallback only.
+
+Cycle 36 (doc-only matrix backfill into ACCESSIBILITY-TESTING.md)
+is the only remaining substrate-arc work; future Cycle 39
+removes the screen-diff legacy when preconditions are met
+(per Section 13 of `/root/.claude/plans/we-do-not-need-fluffy-simon.md`).
+
 ### Changed (Cycle 35b): default `[pathway.stream] substrate_mode` flipped to `auto` + SessionModel hybrid cutover
 
 The headline behavioural change of the substrate-inversion arc.
