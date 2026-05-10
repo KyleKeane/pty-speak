@@ -25,7 +25,7 @@
       A.5 (event-and-output-framework.md:501) names Tomlyn as
       the chosen library; this is its first appearance.
     -->
-    <PackageVersion Include="Tomlyn" Version="0.18.0" />
+    <PackageVersion Include="Tomlyn" Version="2.3.2" />
     <!--
       Cycle 38a-followup — Markdig (BSD 2-Clause) for runtime
       conversion of `docs/ACCESSIBILITY-TESTING.md` to HTML for
