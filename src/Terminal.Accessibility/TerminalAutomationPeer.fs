@@ -156,6 +156,25 @@ type internal TerminalListAutomationPeer
     override _.IsRequiredForFormCore() = false
     override _.SetFocusCore() = ()
 
+    // String-valued metadata abstracts. Empty strings match the
+    // .NET 9 convention for "no value" — UIA clients (NVDA,
+    // Inspect.exe) interpret as unset rather than the literal
+    // empty string.
+    override _.GetAcceleratorKeyCore() = ""
+    override _.GetAccessKeyCore() = ""
+    override _.GetAutomationIdCore() = "TerminalList"
+    override _.GetHelpTextCore() = ""
+    override _.GetItemStatusCore() = ""
+    override _.GetItemTypeCore() = ""
+    // No labeled-by relationship; AutomationPeer's documented
+    // semantic for "none" is null. F# 9's view of the WPF
+    // reference assembly types `AutomationPeer` (rather than
+    // `AutomationPeer | null`); `Unchecked.defaultof<_>`
+    // produces null at runtime without the strict-nullness
+    // diagnostic.
+    override _.GetLabeledByCore() = Unchecked.defaultof<AutomationPeer>
+    override _.GetOrientationCore() = AutomationOrientation.None
+
     // GetParent() is non-virtual on AutomationPeer (FS0855). The
     // parent relationship is established via the document peer's
     // GetChildrenCore returning this list peer; UIA's tree
@@ -234,6 +253,23 @@ and internal TerminalListItemAutomationPeer
     override _.IsPasswordCore() = false
     override _.IsRequiredForFormCore() = false
     override _.SetFocusCore() = ()
+
+    // ListItem leaf-node: no children. Empty list (not null)
+    // matches the .NET 9 non-null `List<AutomationPeer>` return
+    // type per the F# 9 view of the WPF reference assembly.
+    override _.GetChildrenCore() = System.Collections.Generic.List<AutomationPeer>()
+
+    // String-valued metadata abstracts. ItemText is reserved
+    // for the ListItem's name; AutomationId differentiates
+    // siblings within the parent list peer.
+    override _.GetAcceleratorKeyCore() = ""
+    override _.GetAccessKeyCore() = ""
+    override _.GetAutomationIdCore() = sprintf "TerminalListItem[%d]" index
+    override _.GetHelpTextCore() = ""
+    override _.GetItemStatusCore() = ""
+    override _.GetItemTypeCore() = ""
+    override _.GetLabeledByCore() = Unchecked.defaultof<AutomationPeer>
+    override _.GetOrientationCore() = AutomationOrientation.None
 
     // GetParent() is non-virtual on AutomationPeer (FS0855). The
     // parent relationship is established via the list peer's

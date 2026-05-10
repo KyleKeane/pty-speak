@@ -68,6 +68,14 @@ type private TestStubAutomationPeer() =
     override _.IsPasswordCore() = false
     override _.IsRequiredForFormCore() = false
     override _.SetFocusCore() = ()
+    override _.GetAcceleratorKeyCore() = ""
+    override _.GetAccessKeyCore() = ""
+    override _.GetAutomationIdCore() = "test-stub"
+    override _.GetHelpTextCore() = ""
+    override _.GetItemStatusCore() = ""
+    override _.GetItemTypeCore() = ""
+    override _.GetLabeledByCore() = Unchecked.defaultof<AutomationPeer>
+    override _.GetOrientationCore() = AutomationOrientation.None
 
 // ---------------------------------------------------------------------
 // Fixture builders
