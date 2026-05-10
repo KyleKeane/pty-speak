@@ -127,9 +127,9 @@
                           Header="Test Process _Cleanup" />
                 <!-- Cycle 38a-followup — second menu-only command.
                      Filters ACCESSIBILITY-TESTING.md to sections
-                     marked `<!-- DOGFOOD -->`, renders Markdig HTML,
-                     and opens in the default browser for NVDA
-                     browse-mode H-key heading navigation. -->
+                     marked with the DOGFOOD HTML comment, renders
+                     Markdig HTML, and opens in the default browser
+                     for NVDA browse-mode H-key heading navigation. -->
                 <MenuItem x:Name="MenuItem_OpenManualTests"
                           x:FieldModifier="public"
                           Header="Open Manual _Tests" />
