@@ -109,7 +109,7 @@ type internal TerminalListAutomationPeer
         if newSelectedIndex >= 0 && newSelectedIndex < items.Length then
             let target = items.[newSelectedIndex]
             target.RaiseAutomationEvent(
-                SelectionItemPatternIdentifiers.ElementSelectedEvent)
+                AutomationEvents.SelectionItemPatternOnElementSelected)
 
     interface ISelectionProvider with
         member _.CanSelectMultiple = false
@@ -117,11 +117,13 @@ type internal TerminalListAutomationPeer
         member this.GetSelection() : IRawElementProviderSimple[] =
             // F# interface members typed-as-the-implementing
             // class via `member this.X`; direct call to private
-            // `EnsureItems` works without downcast.
+            // `EnsureItems` + protected-instance
+            // `ProviderFromPeer` (inherited from AutomationPeer)
+            // both work without downcast.
             let items = this.EnsureItems()
             if selectedIndex >= 0 && selectedIndex < items.Length then
                 let peer = items.[selectedIndex] :> AutomationPeer
-                let provider = AutomationPeer.ProviderFromPeer(peer)
+                let provider = this.ProviderFromPeer(peer)
                 [| provider |]
             else
                 Array.empty<IRawElementProviderSimple>
@@ -154,16 +156,17 @@ type internal TerminalListAutomationPeer
     override _.IsRequiredForFormCore() = false
     override _.SetFocusCore() = ()
 
-    /// Returns the parent peer so UIA tree navigation walks back
-    /// to `TerminalAutomationPeer` (Document) → `TerminalView`
-    /// (the FrameworkElement). Without this, the virtual list
-    /// peer is orphaned in the tree.
-    override _.GetParent() = parent
+    // GetParent() is non-virtual on AutomationPeer (FS0855). The
+    // parent relationship is established via the document peer's
+    // GetChildrenCore returning this list peer; UIA's tree
+    // walker handles the upward walk via internal framework
+    // bookkeeping.
 
     override this.GetPattern(patternInterface: PatternInterface) : obj | null =
         match patternInterface with
         | PatternInterface.Selection ->
-            let result : obj | null = (this :> ISelectionProvider) :> obj
+            let provider = this :> ISelectionProvider
+            let result : obj | null = provider
             result
         | _ -> null
 
@@ -191,8 +194,8 @@ and internal TerminalListItemAutomationPeer
 
     interface ISelectionItemProvider with
         member _.IsSelected = parent.SelectedIndex = index
-        member _.SelectionContainer =
-            AutomationPeer.ProviderFromPeer(parent :> AutomationPeer)
+        member this.SelectionContainer =
+            this.ProviderFromPeer(parent :> AutomationPeer)
         // Selection mutation from UIA is read-only in 37b — the
         // PTY drives selection via arrow-key echoes, which the
         // detector re-fires as SelectionItem events. Stage 8e-C
@@ -232,17 +235,19 @@ and internal TerminalListItemAutomationPeer
     override _.IsRequiredForFormCore() = false
     override _.SetFocusCore() = ()
 
-    /// Returns the parent list peer so UIA tree navigation walks
-    /// ListItem → List → Document.
-    override _.GetParent() = parent :> AutomationPeer
+    // GetParent() is non-virtual on AutomationPeer (FS0855). The
+    // parent relationship is established via the list peer's
+    // GetChildrenCore returning this item peer.
 
     override this.GetPattern(patternInterface: PatternInterface) : obj | null =
         match patternInterface with
         | PatternInterface.SelectionItem ->
-            let result : obj | null = (this :> ISelectionItemProvider) :> obj
+            let provider = this :> ISelectionItemProvider
+            let result : obj | null = provider
             result
         | PatternInterface.Invoke ->
-            let result : obj | null = (this :> IInvokeProvider) :> obj
+            let provider = this :> IInvokeProvider
+            let result : obj | null = provider
             result
         | _ -> null
 
