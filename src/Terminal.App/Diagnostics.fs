@@ -1109,12 +1109,13 @@ module Diagnostics =
                  | CanonicalCorpus.Pass -> LogLevel.Information
                  | _ -> LogLevel.Warning)
                 cat outcomeMsg
-            return
+            let result : CanonicalCorpus.ScenarioResult =
                 { Scenario = scenario
                   Outcome = outcome
                   ObservedSemantics = semantics
                   ObservedPayloads = payloads
                   ElapsedMs = elapsedMs }
+            return result
         }
 
     /// Run the canonical-corpus scenarios for the active shell.
