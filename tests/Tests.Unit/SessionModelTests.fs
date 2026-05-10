@@ -1644,12 +1644,12 @@ let ``Cycle 35b — applyAndCaptureWithSubstrate preserves Active state through 
                 s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
                 stream true
     Assert.True(s2.Active.IsSome)
-    Assert.Equal(ActiveTupleState.EditingCommand, s2.Active.Value.State)
+    Assert.Equal(SessionModel.ActiveTupleState.EditingCommand, s2.Active.Value.State)
     let s3 = SessionModel.applyWithSubstrate
                 s2 (boundary BoundaryKind.OutputStart (after 200)) [||]
                 stream true
     Assert.True(s3.Active.IsSome)
-    Assert.Equal(ActiveTupleState.OutputStreaming, s3.Active.Value.State)
+    Assert.Equal(SessionModel.ActiveTupleState.OutputStreaming, s3.Active.Value.State)
 
 [<Fact>]
 let ``Cycle 35b — legacy apply / applyAndCapture API unchanged (regression check)`` () =
