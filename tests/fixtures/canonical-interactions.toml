@@ -49,12 +49,13 @@
 [[scenario]]
 id = "cmd.echo.plain"
 shell = "cmd"
-description = "Plain `echo hello` should emit StreamChunk for the output 'hello' only."
+description = "Plain `echo hello` should emit StreamChunk for the output 'hello' only. EchoSuppressor (Cycle 38c) strips the typed-input prefix from the NVDA announce; FileLogger audit trail preserves the suppression via a `(suppressed echo: ...)` annotation."
 command = "echo PtySpeakDiagEchoPlain"
 must_include = ["StreamChunk"]
 must_not_include = ["ErrorLine", "WarningLine"]
 quiescence_ms = 200
-notes = "Bug 2026-05-10: input-echo + next prompt currently bleed into the StreamChunk. Cycle 38c separates input echo from output."
+expected_payload_regex = ["PtySpeakDiagEchoPlain"]
+notes = "Fixed in Cycle 38c. To verify suppression: open Ctrl+Shift+D bundle, search the --- FILELOGGER ACTIVE LOG --- section for `(suppressed echo: echo PtySpeakDiagEchoPlain`. expected_payload_regex enforcement lands in Cycle 38d."
 
 [[scenario]]
 id = "cmd.dir.simple"

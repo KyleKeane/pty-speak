@@ -128,6 +128,53 @@ let ``[shell.claude] pathway = "tui" parses correctly`` () =
     // Other shells fall back to default
     Assert.Equal("stream", Config.resolveShellPathway config "cmd")
 
+// ---- Cycle 38b — per-shell profile-set override -------------------
+
+[<Fact>]
+let ``[shell.cmd] profiles = [...] resolves to the string array`` () =
+    let toml =
+        "schema_version = 1\n[shell.cmd]\nprofiles = [\"echo-suppressor\", \"earcon\"]\n"
+    let config, _ = loadFromText toml
+    let result = Config.resolveShellProfiles config "cmd"
+    Assert.True(result.IsSome)
+    Assert.Equal<string[]>(
+        [| "echo-suppressor"; "earcon" |],
+        result.Value)
+
+[<Fact>]
+let ``[shell.cmd] without profiles returns None for resolveShellProfiles`` () =
+    let toml =
+        "schema_version = 1\n[shell.cmd]\npathway = \"stream\"\n"
+    let config, _ = loadFromText toml
+    Assert.Equal(None, Config.resolveShellProfiles config "cmd")
+
+[<Fact>]
+let ``[shell.cmd] with both pathway and profiles preserves both`` () =
+    let toml =
+        "schema_version = 1\n[shell.cmd]\npathway = \"tui\"\nprofiles = [\"passthrough\"]\n"
+    let config, _ = loadFromText toml
+    Assert.Equal("tui", Config.resolveShellPathway config "cmd")
+    let profiles = Config.resolveShellProfiles config "cmd"
+    Assert.True(profiles.IsSome)
+    Assert.Equal<string[]>([| "passthrough" |], profiles.Value)
+
+[<Fact>]
+let ``[shell.cmd] with only profiles (no pathway) defaults pathway to stream`` () =
+    let toml =
+        "schema_version = 1\n[shell.cmd]\nprofiles = [\"echo-suppressor\"]\n"
+    let config, _ = loadFromText toml
+    // pathway field absent → resolver returns the "stream" default.
+    Assert.Equal("stream", Config.resolveShellPathway config "cmd")
+    let profiles = Config.resolveShellProfiles config "cmd"
+    Assert.True(profiles.IsSome)
+    Assert.Equal<string[]>([| "echo-suppressor" |], profiles.Value)
+
+[<Fact>]
+let ``resolveShellProfiles returns None for a shell with no override section`` () =
+    let toml = "schema_version = 1\n"
+    let config, _ = loadFromText toml
+    Assert.Equal(None, Config.resolveShellProfiles config "cmd")
+
 // ---- Per-pathway parameter override --------------------------------
 
 [<Fact>]

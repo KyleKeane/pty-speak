@@ -36,6 +36,8 @@
     <Compile Include="EarconProfile.fs" />
     <Compile Include="SelectionProfile.fs" />
     <Compile Include="PassThroughProfile.fs" />
+    <Compile Include="EchoCorrelator.fs" />
+    <Compile Include="EchoSuppressorProfile.fs" />
     <Compile Include="OutputDispatcher.fs" />
     <Compile Include="KeyEncoding.fs" />
     <Compile Include="HotkeyRegistry.fs" />

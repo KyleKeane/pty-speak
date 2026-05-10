@@ -59,6 +59,8 @@
     <Compile Include="LinearTextStreamTests.fs" />
     <Compile Include="CanonicalCorpusTests.fs" />
     <Compile Include="ManualTestsHtmlTests.fs" />
+    <Compile Include="EchoCorrelatorTests.fs" />
+    <Compile Include="EchoSuppressorProfileTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

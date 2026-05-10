@@ -76,7 +76,17 @@ module Config =
     /// stays free of `StreamPathway` / `TuiPathway` direct
     /// references on the SHELL side so adding a new pathway in
     /// Phase 2 doesn't require a Config-module change.
-    type ShellPathwayConfig = { PathwayId: string }
+    type ShellPathwayConfig =
+        { PathwayId: string
+          /// Cycle 38b — per-shell profile-set override. `None`
+          /// means the shell uses the composition-root default
+          /// (`["passthrough", "earcon", "selection"]` for Claude;
+          /// `["echo-suppressor", "earcon", "selection"]` for
+          /// cmd / PowerShell). `Some [|...|]` overrides with the
+          /// listed profile IDs (validated against the registered
+          /// `ProfileId`s at composition time; unknown IDs are
+          /// logged + dropped).
+          Profiles: string[] option }
 
     /// Optional overrides for `StreamPathway.Parameters`. Each
     /// field is `int option` so the resolver can merge with
@@ -294,6 +304,20 @@ module Config =
             "# current session only; doesn't persist."
             "min_level = \"Information\""
             ""
+            "# Cycle 38b — per-shell profile-set overrides."
+            "# Each [shell.<key>] table may specify `profiles = [...]`"
+            "# to override the composition-root default. Profile IDs:"
+            "#   \"passthrough\"     — fan every OutputEvent to NVDA + FileLogger."
+            "#   \"echo-suppressor\" — strip cmd / PowerShell input echo before NVDA."
+            "#   \"earcon\"          — bell-ping / error-tone / warning-tone."
+            "#   \"selection\"       — Claude tool-use prompts as ControlType.List."
+            "# Defaults (applied when `profiles` is unset):"
+            "#   cmd / powershell  → [\"echo-suppressor\", \"earcon\", \"selection\"]"
+            "#   claude            → [\"passthrough\", \"earcon\", \"selection\"]"
+            "# Uncomment + edit to override."
+            "# [shell.cmd]"
+            "# profiles = [\"echo-suppressor\", \"earcon\", \"selection\"]"
+            ""
         ]
 
     /// Cycle 25a — write `defaultsTemplate` to `filePath` if no
@@ -374,6 +398,26 @@ module Config =
     let private tryGetBool (table: TomlTable) (key: string) : bool option =
         match table.TryGetValue(key) with
         | true, (:? bool as b) -> Some b
+        | _ -> None
+
+    /// Cycle 38b — try to read a string-array value from a
+    /// TomlTable by key. Returns `None` if absent OR if the
+    /// value is non-array OR if any element is non-string.
+    /// (Strict so a malformed `profiles = [42, "x"]` doesn't
+    /// silently truncate; caller logs the situation.)
+    let private tryGetStringArray
+            (table: TomlTable)
+            (key: string)
+            : string[] option =
+        match table.TryGetValue(key) with
+        | true, (:? TomlArray as arr) ->
+            let buf = ResizeArray<string>()
+            let mutable ok = true
+            for item in arr do
+                match item with
+                | :? string as s -> buf.Add(s)
+                | _ -> ok <- false
+            if ok then Some (buf.ToArray()) else None
         | _ -> None
 
     /// Internal — known parameter keys for `[pathway.stream]`.
@@ -667,12 +711,42 @@ module Config =
                             "Config: [shell.{Key}] is not a table; ignored.",
                             key)
                     | Some shellTable ->
-                        match tryGetString shellTable "pathway" with
-                        | None -> ()
-                        | Some pathwayId ->
+                        // Cycle 38b — `profiles = [...]` is OPTIONAL
+                        // and orthogonal to `pathway`. A shell may
+                        // override one, the other, both, or neither.
+                        // We materialise an entry in `result` if
+                        // EITHER field is set; if only `profiles`
+                        // is set, `PathwayId` falls through to the
+                        // default `"stream"` (matching the prior
+                        // behaviour for a shell that omitted
+                        // `pathway`).
+                        let pathwayId =
+                            tryGetString shellTable "pathway"
+                            |> Option.defaultValue "stream"
+                        let profiles =
+                            match tryGetStringArray shellTable "profiles" with
+                            | Some arr -> Some arr
+                            | None ->
+                                // Distinguish "key absent" (None ok)
+                                // from "key present but malformed"
+                                // (warn so the maintainer notices).
+                                match shellTable.TryGetValue("profiles") with
+                                | true, _ ->
+                                    logger.LogWarning(
+                                        "Config: [shell.{Key}] `profiles` is not a string array; ignored.",
+                                        key)
+                                    None
+                                | _ -> None
+                        let hasOverride =
+                            tryGetString shellTable "pathway" |> Option.isSome
+                            || profiles |> Option.isSome
+                        if hasOverride then
                             result <-
                                 result
-                                |> Map.add key { PathwayId = pathwayId }
+                                |> Map.add
+                                    key
+                                    { PathwayId = pathwayId
+                                      Profiles = profiles }
             result
 
     /// Cycle 19 — parse `[startup]` table. Recognises only
@@ -997,6 +1071,22 @@ module Config =
         match Map.tryFind shellKey config.ShellOverrides with
         | Some entry -> entry.PathwayId
         | None -> "stream"
+
+    /// Cycle 38b — resolve the per-shell profile-set override.
+    /// Returns `Some` when `[shell.<key>] profiles = [...]` is
+    /// set in `config.toml`; `None` otherwise (composition root
+    /// falls back to its built-in default for the shell).
+    /// Caller (`resolveProfilesForShell` in `Program.fs`)
+    /// translates the string IDs into `Profile` instances via
+    /// `OutputDispatcher.ProfileRegistry.lookup`; unknown IDs
+    /// are logged + dropped, never crash.
+    let resolveShellProfiles
+            (config: Config)
+            (shellKey: string)
+            : string[] option =
+        match Map.tryFind shellKey config.ShellOverrides with
+        | Some entry -> entry.Profiles
+        | None -> None
 
     /// Resolve the StreamPathway parameters from a Config.
     /// Each field that's `None` in `StreamOverrides` falls
