@@ -526,3 +526,107 @@ let ``Cycle 35b — hasOsc133Markers resets to false after finalizeHighWaterMark
     Assert.True(LinearTextStream.hasOsc133Markers state)
     let (_, state) = LinearTextStream.finalizeHighWaterMark state
     Assert.False(LinearTextStream.hasOsc133Markers state)
+
+// =====================================================================
+// HOTFIX — bare-CR vs CR-LF disambiguation (RFC §5.3 #3)
+// =====================================================================
+// Pre-existing 34a-era bug: classifyLiveRegion returned EnterTailMask
+// for `\r` unconditionally, but the deferred resolution promised by
+// the `previousEvent` parameter was never implemented in `append`.
+// Result: every cmd / PowerShell output line (`\r\n`-terminated) had
+// its content moved to TailMask on the `\r`, never flushed (cmd
+// doesn't emit OSC 133 sealed seams). NVDA heard nothing.
+//
+// Hotfix: defer the tail-mask transition on CR. Resolve at the next
+// event — LF → CRLF newline (no tail-mask), else → bare CR (perform
+// the deferred tail-mask transition before processing the new event).
+// State persists across chunks so a chunk-boundary `\r` resolves
+// correctly against the next chunk's first event.
+
+[<Fact>]
+let ``Hotfix — CRLF in same chunk commits content to Committed (the regression case)`` () =
+    let state = freshProducer ()
+    // Mimics cmd output: text followed by CR + LF.
+    let (_, state) = feed state t0 (ascii "hi\r\n")
+    // Without the fix: "hi" gets stuck in TailMask; only "\n" reaches
+    // Committed. With the fix: "hi\n" commits to Committed.
+    let committed = LinearTextStream.getLastBytes state 64
+    let text = Encoding.UTF8.GetString committed
+    Assert.Equal("hi\n", text)
+
+[<Fact>]
+let ``Hotfix — bare CR (no LF after) moves Pending to TailMask`` () =
+    let state = freshProducer ()
+    // Spinner pattern: "frame1\rframe2" (no LF).
+    let (_, state) = feed state t0 (ascii "frame1")
+    // After feeding bare CR followed by Print, the bare-CR resolver
+    // should fire on the Print and move "frame1" → TailMask.
+    let (_, state) = feed state (after 5) (ascii "\rframe2")
+    // Committed has nothing (no seam crossed); TailMask holds "frame1".
+    let committed = LinearTextStream.getLastBytes state 64
+    Assert.Equal(0, committed.Length)
+    // Sealed drain (OSC 133 PromptStart) flushes TailMask LATEST into
+    // Committed. With LATEST semantics, "frame1" should appear.
+    let (_, state) = feed state (after 10) (osc133Prompt ())
+    let committed = LinearTextStream.getLastBytes state 64
+    let text = Encoding.UTF8.GetString committed
+    Assert.Contains("frame1", text)
+
+[<Fact>]
+let ``Hotfix — chunk-spanning CR followed by LF in next chunk commits as CRLF newline`` () =
+    let state = freshProducer ()
+    // Chunk 1: ends with `\r` (CR deferred at chunk boundary).
+    let (_, state) = feed state t0 (ascii "line\r")
+    // Chunk 2: starts with `\n`. The deferred CR resolver should see
+    // LF and treat as CRLF (no tail-mask). The LF marks
+    // encounteredLF; end-of-walk drainPending(unsealed) drains ALL
+    // of Pending (which contains "line" + "\n" + "more") to
+    // Committed. The key invariant for THIS test: "line" must
+    // appear in Committed (proving it wasn't stuck in TailMask).
+    let (_, state) = feed state (after 5) (ascii "\nmore")
+    let committed = LinearTextStream.getLastBytes state 64
+    let text = Encoding.UTF8.GetString committed
+    Assert.Equal("line\nmore", text)
+
+[<Fact>]
+let ``Hotfix — chunk-spanning CR followed by NOT-LF in next chunk fires tail-mask transition`` () =
+    let state = freshProducer ()
+    // Chunk 1: "frame1" ends with `\r`.
+    let (_, state) = feed state t0 (ascii "frame1\r")
+    // Chunk 2: starts with `frame2` (a Print, not LF). Deferred CR
+    // should resolve as bare CR → move "frame1" to TailMask.
+    let (_, state) = feed state (after 5) (ascii "frame2\n")
+    // After chunk 2: "frame2\n" committed (LF seam fired); TailMask
+    // has "frame1" awaiting a sealed drain.
+    let committed = LinearTextStream.getLastBytes state 64
+    let text = Encoding.UTF8.GetString committed
+    Assert.Equal("frame2\n", text)
+    Assert.DoesNotContain("frame1", text)
+
+[<Fact>]
+let ``Hotfix — multiple CRLF lines all commit (cmd output regression)`` () =
+    let state = freshProducer ()
+    // Mimics a cmd `dir` output: multiple CRLF-terminated lines.
+    let cmdOutput = "  Volume in drive C\r\n  Directory of C:\\\r\n\r\n01/01/2026\r\n"
+    let (_, state) = feed state t0 (ascii cmdOutput)
+    let committed = LinearTextStream.getLastBytes state 64
+    let text = Encoding.UTF8.GetString committed
+    // All four lines should have committed; the LFs become row
+    // boundaries. The CRs themselves are not in Committed (not
+    // added to Pending in any case).
+    Assert.Contains("Volume in drive C", text)
+    Assert.Contains("Directory of C:\\", text)
+    Assert.Contains("01/01/2026", text)
+
+[<Fact>]
+let ``Hotfix — empty chunk after deferred CR keeps the deferral pending`` () =
+    let state = freshProducer ()
+    let (_, state) = feed state t0 (ascii "x\r")
+    // Feeding an empty chunk: no events to resolve the deferred CR.
+    // PendingCRDeferred should still be true; Pending still holds "x".
+    let (_, state) = feed state (after 5) [||]
+    // Now feed LF — should resolve as CRLF, commit "x\n".
+    let (_, state) = feed state (after 10) (ascii "\n")
+    let committed = LinearTextStream.getLastBytes state 64
+    let text = Encoding.UTF8.GetString committed
+    Assert.Equal("x\n", text)

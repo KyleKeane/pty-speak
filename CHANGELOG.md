@@ -15,6 +15,51 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed (Hotfix): LinearTextStream bare-CR vs CR-LF disambiguation regression
+
+Pre-existing 34a-era bug surfaced after Cycle 35b's `substrate_mode = "auto"`
+default flip routed Linear-substrate output for non-alt-screen frames.
+[`src/Terminal.Core/LinearTextStream.fs`](src/Terminal.Core/LinearTextStream.fs)
+`classifyLiveRegion` returned `EnterTailMask` for `\r` unconditionally,
+but the deferred resolution promised by the `previousEvent` parameter
+was never implemented in `append`. Result: every cmd / PowerShell output
+line (which all use `\r\n`) had its content moved to `TailMask` on the
+`\r` and never flushed (cmd doesn't emit OSC 133 sealed seams). The
+linear stream's `Committed` buffer only ever held bare `\n` bytes;
+`assembleSuffixFromStream` decoded these to whitespace the sanitiser
+stripped; NVDA heard nothing on cmd / PowerShell / Claude across all
+output. Confirmed via `Ctrl+Shift+D` diagnostic battery: `T1.Plain`
+echo test reported `EVENTS (0)` + `FAIL — missing=StreamChunk`; the
+linear-stream sibling file in the bundle was empty.
+
+Fix: defer the tail-mask transition on `\r`. New `PendingCRDeferred`
+flag on the producer's State; set when CR arrives. The next event
+resolves the ambiguity:
+
+- **CR followed by LF** → CRLF newline, no tail-mask. Clear the flag;
+  the LF handler runs normally (adds to Pending, marks
+  `encounteredLF`, advances `CurrentRow`).
+- **CR followed by anything else** (Print, CSI, etc.) → bare CR,
+  overwrite-in-place. Move `Pending` → `TailMask[currentRow]` BEFORE
+  processing the new event.
+
+The flag persists across chunks: a chunk ending with `\r` keeps the
+flag set so the FIRST event of the next chunk resolves correctly.
+`tick` also resolves a deferred CR after `IdleQuantumMs` elapses
+(the spinner-pause case) so bare-CR live-region updates still fire
+when the producer is idle.
+
+After the fix, cmd / PowerShell output flows through Linear correctly
+and NVDA announces resume across all shells without the
+`substrate_mode = "screen-diff"` workaround.
+
+Tests: 6 new facts in
+[`tests/Tests.Unit/LinearTextStreamTests.fs`](tests/Tests.Unit/LinearTextStreamTests.fs)
+covering CRLF in same chunk, bare CR + tail-mask transition,
+chunk-spanning CR + LF (CRLF resolves), chunk-spanning CR + Print
+(bare CR resolves), multiple CRLF lines (the cmd output regression
+case), and empty chunk after deferred CR (flag persists).
+
 ### Changed (Cycle 37b): UIA listbox peer ships; NVDA reads Claude tool-use prompts as ControlType.List
 
 Closes the Stage 8e-B canonical-display arc (interactive-list
