@@ -14,6 +14,7 @@
     <Compile Include="UpdateMessages.fs" />
     <Compile Include="FileLogger.fs" />
     <Compile Include="Coalescer.fs" />
+    <Compile Include="LinearTextStream.fs" />
     <Compile Include="OutputEventTypes.fs" />
     <Compile Include="OutputEventBuilder.fs" />
     <Compile Include="NvdaChannel.fs" />

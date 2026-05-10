@@ -55,6 +55,7 @@
     <Compile Include="HotkeyRegistryTests.fs" />
     <Compile Include="AppReservedHotkeysMirrorTests.fs" />
     <Compile Include="MultiStateRegistryTests.fs" />
+    <Compile Include="LinearTextStreamTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
