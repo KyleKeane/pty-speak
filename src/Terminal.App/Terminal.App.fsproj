@@ -47,6 +47,19 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>test-process-cleanup.ps1</Link>
     </Content>
+    <!--
+      Cycle 38a — canonical interaction-pair corpus. The TOML
+      file lives in `tests/fixtures/` (alongside other planned
+      replay fixtures per `docs/ACCESSIBILITY-TESTING.md:50-69`)
+      and is copied flat next to Terminal.App.exe so the
+      Ctrl+Shift+D battery can resolve it via
+      `AppContext.BaseDirectory + canonical-interactions.toml`.
+      Velopack pack picks it up automatically.
+    -->
+    <Content Include="..\..\tests\fixtures\canonical-interactions.toml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>canonical-interactions.toml</Link>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
