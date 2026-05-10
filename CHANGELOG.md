@@ -15,6 +15,121 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 34a): `LinearTextStream` producer module + tests (substrate-only, parallel-to-screen)
+
+First code cycle of the substrate-inversion arc that started
+with Cycle 33's RFC. Ships the `LinearTextStream` producer
+module per [`docs/rfc/0001-linear-text-substrate.md`](docs/rfc/0001-linear-text-substrate.md)
+§3 + §5 + §6, plus 25 test facts pinning the contract.
+**No behaviour change** — the producer runs parallel-to-screen
+with no consumers; emitted `CommitNotification`s are
+constructed and returned by `append`/`tick` calls but no
+downstream code subscribes. Cycle 34b wires the producer at
+`Program.fs:108` (parser-emit edge) and adds the
+`Ctrl+Shift+D` diagnostic-bundle integration; Cycle 35 flips
+the Stream profile to consume from the producer.
+
+- **`src/Terminal.Core/LinearTextStream.fs`** (new, ~760 LOC)
+  — the producer module. Public API:
+  - `Parameters` record (6 cadence fields per RFC §5.2 verbatim)
+    + `defaultParameters` value.
+  - `CommitNotification` DU (`EmittedChunk` | `LiveRegionUpdate`
+    | `RegimeSwitch`) with the `Sealed: bool` extension on
+    `EmittedChunk` per RFC §5.4.
+  - `T` opaque type wrapping internal `ResizeArray<byte>`
+    buffers + tail-mask `Map<int, byte[]>` + watermark/flag
+    primitives.
+  - `create: Parameters → T` factory.
+  - `append: T → DateTime → byte[] → VtEvent[] → CommitNotification list * T`
+    — main entrypoint; consumes raw bytes for substrate
+    accumulation + parser events for seam/live-region
+    decisions per RFC §5.3 ranking.
+  - `tick: T → DateTime → CommitNotification list * T` —
+    time-driven flush for idle-quantum + max-time + tail-mask
+    debounce settling.
+  - `finalizeHighWaterMark: T → FinalizedChunk * T` — slices
+    Command/OutputText from OSC 133 markers; runtime-unwired
+    in Cycle 34a (Cycle 35 cuts over `SessionModel.applyAndCapture`).
+  - `checkpointAndFreeze` / `resumeFromFreeze` — drain-checkpoint-
+    swap entrypoints per RFC §6 (test-exercised in 34a;
+    runtime-wired by PathwayPump in Cycle 35).
+  - `getLastBytes: T → int → byte[]` — diagnostic accessor for
+    the Cycle 34b `Ctrl+Shift+D` bundle's tail section.
+- **`tests/Tests.Unit/LinearTextStreamTests.fs`** (new, 489
+  LOC, **25 facts**) — pins the contract per RFC §10
+  acceptance criteria:
+  - **Seam hierarchy (Facts 01-08):** empty input no-op;
+    newline-seam unsealed; OSC 133;C/D sealed + watermark
+    advance; idle-quantum + max-bytes + max-time triggers;
+    strongest seam pre-empts weaker.
+  - **Live-region detection (Facts 09-14):** bare CR + ESC[K
+    + CUU+printable + CUB+printable trigger tail-mask;
+    spinner cycle collapses to LATEST; LATEST overwrites
+    intermediate states.
+  - **Drain-checkpoint-swap (Facts 15-17):** alt-screen
+    enter/exit emits RegimeSwitch with resumeAt past drain
+    settle; checkpointAndFreeze + resumeFromFreeze symmetric.
+  - **4 MB cap (Facts 18-19):** small buffers report
+    `Truncated=false`; cap reached evicts oldest +
+    `Truncated=true` (verified with 8 KB cap to keep test
+    allocation bounded).
+  - **Sealed/unsealed (Facts 20-21):** OSC 133;D produces
+    Sealed=true; newline boundary produces Sealed=false.
+  - **State + finalize (Facts 22-23):** chained `append`
+    calls accumulate state via mutable record reference;
+    `finalizeHighWaterMark` slices CommandText / OutputText
+    from OSC 133 offsets.
+  - **Defaults + parameters (Facts 24-25):**
+    `defaultParameters` matches RFC §5.2 verbatim;
+    `create` with custom parameters honors overrides.
+- **`src/Terminal.Core/Terminal.Core.fsproj`** — adds
+  `<Compile Include="LinearTextStream.fs" />` after
+  `Coalescer.fs`. The producer depends only on `VtEvent`
+  (Types.fs) and primitive types; no new package references.
+- **`tests/Tests.Unit/Tests.Unit.fsproj`** — adds
+  `<Compile Include="LinearTextStreamTests.fs" />` after
+  `MultiStateRegistryTests.fs`.
+
+**Vocabulary used (project-canonical post-Cycle 33 RFC):**
+seam hierarchy, tail mask, drain-checkpoint-swap, sealed /
+unsealed events, high-water-mark commit, substrate-of-truth.
+See `docs/rfc/0001-linear-text-substrate.md` §11 for full
+definitions.
+
+**Adjustments from RFC sketch:**
+- The RFC §3.1 sketched `append: T -> byte[] -> CommitNotification list`
+  (implying internal mutation). Phase 1 exploration of existing
+  detector idioms (`HeuristicPromptDetector.tryDetect`,
+  `SelectionDetector.tryDetect`) confirmed the codebase pattern
+  is **immutable pass-and-return** with explicit `now: DateTime`.
+  The implemented signature is `append: T -> DateTime -> byte[] -> VtEvent[] -> CommitNotification list * T`,
+  threading state through call sites. The `T` is implemented
+  as a class with `member` accessors holding `ResizeArray<byte>`
+  buffers (mutable in-place for O(1) append) — the public API
+  is functional pass-and-return, the underlying buffer is
+  mutable for performance.
+- The RFC §3.3 sketched the producer attaching at the
+  Coalescer's input edge. Phase 1 exploration confirmed the
+  Coalescer was restructured (PR-N 2026-05-04); the
+  attachment point is now `Program.fs:108` (just after
+  `Parser.feedArray parser chunk` in `startReaderLoop`).
+  Cycle 34b makes this concrete; Cycle 34a's tests construct
+  events directly via `Parser.feedArray` to feed the producer
+  without composition-root involvement.
+- The RFC §10.5 acceptance criterion ("`SessionModel.applyAndCapture`
+  calls `LinearTextStream.finalizeHighWaterMark` instead of
+  `extractContent`") was overly aggressive — the strategic plan's
+  "parallel-to-screen, no consumers" framing is authoritative.
+  Cycle 34a/34b preserve `extractContent` runtime-wired;
+  Cycle 35 ships the cutover alongside the Stream-profile
+  inversion.
+
+**Stopping gate:** producer's seam-hierarchy implementation
+must align with RFC §5.1. Test fact 08 ("strongest seam wins")
+is the load-bearing assertion. If 08 fails, the priority
+ordering in `append`'s event-walk is wrong; pause + revisit
+RFC §5.1 before continuing to 34b.
+
 ### Docs (Cycle 33): linear-text substrate RFC + canonical-display catalog (pivot gate)
 
 Doc-only pivot-gate cycle locking the substrate-inversion design
