@@ -36,14 +36,17 @@ namespace Terminal.Core
 ///   additive observer for the events it claims; mirrors the
 ///   `EarconProfile` pattern exactly).
 ///
-/// **What 8e-B will change.** The UIA listbox peer arrives in
-/// Stage 8e-B, lifting the text-only `RenderText` decisions to
-/// `RenderRaw` payloads carrying UIA listbox metadata
-/// (`SelectionExtensions.AllItems` / `TopRow` / `BottomRow`
-/// already populated by the detector for this purpose). NVDA
-/// will then read the list as a real listbox with `1 of 4` /
-/// `2 of 4` semantics from UIA's `IItemContainerProvider`
-/// instead of from this profile's plain-text rendering.
+/// **Cycle 37a (Stage 8e-B substrate).** Apply now emits a
+/// THIRD ChannelDecision per Selection event: an NVDA-channel
+/// `RenderRaw` payload of type `SelectionRawPayload` carrying
+/// the UIA listbox metadata. The pre-existing NVDA-channel
+/// `RenderText` decision is retained for the bridge interval
+/// between 37a (substrate) and 37b (peers) — NVDA continues to
+/// announce text from `RenderText` while the
+/// `Terminal.Accessibility` peer is being built. 37b drops the
+/// duplicate NVDA `RenderText` decision once the peer takes
+/// over; FileLogger's `RenderText` decision is preserved as
+/// the audit trail.
 ///
 /// **No Parameters record.** Profile is stateless (the tunable
 /// thresholds live on `SelectionDetector.Parameters`, not here).
@@ -114,13 +117,94 @@ module SelectionProfile =
         { Channel = FileLoggerChannel.id
           Render = RenderText text }
 
+    /// Cycle 37a — build an NVDA-channel decision carrying the
+    /// `SelectionRawPayload` UIA-free snapshot. NvdaChannel
+    /// routes this to `marshalRawPayload`, which the composition
+    /// root binds to `TerminalView.AnnounceRawPayload` (37a stub
+    /// in the View; 37b promotes to peer-state update).
+    ///
+    /// `:>` upcast (preserves non-null) rather than `box`
+    /// (F# 9 nullness annotates `box: 'T -> obj | null`, which
+    /// can't satisfy `RenderRaw of payload: obj`). Mirrors the
+    /// NvdaChannelTests fixture pattern.
+    let private rawDecision (payload: SelectionRawPayload) : ChannelDecision =
+        { Channel = NvdaChannel.id
+          Render = RenderRaw (payload :> obj) }
+
     /// Construct the decisions array for a single Selection event.
-    /// Both NVDA and FileLogger receive the same text so a
-    /// paste-back of the FileLogger log carries the same semantic
-    /// content NVDA spoke.
-    let private selectionDecisions (text: string) : ChannelDecision[] =
+    /// 37a emits THREE decisions (Option A bridge): NVDA
+    /// `RenderText` so NVDA continues to announce during the 37a
+    /// interim window; FileLogger `RenderText` for the audit
+    /// trail; NVDA `RenderRaw` carrying the UIA payload for the
+    /// 37b peer to consume.
+    let private selectionDecisions
+            (text: string)
+            (payload: SelectionRawPayload)
+            : ChannelDecision[] =
         [| nvdaDecision text
-           fileLoggerDecision text |]
+           fileLoggerDecision text
+           rawDecision payload |]
+
+    /// Cycle 37a — build the raw payload for a `SelectionShown`
+    /// event. Pulls `AllItems` + `ItemCount` + `SelectedIndex`
+    /// from Extensions; `ItemIndex` is -1 (per the SelectionShown
+    /// invariant — the burst's per-item index belongs to
+    /// SelectionItem events). Missing-data fallback uses -1 for
+    /// `SelectedIndex` so the peer can detect malformed events
+    /// and skip raising the focus event rather than guessing.
+    let private buildShownPayload (event: OutputEvent) : SelectionRawPayload =
+        let allItems =
+            tryReadStringArray event SelectionExtensions.AllItems
+            |> Option.defaultValue [||]
+        let count =
+            tryReadInt event SelectionExtensions.ItemCount
+            |> Option.defaultValue allItems.Length
+        let selectedIdx =
+            tryReadInt event SelectionExtensions.SelectedIndex
+            |> Option.defaultValue -1
+        { Kind = "shown"
+          ItemCount = count
+          SelectedIndex = selectedIdx
+          ItemIndex = -1
+          AllItems = allItems
+          ItemText = "" }
+
+    /// Cycle 37a — build the raw payload for a `SelectionItem`
+    /// event. Pulls `ItemText`, `ItemIndex`, `SelectedIndex`,
+    /// `ItemCount` from Extensions. `AllItems` is `[||]`
+    /// (SelectionItem events don't repeat the full list — the
+    /// 37b peer caches it from the most recent SelectionShown).
+    let private buildItemPayload (event: OutputEvent) : SelectionRawPayload =
+        let text =
+            tryReadString event SelectionExtensions.ItemText
+            |> Option.defaultValue ""
+        let itemIdx =
+            tryReadInt event SelectionExtensions.ItemIndex
+            |> Option.defaultValue -1
+        let selectedIdx =
+            tryReadInt event SelectionExtensions.SelectedIndex
+            |> Option.defaultValue -1
+        let count =
+            tryReadInt event SelectionExtensions.ItemCount
+            |> Option.defaultValue 0
+        { Kind = "item"
+          ItemCount = count
+          SelectedIndex = selectedIdx
+          ItemIndex = itemIdx
+          AllItems = [||]
+          ItemText = text }
+
+    /// Cycle 37a — sentinel payload for `SelectionDismissed`.
+    /// All numeric fields default to -1 / 0; the 37b peer uses
+    /// `Kind = "dismissed"` to drop its child peer + raise
+    /// `StructureChanged`.
+    let private dismissedPayload : SelectionRawPayload =
+        { Kind = "dismissed"
+          ItemCount = 0
+          SelectedIndex = -1
+          ItemIndex = -1
+          AllItems = [||]
+          ItemText = "" }
 
     /// Render the user-facing text for a `SelectionShown` event.
     /// Pulls `AllItems` + `SelectedIndex` from Extensions and
@@ -183,11 +267,13 @@ module SelectionProfile =
             fun event ->
                 match event.Semantic with
                 | SemanticCategory.SelectionShown ->
-                    [| event, selectionDecisions (renderShown event) |]
+                    let payload = buildShownPayload event
+                    [| event, selectionDecisions (renderShown event) payload |]
                 | SemanticCategory.SelectionItem ->
-                    [| event, selectionDecisions (renderItem event) |]
+                    let payload = buildItemPayload event
+                    [| event, selectionDecisions (renderItem event) payload |]
                 | SemanticCategory.SelectionDismissed ->
-                    [| event, selectionDecisions "selection dismissed" |]
+                    [| event, selectionDecisions "selection dismissed" dismissedPayload |]
                 | _ ->
                     // No decision for other Semantic categories.
                     [||]

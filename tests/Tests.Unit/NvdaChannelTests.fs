@@ -4,10 +4,15 @@ open Xunit
 open Terminal.Core
 
 /// Stage 8a — pins the NVDA channel's `Semantic → ActivityId`
-/// mapping and the empty-payload skip + RenderEarcon /
-/// RenderRaw skip contracts. The mapping must reproduce the
-/// Stage-7 drain's activity-ID vocabulary exactly so the post-
-/// retrofit NVDA reading is identical.
+/// mapping and the empty-payload skip + RenderEarcon skip
+/// contracts. The mapping must reproduce the Stage-7 drain's
+/// activity-ID vocabulary exactly so the post-retrofit NVDA
+/// reading is identical.
+///
+/// Cycle 37a — `RenderRaw` no longer skips silently; it
+/// routes to a second `marshalRawPayload` callback distinct
+/// from the text marshal. Tests recording RenderRaw payloads
+/// use the `rawCalls` recorder.
 ///
 /// **8a does NOT consult `Priority`.** The behaviour-identical
 /// contract preserves Stage 7's
@@ -20,15 +25,26 @@ open Terminal.Core
 ///
 /// The channel implementation lives at
 /// `src/Terminal.Core/NvdaChannel.fs`. The marshal callback
-/// signature `(string * string) -> unit` is what the
-/// composition root in `src/Terminal.App/Program.fs` binds to
-/// the WPF dispatcher hop; the tests call `create` with a
-/// recording callback and assert against the recorded calls.
+/// signatures `(string * string) -> unit` and
+/// `(obj * string) -> unit` are what the composition root in
+/// `src/Terminal.App/Program.fs` binds to the WPF dispatcher
+/// hop; the tests call `create` with recording callbacks and
+/// assert against the recorded calls.
 
 let private makeRecorder () : ResizeArray<string * string> * (string * string -> unit) =
     let calls = ResizeArray<string * string>()
     let recorder (msg, activityId) = calls.Add((msg, activityId))
     calls, recorder
+
+let private makeRawRecorder () : ResizeArray<obj * string> * (obj * string -> unit) =
+    let calls = ResizeArray<obj * string>()
+    let recorder (payload, activityId) = calls.Add((payload, activityId))
+    calls, recorder
+
+/// Test helper: bind the no-op raw recorder when a test only
+/// cares about the text marshal channel. Mirrors the original
+/// 1-arg `NvdaChannel.create` ergonomic.
+let private noOpRawRecorder : obj * string -> unit = fun _ -> ()
 
 let private buildEvent (semantic: SemanticCategory) (payload: string) : OutputEvent =
     OutputEvent.create semantic Priority.Polite "test" payload
@@ -38,7 +54,7 @@ let private buildEvent (semantic: SemanticCategory) (payload: string) : OutputEv
 [<Fact>]
 let ``StreamChunk routes to ActivityIds.output`` () =
     let calls, recorder = makeRecorder ()
-    let channel = NvdaChannel.create recorder
+    let channel = NvdaChannel.create recorder noOpRawRecorder
     let event = buildEvent SemanticCategory.StreamChunk "ls"
     channel.Send event (RenderText event.Payload)
     Assert.Equal(1, calls.Count)
@@ -47,7 +63,7 @@ let ``StreamChunk routes to ActivityIds.output`` () =
 [<Fact>]
 let ``ParserError routes to ActivityIds.error`` () =
     let calls, recorder = makeRecorder ()
-    let channel = NvdaChannel.create recorder
+    let channel = NvdaChannel.create recorder noOpRawRecorder
     let event = buildEvent SemanticCategory.ParserError "boom"
     channel.Send event (RenderText event.Payload)
     Assert.Equal(("boom", ActivityIds.error), calls.[0])
@@ -55,7 +71,7 @@ let ``ParserError routes to ActivityIds.error`` () =
 [<Fact>]
 let ``ErrorLine routes to ActivityIds.error`` () =
     let calls, recorder = makeRecorder ()
-    let channel = NvdaChannel.create recorder
+    let channel = NvdaChannel.create recorder noOpRawRecorder
     let event = buildEvent SemanticCategory.ErrorLine "npm ERR!"
     channel.Send event (RenderText event.Payload)
     Assert.Equal(("npm ERR!", ActivityIds.error), calls.[0])
@@ -63,7 +79,7 @@ let ``ErrorLine routes to ActivityIds.error`` () =
 [<Fact>]
 let ``WarningLine routes to ActivityIds.error`` () =
     let calls, recorder = makeRecorder ()
-    let channel = NvdaChannel.create recorder
+    let channel = NvdaChannel.create recorder noOpRawRecorder
     let event = buildEvent SemanticCategory.WarningLine "deprecated API"
     channel.Send event (RenderText event.Payload)
     Assert.Equal(("deprecated API", ActivityIds.error), calls.[0])
@@ -71,7 +87,7 @@ let ``WarningLine routes to ActivityIds.error`` () =
 [<Fact>]
 let ``AltScreenEntered routes to ActivityIds.mode`` () =
     let calls, recorder = makeRecorder ()
-    let channel = NvdaChannel.create recorder
+    let channel = NvdaChannel.create recorder noOpRawRecorder
     let event = buildEvent SemanticCategory.AltScreenEntered "x"
     channel.Send event (RenderText event.Payload)
     Assert.Equal(("x", ActivityIds.mode), calls.[0])
@@ -79,7 +95,7 @@ let ``AltScreenEntered routes to ActivityIds.mode`` () =
 [<Fact>]
 let ``ModeBarrier routes to ActivityIds.mode`` () =
     let calls, recorder = makeRecorder ()
-    let channel = NvdaChannel.create recorder
+    let channel = NvdaChannel.create recorder noOpRawRecorder
     let event = buildEvent SemanticCategory.ModeBarrier "y"
     channel.Send event (RenderText event.Payload)
     Assert.Equal(("y", ActivityIds.mode), calls.[0])
@@ -92,7 +108,7 @@ let ``Custom Semantic routes to ActivityIds.output as the pre-claim default`` ()
     // row would still announce on the streaming channel rather
     // than nothing.
     let calls, recorder = makeRecorder ()
-    let channel = NvdaChannel.create recorder
+    let channel = NvdaChannel.create recorder noOpRawRecorder
     let event = buildEvent (SemanticCategory.Custom "git-prompt-segment") "main *"
     channel.Send event (RenderText event.Payload)
     Assert.Equal(("main *", ActivityIds.output), calls.[0])
@@ -104,7 +120,7 @@ let ``RenderText with empty string does not invoke the marshal callback`` () =
     // Stage 7 drain skipped Announce on empty messages (mode
     // barriers carry "") — the channel preserves that contract.
     let calls, recorder = makeRecorder ()
-    let channel = NvdaChannel.create recorder
+    let channel = NvdaChannel.create recorder noOpRawRecorder
     let event = buildEvent SemanticCategory.ModeBarrier ""
     channel.Send event (RenderText "")
     Assert.Equal(0, calls.Count)
@@ -112,7 +128,7 @@ let ``RenderText with empty string does not invoke the marshal callback`` () =
 [<Fact>]
 let ``RenderText2 with empty Precise register does not invoke the callback`` () =
     let calls, recorder = makeRecorder ()
-    let channel = NvdaChannel.create recorder
+    let channel = NvdaChannel.create recorder noOpRawRecorder
     let event = buildEvent SemanticCategory.StreamChunk "approx"
     channel.Send event (RenderText2 ("approx", ""))
     Assert.Equal(0, calls.Count)
@@ -122,7 +138,7 @@ let ``RenderText2 picks the Precise register for the marshal callback`` () =
     // 8a always renders Precise — no user-facing verbosity
     // hotkey ships until later stages.
     let calls, recorder = makeRecorder ()
-    let channel = NvdaChannel.create recorder
+    let channel = NvdaChannel.create recorder noOpRawRecorder
     let event = buildEvent SemanticCategory.StreamChunk "hello"
     channel.Send event (RenderText2 ("approx-form", "precise-form"))
     Assert.Equal(("precise-form", ActivityIds.output), calls.[0])
@@ -133,23 +149,33 @@ let ``RenderText2 picks the Precise register for the marshal callback`` () =
 let ``RenderEarcon does not invoke the NVDA marshal callback`` () =
     // Earcons go to the EarconChannel (8d), not NVDA.
     let calls, recorder = makeRecorder ()
-    let channel = NvdaChannel.create recorder
+    let channel = NvdaChannel.create recorder noOpRawRecorder
     let event = buildEvent SemanticCategory.BellRang ""
     channel.Send event (RenderEarcon "bell-ping")
     Assert.Equal(0, calls.Count)
 
 [<Fact>]
-let ``RenderRaw does not invoke the NVDA marshal callback`` () =
-    // Raw payloads are channel-specific; the NVDA channel
-    // ignores them.
-    let calls, recorder = makeRecorder ()
-    let channel = NvdaChannel.create recorder
+let ``RenderRaw routes to marshalRawPayload, not marshalAnnounce (Cycle 37a)`` () =
+    // Cycle 37a — RenderRaw payloads are routed to the second
+    // marshal callback so 37b's TerminalView.AnnounceRawPayload
+    // can update peer state on the UI thread without going
+    // through the text-announce path. The text marshal must NOT
+    // fire for RenderRaw — that's the 37a contract that
+    // separates the UIA-peer pathway from the text pathway.
+    let textCalls, textRecorder = makeRecorder ()
+    let rawCalls, rawRecorder = makeRawRecorder ()
+    let channel = NvdaChannel.create textRecorder rawRecorder
     let event = buildEvent SemanticCategory.SelectionShown ""
     // Use `:>` upcast (preserves non-null) rather than `box`
     // (F# 9 nullness annotates `box: 'T -> obj | null`, which
     // can't satisfy `RenderRaw of payload: obj`).
-    channel.Send event (RenderRaw ("uia-listbox-metadata" :> obj))
-    Assert.Equal(0, calls.Count)
+    let payload = ("uia-listbox-metadata" :> obj)
+    channel.Send event (RenderRaw payload)
+    Assert.Equal(0, textCalls.Count)
+    Assert.Equal(1, rawCalls.Count)
+    let recordedPayload, recordedActivityId = rawCalls.[0]
+    Assert.Same(payload, recordedPayload)
+    Assert.Equal(ActivityIds.output, recordedActivityId)
 
 // ---- Channel identity ------------------------------------------
 
@@ -160,5 +186,5 @@ let ``NvdaChannel.id is the stable string registered with the dispatcher`` () =
 [<Fact>]
 let ``create returns a Channel whose Id matches the module-level id`` () =
     let _, recorder = makeRecorder ()
-    let channel = NvdaChannel.create recorder
+    let channel = NvdaChannel.create recorder noOpRawRecorder
     Assert.Equal(NvdaChannel.id, channel.Id)

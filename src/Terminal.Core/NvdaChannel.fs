@@ -7,17 +7,20 @@ namespace Terminal.Core
 /// (`output → ImportantAll`, everything else → `MostRecent`,
 /// implemented at `src/Views/TerminalView.cs:292-298`).
 ///
-/// The channel is constructed with a marshalling callback the
+/// The channel is constructed with TWO marshalling callbacks the
 /// caller (`src/Terminal.App/Program.fs`) binds to the WPF
 /// dispatcher hop. This keeps `Terminal.Core` free of WPF
 /// dependencies; the caller bridges:
 ///
 /// ```fsharp
 /// let nvda =
-///     NvdaChannel.create (fun (msg, activityId) ->
-///         window.Dispatcher.InvokeAsync(Action(fun () ->
-///             window.TerminalSurface.Announce(msg, activityId)))
-///         |> ignore)
+///     NvdaChannel.create
+///         (fun (msg, activityId) ->
+///             window.Dispatcher.Invoke(Action(fun () ->
+///                 window.TerminalSurface.Announce(msg, activityId))))
+///         (fun (payload, activityId) ->
+///             window.Dispatcher.Invoke(Action(fun () ->
+///                 window.TerminalSurface.AnnounceRawPayload(payload, activityId))))
 /// ```
 ///
 /// **8a does NOT consult `OutputEvent.Priority`.** The
@@ -35,11 +38,20 @@ namespace Terminal.Core
 /// 8c FileLogger channel) may choose to log mode barriers even
 /// with empty payloads.
 ///
-/// **Earcon / Raw render skip.** `RenderEarcon` is the
-/// producer-side instruction for the 8d Earcon channel;
-/// `RenderRaw` is opaque per-channel data (e.g. UIA-listbox
-/// metadata in 8e). NVDA channel ignores both — the dispatcher
-/// fans them to their respective channels separately.
+/// **Earcon skip.** `RenderEarcon` is the producer-side
+/// instruction for the 8d Earcon channel; the NVDA channel
+/// ignores it — the dispatcher fans earcons to the WASAPI
+/// channel separately.
+///
+/// **Raw payload routing (Cycle 37a).** `RenderRaw` carries
+/// channel-specific opaque payloads (e.g. the
+/// `SelectionRawPayload` UIA listbox metadata that Cycle 37b's
+/// `Terminal.Accessibility` peer consumes). The NVDA channel
+/// routes `RenderRaw` to the `marshalRawPayload` callback
+/// distinct from the text marshal — keeping the WPF
+/// dispatcher hop in the View layer (where UIA peer state
+/// updates can run on the UI thread) without coupling
+/// `Terminal.Core` to UIA types.
 module NvdaChannel =
 
     /// Stable channel identifier registered with the dispatcher's
@@ -75,10 +87,16 @@ module NvdaChannel =
         | SemanticCategory.Custom _ -> ActivityIds.output
 
     /// Construct a Channel that announces via the supplied
-    /// marshalling callback. The callback receives `(message,
-    /// activityId)` and is responsible for the WPF dispatcher
-    /// hop + the actual `TerminalView.Announce` call.
-    let create (marshalAnnounce: string * string -> unit) : Channel =
+    /// marshalling callbacks. `marshalAnnounce` receives
+    /// `(message, activityId)` for `RenderText` /
+    /// `RenderText2` payloads (Stage 8a contract).
+    /// `marshalRawPayload` receives `(payload, activityId)` for
+    /// `RenderRaw` payloads (Cycle 37a contract). Both are
+    /// responsible for their own WPF dispatcher hop.
+    let create
+            (marshalAnnounce: string * string -> unit)
+            (marshalRawPayload: obj * string -> unit)
+            : Channel =
         { Id = id
           Send =
             fun event render ->
@@ -93,4 +111,5 @@ module NvdaChannel =
                     // until later stages.
                     marshalAnnounce (precise, activityId)
                 | RenderEarcon _ -> ()
-                | RenderRaw _ -> () }
+                | RenderRaw payload ->
+                    marshalRawPayload (payload, activityId) }
