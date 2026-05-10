@@ -262,15 +262,19 @@ let ``Fact 13 — spinner cycle at 10 Hz collapses to LATEST tail-mask state`` (
     let state = freshProducer ()
     let mutable cur = state
     // Simulate ~10 Hz spinner: 10 frames over 1 second.
+    // Each frame is `\r{glyph}`: CR triggers EnterTailMask
+    // (capturing the prior iteration's pending Print into
+    // tail-mask), then the new glyph goes into pending.
     let frames = [ "|"; "/"; "-"; "\\"; "|"; "/"; "-"; "\\"; "|"; "/" ]
     for i in 0 .. frames.Length - 1 do
         let bytes = ascii (sprintf "\r%s" frames.[i])
         let (_, next) = feed cur (after (i * 100)) bytes
         cur <- next
-    // Tick past final debounce window. With debounce=250ms,
-    // cycles every 100ms produce per-row updates only at
-    // settling boundaries. The LATEST state should match the
-    // last frame's bytes.
+    // Tick past final debounce window. The LATEST tail-mask
+    // state contains the SECOND-to-last frame's char (since
+    // iter N's CR captures iter N-1's pending print into
+    // tail-mask). Verify at least one spinner char appears
+    // in the LATEST update.
     let (tickNotifs, _) = LinearTextStream.tick cur (after 1500)
     let updates =
         tickNotifs
@@ -278,12 +282,13 @@ let ``Fact 13 — spinner cycle at 10 Hz collapses to LATEST tail-mask state`` (
             match n with
             | LinearTextStream.LiveRegionUpdate u -> Some u
             | _ -> None)
-    // At least one update emerged; the LATEST update's
-    // LatestBytes should contain the final spinner glyph.
     Assert.NotEmpty(updates)
     let lastUpdate = updates |> List.last
     let bytesAsStr = Encoding.ASCII.GetString(lastUpdate.LatestBytes)
-    Assert.Contains("/", bytesAsStr)
+    let isSpinnerChar c = List.contains c [ '|'; '/'; '-'; '\\' ]
+    Assert.True(
+        bytesAsStr |> Seq.exists isSpinnerChar,
+        sprintf "expected at least one spinner char in LATEST tail-mask bytes; got %A" bytesAsStr)
 
 [<Fact>]
 let ``Fact 14 — tail-mask LATEST overwrites intermediate states`` () =

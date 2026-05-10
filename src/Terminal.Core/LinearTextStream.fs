@@ -1,6 +1,7 @@
 namespace Terminal.Core
 
 open System
+open System.Text
 
 /// Cycle 34a — the linear-text producer per
 /// `docs/rfc/0001-linear-text-substrate.md`. Maintains an
@@ -445,11 +446,22 @@ module LinearTextStream =
             let mutable encounteredLF = false
             let mutable previousEvent : VtEvent option = None
 
-            // Split-byte accumulation: bytes go into pending
-            // first; later we may move some to tail-mask.
-            state.Pending.AddRange(bytes)
+            // Per-event byte accumulation: only content events
+            // (Print, Execute LF) add to pending. Control
+            // sequences (OSC, CSI, CR) trigger seam / live-
+            // region semantics without contributing bytes.
+            // This matches the substrate-of-truth contract:
+            // pending holds visible content between seams; the
+            // raw byte stream is reconstructable from the
+            // parser's events but not from the linear stream.
 
             for event in events do
+                // Special-case OSC 133 + alt-screen toggle
+                // FIRST since they take priority over any
+                // live-region effect; for everything else
+                // (including Execute CR + EL + CUU + CUB),
+                // run the live-region classifier.
+                let mutable handledByOsc133OrAltScreen = false
                 match event with
                 | OscDispatch (parms, _) ->
                     match classifyOsc133 parms with
@@ -461,10 +473,11 @@ module LinearTextStream =
                         notifs <- chunkNotifs @ notifs
                         state.PromptStartOffset <- state.HighWaterMark
                         promptSeamCrossed <- true
+                        handledByOsc133OrAltScreen <- true
                     | CommandInputStart ->
                         // End of prompt zone, start of typed
                         // command. Buffer continues; no seam.
-                        ()
+                        handledByOsc133OrAltScreen <- true
                     | CommandOutputStart ->
                         // Output zone begins. Drain pending
                         // (which contains the typed command)
@@ -473,12 +486,14 @@ module LinearTextStream =
                         notifs <- chunkNotifs @ notifs
                         state.OutputStartOffset <- state.HighWaterMark
                         promptSeamCrossed <- true
+                        handledByOsc133OrAltScreen <- true
                     | CommandFinished _ ->
                         // Output zone ends. Drain pending
                         // (output) sealed.
                         let chunkNotifs = drainPending state now true
                         notifs <- chunkNotifs @ notifs
                         promptSeamCrossed <- true
+                        handledByOsc133OrAltScreen <- true
                     | NotOsc133 -> ()
 
                 | CsiDispatch (parms, intermediates, finalByte, priv) ->
@@ -489,61 +504,68 @@ module LinearTextStream =
                         notifs <-
                             (RegimeSwitch EnterAltScreen) :: chunkNotifs @ notifs
                         state.Frozen <- true
+                        handledByOsc133OrAltScreen <- true
                     | Some _ ->
                         // ExitAltScreen here would mean we're
                         // already not frozen; ignore.
-                        ()
-                    | None ->
-                        // Non-alt-screen CSI; check for live-
-                        // region effect.
-                        match classifyLiveRegion event previousEvent state.CurrentRow with
-                        | EnterTailMask ->
-                            // Move pending into the tail-mask
-                            // for the current row.
-                            let pendingBytes = state.Pending.ToArray()
-                            state.Pending.Clear()
-                            state.TailMask <-
-                                Map.add state.CurrentRow pendingBytes state.TailMask
-                            state.TailMaskTimestamps <-
-                                Map.add state.CurrentRow now state.TailMaskTimestamps
-                        | FullErase ->
-                            // Drain pending sealed; mark frozen.
-                            let chunkNotifs = drainPending state now true
-                            notifs <- chunkNotifs @ notifs
-                            state.Frozen <- true
-                        | CursorUpThenPrintable target ->
-                            // Move current pending into the
-                            // target row's tail-mask + set
-                            // timestamp so tick can fire a
-                            // LiveRegionUpdate after debounce.
-                            // Per Cycle 34a's rough scope, the
-                            // bytes captured here include
-                            // pre-CUU content; future cycles
-                            // can refine the byte routing.
-                            let pendingBytes = state.Pending.ToArray()
-                            state.Pending.Clear()
-                            state.TailMask <-
-                                Map.add target pendingBytes state.TailMask
-                            state.TailMaskTimestamps <-
-                                Map.add target now state.TailMaskTimestamps
-                        | LeaveTailMask
-                        | NoEffect -> ()
+                        handledByOsc133OrAltScreen <- true
+                    | None -> ()
 
                 | Execute b when b = 0x0Auy ->
-                    // LF. Logical newline → potential newline
-                    // seam. Increment row counter.
+                    // LF. Add to pending (newline is content);
+                    // mark for newline-seam at end of walk;
+                    // increment row counter.
+                    state.Pending.Add(b)
                     encounteredLF <- true
                     state.CurrentRow <- state.CurrentRow + 1
 
-                | Execute b when b = 0x0Duy ->
-                    // CR. Check next event for LF; if absent,
-                    // tail-mask. We can't know yet since events
-                    // are processed sequentially — defer the
-                    // decision via the previousEvent tracking
-                    // already in classifyLiveRegion.
-                    ()
+                | Print rune ->
+                    // Printable Unicode codepoint. Encode as
+                    // UTF-8 + add to pending.
+                    let runeBytes =
+                        Encoding.UTF8.GetBytes(rune.ToString())
+                    state.Pending.AddRange(runeBytes)
 
                 | _ -> ()
+
+                // Live-region classification runs for ALL
+                // events except those already handled by OSC
+                // 133 / alt-screen / LF (which is a separate
+                // newline-seam concern). Specifically: bare CR,
+                // ESC[K, ESC[A+printable, ESC[<n>D+printable
+                // all need this path.
+                if not handledByOsc133OrAltScreen then
+                    match classifyLiveRegion event previousEvent state.CurrentRow with
+                    | EnterTailMask ->
+                        // Move pending into the tail-mask for
+                        // the current row.
+                        let pendingBytes = state.Pending.ToArray()
+                        state.Pending.Clear()
+                        state.TailMask <-
+                            Map.add state.CurrentRow pendingBytes state.TailMask
+                        state.TailMaskTimestamps <-
+                            Map.add state.CurrentRow now state.TailMaskTimestamps
+                    | FullErase ->
+                        // Drain pending sealed; mark frozen.
+                        let chunkNotifs = drainPending state now true
+                        notifs <- chunkNotifs @ notifs
+                        state.Frozen <- true
+                    | CursorUpThenPrintable target ->
+                        // Move current pending into the target
+                        // row's tail-mask + set timestamp so
+                        // tick can fire a LiveRegionUpdate
+                        // after debounce. Per Cycle 34a's
+                        // rough scope, the bytes captured here
+                        // include pre-CUU content; future
+                        // cycles can refine the byte routing.
+                        let pendingBytes = state.Pending.ToArray()
+                        state.Pending.Clear()
+                        state.TailMask <-
+                            Map.add target pendingBytes state.TailMask
+                        state.TailMaskTimestamps <-
+                            Map.add target now state.TailMaskTimestamps
+                    | LeaveTailMask
+                    | NoEffect -> ()
 
                 previousEvent <- Some event
 
