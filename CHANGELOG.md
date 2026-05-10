@@ -15,6 +15,28 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Documented (Cycle 36): substrate-inversion arc validation matrix backfilled into ACCESSIBILITY-TESTING.md
+
+Closes the substrate-inversion arc's documentation work. Adds a
+new `### Cycle 36 — Substrate-inversion arc matrix backfill`
+section to [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
+codifying the 8-row advanced-CMD validation matrix the maintainer
+ran on 2026-05-10 against Cycle 35a's parallel-path-behind-flag
+PR. The section captures per-row procedures + expected NVDA
+shapes, plus FileLogger grep recipes for post-merge dogfood
+verification of the Cycle 35b SessionModel hybrid fallback and
+the Cycle 35c spinner-gate-bypass contract.
+
+The matrix is the Cycle 39 stopping gate — all 8 rows green at
+default `substrate_mode = auto` plus the FileLogger telemetry
+recipes showing the expected absence/presence patterns is the
+precondition for safely removing the screen-diff legacy code
+(per Section 13 of the strategic plan +
+[`docs/STAGE-7-ISSUES.md`](docs/STAGE-7-ISSUES.md) substrate-
+cleanup section).
+
+No code changes; no behaviour change. Pure docs-only PR.
+
 ### Changed (Cycle 35c): Path B Levenshtein spinner gate scoped to ScreenDiff path only
 
 Closes the substrate-inversion arc (Cycles 33-35). The

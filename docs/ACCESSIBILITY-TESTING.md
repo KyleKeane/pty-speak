@@ -910,6 +910,130 @@ short-circuit the detector entirely.
   thresholds; 29c lets the maintainer tune them via
   `Ctrl+Shift+E` (open config.toml).
 
+### Cycle 36 — Substrate-inversion arc matrix backfill
+
+Cycles 33-35c shipped the substrate-inversion arc: the canonical
+representation of "what the shell produced" pivoted from a
+screen-row diff (`Screen.Snapshot` + per-row hashing) to a linear
+byte-stream substrate (`LinearTextStream` producer; RFC
+[`docs/rfc/0001-linear-text-substrate.md`](rfc/0001-linear-text-substrate.md)).
+Cycle 36 codifies the validation matrix the maintainer ran on
+2026-05-10 against Cycle 35a's parallel-path-behind-flag PR so
+future contributors have a reproducible recipe + a Cycle 39
+stopping gate.
+
+**Validation status (2026-05-10).**
+- **Cycle 35a** (parallel path behind default-off TOML flag) was
+  hand-validated by the maintainer 2026-05-10 in cmd +
+  PowerShell + Claude across all 8 rows below in both Linear and
+  Auto modes. All passed.
+- **Cycle 35b** (default flip to `Auto` + SessionModel hybrid
+  cutover) shipped without manual NVDA validation. Relies on the
+  945+ unit-test suite (including 6 SessionModelTests + 2
+  LinearTextStreamTests pinning the substrate-aware path) plus
+  FileLogger telemetry for post-merge regression detection.
+- **Cycle 35c** (Levenshtein spinner gate scoped to ScreenDiff
+  fallback only) shipped without manual NVDA validation. Relies
+  on the 2 new spinner-gate-bypass facts plus the 4 existing
+  screen-diff sentinel facts.
+
+**Pre-requisites.** Default install (no TOML overrides). Cycle
+35b flipped `[pathway.stream] substrate_mode` default to `auto`,
+so non-alt-screen frames flow through the linear substrate; alt-
+screen frames (vim, less, top) flow through screen-diff. The
+matrix below is run at the default; rows that explicitly need a
+different mode call it out.
+
+**Run each row in cmd.exe AND PowerShell** unless the row marks
+otherwise. Hot-switch via `Ctrl+Shift+1` (cmd) / `Ctrl+Shift+2`
+(PowerShell) / `Ctrl+Shift+3` (Claude).
+
+| Test                                  | Procedure                                                                                                                       | Expected NVDA shape                                                                                                                                                                                                            |
+|---------------------------------------|---------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 36.1 `dir` (small dir)                | `cd %USERPROFILE%\Documents` (or any dir with 10–30 entries); run `dir`.                                                        | Single announce of full listing. NVDA reads the entire output as one continuous announce (no chunking, no per-row pause).                                                                                                       |
+| 36.2 `dir /s` of a large tree         | `dir /s C:\Windows\System32`. (Long-running.)                                                                                   | Sustained-output. Producer commits at idle quanta (~150 ms — RFC §5.2). No raw character counts in announce; no chunk repeats; the listing is heard as a streaming flow rather than a rapid-fire burst.                          |
+| 36.3 `git status` in a busy repo      | In any local git repo with uncommitted changes, run `git status`.                                                              | One announce per terminal idle. Coloured `M` / `A` / `D` / `??` lines read in order. No double-read of any file path. Earcons fire on red lines (modified files) but not on green lines (added).                              |
+| 36.4 `npm install` of a small package | In a scratch directory, run `npm install lodash`.                                                                              | Spinner / progress bar suppressed (live-region tail-mask). The "added N packages" final line announces. Warning lines announce individually. The Cycle 29b ~80-spinner-storm regression does NOT recur.                          |
+| 36.5 Claude tool-use spinner (Claude only) | In Claude (`Ctrl+Shift+3`), ask a question that triggers a tool-use spinner-then-response — e.g., "what files are in the current directory?" | <5 announces during the spinner (was ~80 in Cycle 29b validation). Final response announces once at completion. **This is the load-bearing row** — Cycle 35's headline win.                                                  |
+| 36.6 `dir /s | more`                  | In cmd, run `dir /s | more`. Press space to advance pages.                                                                      | First page announces in full. The `-- More --` prompt announces once. Spacebar advances + announces the next page. No re-announce of prior pages.                                                                              |
+| 36.7 PowerShell `gci` with `$PSStyle` | In PowerShell 7+, run `Get-ChildItem` (or `gci`) in any dir with mixed file types.                                            | Coloured output reads as text. Benign colours (file-type indicators) do NOT trigger `error-tone` earcons. Only red error lines trigger earcons.                                                                                |
+| 36.8 cmd tab completion (cmd only)    | In cmd, type `cd C:\Pro` then press `<TAB>` (let it auto-complete to `C:\Program Files`); press `<Enter>`.                      | Echoed completion (`gram Files`) announces ONCE on TAB. NOT re-announced on Enter. **Critical regression test for the input-framework deferral** — substrate inversion must NOT regress plain-cmd typed-input echo.            |
+
+**Cycle 39 stopping gate.** All 8 rows green at default
+`substrate_mode = auto` + the FileLogger grep recipes below
+showing zero `Suppressed (spinner)` log lines on non-alt-screen
+frames is the precondition for safely removing the screen-diff
+legacy code (per Section 13 of the strategic plan +
+[`docs/STAGE-7-ISSUES.md`](STAGE-7-ISSUES.md) substrate-cleanup
+section). Two+ rows regressing without a clean fix → revert
+default to `screen-diff` via TOML; substrate-mode stays opt-in.
+
+**Diagnostic decoders for Cycle 36:**
+
+- **Spinner-storm regression on row 36.4 / 36.5** → producer's
+  tail-mask classifier may be missing a live-region pattern
+  (RFC §5.3). Capture a `Ctrl+Shift+D` bundle; grep the
+  `--- LINEAR STREAM (last 64KB) ---` section for repeated
+  spinner glyphs (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`). If the bundle shows the
+  spinner frames, the tail-mask isn't transitioning the row to
+  LATEST semantics for the byte pattern the spinner uses.
+  Workaround: revert TOML default to `substrate_mode =
+  "screen-diff"` (the Levenshtein gate fires on the screen-
+  diff path).
+- **Non-OSC-133 shell loses Ctrl+Shift+Y CommandText/OutputText**
+  → vanilla cmd / PowerShell don't emit OSC 133 markers. The
+  hybrid fallback in `SessionModel.applyAndCaptureWithSubstrate`
+  routes to `extractContent` row-walk for those shells. If
+  Ctrl+Shift+Y captures empty CommandText/OutputText, check
+  the bundle's `--- SESSION LOG ---` section for the active
+  tuple's content. If empty: extractContent fallback isn't
+  firing (regression vs. Cycle 35b's hybrid contract).
+  Workaround: same TOML revert.
+- **Earcon false-positive on row 36.7** → SGR-color detection
+  in `EarconProfile.fs` may be misclassifying $PSStyle's blue
+  / cyan / magenta as red. EarconProfile is screen-substrate
+  by design (color is a grid concept per CORE-ABSTRACTION-
+  BOUNDARY.md §1.1); the substrate inversion does NOT touch
+  it. Regression here is a separate issue against EarconProfile,
+  not the substrate arc.
+
+**FileLogger grep recipes (post-merge dogfood verification).**
+
+The matrix above is run by-ear; the recipes below complement it
+with grep-against-bundle verification of the implementation
+contracts. Run after a typical session, capture
+`Ctrl+Shift+D`'s bundle, and grep:
+
+```cmd
+:: cmd — verify Linear path bypasses spinner-suppress (Cycle 35c)
+findstr /C:"Suppressed (spinner)" "%LOCALAPPDATA%\PtySpeak\diagnostic-snapshots\snapshot-<latest>.txt"
+:: Expected post-Cycle-35c: zero matches in non-alt-screen frames.
+:: Matches OK if the session entered alt-screen (vim, less, top).
+```
+
+```powershell
+# PowerShell — same check
+Select-String -Pattern "Suppressed \(spinner\)" -Path "$env:LOCALAPPDATA\PtySpeak\diagnostic-snapshots\snapshot-*.txt" -Context 1,1
+```
+
+```cmd
+:: cmd — verify SessionModel hybrid fallback (Cycle 35b) is firing for cmd / PS sessions
+findstr /C:"applyAndCaptureWithSubstrate" "<bundle-path>" | findstr /V /C:"useLinear=true"
+:: Expected: lines from cmd / PowerShell sessions show useLinear=true was passed but the
+:: linear stream returned None (no OSC 133 markers); fallback to extractContent fired.
+:: For Claude sessions, useLinear=true should yield linear-path success.
+```
+
+```cmd
+:: cmd — verify the linear stream is capturing bytes
+findstr /C:"--- LINEAR STREAM" "<bundle-path>"
+:: Should return a header line; the section that follows shows the last 64KB of
+:: producer-captured bytes. Empty section = producer isn't accumulating (bug).
+```
+
+These recipes lean on the existing diagnostic-bundle infrastructure
+shipped in Cycle 34b; no new logging is required.
+
 ## Recording results
 
 For each release tag:
