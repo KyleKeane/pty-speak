@@ -703,6 +703,36 @@ module LinearTextStream =
             // committed in idle_quantum_ms.
             let idleElapsed =
                 now - state.LastByteAt
+            let idleElapsedMs =
+                idleElapsed.TotalMilliseconds
+
+            // Hotfix companion — resolve a deferred CR if the
+            // idle quantum has elapsed. The bare-CR-then-silence
+            // pattern is the spinner pause: a chunk ended with
+            // `\r` and no subsequent event has arrived to resolve
+            // the ambiguity. Treat it as bare CR (overwrite-in-
+            // place) and move Pending → TailMask. Timestamp
+            // uses `LastByteAt` (when the CR landed), not `now`,
+            // so the LiveRegionDebounceMs check below sees the
+            // row as already settled and emits the
+            // LiveRegionUpdate this same tick. Without this,
+            // Fact 09 / Fact 14 would never emit a
+            // LiveRegionUpdate while the spinner is paused.
+            if state.PendingCRDeferred
+               && idleElapsedMs >= float state.Parameters.IdleQuantumMs
+            then
+                state.PendingCRDeferred <- false
+                if state.Pending.Count > 0 then
+                    let pendingBytes = state.Pending.ToArray()
+                    state.Pending.Clear()
+                    state.TailMask <-
+                        Map.add state.CurrentRow pendingBytes state.TailMask
+                    state.TailMaskTimestamps <-
+                        Map.add
+                            state.CurrentRow
+                            state.LastByteAt
+                            state.TailMaskTimestamps
+
             let pendingHasContent = state.Pending.Count > 0
 
             // Max-time check: no emit in max_time_without_emit.
@@ -712,8 +742,6 @@ module LinearTextStream =
                 timeSinceEmit.TotalMilliseconds
                 >= float state.Parameters.MaxTimeWithoutEmitMs
 
-            let idleElapsedMs =
-                idleElapsed.TotalMilliseconds
             let idleTriggered =
                 pendingHasContent
                 && idleElapsedMs >= float state.Parameters.IdleQuantumMs

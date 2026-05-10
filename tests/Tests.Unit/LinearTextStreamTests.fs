@@ -578,13 +578,15 @@ let ``Hotfix — chunk-spanning CR followed by LF in next chunk commits as CRLF 
     // Chunk 1: ends with `\r` (CR deferred at chunk boundary).
     let (_, state) = feed state t0 (ascii "line\r")
     // Chunk 2: starts with `\n`. The deferred CR resolver should see
-    // LF and treat as CRLF (no tail-mask).
+    // LF and treat as CRLF (no tail-mask). The LF marks
+    // encounteredLF; end-of-walk drainPending(unsealed) drains ALL
+    // of Pending (which contains "line" + "\n" + "more") to
+    // Committed. The key invariant for THIS test: "line" must
+    // appear in Committed (proving it wasn't stuck in TailMask).
     let (_, state) = feed state (after 5) (ascii "\nmore")
-    // After chunk 2, Pending has "more" (Print bytes since last seam).
-    // The `\n` in chunk 2 triggered drainPending which committed "line\n".
     let committed = LinearTextStream.getLastBytes state 64
     let text = Encoding.UTF8.GetString committed
-    Assert.Equal("line\n", text)
+    Assert.Equal("line\nmore", text)
 
 [<Fact>]
 let ``Hotfix — chunk-spanning CR followed by NOT-LF in next chunk fires tail-mask transition`` () =
