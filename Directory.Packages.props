@@ -17,7 +17,7 @@
       package is referenced. Ships with the .NET 9 SDK; safe to
       assume present on any user machine running pty-speak.
     -->
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
     <!--
       Phase B — TOML config substrate. Tomlyn (xoofx, BSD 2-Clause)
       parses `%LOCALAPPDATA%\PtySpeak\config.toml` for per-shell
