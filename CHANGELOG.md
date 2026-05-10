@@ -15,6 +15,102 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Docs (Cycle 33): linear-text substrate RFC + canonical-display catalog (pivot gate)
+
+Doc-only pivot-gate cycle locking the substrate-inversion design
+before any code lands. **No behaviour change.** Two new authoritative
+docs + cross-reference updates in CORE-ABSTRACTION-BOUNDARY.md and
+CLAUDE.md so future cycles read against a stable spec.
+
+This cycle is the architectural lock for the next ~8 cycles
+(34-38) of substrate-inversion work. Cycle 34 implements the
+`LinearTextStream` producer module against the RFC's contract;
+Cycles 35-36 invert the Stream profile against it; Cycles 37-38
+build interactive list + form-with-text-input on the inverted
+substrate. The RFC + catalog supersede the informal streaming-
+incomplete protocol in CORE-ABSTRACTION-BOUNDARY.md §7 for
+normative spec.
+
+- **`docs/rfc/0001-linear-text-substrate.md`** (new, ~610 LOC) —
+  the pivot-gate RFC. 12 sections: Abstract, Motivation, Current
+  Extraction Path (`SessionModel.fs:338-375` `extractContent`),
+  LinearTextStream Producer Design (module shape + buffer +
+  Coalescer hookpoint + 4 MB cap + session-restore-explicitly-
+  out-of-scope), Inversion of Cause and Effect, Streaming-
+  Incomplete Emission Protocol (seam hierarchy + cadence
+  parameters table + ranked live-region detection + sealed/
+  unsealed extension; lifted verbatim from
+  `docs/research/emission-paradigms.md` §3.A-§3.D and §4 closing
+  recommendations), Drain-Checkpoint-Swap Protocol (lifted from
+  emission-paradigms.md §3.E), SessionTuple Finalize Contract,
+  Three Exemplar Canonical Displays (high level; full specs in
+  catalog), Risks + Mitigations (11 items), Acceptance Criteria
+  for Cycle 34 (10 testable invariants), Glossary (8 vocabulary
+  terms adopted), Cross-references.
+- **`docs/CANONICAL-DISPLAY-CATALOG.md`** (new, ~400 LOC) —
+  companion catalog. Full per-primitive specs for the three
+  exemplars: Raw Text (with CommandOutputTuple wrapper for the
+  history sub-pane), Interactive List (with ConfirmationPrompt
+  hybrid for assertive-notification cases), Form with Text Input.
+  Each exemplar covers UIA control type, required pattern
+  providers, ARIA role analog, NVDA reading pattern, JAWS virtual
+  cursor behavior, Narrator behavior, interaction contract,
+  substrate consumption, update cadence, output channel routing,
+  example terminal scenarios. Extension points (SeverityAlert,
+  IndeterminateProgress, CommandOutputTuple, Tier-2 deferred,
+  Tier-3 deferred) listed with one-paragraph descriptions. Output
+  channel routing matrix at the end. Lifted from
+  `docs/research/Output-paradigms.md` §1.1, §1.2, §1.3, §1.6 with
+  attribution; CORE-ABSTRACTION-BOUNDARY.md §5 cited as the
+  three-exemplar framing authority.
+- **`docs/CORE-ABSTRACTION-BOUNDARY.md`** §7 — streaming-incomplete
+  protocol summary updated with vocabulary adopted in the RFC
+  (tail mask, drain-checkpoint-swap, seam hierarchy, sealed/
+  unsealed). Cross-references the RFC for normative spec; this
+  section becomes a one-paragraph summary going forward.
+- **`docs/CORE-ABSTRACTION-BOUNDARY.md`** §10 — cross-references
+  expanded to include the new RFC + catalog + the two research
+  docs (now in-repo as authoritative sources).
+- **`CLAUDE.md`** "Reading order at session start" — items 6 + 7
+  added for the RFC + catalog. Items 6-7 (spec/tech-plan + 
+  CONTRIBUTING) renumbered to 8-9.
+
+**Vocabulary adopted (project-canonical post-RFC):**
+
+- **Tail mask** (replaces "live region pointer") — per-row state
+  marking content as overwrite-in-place; LATEST semantics.
+- **Drain-checkpoint-swap** (replaces "alt-screen freeze") —
+  three-phase Stream ↔ TUI substrate transition.
+- **Seam hierarchy** (replaces "idle quanta as commit points") —
+  five-priority ordered emission-trigger ranking.
+- **Substrate-of-truth** — formalised; the canonical source from
+  which all derived projections compute.
+- **Literal-language convention** — `select / mark / announce /
+  present / read / focused / current`; sight metaphors
+  `highlight / view / show` eliminated for accessibility-bearing
+  prose.
+- **Sealed / unsealed events** — formalised; `Sealed: bool`
+  extension on every chunk; mirrors RFC 9112 §8.
+- **High-water-mark commit** — the producer's act of finalising
+  a slice of the committed buffer at a seam crossing; replaces
+  `extractContent`'s row-walk (post-Cycle 34).
+
+**Earcon frequency clarification:** the research's Brewster
+guidance (≥125 Hz, ≤5 kHz) conflicts with CONTRIBUTING.md's
+tighter empirical bound (<180 Hz or >1.5 kHz). The RFC defers to
+CONTRIBUTING.md as the production constraint; the research's
+wider lower bound is flagged as a future tuning experiment.
+**No change to CONTRIBUTING.md** in this PR.
+
+**Stopping gate (per the strategic plan §2 Cycle 33):**
+maintainer reads RFC + catalog before Cycle 34 implementation
+begins; signs off on (a) tail-mask vs. brief-drop-to-TuiPathway
+for live-region content, (b) 4 MB per-tuple cap appropriateness,
+(c) freeze-on-alt-screen handles spinner case (spinners do NOT
+enter alt-screen), (d) three exemplar canonical displays
+accepted as the working catalog seed, (e) earcon frequency
+conflict resolved in favor of CONTRIBUTING.md's tighter bounds.
+
 ### Added (Cycle 32b): first `IDisplayBuffer` consumer — TerminalView render path
 
 `TerminalView`'s UI render path (`OnRender`) now consumes the
