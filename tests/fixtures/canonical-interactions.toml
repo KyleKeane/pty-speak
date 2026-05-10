@@ -1,0 +1,170 @@
+# pty-speak — canonical interaction-pair corpus (Cycle 38a baseline)
+#
+# Curated catalogue of `(bytes-in, expected-NVDA-out)` scenarios.
+# The Ctrl+Shift+D diagnostic battery loads this file (deployed
+# next to Terminal.App.exe via Terminal.App.fsproj's Content + Link),
+# filters scenarios for the active shell, runs each, and reports
+# PASS / FAIL with the observed `SemanticCategory` events in the
+# bundle's `--- CANONICAL CORPUS RESULTS ---` section.
+#
+# # Schema
+#
+# Each `[[scenario]]` table requires:
+#   id                 string  Stable identifier (lower.dotted.case)
+#   shell              string  "cmd" / "powershell" / "claude"
+#   description        string  Narrative (what's being validated)
+#   command            string  Bytes to send (UTF-8; 0x0D CR appended)
+#   must_include       array   SemanticCategory names that MUST fire
+#   must_not_include   array   SemanticCategory names that MUST NOT fire
+#   quiescence_ms      int     Settling window after output stops (default 200)
+#   timeout_ms         int     Total scenario timeout (default 1500)
+#
+# Optional v2 extension fields (parsed but not yet enforced in 38a;
+# subsequent sub-cycles promote each to load-bearing):
+#   setup_command           string                Pre-test command
+#   expected_payload_regex  array of strings      Substrings the captured payload must match (38c)
+#   expected_session_tuple  table { command_text, output_text, exit_code }  (38b)
+#   expected_pane_routing   string  "input" / "current_output" / "history"  (38d)
+#   notes                   string                Free-form (especially "Bug: …; fixed in 38X")
+#
+# # Editing
+#
+# Scenarios should reflect CURRENT behaviour. Where current
+# behaviour is wrong, capture the regression with a `notes` field
+# explaining what the fix sub-cycle will flip; the assertion in
+# `must_include` / `must_not_include` should match what NVDA
+# CURRENTLY hears, so the corpus stays green at HEAD and the bug-
+# fix has to update the assertion alongside the code change.
+#
+# Valid SemanticCategory values (from
+# `src/Terminal.Core/OutputEventTypes.fs:42-111`):
+#   StreamChunk SelectionShown SelectionItem SelectionDismissed
+#   SpinnerTick ErrorLine WarningLine PromptDetected CommandSubmitted
+#   BellRang HyperlinkOpened AltScreenEntered ModeBarrier ParserError
+
+# ---------------------------------------------------------------
+# cmd seed (Cycle 38a; PowerShell extends in 38b, Claude in 38e)
+# ---------------------------------------------------------------
+
+[[scenario]]
+id = "cmd.echo.plain"
+shell = "cmd"
+description = "Plain `echo hello` should emit StreamChunk for the output 'hello' only."
+command = "echo PtySpeakDiagEchoPlain"
+must_include = ["StreamChunk"]
+must_not_include = ["ErrorLine", "WarningLine"]
+quiescence_ms = 200
+notes = "Bug 2026-05-10: input-echo + next prompt currently bleed into the StreamChunk. Cycle 38c separates input echo from output."
+
+[[scenario]]
+id = "cmd.dir.simple"
+shell = "cmd"
+description = "Plain `dir` lists the current directory; emits StreamChunk only."
+command = "dir"
+must_include = ["StreamChunk"]
+must_not_include = ["ErrorLine", "WarningLine"]
+quiescence_ms = 300
+timeout_ms = 2500
+
+[[scenario]]
+id = "cmd.dir.large"
+shell = "cmd"
+description = "Recursive `dir /s` against the Windows directory streams chunks at idle quanta."
+command = "dir /s /a-d C:\\Windows\\System32"
+must_include = ["StreamChunk"]
+must_not_include = ["ErrorLine"]
+quiescence_ms = 500
+timeout_ms = 5000
+notes = "Cycle 36 row 36.2 — large output; no per-row ErrorLine spam."
+
+[[scenario]]
+id = "cmd.exit.success"
+shell = "cmd"
+description = "Sub-shell exiting with code 0 emits StreamChunk only."
+command = "cmd /c exit 0"
+must_include = ["StreamChunk"]
+must_not_include = ["ErrorLine"]
+quiescence_ms = 200
+
+[[scenario]]
+id = "cmd.exit.failure"
+shell = "cmd"
+description = "Sub-shell exiting with code 1; ExitCode capture validates in 38b once tuple extension lands."
+command = "cmd /c exit 1"
+must_include = ["StreamChunk"]
+must_not_include = ["WarningLine"]
+quiescence_ms = 200
+notes = "Cycle 38b will add expected_session_tuple = { exit_code = 1 } once SessionModel exit-code capture is wired through the corpus runner."
+
+[[scenario]]
+id = "cmd.set.userprompt"
+shell = "cmd"
+description = "`set /P NAME=` is the cmd Read-Host equivalent; emits the prompt as a StreamChunk and waits for input."
+command = "set /P PtySpeakDiagName=Enter your name: "
+must_include = ["StreamChunk"]
+must_not_include = ["ErrorLine"]
+quiescence_ms = 300
+timeout_ms = 2000
+notes = "The prompt is currently announced as plain output; Cycle 38c marks input-prompt segments distinctly via expected_pane_routing = 'input'."
+
+[[scenario]]
+id = "cmd.choice.yn"
+shell = "cmd"
+description = "`choice /c YN /m \"Continue\"` is cmd's selection-prompt equivalent."
+command = "choice /c YN /m \"PtySpeakDiagContinue\""
+must_include = ["StreamChunk"]
+must_not_include = ["ErrorLine"]
+quiescence_ms = 300
+timeout_ms = 2000
+notes = "Bug 2026-05-10: SelectionDetector is shellKey-gated to claude (SelectionDetector.fs:81); choice fires StreamChunk but NOT SelectionShown. Cycle 38e generalises the detector to recognise cmd `choice` patterns."
+
+[[scenario]]
+id = "cmd.cls.alt"
+shell = "cmd"
+description = "`cls` is a full-screen erase; the linear-substrate live-region detector should classify it cleanly."
+command = "cls"
+must_include = []
+must_not_include = ["ErrorLine", "WarningLine"]
+quiescence_ms = 200
+notes = "cls produces minimal events post-cycle 35 substrate. May need adjustment after 38a baseline is captured by maintainer."
+
+[[scenario]]
+id = "cmd.echo.color.benign"
+shell = "cmd"
+description = "Cmd echoing benign text without ANSI red doesn't trigger ErrorLine."
+command = "echo PtySpeakDiagBenignColor"
+must_include = ["StreamChunk"]
+must_not_include = ["ErrorLine", "WarningLine"]
+quiescence_ms = 200
+notes = "cmd has minimal ANSI support; this row guards against the Phase A.2 colour-detector misfiring on monochrome output."
+
+[[scenario]]
+id = "cmd.echo.color.error"
+shell = "cmd"
+description = "Cmd echoing a red ANSI sequence should trigger ErrorLine alongside StreamChunk."
+command = "echo [31mPtySpeakDiagRedText[0m"
+must_include = ["StreamChunk", "ErrorLine"]
+must_not_include = ["WarningLine"]
+quiescence_ms = 200
+notes = "Regression guard mirroring T2.Red from the PowerShell battery — keeps the colour detector honest on cmd."
+
+[[scenario]]
+id = "cmd.multiline.continuation"
+shell = "cmd"
+description = "Multi-line input via `^` continuation; tests echo separation across the continuation line."
+command = "echo line1 ^\nline2"
+must_include = ["StreamChunk"]
+must_not_include = ["ErrorLine"]
+quiescence_ms = 300
+timeout_ms = 2500
+notes = "Bug 2026-05-10: continuation echo is announced indistinguishably from output. Cycle 38d's three-pane routing puts the continuation prompt in input pane."
+
+[[scenario]]
+id = "cmd.tab.completion"
+shell = "cmd"
+description = "Partial command followed by Tab triggers cmd's completion; the completed text should announce ONCE."
+command = "ec\tho PtySpeakDiagTabComplete"
+must_include = ["StreamChunk"]
+must_not_include = ["ErrorLine"]
+quiescence_ms = 300
+notes = "Cycle 36 row 36.8 — completion announces once, not re-announced on Enter. 38d's pane routing makes this load-bearing."

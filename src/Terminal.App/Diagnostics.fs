@@ -879,6 +879,7 @@ module Diagnostics =
             (configPath: string)
             (sessionLogSummary: string)
             (linearStreamSection: string)
+            (corpusResultsSection: string)
             : string =
         let sb = StringBuilder()
         let appendLine (s: string) = sb.AppendLine(s) |> ignore
@@ -933,6 +934,16 @@ module Diagnostics =
         appendLine linearStreamSection
         appendLine ""
 
+        // Cycle 38a — canonical interaction-pair corpus results.
+        // The runner ran the active shell's scenarios from
+        // `canonical-interactions.toml` (deployed next to the .exe);
+        // this section reports per-scenario PASS / FAIL with the
+        // observed `SemanticCategory` events. Empty body if the
+        // corpus file is missing or no scenarios match the shell.
+        appendLine "--- CANONICAL CORPUS RESULTS ---"
+        appendLine corpusResultsSection
+        appendLine ""
+
         appendLine "--- ENVIRONMENT (deny-listed values redacted) ---"
         appendLine (formatEnvironmentRedacted ())
         appendLine ""
@@ -968,6 +979,184 @@ module Diagnostics =
                 "Diagnostic snapshot file write failed at {Path}: {Message}",
                 path, ex.Message)
             None
+
+    // ---------------------------------------------------------------
+    // Cycle 38a — canonical interaction-pair corpus runner
+    // ---------------------------------------------------------------
+
+    /// Resolve the canonical-corpus TOML path. Lives next to the
+    /// Terminal.App.exe at runtime (Content + CopyToOutputDirectory
+    /// in `Terminal.App.fsproj`); the source-of-truth file lives at
+    /// `tests/fixtures/canonical-interactions.toml` in the repo and
+    /// is `<Link>`-flattened on copy. Returns `None` if the file
+    /// isn't present (e.g. running an older build where the corpus
+    /// hadn't shipped yet).
+    let private resolveCorpusPath () : string option =
+        let path =
+            Path.Combine(
+                AppContext.BaseDirectory,
+                "canonical-interactions.toml")
+        if File.Exists(path) then Some path else None
+
+    /// Filter a Scenario array down to the entries matching the
+    /// active shell's identifier. Maps `ShellRegistry.ShellId`
+    /// values to the corpus's lower-case shell-key strings —
+    /// mirrors the `shellIdToConfigKey` pattern in `Program.fs:1141`.
+    let private filterScenariosForShell
+            (shellId: ShellRegistry.ShellId)
+            (scenarios: CanonicalCorpus.Scenario[])
+            : CanonicalCorpus.Scenario[] =
+        let shellKey =
+            match shellId with
+            | ShellRegistry.Cmd -> "cmd"
+            | ShellRegistry.PowerShell -> "powershell"
+            | ShellRegistry.Claude -> "claude"
+        scenarios
+        |> Array.filter (fun s -> s.Shell = shellKey)
+
+    /// Run one scenario. Mirrors `runOneTest`'s shape but takes the
+    /// per-scenario `QuiescenceMs` / `TimeoutMs` parameters from
+    /// the Scenario record rather than the hard-coded 200/1500
+    /// `runOneTest` uses. Returns a `ScenarioResult` (no Boolean —
+    /// the caller assembles the bundle).
+    let private runOneScenario
+            (writer: DiagnosticLogWriter)
+            (writeBytes: byte[] -> Task)
+            (resolveSeq: unit -> int64)
+            (scenario: CanonicalCorpus.Scenario)
+            : Task<CanonicalCorpus.ScenarioResult> =
+        task {
+            let cat = sprintf "Diagnostic.Corpus.%s" scenario.Id
+            writer.WriteLine LogLevel.Information cat
+                (sprintf "BEGIN %s" scenario.Description)
+            let tap = DiagnosticEventTap()
+            // Setup phase (optional).
+            match scenario.SetupCommand with
+            | Some setupCmd ->
+                let setupBytes = commandBytes setupCmd
+                writer.WriteLine LogLevel.Information cat
+                    (sprintf "SETUP %s" (hexDump setupBytes))
+                tap.Enable()
+                do! writeBytes setupBytes
+                let! settled, elapsed =
+                    waitForQuiescence
+                        resolveSeq
+                        scenario.QuiescenceMs
+                        scenario.TimeoutMs
+                let setupEvents = tap.DisableAndDrain()
+                writer.WriteLine LogLevel.Information cat
+                    (sprintf "SETUP_RESULT settled=%b elapsedMs=%d events=%d"
+                         settled elapsed setupEvents.Length)
+            | None -> ()
+            // Main phase.
+            let mainBytes = commandBytes scenario.Command
+            writer.WriteLine LogLevel.Information cat
+                (sprintf "WRITE %s" (hexDump mainBytes))
+            tap.Enable()
+            let started = DateTimeOffset.UtcNow
+            do! writeBytes mainBytes
+            let! settled, _ =
+                waitForQuiescence
+                    resolveSeq
+                    scenario.QuiescenceMs
+                    scenario.TimeoutMs
+            let events = tap.DisableAndDrain()
+            let elapsedMs =
+                int (DateTimeOffset.UtcNow - started).TotalMilliseconds
+            let semantics =
+                events |> Array.map (fun ev -> ev.Semantic)
+            let payloads =
+                events |> Array.map (fun ev -> ev.Payload)
+            writer.WriteLine LogLevel.Information cat
+                (sprintf "WAIT settled=%b elapsedMs=%d" settled elapsedMs)
+            writer.WriteLine LogLevel.Information cat
+                (sprintf "EVENTS (%d): %s"
+                     events.Length
+                     (events
+                      |> Array.map formatEvent
+                      |> String.concat " | "))
+            // Evaluate must_include / must_not_include.
+            let missing =
+                scenario.MustInclude
+                |> Array.filter (fun s -> not (Array.contains s semantics))
+            let unexpected =
+                scenario.MustNotInclude
+                |> Array.filter (fun s -> Array.contains s semantics)
+            let outcome : CanonicalCorpus.ScenarioOutcome =
+                if not settled then
+                    CanonicalCorpus.Fail
+                        (sprintf "no quiescence within %dms" scenario.TimeoutMs)
+                elif not (Array.isEmpty missing) then
+                    let names =
+                        missing
+                        |> Array.map (sprintf "%A")
+                        |> String.concat ","
+                    CanonicalCorpus.Fail (sprintf "missing=%s" names)
+                elif not (Array.isEmpty unexpected) then
+                    let names =
+                        unexpected
+                        |> Array.map (sprintf "%A")
+                        |> String.concat ","
+                    CanonicalCorpus.Fail (sprintf "unexpected=%s" names)
+                else
+                    CanonicalCorpus.Pass
+            let outcomeMsg =
+                match outcome with
+                | CanonicalCorpus.Pass -> "PASS"
+                | CanonicalCorpus.Fail r -> sprintf "FAIL — %s" r
+            writer.WriteLine
+                (match outcome with
+                 | CanonicalCorpus.Pass -> LogLevel.Information
+                 | _ -> LogLevel.Warning)
+                cat outcomeMsg
+            let result : CanonicalCorpus.ScenarioResult =
+                { Scenario = scenario
+                  Outcome = outcome
+                  ObservedSemantics = semantics
+                  ObservedPayloads = payloads
+                  ElapsedMs = elapsedMs }
+            return result
+        }
+
+    /// Run the canonical-corpus scenarios for the active shell.
+    /// Returns `Ok results` on success or `Error message` if the
+    /// corpus file is missing or malformed (the caller emits a
+    /// short bundle section in that case).
+    let private runCorpus
+            (writer: DiagnosticLogWriter)
+            (writeBytes: byte[] -> Task)
+            (resolveSeq: unit -> int64)
+            (shellId: ShellRegistry.ShellId)
+            : Task<Result<CanonicalCorpus.ScenarioResult[], string>> =
+        task {
+            match resolveCorpusPath () with
+            | None ->
+                writer.WriteLine LogLevel.Information "Diagnostic.Corpus"
+                    "Corpus file not found next to executable; section omitted."
+                return Error "canonical-interactions.toml not found"
+            | Some path ->
+                writer.WriteLine LogLevel.Information "Diagnostic.Corpus"
+                    (sprintf "Loading corpus from %s" path)
+                match CanonicalCorpus.loadCanonicalCorpus path with
+                | Error e ->
+                    writer.WriteLine LogLevel.Warning "Diagnostic.Corpus"
+                        (sprintf "Corpus parse error: %s" e)
+                    return Error e
+                | Ok scenarios ->
+                    let filtered =
+                        filterScenariosForShell shellId scenarios
+                    writer.WriteLine LogLevel.Information "Diagnostic.Corpus"
+                        (sprintf
+                            "Loaded %d scenarios; %d match active shell %A."
+                            scenarios.Length filtered.Length shellId)
+                    let results = ResizeArray<CanonicalCorpus.ScenarioResult>()
+                    for scenario in filtered do
+                        let! r =
+                            runOneScenario
+                                writer writeBytes resolveSeq scenario
+                        results.Add(r)
+                    return Ok (results.ToArray())
+        }
 
     // ---------------------------------------------------------------
     // Main entry — runFullBattery
@@ -1081,6 +1270,26 @@ module Diagnostics =
                     log.LogInformation(
                         "Diagnostic battery complete. Pass={Pass} Fail={Fail} Total={Total}",
                         pass, fail, total)
+
+                    // Cycle 38a — canonical interaction-pair corpus
+                    // run. Independent of the existing per-shell
+                    // `DiagnosticTest` battery: the corpus targets
+                    // a curated catalogue of (bytes-in,
+                    // expected-NVDA-out) scenarios that grow over
+                    // sub-cycles 38b-e. Failure to load the corpus
+                    // (missing file, parse error) is non-fatal —
+                    // the bundle just renders an explanatory
+                    // section rather than aborting the battery.
+                    let! corpusResultOuter =
+                        runCorpus writer writeBytes resolveSeq shell.Id
+                    let corpusResultsSection =
+                        match corpusResultOuter with
+                        | Ok results ->
+                            CanonicalCorpus.formatCorpusResultsForBundle results
+                        | Error msg ->
+                            sprintf
+                                "(corpus skipped: %s)"
+                                msg
                     // Close the writer BEFORE reading the file for clipboard.
                     (writer :> IDisposable).Dispose()
                     // Read the diagnostic log content for clipboard. Same
@@ -1199,6 +1408,7 @@ module Diagnostics =
                             configPath
                             sessionLogSummary
                             linearStreamSection
+                            corpusResultsSection
                     let writtenPath = writeSnapshotFile log snapshotPath bundle
                     let savedFragment =
                         match writtenPath with

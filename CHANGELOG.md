@@ -15,6 +15,81 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 38a): Canonical interaction-pair corpus + diagnostic battery integration
+
+Regression scaffolding for the cmd / PowerShell / Claude per-shell
+parser-route refactors landing in Cycles 38b-e. The 35b regression
+went undetected for ~3 cycles (PR #249 hotfix); this cycle introduces
+a curated `(bytes-in, expected-NVDA-out)` corpus that the
+`Ctrl+Shift+D` battery loads and runs against the active shell so
+future substrate flips can't silently break announcement.
+
+**New module**:
+[`src/Terminal.Core/CanonicalCorpus.fs`](src/Terminal.Core/CanonicalCorpus.fs)
+defines the `Scenario` record + TOML parser. The schema is
+**tiered**: required v1 fields (id / shell / description / command /
+must_include / must_not_include / quiescence_ms / timeout_ms)
+match `Diagnostics.DiagnosticTest`'s shape exactly so the runner
+reuses `runOneTest`'s capture pipeline. Optional v2 extension
+fields (`setup_command`, `expected_payload_regex`,
+`expected_session_tuple`, `expected_pane_routing`, `notes`) are
+parsed but not yet enforced — subsequent sub-cycles promote each
+to load-bearing.
+
+**Seed corpus**:
+[`tests/fixtures/canonical-interactions.toml`](tests/fixtures/canonical-interactions.toml)
+ships 12 cmd scenarios drawn from real workflows + the existing
+Cycle 36 matrix:
+
+- `cmd.echo.plain`, `cmd.dir.simple`, `cmd.dir.large`
+- `cmd.exit.success`, `cmd.exit.failure`
+- `cmd.set.userprompt` (Read-Host equivalent)
+- `cmd.choice.yn` (selection prompt — currently fails because
+  `SelectionDetector` is shellKey-gated to claude; tagged for 38e)
+- `cmd.cls.alt`, `cmd.echo.color.benign`, `cmd.echo.color.error`
+- `cmd.multiline.continuation`, `cmd.tab.completion`
+
+Scenarios where current behaviour is wrong carry
+`notes = "Bug 2026-05-10: …; fixed in <sub-cycle>"`; the assertion
+lists what NVDA CURRENTLY hears so the corpus stays green at HEAD
+and the bug-fix sub-cycle has to update both code and assertion
+atomically.
+
+**Diagnostic battery integration**:
+[`src/Terminal.App/Diagnostics.fs`](src/Terminal.App/Diagnostics.fs)
+gains `runOneScenario` (mirrors `runOneTest` but with per-scenario
+`QuiescenceMs` / `TimeoutMs` rather than the hard-coded 200/1500),
+`runCorpus` (filters scenarios for active shell, runs each), and
+extends `formatDiagnosticBundle` with a new
+`--- CANONICAL CORPUS RESULTS ---` section. The corpus TOML is
+deployed next to `Terminal.App.exe` via Content + CopyToOutput in
+[`src/Terminal.App/Terminal.App.fsproj`](src/Terminal.App/Terminal.App.fsproj);
+runtime resolves it via `AppContext.BaseDirectory`. Failure to
+load the corpus (missing file, parse error) is non-fatal — the
+bundle just renders an explanatory section.
+
+**Tests**:
+[`tests/Tests.Unit/CanonicalCorpusTests.fs`](tests/Tests.Unit/CanonicalCorpusTests.fs)
+adds 12 facts pinning required-field round-trip, optional-field
+round-trip, missing-required-field error, unknown
+`SemanticCategory` error, unknown `expected_pane_routing` error,
+empty document, multiple-scenarios ordering, default
+`quiescence_ms` / `timeout_ms`, `formatScenarioResult` shape,
+`formatCorpusResultsForBundle` summary, empty-results summary.
+
+**Docs**:
+[`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
+gains a `### Cycle 38a — Canonical interaction corpus baseline`
+section with schema reference, the sub-cycle promotion table, a
+5-row manual matrix for the dogfood loop, and the stopping gate.
+
+**What 38a does NOT do**: per-shell route table (38b);
+echo-suppression for cmd (38c); three-pane channel routing (38d);
+PowerShell or Claude scenarios (38b/e); NVDA verbatim-text matching
+(parsed but not yet evaluated by `runCorpus`); CI gating on corpus
+results (post-38e once the corpus is comprehensive enough that
+random regressions are noise rather than design).
+
 ### Fixed (Hotfix): LinearTextStream bare-CR vs CR-LF disambiguation regression
 
 Pre-existing 34a-era bug surfaced after Cycle 35b's `substrate_mode = "auto"`

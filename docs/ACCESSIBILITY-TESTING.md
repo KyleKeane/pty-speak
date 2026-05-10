@@ -1235,6 +1235,72 @@ matrix's shrinking surface area over time.
   the producer side (pattern present + GetText returns a snapshot
   with the expected length floor) is now CI-pinned.
 
+### Cycle 38a — Canonical interaction corpus baseline
+
+Cycle 38a is the **regression scaffolding** for the cmd / PowerShell
+/ Claude per-shell parser-route work landing in 38b-e. It introduces
+a curated catalogue of `(bytes-in, expected-NVDA-out)` scenarios in
+[`tests/fixtures/canonical-interactions.toml`](../tests/fixtures/canonical-interactions.toml)
+that the `Ctrl+Shift+D` battery loads and runs against the active
+shell, reporting per-scenario PASS / FAIL in a new
+`--- CANONICAL CORPUS RESULTS ---` section in the bundle.
+
+**No behaviour change in 38a.** The corpus captures CURRENT
+behaviour as the baseline. Subsequent sub-cycles flip individual
+scenarios from FAIL → PASS as they fix the relevant pipeline
+behaviour:
+
+| Sub-cycle | Adds | Scenarios it makes load-bearing |
+|---|---|---|
+| 38b | Per-shell route table + PowerShell scenarios | `expected_session_tuple` (exit-code capture) |
+| 38c | Cmd input-echo suppression | `cmd.echo.plain`, `cmd.set.userprompt`, `expected_payload_regex` |
+| 38d | Three-sub-pane channel routing | `expected_pane_routing` (input / current_output / history) |
+| 38e | Claude scenarios + per-shell hardening | `cmd.choice.yn` (cross-shell SelectionShown) |
+
+**Corpus schema reference.** Each `[[scenario]]` table requires
+`id`, `shell`, `description`, `command`, `must_include`,
+`must_not_include`. Optional defaults: `quiescence_ms` (200),
+`timeout_ms` (1500). Optional v2 extensions parsed but not yet
+enforced in 38a: `setup_command`, `expected_payload_regex`,
+`expected_session_tuple`, `expected_pane_routing`, `notes`. Valid
+`SemanticCategory` values come from
+[`src/Terminal.Core/OutputEventTypes.fs`](../src/Terminal.Core/OutputEventTypes.fs)
+`type SemanticCategory` (lines 42-111).
+
+**Adding a scenario.** Edit the TOML file, rebuild, press
+`Ctrl+Shift+D`, look at the new section in the bundle. If the
+scenario reports PASS but the actual NVDA experience is wrong,
+the assertion is wrong — adjust `must_include` /
+`must_not_include` to reflect reality and add a `notes` field
+describing the gap.
+
+**Bug-tagged scenarios.** Scenarios where current behaviour is
+known-wrong carry `notes = "Bug 2026-05-XX: <gap>; fixed in
+<sub-cycle>"`. The assertion lists what NVDA CURRENTLY hears so
+the corpus stays green; the bug-fix sub-cycle has to update both
+the code and the assertion atomically.
+
+**Reading the bundle section.** The header `CORPUS: 9 PASS / 3
+FAIL / 12 total` summarises counts. Each scenario block shows id,
+elapsed ms, must_include / must_not_include sets, observed
+semantic categories, and notes (if present). FAIL scenarios get a
+reason after the elapsed time (`missing=…`, `unexpected=…`, or
+`no quiescence within Nms`).
+
+**Manual matrix row (Cycle 38a):**
+
+| Test | Procedure | Expected |
+|---|---|---|
+| 38a.1 — Corpus runs from Ctrl+Shift+D | Open cmd in pty-speak, press Ctrl+Shift+D, wait ~10 seconds | Bundle file in `%LOCALAPPDATA%\PtySpeak\diagnostic-snapshots\` contains `--- CANONICAL CORPUS RESULTS ---` section. Section starts with `CORPUS: <P> PASS / <F> FAIL / 12 total`. |
+| 38a.2 — Per-scenario reporting | Read each of the 12 scenario blocks in the bundle | Each scenario block shows `[PASS]` or `[FAIL]` with elapsed ms; observed semantics line; notes line for `Bug:`-tagged scenarios. |
+| 38a.3 — PowerShell skip | Switch to PowerShell with Ctrl+Shift+2; press Ctrl+Shift+D | Bundle reports `CORPUS: 0 PASS / 0 FAIL / 0 total` (no PowerShell scenarios in 38a; these arrive in 38b). |
+| 38a.4 — Claude skip | Switch to Claude with Ctrl+Shift+3; press Ctrl+Shift+D | Same as 38a.3 — no Claude scenarios in 38a; these arrive in 38e. |
+| 38a.5 — Behavioural calibration | For each `cmd.*` scenario in the bundle, run the same command manually in cmd and confirm the reported PASS / FAIL matches what NVDA actually does | Discrepancies → fixup commit on the PR adjusting the scenario's assertions until baseline matches reality. |
+
+**Stopping gate for 38a.** Maintainer-acknowledged baseline + bundle
+integration working. Subsequent sub-cycles use this baseline as
+their regression net.
+
 ## Why this is manual
 
 CI tests run on a Windows runner with no logged-in interactive
