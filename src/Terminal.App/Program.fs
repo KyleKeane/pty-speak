@@ -1277,6 +1277,13 @@ module Program =
         // Defined BEFORE `handleRowsChanged` so the latter can
         // dispatch heuristic-detected boundaries (Tier 1.D) via
         // this helper. F# `let` bindings are sequential.
+        //
+        // Cycle 35b — resolve the SubstrateMode once outside
+        // the per-boundary closure so the resolution doesn't
+        // run on every prompt event. `Config.tryLoad` happens
+        // at startup; no hot-reload, so resolved params are
+        // stable for the session.
+        let resolvedStreamParams = Config.resolveStreamParameters config
         let handlePromptBoundary
                 (boundary: PromptBoundaryData)
                 (snapshot: Cell[][])
@@ -1327,9 +1334,25 @@ module Program =
             // becomes a no-op. Cycle 24d-1: `Always` mode routes
             // through `EnqueueSync` (blocking) via
             // `dispatchTupleToWriter`.
+            // Cycle 35b — substrate-aware finalize. Resolve
+            // SubstrateMode against the alt-screen state captured
+            // at boundary time (mirrors
+            // StreamPathway.resolveSubstrateMode). Linear path
+            // becomes authoritative when the LinearTextStream
+            // producer has observed OSC 133 markers since the
+            // last finalize; falls back to extractContent for
+            // OSC-133-less shells (vanilla cmd, vanilla
+            // PowerShell). See Section 13 of the strategic plan
+            // for the eventual-cleanup conditions.
+            let useLinear =
+                match resolvedStreamParams.SubstrateMode with
+                | StreamPathway.Linear -> true
+                | StreamPathway.ScreenDiff -> false
+                | StreamPathway.Auto -> not screen.Modes.AltScreen
             let nextSession, finalisedOpt =
-                SessionModel.applyAndCapture
+                SessionModel.applyAndCaptureWithSubstrate
                     currentSession augmented snapshotForApply
+                    linearStream useLinear
             currentSession <- nextSession
             match finalisedOpt with
             | Some tuple -> dispatchTupleToWriter tuple

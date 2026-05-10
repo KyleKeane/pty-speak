@@ -91,12 +91,22 @@ let private suppressShrinkParameters : StreamPathway.Parameters =
 
 // Cycle 35a — test wrappers that inject a fresh LinearTextStream
 // per call so existing tests don't need to thread the new
-// parameter explicitly. Default SubstrateMode is ScreenDiff
-// (so the linear stream isn't read at runtime); the fresh
-// instance is harmless. New linear-mode tests construct their
-// own shared stream + call StreamPathway.X directly.
+// parameter explicitly.
+//
+// Cycle 35b — wrappers now force-override `SubstrateMode` back
+// to `ScreenDiff` for every fact that flows through them. This
+// preserves the screen-content-payload assertions in the 80+
+// facts that predate the substrate-inversion arc; the
+// `StreamPathway.defaultParameters` default flipped to `Auto`
+// in 35b but the legacy semantics live on inside the wrappers.
+// New 35a/35b facts that need to exercise the Linear or Auto
+// path bypass the wrappers and call `StreamPathway.X`
+// directly with their own parameters.
 let private freshLinearStream () : LinearTextStream.T =
     LinearTextStream.create LinearTextStream.defaultParameters
+
+let private legacyAware (p: StreamPathway.Parameters) : StreamPathway.Parameters =
+    { p with SubstrateMode = StreamPathway.ScreenDiff }
 
 let private processCanonicalState
         parameters
@@ -104,18 +114,18 @@ let private processCanonicalState
         now
         canonical
         : OutputEvent[] =
-    StreamPathway.processCanonicalState parameters state now canonical (freshLinearStream ())
+    StreamPathway.processCanonicalState (legacyAware parameters) state now canonical (freshLinearStream ())
 
 let private onTimerTick parameters state now : OutputEvent[] =
-    StreamPathway.onTimerTick parameters state now (freshLinearStream ())
+    StreamPathway.onTimerTick (legacyAware parameters) state now (freshLinearStream ())
 
 let private create parameters : DisplayPathway.T =
-    StreamPathway.create parameters (freshLinearStream ())
+    StreamPathway.create (legacyAware parameters) (freshLinearStream ())
 
 let private createWithExposedState
         parameters
         : DisplayPathway.T * StreamPathway.State =
-    StreamPathway.createWithExposedState parameters (freshLinearStream ())
+    StreamPathway.createWithExposedState (legacyAware parameters) (freshLinearStream ())
 
 // ---- Frame dedup ----------------------------------------------------
 
@@ -1582,14 +1592,20 @@ let ``Cycle 35a — SubstrateMode=Linear emits only post-watermark bytes on seco
     Assert.DoesNotContain("first", r2.[0].Payload)
 
 [<Fact>]
-let ``Cycle 35a — SubstrateMode=ScreenDiff (default) does NOT consult linear stream`` () =
+let ``Cycle 35a — SubstrateMode=ScreenDiff does NOT consult linear stream`` () =
+    // Cycle 35b — defaultParameters now has SubstrateMode=Auto,
+    // so this fact constructs ScreenDiff parameters explicitly
+    // rather than relying on the (no-longer-screen-diff) default.
+    let screenDiffParameters =
+        { StreamPathway.defaultParameters with
+            SubstrateMode = StreamPathway.ScreenDiff }
     let state = StreamPathway.createState ()
     let stream = LinearTextStream.create LinearTextStream.defaultParameters
     let stream = feedStream stream dt0 (System.Text.Encoding.ASCII.GetBytes "linear-only\n")
     let snap = snapshotOf 1 10 [ "screen" ]
     let result =
         StreamPathway.processCanonicalState
-            StreamPathway.defaultParameters state (at 0)
+            screenDiffParameters state (at 0)
             (canonicalAt snap 0L) stream
     Assert.Equal(1, result.Length)
     Assert.Contains("screen", result.[0].Payload)

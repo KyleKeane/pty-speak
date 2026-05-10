@@ -133,6 +133,58 @@ boundaries (e.g. typed-input echo dedup is both `[output-stream]`
 and `[input-buffer]` because the bridge is the echo-correlation
 API).
 
+## Open tech-debt items
+
+### [substrate-cleanup] Screen-diff legacy survives the Cycle 35b cutover (Section 13)
+
+**Status (post-Cycle 35b 2026-05-10):** OPEN; cleanup deferred
+to a future Cycle 39 once preconditions are met. Captured here
+so future readers can find the cleanup-cycle context from the
+in-code `TODO(Cycle 39)` comments at:
+- `src/Terminal.Core/SessionModel.fs` `extractContent`
+- `src/Terminal.Core/SessionModel.fs` `finalizeAndEnqueue`'s
+  `linearOverride` `None` branch
+- `src/Terminal.Core/StreamPathway.fs` `assembleSuffixPayload`
+
+**Three pieces of screen-diff legacy carry forward:**
+
+1. **`SessionModel.extractContent`** — the row-walk
+   reconstruction that survives as the hybrid fallback in
+   `applyAndCaptureWithSubstrate` for OSC-133-less shells
+   (vanilla cmd, vanilla PowerShell). Removable when broad
+   OSC 133 coverage exists OR an OSC-133-injecting shim
+   cycle ships that synthesises markers from
+   `HeuristicPromptDetector` events.
+2. **`StreamPathway.assembleSuffixPayload` +
+   `LastEmittedRowText` + `LastEmittedRowHashes`** — the
+   PR #166 sub-row suffix-diff for alt-screen TUIs +
+   users who explicitly opt into
+   `substrate_mode = "screen-diff"`. Removable when
+   alt-screen TUI handling moves to Linear OR when this
+   logic moves into a TuiPathway-internal module.
+3. **`StreamPathway.isSpinnerSuppressed`** — Path B
+   Levenshtein gate. Cycle 35c (queued) makes it screen-
+   diff-fallback-only without deleting; full deletion
+   requires confidence that the linear path's tail-mask
+   handles every spinner shape in the wild.
+
+**Preconditions for Cycle 39 (Screen-diff legacy removal):**
+1. OSC-133-injecting shim ships, OR maintainer accepts that
+   `Ctrl+Shift+Y` `CommandText` / `OutputText` becomes a
+   Claude-only feature.
+2. ≥4 weeks of dogfood with the hybrid (post-35b merge)
+   without Linear-mode regressions reported.
+
+**Why deferring is the right call:** see Section 13 of
+`/root/.claude/plans/we-do-not-need-fluffy-simon.md` for
+the full reasoning (insurance / coverage / decoupling).
+Short version: the hybrid is the textbook phased-migration
+architecture, not technical debt in the shameful-workaround
+sense — the debt that needs paying down is `extractContent`
+itself, and the right time to pay it down is when the
+linear path has weeks of dogfood data, not literally hours
+after shipping it.
+
 ## Entries
 
 The four entries below are **design-derived** from

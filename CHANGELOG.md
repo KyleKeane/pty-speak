@@ -15,6 +15,124 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 35b): default `[pathway.stream] substrate_mode` flipped to `auto` + SessionModel hybrid cutover
+
+The headline behavioural change of the substrate-inversion arc.
+After the maintainer manually validated the §3 advanced-CMD
+content matrix in both Linear and Auto modes against cmd,
+PowerShell, and Claude on 2026-05-10 — all 8 rows passed —
+Cycle 35b flips the default `SubstrateMode` from `ScreenDiff`
+to `Auto` so users get linear-substrate announces for non-alt-
+screen content + screen-diff for alt-screen TUIs without any
+TOML opt-in.
+
+`SessionModel.applyAndCapture` (the SessionTuple finalize path
+that feeds `Ctrl+Shift+Y` and the in-memory History queue)
+also gains a substrate-aware variant
+`applyAndCaptureWithSubstrate` that routes through
+`LinearTextStream.finalizeHighWaterMark` when OSC 133 markers
+are present, falling back to the legacy `extractContent` row-
+walk for OSC-133-less shells (vanilla cmd, vanilla PowerShell)
+so those users keep working.
+
+The legacy `apply` / `applyAndCapture` API is preserved with
+original signatures for the 80+ existing test callers and any
+external consumer that doesn't have a `LinearTextStream` in
+scope.
+
+**Regression escape hatch.** If you hit a Linear-mode
+regression, set `[pathway.stream] substrate_mode = "screen-
+diff"` in `%LOCALAPPDATA%\PtySpeak\config.toml` and restart
+pty-speak. See `docs/USER-SETTINGS.md` "Substrate mode" for
+the full TOML schema.
+
+- **`src/Terminal.Core/StreamPathway.fs:194`** — flipped
+  `defaultParameters.SubstrateMode` from `ScreenDiff` to
+  `Auto`.
+- **`src/Terminal.Core/LinearTextStream.fs`** — added
+  per-tuple `Osc133MarkersSetThisTuple: bool` flag set on
+  every OSC 133 event (PromptStart / CommandInputStart /
+  CommandOutputStart / CommandFinished) and reset in
+  `finalizeHighWaterMark`. New public accessor
+  `hasOsc133Markers: T -> bool` that SessionModel uses to
+  pick between the linear finalize and the extractContent
+  fallback.
+- **`src/Terminal.Core/SessionModel.fs`** — added the new
+  public surface:
+  - `applyWithSubstrate` and `applyAndCaptureWithSubstrate`
+    take `linearStream: LinearTextStream.T` + `useLinear:
+    bool` parameters.
+  - The shared body factored out as private
+    `applyAndCaptureCore` that takes a `linearOverride:
+    (string * string) option`. Legacy `applyAndCapture`
+    passes `None`; substrate-aware `applyAndCaptureWithSubstrate`
+    constructs `Some (cmd, out)` from
+    `LinearTextStream.finalizeHighWaterMark` when
+    `useLinear` resolves AND OSC 133 markers are present.
+  - `finalizeAndEnqueue` signature gained the
+    `linearOverride: (string * string) option` parameter;
+    body matches on it before calling `extractContent`.
+- **`src/Terminal.App/Program.fs:~1280-1340`** — composition
+  cutover: `handlePromptBoundary` now resolves the
+  `useLinear` boolean from the Config-resolved
+  `SubstrateMode` against `screen.Modes.AltScreen` (mirror
+  of `StreamPathway.resolveSubstrateMode`) and calls
+  `SessionModel.applyAndCaptureWithSubstrate`. The resolved
+  StreamPathway parameters are hoisted to a per-session
+  `let` so the resolution doesn't re-run per boundary.
+- **`tests/Tests.Unit/StreamPathwayTests.fs`** — test
+  wrappers (`processCanonicalState`, `onTimerTick`,
+  `create`, `createWithExposedState`) now apply a
+  `legacyAware` override that forces `SubstrateMode =
+  ScreenDiff` so the 80+ pre-substrate-inversion facts keep
+  their screen-content-payload assertions unchanged. The
+  Cycle 35a fact "SubstrateMode=ScreenDiff (default)" was
+  renamed + updated to construct ScreenDiff explicitly
+  (no longer the default).
+- **`tests/Tests.Unit/ConfigTests.fs`** — the four "absent"
+  / "unknown" / "non-string" facts updated to assert `Auto`
+  as the new fallback default. The three explicit-string
+  mappings (`"linear"`, `"screen-diff"`, `"auto"`) unchanged.
+- **`tests/Tests.Unit/LinearTextStreamTests.fs`** — 4 new
+  facts pinning `hasOsc133Markers` (false on fresh stream;
+  true after PromptStart; false for plain bytes; resets to
+  false after `finalizeHighWaterMark`).
+- **`tests/Tests.Unit/SessionModelTests.fs`** — 6 new facts
+  pin the substrate-aware path:
+  - `useLinear = false` bypasses the linear stream entirely.
+  - `useLinear = true` + OSC 133 markers populates
+    CommandText/OutputText from the stream.
+  - `useLinear = true` + no markers falls back to
+    `extractContent`.
+  - `useLinear = false` ignores OSC 133 markers (linear
+    stream has them).
+  - Non-finalize boundaries (PromptStart / CommandStart /
+    OutputStart) preserve Active-state semantics.
+  - Legacy `apply` / `applyAndCapture` regression check
+    confirms the original API still works.
+- **`docs/USER-SETTINGS.md`** — new "Substrate mode (Cycle
+  35a/35b)" section after the existing `[pathway.stream]`
+  parameters table. Documents the three values, the new
+  default, when to override, and the hybrid finalize
+  semantics.
+- **`docs/STAGE-7-ISSUES.md`** — new "Open tech-debt items"
+  section with the `[substrate-cleanup]` entry referencing
+  Section 13 of the strategic plan and the in-code
+  `TODO(Cycle 39)` comments.
+
+**Tech-debt removal sketch (Cycle 39).** The hybrid is the
+intermediate state. Section 13 of
+`/root/.claude/plans/we-do-not-need-fluffy-simon.md` sketches
+the eventual cleanup cycle that removes
+`SessionModel.extractContent` + the `linearOverride` `None`
+branch + the screen-diff `assembleSuffixPayload` legacy. The
+preconditions for Cycle 39 are (a) broad OSC 133 coverage
+(likely an OSC-133-injecting shim cycle for vanilla shells)
+AND (b) ≥4 weeks of dogfood with the hybrid in production
+without Linear-mode regressions reported. The cleanup is
+deferred to preserve the regression-rollback escape hatch
+during the dogfood window.
+
 ### Added (Cycle 35a): StreamPathway parallel linear-substrate path behind default-off TOML flag
 
 Introduces a parallel announce path in `StreamPathway` that

@@ -207,6 +207,19 @@ module LinearTextStream =
         /// of the current command (set by OSC 133;A, cleared
         /// by OSC 133;C).
         member val internal PromptStartOffset: int64 = 0L with get, set
+        /// Cycle 35b — true when ANY OSC 133 marker (A, C, or D)
+        /// has fired since the last `finalizeHighWaterMark`. The
+        /// SessionModel hybrid cutover uses this signal to decide
+        /// whether to route the SessionTuple finalize through the
+        /// linear stream's offsets or fall back to the legacy
+        /// `extractContent` row-walk for OSC-133-less shells
+        /// (vanilla cmd, vanilla PowerShell). Unlike the offset
+        /// fields (which are reset to `HighWaterMark` after
+        /// finalize and therefore appear "set" on subsequent
+        /// tuples), this flag is reset to `false` on each
+        /// finalize so a tuple with no OSC 133 events sees the
+        /// fallback.
+        member val internal Osc133MarkersSetThisTuple: bool = false with get, set
 
     // --------------------------------------------------------
     // Construction
@@ -489,11 +502,13 @@ module LinearTextStream =
                         let chunkNotifs = drainPending state now true
                         notifs <- chunkNotifs @ notifs
                         state.PromptStartOffset <- state.HighWaterMark
+                        state.Osc133MarkersSetThisTuple <- true
                         promptSeamCrossed <- true
                         handledByOsc133OrAltScreen <- true
                     | CommandInputStart ->
                         // End of prompt zone, start of typed
                         // command. Buffer continues; no seam.
+                        state.Osc133MarkersSetThisTuple <- true
                         handledByOsc133OrAltScreen <- true
                     | CommandOutputStart ->
                         // Output zone begins. Drain pending
@@ -502,6 +517,7 @@ module LinearTextStream =
                         let chunkNotifs = drainPending state now true
                         notifs <- chunkNotifs @ notifs
                         state.OutputStartOffset <- state.HighWaterMark
+                        state.Osc133MarkersSetThisTuple <- true
                         promptSeamCrossed <- true
                         handledByOsc133OrAltScreen <- true
                     | CommandFinished _ ->
@@ -509,6 +525,7 @@ module LinearTextStream =
                         // (output) sealed.
                         let chunkNotifs = drainPending state now true
                         notifs <- chunkNotifs @ notifs
+                        state.Osc133MarkersSetThisTuple <- true
                         promptSeamCrossed <- true
                         handledByOsc133OrAltScreen <- true
                     | NotOsc133 -> ()
@@ -757,8 +774,26 @@ module LinearTextStream =
             state.PromptStartOffset <- state.HighWaterMark
             state.OutputStartOffset <- state.HighWaterMark
             state.Truncated <- false
+            state.Osc133MarkersSetThisTuple <- false
 
             (chunk, state))
+
+    /// Cycle 35b — true when the producer has observed any OSC
+    /// 133 marker (PromptStart / CommandInputStart /
+    /// CommandOutputStart / CommandFinished) since the last
+    /// `finalizeHighWaterMark`. SessionModel's hybrid cutover
+    /// uses this signal to decide whether to route the
+    /// SessionTuple finalize through the linear stream's offsets
+    /// or fall back to the legacy `extractContent` row-walk for
+    /// OSC-133-less shells (vanilla cmd, vanilla PowerShell).
+    ///
+    /// Implementation tracks a per-tuple boolean rather than
+    /// inspecting `PromptStartOffset > 0L` because the offsets
+    /// reset to `HighWaterMark` after each finalize — which
+    /// would always appear "set" on subsequent tuples even if
+    /// no OSC 133 events fire during them.
+    let hasOsc133Markers (state: T) : bool =
+        lock state.Gate (fun () -> state.Osc133MarkersSetThisTuple)
 
     // --------------------------------------------------------
     // Diagnostic accessor (for Cycle 34b Ctrl+Shift+D)
