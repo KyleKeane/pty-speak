@@ -221,6 +221,30 @@ module LinearTextStream =
         /// fallback.
         member val internal Osc133MarkersSetThisTuple: bool = false with get, set
 
+        /// Hotfix — bare-CR vs CR-LF disambiguation. RFC §5.3 #3
+        /// distinguishes a bare `\r` (overwrite-in-place spinner
+        /// frame; transitions current row into tail-mask) from
+        /// `\r\n` (a normal newline; just a row boundary, no
+        /// tail-mask). The disambiguation requires looking at
+        /// the NEXT event after `\r`. When `\r` arrives we set
+        /// this flag instead of immediately moving Pending →
+        /// TailMask; the next event resolves: if LF, clear flag
+        /// (CRLF = newline); if anything else, perform the
+        /// deferred tail-mask transition before processing the
+        /// new event. The state is preserved across chunks: a
+        /// chunk ending with `\r` keeps the flag set so the
+        /// FIRST event of the next chunk resolves correctly.
+        ///
+        /// Without this disambiguation, every cmd / PowerShell
+        /// output line (which all use `\r\n`) would be moved to
+        /// TailMask on the `\r` and never flushed (cmd doesn't
+        /// emit OSC 133 sealed seams). Result: `Committed`
+        /// only ever holds bare `\n` bytes; `assembleSuffixFromStream`
+        /// returns content the sanitiser strips; NVDA hears
+        /// nothing — the regression that surfaced after Cycle
+        /// 35b's default flip to `auto` substrate mode.
+        member val internal PendingCRDeferred: bool = false with get, set
+
     // --------------------------------------------------------
     // Construction
     // --------------------------------------------------------
@@ -486,6 +510,30 @@ module LinearTextStream =
             // parser's events but not from the linear stream.
 
             for event in events do
+                // Hotfix — resolve any deferred CR from the
+                // previous iteration (or the previous chunk if
+                // this is event[0] and the prior chunk ended
+                // with `\r`). If the current event is LF, the
+                // pair is `\r\n` — a normal newline boundary,
+                // no tail-mask transition. Otherwise, the bare
+                // `\r` was an overwrite-in-place; perform the
+                // EnterTailMask transition now (move Pending
+                // bytes that accumulated BEFORE the CR into
+                // TailMask for the current row).
+                if state.PendingCRDeferred then
+                    state.PendingCRDeferred <- false
+                    let isFollowingLF =
+                        match event with
+                        | Execute b when b = 0x0Auy -> true
+                        | _ -> false
+                    if not isFollowingLF then
+                        let pendingBytes = state.Pending.ToArray()
+                        state.Pending.Clear()
+                        state.TailMask <-
+                            Map.add state.CurrentRow pendingBytes state.TailMask
+                        state.TailMaskTimestamps <-
+                            Map.add state.CurrentRow now state.TailMaskTimestamps
+
                 // Special-case OSC 133 + alt-screen toggle
                 // FIRST since they take priority over any
                 // live-region effect; for everything else
@@ -552,6 +600,19 @@ module LinearTextStream =
                     state.Pending.Add(b)
                     encounteredLF <- true
                     state.CurrentRow <- state.CurrentRow + 1
+
+                | Execute b when b = 0x0Duy ->
+                    // CR. Defer the tail-mask decision to the
+                    // next event (resolved at the top of the
+                    // next iteration). If the next event is LF,
+                    // we have `\r\n` and no tail-mask is needed
+                    // (the LF handler increments CurrentRow).
+                    // Otherwise, the deferred-CR resolver will
+                    // perform the EnterTailMask transition.
+                    // Pre-empt the live-region classifier below
+                    // so it doesn't immediately tail-mask.
+                    state.PendingCRDeferred <- true
+                    handledByOsc133OrAltScreen <- true
 
                 | Print rune ->
                     // Printable Unicode codepoint. Encode as
