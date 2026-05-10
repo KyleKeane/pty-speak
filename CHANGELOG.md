@@ -45,6 +45,9 @@ resolves the ambiguity:
 
 The flag persists across chunks: a chunk ending with `\r` keeps the
 flag set so the FIRST event of the next chunk resolves correctly.
+`tick` also resolves a deferred CR after `IdleQuantumMs` elapses
+(the spinner-pause case) so bare-CR live-region updates still fire
+when the producer is idle.
 
 After the fix, cmd / PowerShell output flows through Linear correctly
 and NVDA announces resume across all shells without the
@@ -56,6 +59,75 @@ covering CRLF in same chunk, bare CR + tail-mask transition,
 chunk-spanning CR + LF (CRLF resolves), chunk-spanning CR + Print
 (bare CR resolves), multiple CRLF lines (the cmd output regression
 case), and empty chunk after deferred CR (flag persists).
+
+### Changed (Cycle 37b): UIA listbox peer ships; NVDA reads Claude tool-use prompts as ControlType.List
+
+Closes the Stage 8e-B canonical-display arc (interactive-list
+exemplar). Adds `TerminalListAutomationPeer` and
+`TerminalListItemAutomationPeer` virtual UIA peers in
+[`Terminal.Accessibility`](src/Terminal.Accessibility/TerminalAutomationPeer.fs);
+both derive directly from `System.Windows.Automation.Peers.AutomationPeer`
+(no FrameworkElement backing — virtual peers materialized only
+while a selection prompt is active). `TerminalListAutomationPeer`
+implements `ISelectionProvider` (CanSelectMultiple=false,
+IsSelectionRequired=true); `TerminalListItemAutomationPeer`
+implements `ISelectionItemProvider` + `IInvokeProvider` per
+`docs/CANONICAL-DISPLAY-CATALOG.md` §2.14 (ConfirmationPrompt
+hybrid). NVDA in focus mode hears "list with 4 items, Edit, 1 of
+4"; arrow-down announces "Yes, 2 of 4" via
+`SelectionItemPatternIdentifiers.ElementSelectedEvent`;
+`IInvokeProvider.Invoke()` writes `\r` (0x0D) to the PTY for
+single-key activation.
+
+`TerminalAutomationPeer` (the document peer) is extended to:
+
+- Take a third constructor parameter `writePtyBytes:
+  Action<byte[]>` (passed by the View's `OnCreateAutomationPeer`)
+  that threads the PTY-write callback to `TerminalListItemAutomationPeer`'s
+  Invoke handler.
+- Override `IsContentElementCore` to return `false` while a list
+  peer is active — the §8.5 dedup mechanic that prevents NVDA
+  from reading the list rows as both document text and listbox
+  items. Per the 2026-05-10 design choice: full-document form
+  (simpler; trade-off accepted: NVDA reading-cursor history is
+  suspended while a prompt is active).
+- Override `GetChildrenCore` to expose the active list peer as
+  the sole child while one is materialized.
+- Add `UpdateSelectionState(payload: SelectionRawPayload)` —
+  called from the View's `AnnounceRawPayload` cutover (replacing
+  the 37a log-only stub) on the WPF UI thread; transitions
+  through "shown" → "item" → "dismissed" with appropriate
+  `RaiseAutomationEvent(StructureChanged)` calls.
+
+[`SelectionProfile`](src/Terminal.Core/SelectionProfile.fs) drops
+the duplicate NVDA `RenderText` decision retained for the 37a
+bridge — keeping it would cause double-announce (text + listbox).
+The FileLogger `RenderText` decision stays as the audit trail.
+Selection events now emit 2 ChannelDecisions: FileLogger
+RenderText + NVDA RenderRaw.
+
+[`TerminalView.AnnounceRawPayload`](src/Views/TerminalView.cs)
+cutover: replaces the 37a stub with peer-state delegation.
+Adds public `WritePtyBytes(byte[])` that bridges the peer's
+IInvokeProvider callback to the View's private `_writeBytes`
+field.
+
+Tests: 14 new `TerminalListAutomationPeerTests` facts (direct
+F# instantiation + interface inspection; no FlaUI / WPF runtime
+dependency — uses a minimal `TestStubAutomationPeer` for the
+parent peer). 4 updated `SelectionProfileTests` facts (3-decision
+shape → 2-decision shape; index shifts 0↔1↔2).
+
+**Manual NVDA validation gate**: the 7-row matrix in
+[`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
+`### Cycle 37` is the load-bearing acceptance gate per
+[`CONTRIBUTING.md`](CONTRIBUTING.md) "non-negotiable accessibility
+rules". PR cannot squash-merge until maintainer confirms all
+rows pass on real NVDA.
+
+After 37b ships, the canonical-display exemplar count goes from
+1 → 2 (raw text + interactive list). Cycle 38 picks up the
+third (form-with-text-input).
 
 ### Changed (Cycle 37a): SelectionProfile emits RenderRaw substrate alongside RenderText
 

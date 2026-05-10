@@ -46,6 +46,7 @@
     <Compile Include="IOutputSinkTests.fs" />
     <Compile Include="EarconProfileTests.fs" />
     <Compile Include="SelectionProfileTests.fs" />
+    <Compile Include="TerminalListAutomationPeerTests.fs" />
     <Compile Include="OutputDispatcherTests.fs" />
     <Compile Include="KeyEncodingTests.fs" />
     <Compile Include="FileLoggerTests.fs" />

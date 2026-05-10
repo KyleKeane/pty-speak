@@ -1034,6 +1034,96 @@ findstr /C:"--- LINEAR STREAM" "<bundle-path>"
 These recipes lean on the existing diagnostic-bundle infrastructure
 shipped in Cycle 34b; no new logging is required.
 
+### Cycle 37 — UIA listbox peer (interactive-list canonical-display)
+
+Cycle 37 (37a + 37b) replaces SelectionProfile's Cycle 29b
+text-only NVDA announcements with full UIA listbox semantics.
+NVDA hears Claude tool-use selection prompts as a real
+`ControlType.List` with `1 of N` semantics, per
+`spec/tech-plan.md` §8.2-§8.5 and
+[`docs/CANONICAL-DISPLAY-CATALOG.md`](CANONICAL-DISPLAY-CATALOG.md)
+§2 (interactive list exemplar) + §2.14 (ConfirmationPrompt
+hybrid: items also implement `IInvokeProvider` for single-key
+activation).
+
+**This is the load-bearing acceptance gate for PR 37b.** Per
+[`CONTRIBUTING.md`](../CONTRIBUTING.md) "non-negotiable
+accessibility rules", PR 37b cannot squash-merge until the
+maintainer confirms all rows below pass on real NVDA.
+
+**Pre-requisites.** Set `PTYSPEAK_SHELL=claude` (or
+`Ctrl+Shift+3` to switch to Claude in-session). SelectionDetector
+is shellKey-gated to `"claude"` only — cmd / PowerShell /
+non-Claude shells short-circuit detection and the list peer
+never materializes for those.
+
+| Test                                                     | Procedure                                                                                                            | Expected NVDA shape                                                                                                                                                                                                                                                              |
+|----------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 37.1 List appearance (Cycle 37b)                         | In Claude (`Ctrl+Shift+3`), ask "edit a file" to trigger the Edit/Yes/Always/No prompt. Wait for the highlight.       | NVDA in focus mode: announces "list with 4 items, Edit, 1 of 4". NVDA in browse mode: announces "list" on cursor entry. The `StructureChanged` event fires; the new `TerminalList` child appears in the peer tree (verifiable via Inspect.exe).                                  |
+| 37.2 Browse-mode item navigation (Cycle 37b)             | NVDA+Down or right-arrow to navigate the list cells in browse mode.                                                  | Each item announces with its number/total: "Yes, 2 of 4", "Always, 3 of 4", "No, 4 of 4". UIA `PositionInSet` / `SizeOfSet` populated correctly per `TerminalListItemAutomationPeer.GetPositionInSetCore`/`GetSizeOfSetCore`.                                                     |
+| 37.3 Highlight movement (terminal-side, Cycle 37b)       | With NVDA in focus mode, press the keyboard's Down arrow (PTY echoes; Claude shifts highlight).                      | NVDA announces the new selection: "Yes, 2 of 4". The `SelectionItemPatternIdentifiers.ElementSelectedEvent` fires from `TerminalListAutomationPeer.UpdateSelection`; NVDA refocuses to the new item.                                                                              |
+| 37.4 Invoke (Enter on selected item, Cycle 37b)          | With NVDA in focus mode on the selected item, press Enter (NVDA's Enter key in focus mode invokes the focused item). | The PTY receives `\r` (0x0D byte) via `IInvokeProvider.Invoke()` → `TerminalView.WritePtyBytes`. The prompt dismisses; "selection dismissed" structural event fires (StructureChanged); list peer drops from `GetChildren`. Claude proceeds with the chosen action.               |
+| 37.5 Dismissal cleanup (Cycle 37b)                       | After the prompt disappears (via Enter or terminal-side Esc), navigate document with NVDA reading cursor.            | The list peer is gone (verified via Inspect.exe — `TerminalView` child count returns to 0). Document `IsContentElementCore` returns to `true`; reading cursor works again on document text.                                                                                      |
+| 37.6 Document dedup (full-document IsContentElement, Cycle 37b) | While the list is showing, attempt to read terminal text with NVDA reading cursor (Insert+Up/Down).                  | Reading cursor cannot enter the document (full-document `IsContentElement = false` while list active per the 2026-05-10 design choice). Documented limitation; iterate to per-range exclusion in a follow-up if the trade-off bites the maintainer's reading flow.               |
+| 37.7 cmd `choice` non-claude shell (Cycle 37b)           | In cmd (`Ctrl+Shift+1`), run `choice /c YN /m "Continue?"`. Type `Y`.                                                | `cmd choice` is prompt-line, not a multi-row interactive list. SelectionDetector is shellKey-gated to `"claude"` only. The list peer never materializes. Verify via FileLogger: `Ctrl+Shift+D` bundle's `--- FILELOGGER ACTIVE LOG ---` shows ZERO `Semantic=SelectionShown` lines during the cmd session. |
+
+**Diagnostic decoders for Cycle 37b:**
+
+- **NVDA reads selection text but no listbox structure** →
+  the cutover may not be in effect. Capture
+  `Ctrl+Shift+D` bundle and grep
+  `--- FILELOGGER ACTIVE LOG ---` for `Semantic=SelectionShown`
+  rows. The text payload should be present (FileLogger keeps
+  the audit trail), but no `RawPayload received` warning lines
+  (those would indicate the View's `AnnounceRawPayload` is
+  receiving an unexpected payload type).
+- **NVDA hears the list announcement TWICE** ("selection
+  prompt: Edit, Yes, Always, No (selected: Yes)" then
+  "list with 4 items, Edit, 1 of 4") → Cycle 37b's
+  `SelectionProfile.fs` cleanup may have regressed; the
+  duplicate NVDA `RenderText` decision is still being emitted.
+  Pin-test failure on `SelectionProfile`'s `decisions.Length =
+  2` invariant catches this at CI.
+- **List peer doesn't appear in NVDA's UIA tree at all** →
+  use Inspect.exe to walk the tree. If the `TerminalView`
+  Document peer has no `TerminalList` child while a Claude
+  prompt is showing, `TerminalAutomationPeer.UpdateSelectionState`
+  is not firing. Capture FileLogger; grep
+  `Semantic=SelectionShown` to confirm the substrate is
+  emitting the event.
+- **`IInvokeProvider.Invoke()` fires but PTY doesn't
+  receive `\r`** → `TerminalView.WritePtyBytes` may be
+  short-circuiting (`_writeBytes` is null because `SetPtyHost`
+  wasn't called yet). Reproduce with the app already in steady
+  state (post-startup); the wiring race only happens during
+  the very first second after launch.
+- **Cycle 37c arrives** with NVDA list-mode arrow-key
+  translation (NVDA in focus mode pressing Down sends Down to
+  the peer, peer translates to PTY arrow byte). 37b ships
+  read-only UIA semantics: NVDA hears the list correctly but
+  can't drive selection from focus mode without falling
+  through to the input layer (which works today via PTY echo).
+
+**FileLogger grep recipes (post-merge dogfood verification).**
+
+```cmd
+:: cmd — verify the substrate is emitting SelectionShown for Claude sessions
+findstr /C:"Semantic=SelectionShown" "%LOCALAPPDATA%\PtySpeak\diagnostic-snapshots\snapshot-<latest>.txt"
+:: Expected: one or more rows during a Claude session that triggered a tool-use prompt.
+```
+
+```cmd
+:: cmd — verify NO unexpected RawPayload type errors
+findstr /C:"AnnounceRawPayload received unexpected" "%LOCALAPPDATA%\PtySpeak\diagnostic-snapshots\snapshot-<latest>.txt"
+:: Expected: zero rows. Any match indicates payload type drift between substrate and channel.
+```
+
+```powershell
+# PowerShell — same checks
+Select-String -Pattern "Semantic=SelectionShown" -Path "$env:LOCALAPPDATA\PtySpeak\diagnostic-snapshots\snapshot-*.txt"
+Select-String -Pattern "AnnounceRawPayload received unexpected" -Path "$env:LOCALAPPDATA\PtySpeak\diagnostic-snapshots\snapshot-*.txt"
+```
+
 ## Recording results
 
 For each release tag:

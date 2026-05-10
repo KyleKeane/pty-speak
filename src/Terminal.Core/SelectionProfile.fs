@@ -36,17 +36,17 @@ namespace Terminal.Core
 ///   additive observer for the events it claims; mirrors the
 ///   `EarconProfile` pattern exactly).
 ///
-/// **Cycle 37a (Stage 8e-B substrate).** Apply now emits a
-/// THIRD ChannelDecision per Selection event: an NVDA-channel
-/// `RenderRaw` payload of type `SelectionRawPayload` carrying
-/// the UIA listbox metadata. The pre-existing NVDA-channel
-/// `RenderText` decision is retained for the bridge interval
-/// between 37a (substrate) and 37b (peers) — NVDA continues to
-/// announce text from `RenderText` while the
-/// `Terminal.Accessibility` peer is being built. 37b drops the
-/// duplicate NVDA `RenderText` decision once the peer takes
-/// over; FileLogger's `RenderText` decision is preserved as
-/// the audit trail.
+/// **Cycle 37b (Stage 8e-B peer cutover).** Apply emits TWO
+/// ChannelDecisions per Selection event: a FileLogger-channel
+/// `RenderText` (audit trail) and an NVDA-channel `RenderRaw`
+/// payload of type `SelectionRawPayload` carrying the UIA
+/// listbox metadata. The 37a interim NVDA-channel `RenderText`
+/// decision has been dropped now that
+/// `TerminalListAutomationPeer` (in `Terminal.Accessibility`)
+/// takes over the announce semantics — NVDA hears the list as
+/// a real `ControlType.List` with `1 of 4` semantics, not as
+/// rendered plain text. The FileLogger text decision remains
+/// for the audit trail (paste-back debugging post-incident).
 ///
 /// **No Parameters record.** Profile is stateless (the tunable
 /// thresholds live on `SelectionDetector.Parameters`, not here).
@@ -101,13 +101,6 @@ module SelectionProfile =
             | _ -> None
         | None -> None
 
-    /// Build an NVDA-channel decision carrying the supplied
-    /// already-sanitised text. Mirrors `EarconProfile`'s
-    /// `earconDecision` helper.
-    let private nvdaDecision (text: string) : ChannelDecision =
-        { Channel = NvdaChannel.id
-          Render = RenderText text }
-
     /// Build a FileLogger-channel decision carrying the supplied
     /// text. The detector's payloads are already sanitised via
     /// `AnnounceSanitiser.sanitise`; the rendered text we add
@@ -132,17 +125,18 @@ module SelectionProfile =
           Render = RenderRaw (payload :> obj) }
 
     /// Construct the decisions array for a single Selection event.
-    /// 37a emits THREE decisions (Option A bridge): NVDA
-    /// `RenderText` so NVDA continues to announce during the 37a
-    /// interim window; FileLogger `RenderText` for the audit
-    /// trail; NVDA `RenderRaw` carrying the UIA payload for the
-    /// 37b peer to consume.
+    /// Cycle 37b emits TWO decisions: FileLogger `RenderText` for
+    /// the audit trail (paste-back debugging) + NVDA `RenderRaw`
+    /// carrying the UIA payload for `TerminalListAutomationPeer`
+    /// to consume. The 37a-interim NVDA `RenderText` decision was
+    /// dropped now that the peer takes over the announce
+    /// semantics — keeping it would cause double-announce (text
+    /// + listbox).
     let private selectionDecisions
             (text: string)
             (payload: SelectionRawPayload)
             : ChannelDecision[] =
-        [| nvdaDecision text
-           fileLoggerDecision text
+        [| fileLoggerDecision text
            rawDecision payload |]
 
     /// Cycle 37a — build the raw payload for a `SelectionShown`
