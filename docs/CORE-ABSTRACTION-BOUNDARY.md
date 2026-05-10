@@ -487,22 +487,35 @@ same substrate.
 The linear-text substrate is **incomplete at every tick**. A
 byte that arrived 5ms ago might be the start of a longer
 sequence whose final shape is still in flight. The protocol
-that lets profiles emit usefully against an incomplete stream:
+that lets profiles emit usefully against an incomplete stream
+is specified in full in
+[`docs/rfc/0001-linear-text-substrate.md`](rfc/0001-linear-text-substrate.md)
+§5 (the seam-hierarchy commit model + cadence parameters +
+ranked live-region detection + sealed/unsealed extension).
+This section's framing is preserved as a one-paragraph
+summary; the RFC supersedes for normative spec.
 
-- **Idle quanta as commit points.** Coalescer's debounce-window
-  fire = high-water-mark commit; profiles emit suffix-since-
-  last-commit.
+- **Seam hierarchy.** Five-priority commit triggers (semantic
+  prompt seam > newline > idle quantum > max-bytes > max-time)
+  per RFC §5.1; lifted from
+  [`docs/research/emission-paradigms.md`](research/emission-paradigms.md)
+  §3.A. Each stronger seam pre-empts weaker ones.
 - **Prompt boundary as finalize.** `HeuristicPromptDetector`
-  fire = `SessionTuple.OutputText` sealed; immutable in History.
+  fire = `LinearTextStream.finalizeHighWaterMark` (post-Cycle
+  34) → `SessionTuple.OutputText` sealed; immutable in History.
 - **Mid-stream events carry `Sealed: bool` extension.** Unsealed
   events are advisory (profiles may show provisional state but
   must not commit irreversibly); sealed events are authoritative.
-- **Live region.** A `(start, length)` pointer into the
-  substrate tail. Bytes overwriting the live region (`\r`-
-  without-`\n`, cursor-up-then-back, ESC[K) replace tail; do
-  not append. Spinners + progress bars + `--More--` paginator
-  prompts live here. Detection mechanism finalized in Cycle 33
-  RFC.
+  Mirrors RFC 9112 §8 incomplete-message contract.
+- **Tail mask** (replaces the older "live region pointer"
+  framing per Cycle 33 vocabulary adoption). Per-row state
+  marking content as overwrite-in-place. Bytes overwriting via
+  `\r`-without-`\n`, cursor-up-then-back, ESC[K replace the
+  masked region; do not append. Spinners + progress bars +
+  `--More--` paginator prompts live here with LATEST semantics.
+- **Drain-checkpoint-swap** (replaces "alt-screen freeze"
+  framing). Three-phase Stream ↔ TUI substrate transition per
+  RFC §6.
 
 This protocol is the contract that makes the linear-text
 substrate usable by channels without erasing the streaming
@@ -561,6 +574,16 @@ a boundary violation; reviewers block.
 
 - **ADR**: [`adr/0001-substrate-channel-dichotomy.md`](adr/0001-substrate-channel-dichotomy.md)
 - **Strategic plan**: [`PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md)
+- **Substrate RFC** (Cycle 33 — pivot gate):
+  [`rfc/0001-linear-text-substrate.md`](rfc/0001-linear-text-substrate.md).
+  Specifies the `LinearTextStream` producer + streaming-
+  incomplete emission protocol + drain-checkpoint-swap;
+  supersedes §7 informal protocol for normative spec.
+- **Canonical-display catalog** (Cycle 33 — pivot gate):
+  [`CANONICAL-DISPLAY-CATALOG.md`](CANONICAL-DISPLAY-CATALOG.md).
+  Full per-primitive UIA / ARIA / NVDA / JAWS / Narrator /
+  channel-routing specs for the three exemplars + named
+  extension points; companion to the substrate RFC.
 - **Channel principle (older framing)**:
   [`CHANNEL-ARCHITECTURE.md`](CHANNEL-ARCHITECTURE.md)
 - **Pipeline mechanics**: [`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md)
@@ -568,6 +591,10 @@ a boundary violation; reviewers block.
 - **Session history**: [`SESSION-MODEL.md`](SESSION-MODEL.md)
 - **Pane catalog + sub-pane decomposition**:
   [`PANE-MODEL.md`](PANE-MODEL.md)
+- **Research sources** (now in-repo as authoritative):
+  [`research/emission-paradigms.md`](research/emission-paradigms.md),
+  [`research/Output-paradigms.md`](research/Output-paradigms.md).
+  Primary sources for the Cycle 33 RFC + catalog lifts.
 - **Spec authority**: [`spec/tech-plan.md`](../spec/tech-plan.md)
 
 ### Boundary interfaces (the actual code)

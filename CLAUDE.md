@@ -40,9 +40,27 @@ before deviating.
    reserved peer panes (notification queue, contextual keyword
    info, input assistant). Read before working on substrate or
    channel code.
-6. **[`spec/tech-plan.md`](spec/tech-plan.md)** §N for the canonical
+6. **[`docs/rfc/0001-linear-text-substrate.md`](docs/rfc/0001-linear-text-substrate.md)**
+   — Cycle 33 pivot-gate RFC. Specifies the `LinearTextStream`
+   producer, the streaming-incomplete emission protocol (seam
+   hierarchy + cadence parameters + ranked live-region detection
+   + sealed/unsealed events), and the drain-checkpoint-swap
+   protocol for Stream ↔ TUI substrate transitions. Supersedes
+   CORE-ABSTRACTION-BOUNDARY.md §7's informal protocol for
+   normative spec. Read before working on Cycle 34+ substrate-
+   inversion implementation.
+7. **[`docs/CANONICAL-DISPLAY-CATALOG.md`](docs/CANONICAL-DISPLAY-CATALOG.md)**
+   — Cycle 33 pivot-gate companion. Full per-primitive UIA /
+   ARIA / NVDA / JAWS / Narrator / interaction-contract /
+   channel-routing specs for the three exemplars (raw text +
+   CommandOutputTuple wrapper, interactive list +
+   ConfirmationPrompt hybrid, form with text input) plus named
+   extension points (severity alert, indeterminate progress,
+   Tier-2 deferred, Tier-3 deferred). Read before working on
+   any output-side framework or channel implementation.
+8. **[`spec/tech-plan.md`](spec/tech-plan.md)** §N for the canonical
    spec of whatever stage you're working on.
-7. **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — canonical PR shape,
+9. **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — canonical PR shape,
    branch naming, F# / .NET 9 gotchas, accessibility
    non-negotiables, P/Invoke conventions, test conventions.
 
