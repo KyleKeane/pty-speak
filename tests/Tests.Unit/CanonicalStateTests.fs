@@ -47,7 +47,7 @@ let private snapshotOf (rows: int) (cols: int) (lines: string list) : Cell[][] =
 [<Fact>]
 let ``create populates RowHashes via Coalescer.hashRow`` () =
     let snap = snapshotOf 3 5 [ "hello"; "world"; "" ]
-    let canonical = CanonicalState.create snap (0, 0) 0L
+    let canonical = CanonicalState.create snap (0, 0) 0L false
     Assert.Equal(3, canonical.RowHashes.Length)
     for i in 0 .. 2 do
         Assert.Equal(Coalescer.hashRow i snap.[i], canonical.RowHashes.[i])
@@ -55,14 +55,14 @@ let ``create populates RowHashes via Coalescer.hashRow`` () =
 [<Fact>]
 let ``create populates ContentHashes via Coalescer.hashRowContent`` () =
     let snap = snapshotOf 2 5 [ "hello"; "world" ]
-    let canonical = CanonicalState.create snap (0, 0) 5L
+    let canonical = CanonicalState.create snap (0, 0) 5L false
     Assert.Equal(2, canonical.ContentHashes.Length)
     for i in 0 .. 1 do
         Assert.Equal(Coalescer.hashRowContent snap.[i], canonical.ContentHashes.[i])
 
 [<Fact>]
 let ``create captures sequence number verbatim`` () =
-    let canonical = CanonicalState.create (snapshotOf 1 1 [ "" ]) (0, 0) 42L
+    let canonical = CanonicalState.create (snapshotOf 1 1 [ "" ]) (0, 0) 42L false
     Assert.Equal(42L, canonical.SequenceNumber)
 
 // ---- computeDiff: identical state -----------------------------------
@@ -70,7 +70,7 @@ let ``create captures sequence number verbatim`` () =
 [<Fact>]
 let ``computeDiff returns emptyDiff when previousRowHashes match current`` () =
     let snap = snapshotOf 3 5 [ "hello"; "world"; "" ]
-    let canonical = CanonicalState.create snap (0, 0) 1L
+    let canonical = CanonicalState.create snap (0, 0) 1L false
     let diff = canonical.computeDiff canonical.RowHashes
     Assert.Equal(0, diff.ChangedRows.Length)
     Assert.Equal("", diff.ChangedText)
@@ -80,7 +80,7 @@ let ``computeDiff returns emptyDiff when previousRowHashes match current`` () =
 [<Fact>]
 let ``computeDiff with empty previousRowHashes returns every row index`` () =
     let snap = snapshotOf 3 5 [ "hello"; "world"; "!" ]
-    let canonical = CanonicalState.create snap (0, 0) 1L
+    let canonical = CanonicalState.create snap (0, 0) 1L false
     let diff = canonical.computeDiff [||]
     Assert.Equal<int[]>([| 0; 1; 2 |], diff.ChangedRows)
     Assert.Contains("hello", diff.ChangedText)
@@ -90,7 +90,7 @@ let ``computeDiff with empty previousRowHashes returns every row index`` () =
 [<Fact>]
 let ``computeDiff first-call ChangedText is rendered with newline separators`` () =
     let snap = snapshotOf 2 5 [ "row1"; "row2" ]
-    let canonical = CanonicalState.create snap (0, 0) 0L
+    let canonical = CanonicalState.create snap (0, 0) 0L false
     let diff = canonical.computeDiff [||]
     Assert.Contains("row1", diff.ChangedText)
     Assert.Contains("row2", diff.ChangedText)
@@ -102,8 +102,8 @@ let ``computeDiff first-call ChangedText is rendered with newline separators`` (
 let ``computeDiff returns only rows whose hash differs`` () =
     let prev = snapshotOf 3 5 [ "hello"; "world"; "abc" ]
     let cur = snapshotOf 3 5 [ "hello"; "BANG!"; "abc" ]
-    let prevCanonical = CanonicalState.create prev (0, 0) 0L
-    let curCanonical = CanonicalState.create cur (0, 0) 1L
+    let prevCanonical = CanonicalState.create prev (0, 0) 0L false
+    let curCanonical = CanonicalState.create cur (0, 0) 1L false
     let diff = curCanonical.computeDiff prevCanonical.RowHashes
     Assert.Equal<int[]>([| 1 |], diff.ChangedRows)
     Assert.Contains("BANG!", diff.ChangedText)
@@ -114,8 +114,8 @@ let ``computeDiff returns only rows whose hash differs`` () =
 let ``computeDiff returns sorted ChangedRows for multi-row changes`` () =
     let prev = snapshotOf 4 5 [ "a"; "b"; "c"; "d" ]
     let cur = snapshotOf 4 5 [ "a"; "B"; "c"; "D" ]
-    let prevCanonical = CanonicalState.create prev (0, 0) 0L
-    let curCanonical = CanonicalState.create cur (0, 0) 1L
+    let prevCanonical = CanonicalState.create prev (0, 0) 0L false
+    let curCanonical = CanonicalState.create cur (0, 0) 1L false
     let diff = curCanonical.computeDiff prevCanonical.RowHashes
     Assert.Equal<int[]>([| 1; 3 |], diff.ChangedRows)
 
@@ -130,7 +130,7 @@ let ``computeDiff ChangedText respects per-row sanitisation`` () =
     row.[1] <- { Ch = System.Text.Rune '\x07'; Attrs = SgrAttrs.defaults }
     row.[2] <- cellOf 'b'
     let snap = [| row |]
-    let canonical = CanonicalState.create snap (0, 0) 0L
+    let canonical = CanonicalState.create snap (0, 0) 0L false
     let diff = canonical.computeDiff [||]
     Assert.False(diff.ChangedText.Contains('\x07'),
         "BEL must be stripped from changed-rows text")
@@ -143,7 +143,7 @@ let ``computeDiff handles previousRowHashes shorter than current snapshot`` () =
     // previous hash array could be shorter. The substrate
     // treats missing indices as "different".
     let snap = snapshotOf 3 5 [ "a"; "b"; "c" ]
-    let canonical = CanonicalState.create snap (0, 0) 1L
+    let canonical = CanonicalState.create snap (0, 0) 1L false
     // Previous hashes: only 2 entries, both match indices 0+1.
     let truncated = [| canonical.RowHashes.[0]; canonical.RowHashes.[1] |]
     let diff = canonical.computeDiff truncated
@@ -155,7 +155,7 @@ let ``computeDiff trims trailing blank cells in changed-row rendering`` () =
     // contract. A row with text + 5 trailing blanks renders
     // without the trailing space padding.
     let snap = snapshotOf 1 10 [ "ab" ]
-    let canonical = CanonicalState.create snap (0, 0) 0L
+    let canonical = CanonicalState.create snap (0, 0) 0L false
     let diff = canonical.computeDiff [||]
     Assert.Equal("ab", diff.ChangedText)
 
@@ -173,8 +173,8 @@ let ``computeDiff returns ChangedRows in ascending order regardless of frame`` (
         arr.[5] <- rowOf 5 "B"
         arr.[10] <- rowOf 5 "C"
         arr
-    let prevCanonical = CanonicalState.create prev (0, 0) 0L
-    let curCanonical = CanonicalState.create cur (0, 0) 1L
+    let prevCanonical = CanonicalState.create prev (0, 0) 0L false
+    let curCanonical = CanonicalState.create cur (0, 0) 1L false
     let diff = curCanonical.computeDiff prevCanonical.RowHashes
     Assert.Equal<int[]>([| 0; 5; 10 |], diff.ChangedRows)
 

@@ -427,6 +427,65 @@ let ``unknown mode_barrier_flush_policy value logs Warning and falls back to def
     Assert.True(logger.HasLevel(LogLevel.Warning))
 
 // =====================================================================
+// Cycle 35a — `[pathway.stream] substrate_mode` TOML override.
+// Selects which substrate the StreamPathway announces from:
+//   "linear"      → LinearTextStream (RFC 0001)
+//   "screen-diff" → existing PR #166 suffix-diff (default in 35a)
+//   "auto"        → linear for non-alt-screen, screen-diff for alt-screen
+// 35b will flip the default to "auto" after the §3 advanced-CMD
+// matrix passes manual NVDA validation.
+// =====================================================================
+
+[<Fact>]
+let ``[pathway.stream] substrate_mode absent — defaults to ScreenDiff`` () =
+    let toml = "schema_version = 1\n"
+    let config, _ = loadFromText toml
+    let resolved = Config.resolveStreamParameters config
+    Assert.Equal(StreamPathway.ScreenDiff, resolved.SubstrateMode)
+
+[<Fact>]
+let ``[pathway.stream] substrate_mode = "linear" maps to Linear`` () =
+    let toml =
+        "schema_version = 1\n[pathway.stream]\nsubstrate_mode = \"linear\"\n"
+    let config, _ = loadFromText toml
+    let resolved = Config.resolveStreamParameters config
+    Assert.Equal(StreamPathway.Linear, resolved.SubstrateMode)
+
+[<Fact>]
+let ``[pathway.stream] substrate_mode = "screen-diff" maps to ScreenDiff`` () =
+    let toml =
+        "schema_version = 1\n[pathway.stream]\nsubstrate_mode = \"screen-diff\"\n"
+    let config, _ = loadFromText toml
+    let resolved = Config.resolveStreamParameters config
+    Assert.Equal(StreamPathway.ScreenDiff, resolved.SubstrateMode)
+
+[<Fact>]
+let ``[pathway.stream] substrate_mode = "auto" maps to Auto`` () =
+    let toml =
+        "schema_version = 1\n[pathway.stream]\nsubstrate_mode = \"auto\"\n"
+    let config, _ = loadFromText toml
+    let resolved = Config.resolveStreamParameters config
+    Assert.Equal(StreamPathway.Auto, resolved.SubstrateMode)
+
+[<Fact>]
+let ``unknown substrate_mode value logs Warning and falls back to default`` () =
+    let toml =
+        "schema_version = 1\n[pathway.stream]\nsubstrate_mode = \"fictional\"\n"
+    let config, logger = loadFromText toml
+    let resolved = Config.resolveStreamParameters config
+    Assert.Equal(StreamPathway.ScreenDiff, resolved.SubstrateMode)
+    Assert.True(logger.HasLevel(LogLevel.Warning))
+
+[<Fact>]
+let ``non-string substrate_mode value logs Warning and falls back to default`` () =
+    let toml =
+        "schema_version = 1\n[pathway.stream]\nsubstrate_mode = 123\n"
+    let config, logger = loadFromText toml
+    let resolved = Config.resolveStreamParameters config
+    Assert.Equal(StreamPathway.ScreenDiff, resolved.SubstrateMode)
+    Assert.True(logger.HasLevel(LogLevel.Warning))
+
+// =====================================================================
 // Cycle 19 — `[startup] default_shell` TOML override
 // =====================================================================
 

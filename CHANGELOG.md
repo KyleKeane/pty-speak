@@ -15,6 +15,115 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 35a): StreamPathway parallel linear-substrate path behind default-off TOML flag
+
+Introduces a parallel announce path in `StreamPathway` that
+sources its payload from the Cycle 34 `LinearTextStream`
+producer instead of the existing PR #166 screen-row suffix-
+diff. Selection is via the new `[pathway.stream] substrate_mode`
+TOML key (`"linear" | "screen-diff" | "auto"`); default in
+35a is `"screen-diff"` so existing behaviour is preserved
+verbatim. Cycle 35b will flip the default to `"auto"` after
+the §3 advanced-CMD content matrix passes manual NVDA
+validation.
+
+`Auto` routes alt-screen frames through the screen-diff path
+(where the grid is canonical per
+CORE-ABSTRACTION-BOUNDARY.md §1.4) and non-alt-screen
+frames through the linear path (where the byte stream is
+canonical per RFC 0001).
+
+**No user-visible behaviour change** unless the user opts
+in via `config.toml`. The screen-diff path remains
+authoritative for the default install; the new linear path
+runs only when explicitly selected.
+
+- **`src/Terminal.Core/StreamPathway.fs`** — new
+  `SubstrateMode` DU (`Linear | ScreenDiff | Auto`); new
+  `Parameters.SubstrateMode` field defaulting to
+  `ScreenDiff`; new `State.LastLinearWatermark: int64`
+  tracking the last byte offset emitted via the linear path
+  (zeroed in `resetState`); new private helpers
+  `assembleSuffixFromStream` (decodes UTF-8 bytes from
+  `LinearTextStream.suffixSince`, sanitises via
+  `AnnounceSanitiser.sanitise`, applies `MaxAnnounceChars`
+  cap) and `resolveSubstrateMode` (collapses `Auto` to
+  `Linear` / `ScreenDiff` based on
+  `canonical.IsAltScreenActive`); `processCanonicalState` +
+  `onTimerTick` signatures gain `linearStream:
+  LinearTextStream.T` parameter; both leading-edge and
+  trailing-edge dispatch now match on `resolvedMode` to
+  pick the payload assembler. Watermark advances ONLY on
+  successful emit (suppressed / empty payloads don't lose
+  bytes). The Path B Levenshtein gate
+  (`isSpinnerSuppressed`) continues to apply to BOTH paths
+  in 35a; 35c migrates it to be screen-diff-fallback-only.
+- **`src/Terminal.Core/LinearTextStream.fs`** — new public
+  `suffixSince: T -> int64 -> byte[]` accessor that returns
+  bytes from the committed buffer starting at the supplied
+  watermark. Mirrors the existing `getLastBytes` pattern
+  (lock state.Gate; defensive bounds clamping). Used by
+  `StreamPathway.assembleSuffixFromStream`.
+- **`src/Terminal.Core/CanonicalState.fs`** — new
+  `Canonical.IsAltScreenActive: bool` field captured
+  atomically with the snapshot under the gate lock; new
+  parameter on `CanonicalState.create`. Read at snapshot
+  time from `Screen.IsAltScreenActive`. Required for
+  `Auto` mode dispatch.
+- **`src/Terminal.App/Program.fs`** — three
+  `CanonicalState.create` call sites (in `PathwayPump`'s
+  rows-changed / cursor-changed paths and in the
+  composition-root baseline-seeding) updated to pass
+  `screen.Modes.AltScreen`. Three `StreamPathway.create`
+  call sites (initial pathway construction +
+  `createPathway` factory) updated to pass `linearStream`.
+- **`src/Terminal.Core/Config.fs`** — new
+  `StreamParameterOverrides.SubstrateMode:
+  StreamPathway.SubstrateMode option` field; new
+  `readSubstrateMode` helper inside `parseStreamOverrides`
+  (`"linear"` / `"screen-diff"` / `"auto"`; logs Warning +
+  drops on any other value, including non-string types);
+  `"substrate_mode"` added to `knownStreamKeys` so unknown-
+  key warnings don't mis-fire; new field merge in
+  `resolveStreamParameters`.
+- **`tests/Tests.Unit/ConfigTests.fs`** — 6 new facts pin
+  the parser + resolver: absent → defaults; `"linear"`,
+  `"screen-diff"`, `"auto"` map correctly; unknown string
+  + non-string both log Warning + fall back to default.
+- **`tests/Tests.Unit/StreamPathwayTests.fs`** — 10 new
+  facts cover dispatch:
+  - SubstrateMode=Linear with populated stream emits
+    suffix payload (and the screen-diff content does NOT
+    appear).
+  - SubstrateMode=Linear with empty stream emits nothing.
+  - SubstrateMode=Linear advances LastLinearWatermark by
+    emitted byte count.
+  - SubstrateMode=Linear emits only post-watermark bytes
+    on second call.
+  - SubstrateMode=ScreenDiff (default) does NOT consult
+    the linear stream.
+  - SubstrateMode=Auto with alt-screen routes to
+    ScreenDiff.
+  - SubstrateMode=Auto without alt-screen routes to
+    Linear.
+  - Reset zeroes LastLinearWatermark.
+  - Linear payload is sanitised (control chars stripped).
+  - Linear payload respects `MaxAnnounceChars` cap.
+- **`tests/Tests.Unit/CanonicalStateTests.fs`,
+  `tests/Tests.Unit/TuiPathwayTests.fs`,
+  `tests/Tests.Unit/StreamPathwayTests.fs`** — existing
+  `CanonicalState.create` call sites mechanically updated
+  to pass the new `isAltScreenActive: bool` parameter
+  (`false` for non-alt-screen tests; the new field has
+  defaulted-false semantics for the existing test suite).
+
+**Stopping gate:** if the §3 advanced-CMD 8-row matrix
+regresses against PR #166 in linear / auto mode, revert
+`StreamPathway.defaultParameters.SubstrateMode` to
+`ScreenDiff` (already the default in 35a — no revert
+needed) and treat as a Linear-mode bug. Side-by-side
+migration is the explicit insurance.
+
 ### Added (Cycle 34b): producer composition wiring + Ctrl+Shift+D bundle integration + cross-thread locking
 
 Wires the Cycle 34a `LinearTextStream` producer at the parser-

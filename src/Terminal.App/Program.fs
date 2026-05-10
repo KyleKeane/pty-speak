@@ -1142,13 +1142,18 @@ module Program =
             let pathwayId = Config.resolveShellPathway config shellKey
             let streamParams = Config.resolveStreamParameters config
             match pathwayId with
-            | "stream" -> StreamPathway.create streamParams
+            // Cycle 35a — pass `linearStream` (Cycle 34a/b
+            // producer cell) to StreamPathway so its
+            // SubstrateMode = Linear / Auto dispatch can read
+            // the producer's committed buffer via
+            // `LinearTextStream.suffixSince`.
+            | "stream" -> StreamPathway.create streamParams linearStream
             | "tui" -> TuiPathway.create ()
             | unknown ->
                 log.LogWarning(
                     "Config: unknown pathway '{Pathway}' for shell {Shell}; falling back to stream.",
                     unknown, shellKey)
-                StreamPathway.create streamParams
+                StreamPathway.create streamParams linearStream
 
         // Initial pathway — StreamPathway with the resolved
         // parameters from `config` (or defaults if no config
@@ -1162,7 +1167,10 @@ module Program =
         // placeholder is safe regardless of `config`'s
         // shell-pathway override.
         let mutable activePathway : DisplayPathway.T =
-            StreamPathway.create (Config.resolveStreamParameters config)
+            // Cycle 35a — startup pathway also takes the
+            // linearStream; same instance flows to all
+            // subsequent shell-switch pathway recreations.
+            StreamPathway.create (Config.resolveStreamParameters config) linearStream
 
         // Phase B (subset) — alt-screen → TuiPathway auto-detect
         // bookkeeping. The PathwayPump's `handleModeChanged`
@@ -1393,7 +1401,10 @@ module Program =
             // out of `handleRowsChanged` + `handleTick` to
             // remove duplication.
             runDetector snapshot cursorPos (DateTime.UtcNow)
-            let canonical = CanonicalState.create snapshot cursorPos seq
+            // Cycle 35a — pass alt-screen state for SubstrateMode=Auto
+            // dispatch in StreamPathway.processCanonicalState.
+            let canonical =
+                CanonicalState.create snapshot cursorPos seq screen.Modes.AltScreen
             let emitted = activePathway.Consume canonical
             pumpLog.LogDebug(
                 "PathwayPump RowsChanged → {Pathway}.Consume → {Count} events.",
@@ -1415,7 +1426,8 @@ module Program =
                 let seq, cursorPos, snapshot =
                     screen.SnapshotRows(0, screen.Rows)
                 let canonical =
-                    CanonicalState.create snapshot cursorPos seq
+                    CanonicalState.create
+                        snapshot cursorPos seq screen.Modes.AltScreen
                 activePathway.SetBaseline canonical
             with _ -> ()
             pumpLog.LogInformation(
@@ -2622,7 +2634,11 @@ module Program =
                                             let seq, cursorPos, snapshot =
                                                 screen.SnapshotRows(0, screen.Rows)
                                             let canonical =
-                                                CanonicalState.create snapshot cursorPos seq
+                                                CanonicalState.create
+                                                    snapshot
+                                                    cursorPos
+                                                    seq
+                                                    screen.Modes.AltScreen
                                             activePathway.SetBaseline canonical
                                         with _ -> ()
                                         wirePostSpawn newHost

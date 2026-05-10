@@ -183,6 +183,18 @@ module CanonicalState =
           /// captures the field; consumers don't read it
           /// yet.
           CursorPosition: int * int
+          /// Cycle 35a — alt-screen state at snapshot time.
+          /// Used by StreamPathway's `SubstrateMode = Auto`
+          /// dispatch (`processCanonicalState`) to route alt-
+          /// screen frames through the screen-diff path
+          /// (where the grid IS the canonical substrate per
+          /// CORE-ABSTRACTION-BOUNDARY.md §1.4) and non-alt-
+          /// screen frames through the linear path (where the
+          /// byte stream is canonical). Read at snapshot time
+          /// from `Screen.IsAltScreenActive`; passed atomically
+          /// alongside `cursorPosition` per the existing
+          /// `Screen.SnapshotRows` gate-lock contract.
+          IsAltScreenActive: bool
           computeDiff: uint64[] -> CanonicalDiff }
 
     /// Build a canonical state from a Screen snapshot. The
@@ -194,10 +206,13 @@ module CanonicalState =
     /// `snapshot` inside `Screen.SnapshotRows` (under the
     /// gate lock) — callers should never re-read
     /// `screen.Cursor` to construct this value off-thread.
+    /// `isAltScreenActive` is read from
+    /// `Screen.IsAltScreenActive` at the same moment.
     let create
             (snapshot: Cell[][])
             (cursorPosition: int * int)
             (sequenceNumber: int64)
+            (isAltScreenActive: bool)
             : Canonical
             =
         let rowHashes =
@@ -209,6 +224,7 @@ module CanonicalState =
           RowHashes = rowHashes
           ContentHashes = contentHashes
           CursorPosition = cursorPosition
+          IsAltScreenActive = isAltScreenActive
           computeDiff =
             fun previousRowHashes ->
                 computeDiffFromHashes snapshot rowHashes previousRowHashes }
