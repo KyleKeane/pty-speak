@@ -1068,12 +1068,30 @@ module Program =
         // user-facing text and emit a NVDA + FileLogger pair.
         let selectionProfile = SelectionProfile.create ()
         OutputDispatcher.ProfileRegistry.register selectionProfile
-        // Active set: [ passThroughProfile; earconProfile;
-        // selectionProfile ]. PassThrough fans non-empty
-        // payloads to NVDA + FileLogger; Earcon claims
-        // BellRang / ErrorLine / WarningLine; Selection claims
-        // SelectionShown / SelectionItem / SelectionDismissed
-        // and emits the user-facing text rendering for them.
+        // Cycle 38c — EchoCorrelator + EchoSuppressorProfile.
+        // The correlator tracks bytes written to PTY-stdin via
+        // the wrapped WriteBytes call below; EchoSuppressorProfile
+        // consults the correlator on each StreamChunk to strip
+        // the echoed input prefix from NVDA announcements. The
+        // FileLogger audit trail preserves the full payload (with
+        // a `(suppressed echo: ...)` annotation for fully-echoed
+        // chunks) so `Ctrl+Shift+D` bundles can verify suppression
+        // behaviour post-hoc. For shells where echo isn't an issue
+        // (Claude uses OSC 133), this profile is omitted from the
+        // active set via the per-shell route table (Cycle 38b).
+        let echoCorrelator =
+            EchoCorrelator.create EchoCorrelator.defaultParameters
+        let echoSuppressorProfile =
+            EchoSuppressorProfile.create echoCorrelator
+        OutputDispatcher.ProfileRegistry.register echoSuppressorProfile
+        // Cycle 38b — startup active set uses the legacy
+        // PassThrough-based list as a placeholder until
+        // `chosenShell` is resolved later in composition. The
+        // dispatcher doesn't see events until after the PTY
+        // starts producing, so the placeholder window is
+        // dispatch-event-free. `setActiveProfileSet` is
+        // re-called once `chosenShell` is known (line ~1962)
+        // and again on every shell-switch.
         OutputDispatcher.ProfileRegistry.setActiveProfileSet
             [ passThroughProfile; earconProfile; selectionProfile ]
 
@@ -1925,6 +1943,41 @@ module Program =
         // shell.
         currentShellId <- chosenShell.Id
 
+        // Cycle 38b — resolve the active profile set for the
+        // chosen shell. Defined here (after `chosenShell` is
+        // known) so the resolver can read the shell key. Used
+        // both at startup (this call) and on every shell-switch
+        // (later in `switchToShell`). Built-in defaults give
+        // cmd / PowerShell the EchoSuppressor (Cycle 38c) and
+        // Claude the legacy PassThrough; TOML
+        // `[shell.<key>] profiles = [...]` overrides per shell.
+        let shellIdToProfileKey (id: ShellRegistry.ShellId) : string =
+            match id with
+            | ShellRegistry.Cmd -> "cmd"
+            | ShellRegistry.PowerShell -> "powershell"
+            | ShellRegistry.Claude -> "claude"
+        let resolveProfilesForShell (shellId: ShellRegistry.ShellId) : Profile list =
+            let shellKey = shellIdToProfileKey shellId
+            let defaultSet =
+                match shellKey with
+                | "claude" -> [ "passthrough"; "earcon"; "selection" ]
+                | _ -> [ "echo-suppressor"; "earcon"; "selection" ]
+            let configured =
+                Config.resolveShellProfiles config shellKey
+                |> Option.map Array.toList
+                |> Option.defaultValue defaultSet
+            configured
+            |> List.choose (fun pid ->
+                match OutputDispatcher.ProfileRegistry.lookup pid with
+                | Some p -> Some p
+                | None ->
+                    log.LogWarning(
+                        "Config: profile id '{Id}' for shell '{Shell}' is not registered; dropped from active set.",
+                        pid, shellKey)
+                    None)
+        OutputDispatcher.ProfileRegistry.setActiveProfileSet
+            (resolveProfilesForShell chosenShell.Id)
+
         // SessionModel Tier 1.C — re-create with the resolved
         // startup shell key. The placeholder declared above
         // (with `cmd` key) is replaced here once `chosenShell`
@@ -2414,7 +2467,15 @@ module Program =
                     (fun _ -> lastReadUtc <- DateTimeOffset.UtcNow)
                     cts.Token
             window.TerminalSurface.SetPtyHost(
-                Action<byte[]>(fun bytes -> host.WriteBytes(bytes)),
+                // Cycle 38c — record bytes into the EchoCorrelator
+                // BEFORE the PTY write so a fast shell can't echo
+                // back before we tracked the typed bytes. The
+                // correlator is shared with EchoSuppressorProfile,
+                // which strips matched prefixes from StreamChunk
+                // payloads at dispatch time.
+                Action<byte[]>(fun bytes ->
+                    EchoCorrelator.recordWrite echoCorrelator (DateTime.UtcNow) bytes
+                    host.WriteBytes(bytes)),
                 Action<int, int>(fun cols rows ->
                     // Resize is best-effort: a transient failure
                     // (e.g. the child has just exited) shouldn't
@@ -2694,6 +2755,24 @@ module Program =
                                         selectionDetector <-
                                             SelectionDetector.reset
                                                 selectionDetector
+                                        // Cycle 38c — clear the
+                                        // EchoCorrelator's pending
+                                        // input buffer so bytes
+                                        // typed at the prior shell
+                                        // can't match early output
+                                        // on the new shell.
+                                        EchoCorrelator.reset
+                                            echoCorrelator
+                                        // Cycle 38b — re-resolve
+                                        // the active profile set
+                                        // for the new shell so its
+                                        // TOML `[shell.<key>] profiles`
+                                        // takes effect (cmd /
+                                        // PowerShell get
+                                        // EchoSuppressor; Claude
+                                        // gets PassThrough).
+                                        OutputDispatcher.ProfileRegistry.setActiveProfileSet
+                                            (resolveProfilesForShell shell.Id)
                                         // Phase A — swap the active
                                         // pathway for the new shell.
                                         // `Reset` clears any pending

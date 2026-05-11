@@ -15,6 +15,105 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 38b + 38c): Per-shell route table + cmd/PowerShell echo-suppression
+
+Closes the maintainer's 2026-05-10 dogfood regression: `echo hello`
+in cmd no longer causes NVDA to read the typed-input echo prefix.
+Two related changes ship as one PR per maintainer's "stable
+functional position" directive.
+
+**Cycle 38b — Per-shell profile-set route table** (~150 LOC):
+
+- [`src/Terminal.Core/Config.fs`](src/Terminal.Core/Config.fs)
+  extends `ShellPathwayConfig` with `Profiles: string[] option`
+  and grows `parseShellOverrides` to read
+  `[shell.<key>] profiles = [...]` alongside the existing
+  `pathway` field. New `tryGetStringArray` helper. New
+  `resolveShellProfiles` resolver.
+- [`src/Terminal.App/Program.fs`](src/Terminal.App/Program.fs)
+  adds `resolveProfilesForShell : ShellId -> Profile list`
+  (defined after `chosenShell` is known) and calls
+  `OutputDispatcher.ProfileRegistry.setActiveProfileSet` at
+  startup AND on every shell-switch (alongside the existing
+  detector resets). The setActiveProfileSet surface was planned
+  at `OutputDispatcher.fs:80-83` ("Stage 8f wires this") but
+  wasn't wired until now.
+- Built-in defaults when TOML doesn't override:
+  cmd / powershell → `["echo-suppressor", "earcon", "selection"]`
+  claude → `["passthrough", "earcon", "selection"]`
+- Unknown profile IDs in TOML are logged + dropped (warning, not
+  fatal) so a typo doesn't crash startup.
+- `defaultsTemplate` in Config.fs gains a commented example block
+  documenting the override syntax.
+
+**Cycle 38c — Echo-suppression for cmd / PowerShell** (~300 LOC):
+
+- New module
+  [`src/Terminal.Core/EchoCorrelator.fs`](src/Terminal.Core/EchoCorrelator.fs)
+  holds a bounded, time-bounded buffer of bytes written to
+  `ConPtyHost.WriteBytes`. `matchAndConsumeEchoPrefix` returns
+  how many leading payload bytes match the recent input, with
+  CR→CRLF normalisation for cmd's echo behaviour. Atomic
+  match-then-consume so an input byte echoes exactly once.
+  Lock-per-instance for thread safety (WriteBytes runs on UI
+  thread; matching runs on dispatcher pump thread).
+- New module
+  [`src/Terminal.Core/EchoSuppressorProfile.fs`](src/Terminal.Core/EchoSuppressorProfile.fs)
+  registers as `ProfileId = "echo-suppressor"`. For StreamChunk
+  events: consults the shared correlator; strips matched prefix
+  from the NVDA payload; emits FileLogger with the FULL original
+  (or `(suppressed echo: ...)` annotation when fully echoed).
+  For non-StreamChunk events: behaves identically to
+  PassThroughProfile.
+- `Program.fs` wires:
+  - One `EchoCorrelator` instance at composition root.
+  - One `EchoSuppressorProfile` instance, registered with
+    `ProfileRegistry`.
+  - `ConPtyHost.WriteBytes` is wrapped to feed the correlator
+    BEFORE the PTY write (so a fast shell can't echo before we
+    tracked the typed bytes).
+  - `EchoCorrelator.reset` is called on shell-switch alongside
+    the existing prompt / selection detector resets.
+
+**Tests** (~250 LOC):
+
+- 9 facts in
+  [`tests/Tests.Unit/EchoCorrelatorTests.fs`](tests/Tests.Unit/EchoCorrelatorTests.fs)
+  pin: empty-buffer baseline; exact-match prefix; payload
+  divergence; CR-LF normalisation; match-then-consume invariant;
+  partial-match leaves remainder; age-based expiry; buffer
+  overflow eviction; reset.
+- 7 facts in
+  [`tests/Tests.Unit/EchoSuppressorProfileTests.fs`](tests/Tests.Unit/EchoSuppressorProfileTests.fs)
+  pin: full-echo NVDA-drop; partial-echo strip; no-match
+  pass-through; payload divergence pass-through; non-StreamChunk
+  pass-through; module identity.
+- 5 new facts in
+  [`tests/Tests.Unit/ConfigTests.fs`](tests/Tests.Unit/ConfigTests.fs)
+  pin: profiles array parse; absent profiles returns None;
+  pathway + profiles together; profiles without pathway; absent
+  shell section.
+
+**Corpus update**:
+[`tests/fixtures/canonical-interactions.toml`](tests/fixtures/canonical-interactions.toml)
+`cmd.echo.plain` row's `notes` field flips FAIL→PASS: bug-tag
+becomes "Fixed in Cycle 38c." `expected_payload_regex` field
+populated (parsed today but enforced from Cycle 38d).
+
+**What this PR does NOT do**:
+- No three-pane channel routing (input vs current_output vs
+  history pane). Echo is SUPPRESSED in 38c, not ROUTED. Deferred
+  to Cycle 38d.
+- No `expected_payload_regex` enforcement in `runCorpus`. Still
+  parsed-only; 38d wires it.
+- No PowerShell / Claude scenarios in the corpus. 38e adds those.
+- No NVDA verbatim-text matching. Same as above.
+- No prompt-stripping (cmd's next prompt `C:\>` still flows
+  through). Separate concern (heuristic prompt detector).
+- No timing-parameter exposure via TOML. EchoCorrelator
+  parameters are hardcoded; future cycle exposes via
+  `[profile.echo-suppressor]` if dogfood reveals timing issues.
+
 ### Changed (Cycle 38a-followup): Post-dogfood UX refresh
 
 Five UX/ergonomics fixes from the 2026-05-10 dogfood session of

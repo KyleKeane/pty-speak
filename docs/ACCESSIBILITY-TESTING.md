@@ -1263,6 +1263,49 @@ matrix's shrinking surface area over time.
   with the expected length floor) is now CI-pinned.
 
 <!-- DOGFOOD -->
+### Cycle 38b + 38c — Per-shell route table + cmd/PowerShell echo-suppression
+
+Cycle 38b introduces a per-shell profile-set TOML override
+(`[shell.<key>] profiles = [...]` in `config.toml`); Cycle 38c
+ships the first profile that uses it — `EchoSuppressorProfile`,
+which strips the user's typed-input echo from NVDA announcements
+on cmd / PowerShell.
+
+**Built-in default active sets** (when TOML doesn't override):
+- cmd, powershell → `["echo-suppressor", "earcon", "selection"]`
+- claude → `["passthrough", "earcon", "selection"]`
+
+**EchoSuppressorProfile behaviour**:
+- For `StreamChunk` events with non-empty payload, consult
+  `EchoCorrelator` (which has been recording bytes written via
+  `ConPtyHost.WriteBytes`). If a leading prefix of the payload
+  matches recent input (with CR→CRLF normalisation for cmd's
+  echo-translation behaviour), strip that prefix from the NVDA
+  announce.
+- If the entire payload was echo: NVDA decision is DROPPED; the
+  FileLogger gets a `(suppressed echo: ...)` annotation in its
+  audit trail.
+- If a partial match: NVDA gets the stripped payload; FileLogger
+  gets the full original.
+- Non-StreamChunk events behave identically to PassThrough.
+
+**Manual matrix rows**:
+
+| Test | Procedure | Expected |
+|---|---|---|
+| 38b.1 — Active profile set per shell | Switch between cmd / PowerShell / Claude via Ctrl+Shift+1/2/3. After each switch, type a short command. | Cmd / PowerShell: no echoed-input bleed in NVDA announce. Claude: behaves as today (passthrough). |
+| 38c.1 — `echo` suppression on cmd | In cmd, type `echo hello` + Enter. | NVDA announces "hello" (or near-equivalent). The typed `echo hello` echo is NOT in the announce. |
+| 38c.2 — Suppression audit trail | After 38c.1, press Ctrl+Shift+D. Open the bundle's `--- FILELOGGER ACTIVE LOG ---` section. Search for `(suppressed echo:`. | The annotation appears with the echo-prefix payload. |
+| 38c.3 — Partial-echo case | In cmd, type `set` + Enter (cmd lists env vars with `set` as the first echoed word). | NVDA announces the env-var list. The leading `set\r\n` echo is stripped; the rest is announced. |
+| 38c.4 — Claude unaffected | Switch to Claude. Send a short message. | Claude behaviour is unchanged (still uses passthrough; selection-list peer still fires for tool-use prompts). |
+| 38c.5 — Per-shell override via TOML | Edit `config.toml`. Add `[shell.cmd] profiles = ["passthrough", "earcon"]` (no echo-suppressor). Restart pty-speak (or hot-switch to a different shell and back to cmd). Type `echo hello` + Enter. | Echo is NO LONGER suppressed (because TOML overrode the default and dropped echo-suppressor). |
+
+**Stopping gate for 38b+c**: NVDA hears only the output of
+`echo hello` on cmd (no input echo). FileLogger preserves the
+suppression annotation for forensics. Per-shell TOML override
+respected.
+
+<!-- DOGFOOD -->
 ### Cycle 38a — Canonical interaction corpus baseline
 
 Cycle 38a is the **regression scaffolding** for the cmd / PowerShell
