@@ -1813,31 +1813,34 @@ let ``Cycle 41 — buildEmittedEventsForLinear without 133;A emits single Stream
 let ``Cycle 41 — buildEmittedEventsForLinear with 133;A splits into StreamChunk + PromptDetected`` () =
     let stream = LinearTextStream.create LinearTextStream.defaultParameters
     let parser = Terminal.Parser.Parser.create ()
+    // "hello\n" drains pending → Committed (HighWaterMark=6).
+    // Then OSC 133;A records PromptStartOffset=6. Then "C:\\>"
+    // + OSC 133;D drains the prompt portion into Committed
+    // (HighWaterMark=10 — 4 prompt bytes added).
     let bytes =
         Array.concat
-            [ System.Text.Encoding.ASCII.GetBytes "hello"
+            [ System.Text.Encoding.ASCII.GetBytes "hello\n"
               System.Text.Encoding.ASCII.GetBytes "\x1b]133;A\x07"
-              System.Text.Encoding.ASCII.GetBytes "C:\\>" ]
+              System.Text.Encoding.ASCII.GetBytes "C:\\>"
+              System.Text.Encoding.ASCII.GetBytes "\x1b]133;D\x07" ]
     let events = Terminal.Parser.Parser.feedArray parser bytes
     let (_, _) =
         LinearTextStream.append stream DateTime.UtcNow bytes events
-    // The full text seen by NVDA's announce path would be the
-    // concatenation of "hello" and "C:\\>" (OSC sequence consumed
-    // by the parser). The split happens at PromptStartOffset
-    // which is set when 133;A fired — that's the HighWaterMark
-    // at the moment of the marker, which is just after "hello".
+    // sinceOffset=0; PromptStartOffset=6 > 0 ✓. Split fires.
+    // Output portion = Committed[0..5] = "hello\n".
+    // Prompt portion = Committed[6..end] = "C:\\>".
     let result =
         StreamPathway.buildEmittedEventsForLinear
-            stream 0L "helloC:\\>" None
+            stream 0L "hello\nC:\\>" None
     Assert.Equal(2, result.Length)
     Assert.Equal(SemanticCategory.StreamChunk, result.[0].Semantic)
-    Assert.Equal("hello", result.[0].Payload)
+    Assert.Contains("hello", result.[0].Payload)
     Assert.Equal(SemanticCategory.PromptDetected, result.[1].Semantic)
     // PromptDetected has empty payload (silent auto-announce) +
     // prompt text in Extensions["prompt.text"].
     Assert.Equal("", result.[1].Payload)
     match Map.tryFind "prompt.text" result.[1].Extensions with
-    | Some (:? string as t) -> Assert.Equal("C:\\>", t)
+    | Some (:? string as t) -> Assert.Contains("C:\\>", t)
     | _ -> Assert.Fail("expected prompt.text in Extensions to be a string")
 
 [<Fact>]

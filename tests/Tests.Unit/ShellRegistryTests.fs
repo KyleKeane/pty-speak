@@ -129,12 +129,20 @@ let ``builtIns contains exactly Cmd, Claude, and PowerShell`` () =
     Assert.Equal<Set<ShellRegistry.ShellId>>(expected, actual)
 
 [<Fact>]
-let ``Cmd entry resolves to cmd.exe`` () =
+let ``Cmd entry resolves to a cmd.exe command line`` () =
+    // Cycle 41 — cmd's Resolve now returns
+    // `cmd.exe /K "@prompt $E]133;A$E\$P$G$E]133;B$E\"` for the
+    // OSC 133 injection. The Cycle 41 dedicated test below pins
+    // the injection literals; this test pins the entry's basic
+    // shape (DisplayName + Ok-with-cmd.exe-prefix).
     let cmd =
         ShellRegistry.builtIns
         |> Map.find ShellRegistry.Cmd
     Assert.Equal("Command Prompt", cmd.DisplayName)
-    Assert.Equal<Result<string, string>>(Ok "cmd.exe", cmd.Resolve())
+    match cmd.Resolve() with
+    | Ok commandLine ->
+        Assert.StartsWith("cmd.exe", commandLine)
+    | Error e -> Assert.Fail(sprintf "expected Ok cmd.exe command; got Error: %s" e)
 
 [<Fact>]
 let ``Claude entry has DisplayName "Claude Code"`` () =

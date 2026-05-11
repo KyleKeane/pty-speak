@@ -644,18 +644,14 @@ let ``Cycle 41 — tryReadPromptStartOffsetSince returns None when no 133;A fire
 [<Fact>]
 let ``Cycle 41 — tryReadPromptStartOffsetSince returns Some offset when 133;A fired in window`` () =
     let state = freshProducer ()
-    let (_, state) = feed state t0 (ascii "hello")
+    // "hello\n" drains pending into Committed via the newline
+    // seam; HighWaterMark advances to 6. Then OSC 133;A records
+    // PromptStartOffset = 6 (the current HighWaterMark).
+    let (_, state) = feed state t0 (ascii "hello\n")
     let (_, state) = feed state (after 5) (osc133Prompt ())
-    let (_, state) = feed state (after 10) (ascii "C:\\>")
     match LinearTextStream.tryReadPromptStartOffsetSince state 0L with
-    | Some offset ->
-        // PromptStartOffset is the HighWaterMark at the moment 133;A
-        // fired, which is the offset of the FIRST byte AFTER the
-        // initial "hello" (and the OSC sequence itself contributes
-        // 0 bytes to Committed since it's a control sequence).
-        Assert.Equal(5L, offset)
-    | None ->
-        Assert.Fail("expected Some prompt-start offset after 133;A fired")
+    | Some offset -> Assert.Equal(6L, offset)
+    | None -> Assert.Fail("expected Some prompt-start offset after 133;A fired")
 
 [<Fact>]
 let ``Cycle 41 — tryReadPromptStartOffsetSince returns None when 133;A is at or before sinceOffset`` () =
@@ -670,7 +666,13 @@ let ``Cycle 41 — tryReadPromptStartOffsetSince returns None when 133;A is at o
 [<Fact>]
 let ``Cycle 41 — readSplitAt slices Committed into [from, splitAt) + [splitAt, end)`` () =
     let state = freshProducer ()
-    let (_, state) = feed state t0 (ascii "hello world")
+    // OSC 133;D drains pending → Committed; afterwards Committed
+    // contains "hello world" (11 bytes).
+    let bytes =
+        Array.concat
+            [ ascii "hello world"
+              osc133CommandFinished 0 ]
+    let (_, state) = feed state t0 bytes
     let (buf1, buf2) = LinearTextStream.readSplitAt state 0L 5L
     Assert.Equal("hello", System.Text.Encoding.UTF8.GetString buf1)
     Assert.Equal(" world", System.Text.Encoding.UTF8.GetString buf2)
