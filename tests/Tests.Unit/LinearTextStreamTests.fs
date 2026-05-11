@@ -630,3 +630,57 @@ let ``Hotfix — empty chunk after deferred CR keeps the deferral pending`` () =
     let committed = LinearTextStream.getLastBytes state 64
     let text = Encoding.UTF8.GetString committed
     Assert.Equal("x\n", text)
+
+// =====================================================================
+// Cycle 41 — tryReadPromptStartOffsetSince + readSplitAt
+// =====================================================================
+
+[<Fact>]
+let ``Cycle 41 — tryReadPromptStartOffsetSince returns None when no 133;A fired in window`` () =
+    let state = freshProducer ()
+    let (_, state) = feed state t0 (ascii "hello")
+    Assert.Equal(None, LinearTextStream.tryReadPromptStartOffsetSince state 0L)
+
+[<Fact>]
+let ``Cycle 41 — tryReadPromptStartOffsetSince returns Some offset when 133;A fired in window`` () =
+    let state = freshProducer ()
+    // "hello\n" drains pending into Committed via the newline
+    // seam; HighWaterMark advances to 6. Then OSC 133;A records
+    // PromptStartOffset = 6 (the current HighWaterMark).
+    let (_, state) = feed state t0 (ascii "hello\n")
+    let (_, state) = feed state (after 5) (osc133Prompt ())
+    match LinearTextStream.tryReadPromptStartOffsetSince state 0L with
+    | Some offset -> Assert.Equal(6L, offset)
+    | None -> Assert.Fail("expected Some prompt-start offset after 133;A fired")
+
+[<Fact>]
+let ``Cycle 41 — tryReadPromptStartOffsetSince returns None when 133;A is at or before sinceOffset`` () =
+    let state = freshProducer ()
+    let (_, state) = feed state t0 (osc133Prompt ())
+    let (_, state) = feed state (after 5) (ascii "C:\\>")
+    // PromptStartOffset = 0 (133;A fired at HighWaterMark=0).
+    // Querying with sinceOffset >= 0 returns None per the
+    // "strictly after" contract.
+    Assert.Equal(None, LinearTextStream.tryReadPromptStartOffsetSince state 0L)
+
+[<Fact>]
+let ``Cycle 41 — readSplitAt slices Committed into [from, splitAt) + [splitAt, end)`` () =
+    let state = freshProducer ()
+    // OSC 133;D drains pending → Committed; afterwards Committed
+    // contains "hello world" (11 bytes).
+    let bytes =
+        Array.concat
+            [ ascii "hello world"
+              osc133CommandFinished 0 ]
+    let (_, state) = feed state t0 bytes
+    let (buf1, buf2) = LinearTextStream.readSplitAt state 0L 5L
+    Assert.Equal("hello", System.Text.Encoding.UTF8.GetString buf1)
+    Assert.Equal(" world", System.Text.Encoding.UTF8.GetString buf2)
+
+[<Fact>]
+let ``Cycle 41 — readSplitAt returns empty arrays for degenerate ranges`` () =
+    let state = freshProducer ()
+    let (_, state) = feed state t0 (ascii "abc")
+    let (buf1, buf2) = LinearTextStream.readSplitAt state 3L 3L
+    Assert.Empty(buf1)
+    Assert.Empty(buf2)

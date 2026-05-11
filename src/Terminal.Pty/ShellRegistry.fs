@@ -132,7 +132,28 @@ module ShellRegistry =
             [ Cmd,
                 { Id = Cmd
                   DisplayName = "Command Prompt"
-                  Resolve = fun () -> Ok "cmd.exe" }
+                  // Cycle 41 — inject OSC 133;A/B markers via cmd's
+                  // PROMPT template. The `/K` flag runs the embedded
+                  // command at startup, which sets PROMPT for the
+                  // cmd session. `@` suppresses the line-echo of the
+                  // prompt command itself.
+                  //
+                  // cmd PROMPT codes: $E = ESC (0x1B), $P = path,
+                  // $G = `>`. The template `$E]133;A$E\` produces
+                  // `ESC ] 133 ; A ESC \` which is a valid OSC 133;A
+                  // terminated by the ST (string terminator).
+                  //
+                  // Rendered prompt becomes:
+                  //   <OSC 133;A><path>><OSC 133;B>
+                  // The OSC sequences are consumed by the VT parser
+                  // and dispatched as PromptBoundaryData events;
+                  // the user sees only `<path>>`. LinearTextStream
+                  // (Cycle 34a) updates PromptStartOffset on 133;A
+                  // synchronously, which StreamPathway then uses to
+                  // deterministically split the announce.
+                  Resolve =
+                      fun () ->
+                          Ok @"cmd.exe /K ""@prompt $E]133;A$E\$P$G$E]133;B$E\""" }
               Claude,
                 { Id = Claude
                   DisplayName = "Claude Code"

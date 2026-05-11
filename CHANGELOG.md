@@ -15,6 +15,53 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 41): OSC 133 injection on cmd (deterministic prompt boundaries)
+
+Closes the `echo hello` regression via deterministic shell-emitted
+markers, replacing the heuristic regex approach that broke in
+Cycles 40 + 40a (both reverted in PR #256).
+
+**Cmd PROMPT injection** in
+[`src/Terminal.Pty/ShellRegistry.fs`](src/Terminal.Pty/ShellRegistry.fs):
+cmd `Shell.Resolve` returns
+`cmd.exe /K "@prompt $E]133;A$E\$P$G$E]133;B$E\"`. The `/K` runs
+the embedded `prompt` command at cmd startup, setting `PROMPT` for
+the cmd session. Rendered prompt: `<OSC 133;A><path>><OSC 133;B>`.
+OSC sequences consumed by parser → dispatched as `PromptBoundaryData`
+events. PO-5 env-scrub allow-list untouched (PROMPT set INSIDE cmd,
+not in parent process).
+
+**LinearTextStream accessors** in
+[`src/Terminal.Core/LinearTextStream.fs`](src/Terminal.Core/LinearTextStream.fs):
+- `tryReadPromptStartOffsetSince : T -> int64 -> int64 option`
+- `readSplitAt : T -> int64 -> int64 -> byte[] * byte[]`
+
+**StreamPathway split** in
+[`src/Terminal.Core/StreamPathway.fs`](src/Terminal.Core/StreamPathway.fs):
+new `buildEmittedEventsForLinear` — at emit time, checks for an
+OSC 133;A offset in the emit window. If present, splits into
+`StreamChunk` (output portion) + `PromptDetected` (empty Payload +
+prompt text in `Extensions["prompt.text"]`). NvdaChannel skips the
+empty payload (silent auto-announce). Falls back to single-StreamChunk
+when no marker is found. Wired into both leading-edge and trailing-
+edge emit paths for the Linear substrate mode; ScreenDiff stays
+single-StreamChunk.
+
+**Why determinism beats heuristics**: OSC 133;A byte offset is set
+SYNCHRONOUSLY during parser dispatch. No timing race, no regex, no
+payload-shape edge cases.
+
+**Tests** (~12 new facts): pin cmd injection literals; pin
+`tryReadPromptStartOffsetSince` / `readSplitAt` semantics; pin
+`buildEmittedEventsForLinear` split behaviour.
+
+**What this PR does NOT do**:
+- No PowerShell injection (Cycle 42 deferred; PowerShell uses
+  `function prompt { ... }` plus PSReadLine).
+- No OSC 133;C / 133;D injection (cmd has no per-command hook).
+- No ScreenDiff-mode split (Linear only).
+- No echo-suppression (Cycle 38c stays reverted).
+
 ### Reverted (Cycle 39): Cycle 38c echo-suppression
 
 Cycle 38c (`EchoCorrelator` + `EchoSuppressorProfile`) was solving a
