@@ -133,6 +133,45 @@
                 <MenuItem x:Name="MenuItem_OpenManualTests"
                           x:FieldModifier="public"
                           Header="Open Manual _Tests" />
+                <Separator />
+                <!-- Cycle 43a — diagnostic chunking. Top-level
+                     `Copy Latest Bundle` and `Grep Diagnostics`
+                     are the load-bearing triage tools; the
+                     `Extract` submenu tree provides the catalog of
+                     small targeted slices. All six items are
+                     menu-only (no keyboard accelerators) per the
+                     hotkey-count working-memory ceiling — the
+                     existing Ctrl+Shift+D path stays for users
+                     who want the full battery + clipboard copy
+                     in one keystroke. -->
+                <MenuItem x:Name="MenuItem_CopyLatestBundle"
+                          x:FieldModifier="public"
+                          Header="Copy Latest Bun_dle to Clipboard" />
+                <MenuItem x:Name="MenuItem_GrepDiagnostics"
+                          x:FieldModifier="public"
+                          Header="_Grep Diagnostics..." />
+                <MenuItem Header="E_xtract">
+                    <MenuItem Header="By _Recency">
+                        <MenuItem x:Name="MenuItem_ExtractLast50LogLines"
+                                  x:FieldModifier="public"
+                                  Header="Last 50 _Log Lines" />
+                    </MenuItem>
+                    <MenuItem Header="By _Event Type">
+                        <MenuItem x:Name="MenuItem_ExtractErrorsAndWarnings"
+                                  x:FieldModifier="public"
+                                  Header="_Errors and Warnings" />
+                    </MenuItem>
+                    <MenuItem Header="By _Bundle Section">
+                        <MenuItem x:Name="MenuItem_ExtractActiveConfig"
+                                  x:FieldModifier="public"
+                                  Header="Active _Config" />
+                    </MenuItem>
+                    <MenuItem Header="_Snapshot">
+                        <MenuItem x:Name="MenuItem_ExtractVersionHeader"
+                                  x:FieldModifier="public"
+                                  Header="_Version Header" />
+                    </MenuItem>
+                </MenuItem>
             </MenuItem>
             <!-- Cycle 28 — Window menu. Both items are menu-only
                  commands (no keyboard accelerator registered with

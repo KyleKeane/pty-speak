@@ -59,6 +59,14 @@
     <Compile Include="LinearTextStreamTests.fs" />
     <Compile Include="CanonicalCorpusTests.fs" />
     <Compile Include="ManualTestsHtmlTests.fs" />
+    <!--
+      Cycle 43a — DiagnosticExtracts + DiagnosticGrep tests.
+      Slot after `ManualTestsHtmlTests` so the test compile
+      order mirrors the source compile order in
+      `Terminal.Core/Terminal.Core.fsproj`.
+    -->
+    <Compile Include="DiagnosticExtractsTests.fs" />
+    <Compile Include="DiagnosticGrepTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

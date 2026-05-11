@@ -90,7 +90,18 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               HotkeyRegistry.ExitApp
               // Cycle 38a-followup — second menu-only command;
               // Diagnostics → Open Manual Tests.
-              HotkeyRegistry.OpenManualTests ]
+              HotkeyRegistry.OpenManualTests
+              // Cycle 43a — diagnostic chunk extractors. All
+              // menu-only (no keyboard accelerators). Two top-level
+              // items under Diagnostics + 4 proof-of-concept
+              // extractors under Diagnostics → Extract → {Recency
+              // | Event Type | Bundle Section | Snapshot}.
+              HotkeyRegistry.CopyLatestBundle
+              HotkeyRegistry.GrepDiagnostics
+              HotkeyRegistry.ExtractLast50LogLines
+              HotkeyRegistry.ExtractErrorsAndWarnings
+              HotkeyRegistry.ExtractActiveConfig
+              HotkeyRegistry.ExtractVersionHeader ]
     let actual = Set.ofList HotkeyRegistry.allCommands
     Assert.Equal<Set<HotkeyRegistry.AppCommand>>(expected, actual)
 

@@ -1,0 +1,136 @@
+<!--
+  Cycle 43a — Grep diagnostics dialog. Modal WPF window opened
+  from the `Diagnostics → Grep diagnostics...` menu item. The user
+  enters a search pattern + options; the orchestrator in
+  `Terminal.App/Program.fs` calls `Terminal.Core.DiagnosticGrep`
+  to produce a formatted match list and copy it to the clipboard.
+
+  Accessibility-first conventions:
+  - Every interactive control has an explicit
+    `AutomationProperties.Name` so NVDA reads a clear label on tab
+    focus rather than the WPF default (which often reads "edit"
+    or "checkbox" with no field name).
+  - `FocusManager.FocusedElement` points at the pattern textbox so
+    the user can start typing immediately on dialog open.
+  - The OK button is `IsDefault="True"` (Enter activates) and
+    Cancel is `IsCancel="True"` (Escape activates), per WPF
+    standard modal-dialog conventions; this means the user can
+    type a pattern + hit Enter without leaving the textbox.
+  - Tab order is explicit (TabIndex on every focusable control)
+    so the screen-reader walks: pattern → case-sensitive →
+    regex → context-lines → OK → Cancel.
+  - Window is small (480 × 280), modal, non-resizable, centered
+    on the owner. SizeToContent="Height" lets the inline error
+    message expand the dialog vertically when validation fires.
+-->
+<Window x:Class="PtySpeak.Views.GrepDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Grep diagnostics"
+        Width="480"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        AutomationProperties.Name="Grep diagnostics dialog"
+        AutomationProperties.AutomationId="pty-speak.GrepDialog"
+        FocusManager.FocusedElement="{Binding ElementName=PatternTextBox}">
+    <Grid Margin="16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Row 0: pattern textbox + label. -->
+        <Label Grid.Row="0" Grid.Column="0"
+               Target="{Binding ElementName=PatternTextBox}"
+               Content="Search _pattern:"
+               Margin="0,0,8,4"
+               VerticalAlignment="Center" />
+        <TextBox x:Name="PatternTextBox"
+                 Grid.Row="0" Grid.Column="1"
+                 Margin="0,0,0,4"
+                 TabIndex="0"
+                 AutomationProperties.Name="Search pattern"
+                 AutomationProperties.HelpText="Pattern to search for. Empty pattern returns no matches." />
+
+        <!-- Row 1: case-sensitive checkbox. -->
+        <CheckBox x:Name="CaseSensitiveCheckBox"
+                  Grid.Row="1" Grid.Column="1"
+                  Margin="0,8,0,4"
+                  TabIndex="1"
+                  Content="_Case sensitive"
+                  AutomationProperties.Name="Case sensitive"
+                  AutomationProperties.HelpText="When unchecked, the pattern matches regardless of letter case (default)." />
+
+        <!-- Row 2: regex checkbox. -->
+        <CheckBox x:Name="RegexCheckBox"
+                  Grid.Row="2" Grid.Column="1"
+                  Margin="0,4,0,4"
+                  TabIndex="2"
+                  Content="Treat pattern as _regex"
+                  AutomationProperties.Name="Treat pattern as regex"
+                  AutomationProperties.HelpText="When unchecked, the pattern is a literal substring (default). When checked, the pattern is a .NET regular expression." />
+
+        <!-- Row 3: context-lines textbox + label. -->
+        <Label Grid.Row="3" Grid.Column="0"
+               Target="{Binding ElementName=ContextLinesTextBox}"
+               Content="_Lines of context:"
+               Margin="0,8,8,4"
+               VerticalAlignment="Center" />
+        <TextBox x:Name="ContextLinesTextBox"
+                 Grid.Row="3" Grid.Column="1"
+                 Margin="0,8,0,4"
+                 TabIndex="3"
+                 Text="5"
+                 AutomationProperties.Name="Lines of context around each match"
+                 AutomationProperties.HelpText="Integer between zero and twenty. Default five. Sets the number of lines of surrounding context emitted before and after each matched line." />
+
+        <!-- Row 4: validation error message (hidden by default). -->
+        <TextBlock x:Name="ValidationMessage"
+                   Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2"
+                   Margin="0,8,0,0"
+                   Foreground="DarkRed"
+                   TextWrapping="Wrap"
+                   Visibility="Collapsed"
+                   AutomationProperties.Name="Validation error"
+                   AutomationProperties.LiveSetting="Assertive" />
+
+        <!-- Row 5: spacer. -->
+        <Border Grid.Row="5" Grid.ColumnSpan="2" Height="8" />
+
+        <!-- Row 6: OK + Cancel buttons. Right-aligned, OK is
+             default so Enter from any field activates it; Cancel
+             is the IsCancel button so Escape closes the dialog. -->
+        <StackPanel Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,8,0,0">
+            <Button x:Name="OkButton"
+                    Content="_OK"
+                    IsDefault="True"
+                    Width="80"
+                    Height="28"
+                    Margin="0,0,8,0"
+                    TabIndex="4"
+                    AutomationProperties.Name="OK; run grep and copy results to clipboard"
+                    Click="OkButton_Click" />
+            <Button x:Name="CancelButton"
+                    Content="_Cancel"
+                    IsCancel="True"
+                    Width="80"
+                    Height="28"
+                    TabIndex="5"
+                    AutomationProperties.Name="Cancel; close dialog without running grep" />
+        </StackPanel>
+    </Grid>
+</Window>

@@ -1151,6 +1151,47 @@ Select-String -Pattern "Semantic=SelectionShown" -Path "$env:LOCALAPPDATA\PtySpe
 Select-String -Pattern "AnnounceRawPayload received unexpected" -Path "$env:LOCALAPPDATA\PtySpeak\diagnostic-snapshots\snapshot-*.txt"
 ```
 
+<!-- DOGFOOD -->
+### Cycle 43a — Diagnostic chunk extractors + Grep dialog
+
+Cycle 43a converts diagnostic triage from "press `Ctrl+Shift+D`,
+hope the multi-megabyte bundle doesn't crash iOS chat on paste"
+to "press a menu item, get a paste-safe focused chunk." The new
+surface lives entirely under `Diagnostics`: two top-level items
+(`Copy Latest Bundle to Clipboard`, `Grep Diagnostics...`) plus a
+4-way `Extract` submenu (By Recency / By Event Type / By Bundle
+Section / Snapshot) with one proof-of-concept item each in 43a.
+
+Every extractor copies a clipboard payload (capped at **60 KB**
+to dodge the Cycle 29b iOS-paste-crash failure mode), writes the
+full untruncated text to
+`%LOCALAPPDATA%\PtySpeak\extracts\<extractor>-<timestamp>.txt` as
+paste-fallback, and announces "<extractor> copied to clipboard:
+<size>. Extract file at <path>." via NVDA.
+
+| Test | Steps | Expected |
+|---|---|---|
+| Top-level item: Copy Latest Bundle | Press Alt, arrow to Diagnostics → Copy Latest Bundle to Clipboard, press Enter. Wait for the NVDA announce. Paste clipboard into any text editor. | NVDA announces "CopyLatestBundle copied to clipboard: <N> kilobytes. Extract file at <path>." within ~1 second (lightweight bundle skips the diagnostic battery so it's much faster than Ctrl+Shift+D's ~10s). Pasted text starts with `pty-speak diagnostic snapshot (Cycle 43a lightweight)` and contains all five sections (`--- FILELOGGER ACTIVE LOG ---`, `--- CONFIG.TOML ---`, `--- SESSION LOG ---`, `--- LINEAR STREAM ---`, `--- ENVIRONMENT ---`). |
+| Top-level item: Grep Diagnostics dialog | Press Alt, arrow to Diagnostics → Grep Diagnostics..., press Enter. NVDA reads the dialog title. Tab through controls — pattern textbox, case-sensitive checkbox, regex checkbox, context-lines textbox, OK button, Cancel button. | Dialog opens centred on the main window. Initial focus is on the pattern textbox (NVDA reads "Search pattern, edit"). Tabbing reads each label: "Case sensitive, checkbox, not checked"; "Treat pattern as regex, checkbox, not checked"; "Lines of context around each match, edit, 5"; "OK, button"; "Cancel, button". |
+| Grep dialog default-OK round trip | Type `Heartbeat` in the pattern textbox, press Enter (default OK). | Dialog closes. NVDA announces "grep-Heartbeat copied to clipboard: <N> bytes. Extract file at <path>." Pasted clipboard begins with `pty-speak grep — pattern: Heartbeat (regex=false, case=false, context=5)` and contains one `--- Match N of M (line L) ---` block per matched line. |
+| Grep dialog Cancel / Escape | Open the dialog, press Escape. | Dialog closes silently. No NVDA announce. No clipboard write. |
+| Grep dialog invalid context lines | Open dialog, type `abc` into the context-lines textbox, press Enter. | Dialog stays open. Inline error message reads "Context lines must be a whole number between 0 and 20." Focus moves back to the context-lines textbox. NVDA reads the error via the `LiveSetting=Assertive` automation property. |
+| Grep clipboard truncation | Open dialog, type `Heartbeat` with context = 20, press Enter. The lightweight bundle has many heartbeat lines so result exceeds 60 KB. | NVDA announce contains "(clipboard truncated)" suffix. Pasted clipboard ends with `[... truncated at 60-something bytes; full results in extract file ...]`. Extract file at the announced path contains the full untruncated result. |
+| Extract → By Recency → Last 50 Log Lines | Press Alt → Diagnostics → Extract → By Recency → Last 50 Log Lines → Enter. | NVDA announces "ExtractLast50LogLines copied to clipboard: <N> kilobytes." Pasted text contains 50 log lines (or fewer if the active log is shorter), each prefixed by an ISO-8601 timestamp like `2026-05-11T14:32:17.456Z`. |
+| Extract → By Event Type → Errors and Warnings | Open the menu chain, select Errors and Warnings. | NVDA announces successfully. Pasted text contains only lines with `Semantic=ErrorLine`, `Semantic=WarningLine`, or `Semantic=ParserError`. If the current session has no such events, the body reads as empty (just the header). |
+| Extract → By Bundle Section → Active Config | Open the menu chain, select Active Config. | NVDA announces successfully. Pasted text is the verbatim content of `%LOCALAPPDATA%\PtySpeak\config.toml`. If the file is missing, the body reads `(file not present: <path>)`. |
+| Extract → Snapshot → Version Header | Open the menu chain, select Version Header. | NVDA announces successfully. Pasted text contains 5 short lines: `Version: 0.0.x.y`, `OS: <OS string>`, `.NET: <runtime version>`, `Process ID: <pid>`, `Active shell: cmd` (or whichever shell is current). Total size under 1 KB. |
+| Extract file fallback for clipboard contention | With pty-speak open, open another app that holds the clipboard (e.g., a clipboard-manager utility). Press Diagnostics → Extract → Snapshot → Version Header. | NVDA may announce "ExtractVersionHeader clipboard copy timed out. Extract file at <path>." Even on clipboard timeout, the extract file is written with the full content — the user can navigate to `%LOCALAPPDATA%\PtySpeak\extracts\` and open the latest file. |
+| Menu item announces with no InputGestureText | Focus any of the 6 new menu items via arrow keys. | NVDA reads only the item name (e.g., "Grep Diagnostics, ellipsis"). No keyboard shortcut is announced — all 6 commands are menu-only by canon (`Key = None`, `Modifiers = None` in `HotkeyRegistry.builtIns`). |
+
+**Diagnostic decoder.** If a clipboard copy fails repeatedly with
+"clipboard copy timed out": likely NVDA's clipboard hook
+contention. Pull the extract file directly from
+`%LOCALAPPDATA%\PtySpeak\extracts\`. If the extract file write
+fails: check `%LOCALAPPDATA%\PtySpeak\` disk space / permissions
+— the error path will report "Extract file write failed" but
+clipboard copy still works.
+
 ## Recording results
 
 For each release tag:

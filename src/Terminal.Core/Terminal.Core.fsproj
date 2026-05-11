@@ -43,6 +43,17 @@
     <Compile Include="Channels/IHotkeyTranslator.fs" />
     <Compile Include="Channels/IDisplayBuffer.fs" />
     <Compile Include="ManualTestsHtml.fs" />
+    <!--
+      Cycle 43a — diagnostic chunk extractors + grep substrate.
+      Pure F# helpers backing the new `Diagnostics → Extract` and
+      `Diagnostics → Grep diagnostics...` menu commands. No
+      WPF / clipboard / logger dependencies; orchestrator in
+      `Terminal.App/Program.fs` owns side effects. The two
+      modules live at the end of the compile order because
+      nothing else in `Terminal.Core` depends on them.
+    -->
+    <Compile Include="DiagnosticExtracts.fs" />
+    <Compile Include="DiagnosticGrep.fs" />
   </ItemGroup>
 
   <ItemGroup>

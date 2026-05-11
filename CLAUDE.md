@@ -119,33 +119,56 @@ user isn't around, queue the question and wait. **Do not push
 speculative fixups** — the cost of one wrong fix is multiple
 minutes of wasted CI cycle plus a noisier git history.
 
-### Diagnostic logs — request chunks, not full bundles
+### Diagnostic logs — request chunks via the in-app menu
 
-`Ctrl+Shift+D`'s diagnostic snapshot is comprehensive: FileLogger
-log + config.toml + redacted env + session-log summary +
-diagnostic-battery log, all combined. **The full bundle can be
-multi-megabyte, especially after a Claude session.** Cycle 29b
-NVDA validation 2026-05-09 produced a bundle that crashed the
-maintainer's iOS chat app on paste. Sharing the whole thing back
-is sometimes infeasible.
+`Ctrl+Shift+D`'s full diagnostic snapshot is comprehensive but
+can be multi-megabyte after a Claude session. Cycle 29b NVDA
+validation 2026-05-09 produced a bundle that crashed the
+maintainer's iOS chat app on paste. Cycle 43a (2026-05-11)
+shipped in-app chunking infrastructure so the maintainer can
+produce paste-safe focused slices without shell-quoting `findstr`
+or `Select-String` — both of which are friction for keyboard-only
+/ screen-reader usage. **Default to the menu items**:
 
-**Default to chunk-first requests.** Tell the maintainer the
-specific strings or sections you need:
+- **`Diagnostics → Grep diagnostics...`** — opens a dialog
+  (pattern, case-sensitive checkbox, regex checkbox,
+  context-lines spinner). Greps the lightweight diagnostic
+  bundle in-memory; clipboard payload is capped at 60 KB with
+  full untruncated text written to
+  `%LOCALAPPDATA%\PtySpeak\extracts\grep-<slug>-<timestamp>.txt`.
+  Use this whenever you want a pattern match — replaces every
+  `findstr` recipe.
+- **`Diagnostics → Copy Latest Bundle to Clipboard`** — fast
+  current-state snapshot (~100 ms; skips the diagnostic battery,
+  so much faster than `Ctrl+Shift+D`'s ~10 s). Use when you want
+  the broad picture without running test commands.
+- **`Diagnostics → Extract → By Recency → Last 50 Log Lines`** —
+  tail of the active FileLogger log.
+- **`Diagnostics → Extract → By Event Type → Errors and Warnings`** —
+  log entries with `Semantic=ErrorLine`, `WarningLine`, or
+  `ParserError`.
+- **`Diagnostics → Extract → By Bundle Section → Active Config`** —
+  current `config.toml` content.
+- **`Diagnostics → Extract → Snapshot → Version Header`** —
+  version + OS + .NET + PID + active shell (< 1 KB).
 
-- Specific Semantic categories — `findstr "Semantic=SelectionShown" "<bundle>"` from cmd
-  or `Select-String -Pattern "Semantic=SelectionShown" "<bundle>"` from PowerShell.
-- Time-bounded windows — "the lines around 18:52 when the prompt
-  appeared" with ±10 lines of context.
-- Specific log sections — `--- DIAGNOSTIC BATTERY LOG ---` /
-  `--- FILELOGGER ACTIVE LOG ---` / `--- CONFIG.TOML ---` /
-  `--- ENVIRONMENT ---` are clearly delimited; ask for one
-  section by name rather than the whole snapshot.
-- Single-line counts — "how many `Earcon play started` lines
-  with `error-tone` in the last minute?" is a one-line answer
-  that often tells you what you need.
+**Asking the maintainer for an extract.** Replace
+"please paste me the FileLogger log filtered for Semantic=ErrorLine"
+with "press `Alt`, arrow to Diagnostics → Extract → By Event Type
+→ Errors and Warnings, press Enter, paste me the clipboard." The
+NVDA announce confirms size + extract-file path, so if iOS chat
+chokes on the paste the maintainer can navigate to the extract
+file path the announce mentioned and share that instead.
 
-When you DO need a wider grep, push the heavy lifting onto the
-maintainer's shell rather than the chat:
+**Asking for a custom pattern.** Replace any `findstr`/
+`Select-String` recipe with: "press `Alt`, arrow to Diagnostics →
+Grep Diagnostics, press Enter, type `<pattern>` and press Enter,
+paste me the result." If the pattern needs regex semantics, tell
+the maintainer to tick the "Treat pattern as regex" checkbox
+before pressing Enter.
+
+**Shell-script fallback (deprecated; use only if the menu items
+are unavailable, e.g. on a build before Cycle 43a):**
 
 ```
 :: cmd
@@ -159,10 +182,12 @@ Select-String -Pattern "Color=red" -Path "$env:LOCALAPPDATA\PtySpeak\logs\<file>
     Out-File excerpt.txt -Encoding utf8
 ```
 
-If the bundle is genuinely needed in full, ask whether the
-maintainer can share via a different channel (gist, file
-attachment, paste service) rather than inline chat — paste-into-chat
-is the failure mode.
+If the bundle is genuinely needed in full and even the extract
+file is too large for the chat channel, ask whether the
+maintainer can share via gist / file attachment / paste service
+— paste-into-chat is the long-standing failure mode the Cycle 43a
+extractors are designed to sidestep but cannot eliminate for
+truly enormous artifacts.
 
 ### PR creation and webhook subscription
 

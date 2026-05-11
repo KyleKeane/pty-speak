@@ -2335,6 +2335,313 @@ module Program =
                         safe,
                     ActivityIds.error)
 
+        // ---------------------------------------------------------------
+        // Cycle 43a — Diagnostics → Extract submenu + Grep dialog
+        // ---------------------------------------------------------------
+        //
+        // Six new menu-only commands (no keyboard accelerators):
+        //   * `CopyLatestBundle`     — Diagnostics → Copy latest diagnostic bundle
+        //   * `GrepDiagnostics`      — Diagnostics → Grep diagnostics...
+        //   * `ExtractLast50LogLines` — Diagnostics → Extract → By Recency
+        //   * `ExtractErrorsAndWarnings` — Diagnostics → Extract → By Event Type
+        //   * `ExtractActiveConfig`     — Diagnostics → Extract → By Bundle Section
+        //   * `ExtractVersionHeader`    — Diagnostics → Extract → Snapshot
+        //
+        // All six follow the same shape: compute a body string,
+        // wrap it with a header, cap clipboard payload at 60 KB
+        // (Cycle 29b iOS-paste-crash ceiling), write the full
+        // untruncated text to `%LOCALAPPDATA%\PtySpeak\extracts\`
+        // as a paste-fallback, copy the (possibly-truncated)
+        // clipboard view via the STA-thread + 3s-timeout pattern
+        // shared by `runCopyHistoryToClipboard`, and announce the
+        // size + file path via NVDA. The shared shape lives in
+        // `runExtractorClipboard` below; the per-command logic
+        // is a single closure passed as `computeBody`.
+
+        // Shared building block for the lightweight diagnostic
+        // bundle that `CopyLatestBundle` copies and that
+        // `GrepDiagnostics` searches over. Resolvers run at
+        // press-time so a hot-switch between presses is picked up
+        // correctly. Skips the diagnostic-battery + canonical-
+        // corpus sections that `Ctrl+Shift+D` includes (those
+        // require running test commands against the live shell,
+        // adding ~10 seconds of wall time); the lightweight
+        // assembly is current-state-only and completes in ~100 ms.
+        let buildLightweightBundle () : string =
+            let now = DateTime.UtcNow
+            let configPath = Config.defaultConfigFilePath ()
+            let sessionLogSummary = buildSessionLogSummary ()
+            let fileLoggerPath =
+                loggerSink |> Option.map (fun s -> s.ActiveLogPath)
+            let tailBytes =
+                LinearTextStream.getLastBytes linearStream 64
+            let tailText =
+                try
+                    System.Text.Encoding.UTF8.GetString(tailBytes)
+                    |> AnnounceSanitiser.sanitise
+                with _ -> "(UTF-8 decode failed)"
+            Diagnostics.formatLightweightBundle
+                now
+                fileLoggerPath
+                configPath
+                sessionLogSummary
+                tailText
+
+        // Cycle 43a — the canonical "extractor → clipboard + file
+        // + announce" pipeline. Captures `window` from compose-
+        // local scope; otherwise pure (delegates body production
+        // to the caller-supplied closure). Mirrors the STA + 3s
+        // pattern of `runCopyHistoryToClipboard`; the difference
+        // is the file-write step ahead of the clipboard hand-off
+        // so paste-back consumers who can't paste from clipboard
+        // (e.g. iOS chat clients on huge content) have the
+        // untruncated text on disk.
+        let runExtractorClipboard
+                (extractorName: string)
+                (sourceDescription: string)
+                (computeBody: unit -> string)
+                : unit =
+            let log =
+                Logger.get
+                    (sprintf
+                        "Terminal.App.Program.runExtractor.%s"
+                        extractorName)
+            log.LogInformation(
+                "Extractor pressed: {Name}", extractorName)
+            let _ =
+                task {
+                    try
+                        let now = DateTimeOffset.UtcNow
+                        let body = computeBody ()
+                        let fullContent =
+                            DiagnosticExtracts.formatExtractHeader
+                                now
+                                extractorName
+                                sourceDescription
+                                body
+                        let (clipboardContent, truncated) =
+                            DiagnosticExtracts.truncateForClipboard
+                                DiagnosticExtracts.clipboardSafetyCeilingBytes
+                                fullContent
+                        let extractPath =
+                            DiagnosticExtracts.extractFilePath
+                                now
+                                extractorName
+                        let mutable extractWritten = false
+                        try
+                            DiagnosticExtracts.writeExtractFile
+                                extractPath
+                                fullContent
+                            extractWritten <- true
+                        with ex ->
+                            log.LogWarning(
+                                ex,
+                                "Extract file write failed at {Path}",
+                                extractPath)
+                        let setOk = TaskCompletionSource<bool>()
+                        let staBody = ThreadStart(fun () ->
+                            try
+                                System.Windows.Clipboard.SetText(clipboardContent)
+                                setOk.TrySetResult(true) |> ignore
+                            with ex ->
+                                log.LogWarning(
+                                    ex,
+                                    "Extractor clipboard SetText threw: {Message}",
+                                    ex.Message)
+                                setOk.TrySetResult(false) |> ignore)
+                        let staThread = new Thread(staBody)
+                        staThread.SetApartmentState(ApartmentState.STA)
+                        staThread.IsBackground <- true
+                        staThread.Start()
+                        let! winner =
+                            Task.WhenAny(
+                                setOk.Task :> Task,
+                                Task.Delay(3000))
+                        let copied =
+                            obj.ReferenceEquals(winner, setOk.Task)
+                            && setOk.Task.Result
+                        let bytes =
+                            System.Text.Encoding.UTF8.GetByteCount(clipboardContent)
+                        let sizeStr =
+                            DiagnosticExtracts.formatBytesForAnnounce bytes
+                        let truncSuffix =
+                            if truncated then " (clipboard truncated)"
+                            else ""
+                        let fileSuffix =
+                            if extractWritten then
+                                sprintf
+                                    " Extract file at %s."
+                                    extractPath
+                            else
+                                " Extract file write failed."
+                        let msg, activityId =
+                            if copied then
+                                log.LogInformation(
+                                    "Extractor {Name} copied. Bytes={Bytes} Truncated={Truncated} ExtractPath={Path}",
+                                    extractorName,
+                                    bytes,
+                                    truncated,
+                                    extractPath)
+                                sprintf
+                                    "%s copied to clipboard: %s%s.%s"
+                                    extractorName
+                                    sizeStr
+                                    truncSuffix
+                                    fileSuffix,
+                                ActivityIds.diagnostic
+                            else
+                                log.LogWarning(
+                                    "Extractor {Name} clipboard timed out.",
+                                    extractorName)
+                                sprintf
+                                    "%s clipboard copy timed out.%s"
+                                    extractorName
+                                    fileSuffix,
+                                ActivityIds.error
+                        let action () =
+                            window.TerminalSurface.Announce(msg, activityId)
+                        do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                    with ex ->
+                        let safe = AnnounceSanitiser.sanitise ex.Message
+                        log.LogError(
+                            ex,
+                            "Extractor {Name} failed.",
+                            extractorName)
+                        let action () =
+                            window.TerminalSurface.Announce(
+                                sprintf "%s failed: %s" extractorName safe,
+                                ActivityIds.error)
+                        try
+                            do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                        with _ -> ()
+                }
+            ()
+
+        // --- Top-level: Copy latest diagnostic bundle (no battery) ---
+        let runCopyLatestBundle () : unit =
+            runExtractorClipboard
+                "CopyLatestBundle"
+                "lightweight diagnostic bundle (FileLogger active log + config + session log summary + linear stream tail + redacted environment)"
+                buildLightweightBundle
+
+        // --- Top-level: Grep diagnostics... (modal dialog) ---
+        //
+        // Runs on the dispatcher (hotkey handler is dispatcher-bound
+        // by `bindHotkey`'s contract). Dialog is modal-with-owner
+        // so NVDA's focus model reads the dialog as a child of the
+        // main window and Alt+F4 / Escape close it cleanly. After
+        // the dialog returns, the grep + clipboard + announce
+        // pipeline runs through `runExtractorClipboard` so the
+        // size-cap / file-write / NVDA-announce behaviour is
+        // identical to the other extractors.
+        let runGrepDiagnostics () : unit =
+            let log =
+                Logger.get "Terminal.App.Program.runGrepDiagnostics"
+            try
+                let dialog = GrepDialog()
+                dialog.Owner <- window
+                let result = dialog.ShowDialog()
+                if result.HasValue && result.Value then
+                    let opts : DiagnosticGrep.GrepOptions =
+                        { Pattern = dialog.Pattern
+                          CaseSensitive = dialog.CaseSensitive
+                          TreatAsRegex = dialog.TreatAsRegex
+                          ContextLines = dialog.ContextLines }
+                    let extractorName =
+                        sprintf "grep-%s" dialog.Pattern
+                    let source =
+                        sprintf
+                            "lightweight diagnostic bundle; grep pattern=%s regex=%b case=%b context=%d"
+                            dialog.Pattern
+                            dialog.TreatAsRegex
+                            dialog.CaseSensitive
+                            dialog.ContextLines
+                    let computeBody () =
+                        let bundle = buildLightweightBundle ()
+                        DiagnosticGrep.formatGrep opts bundle
+                    runExtractorClipboard
+                        extractorName
+                        source
+                        computeBody
+                else
+                    log.LogInformation(
+                        "Grep dialog cancelled.")
+            with ex ->
+                let safe = AnnounceSanitiser.sanitise ex.Message
+                log.LogError(ex, "Grep dialog failed to open.")
+                window.TerminalSurface.Announce(
+                    sprintf "Grep dialog failed: %s" safe,
+                    ActivityIds.error)
+
+        // --- Extract → By Recency → Last 50 log lines ---
+        let runExtractLast50LogLines () : unit =
+            runExtractorClipboard
+                "ExtractLast50LogLines"
+                "FileLogger active log; last 50 lines"
+                (fun () ->
+                    match loggerSink with
+                    | None -> "(FileLogger not configured)"
+                    | Some sink ->
+                        DiagnosticExtracts.tailLogLines
+                            sink.ActiveLogPath
+                            50)
+
+        // --- Extract → By Event Type → Errors and warnings ---
+        let runExtractErrorsAndWarnings () : unit =
+            runExtractorClipboard
+                "ExtractErrorsAndWarnings"
+                "FileLogger active log; entries with Semantic=ErrorLine, WarningLine, or ParserError"
+                (fun () ->
+                    match loggerSink with
+                    | None -> "(FileLogger not configured)"
+                    | Some sink ->
+                        DiagnosticExtracts.filterLogBySemantic
+                            sink.ActiveLogPath
+                            [ "ErrorLine"; "WarningLine"; "ParserError" ])
+
+        // --- Extract → By Bundle Section → Active config.toml ---
+        let runExtractActiveConfig () : unit =
+            runExtractorClipboard
+                "ExtractActiveConfig"
+                (sprintf
+                    "config.toml at %s"
+                    (Config.defaultConfigFilePath ()))
+                (fun () ->
+                    let path = Config.defaultConfigFilePath ()
+                    Diagnostics.readFileSafe path)
+
+        // --- Extract → Snapshot → Version + environment header ---
+        let runExtractVersionHeader () : unit =
+            runExtractorClipboard
+                "ExtractVersionHeader"
+                "process version + OS + .NET + PID (small status snapshot)"
+                (fun () ->
+                    let version =
+                        try
+                            let asm =
+                                System.Reflection.Assembly.GetExecutingAssembly()
+                            let v = asm.GetName().Version
+                            if isNull v then "unknown" else string v
+                        with _ -> "unknown"
+                    let pid =
+                        System.Diagnostics.Process.GetCurrentProcess().Id
+                    let sb = System.Text.StringBuilder()
+                    sb.AppendLine(sprintf "Version: %s" version) |> ignore
+                    sb.AppendLine(
+                        sprintf
+                            "OS: %s"
+                            (Environment.OSVersion.VersionString)) |> ignore
+                    sb.AppendLine(
+                        sprintf
+                            ".NET: %s"
+                            (Environment.Version.ToString())) |> ignore
+                    sb.AppendLine(sprintf "Process ID: %d" pid) |> ignore
+                    sb.AppendLine(
+                        sprintf
+                            "Active shell: %s"
+                            currentShell.DisplayName) |> ignore
+                    sb.ToString())
+
         // Stage 7-followup PR-F — wire Ctrl+Shift+H and Ctrl+Shift+B
         // through the unified `bindHotkey` helper (PR-O). Both
         // closures capture compose-local state (lastReadUtc,
@@ -2346,6 +2653,16 @@ module Program =
         bind HotkeyRegistry.RunDiagnostic runDiagnostic
         bind HotkeyRegistry.CopyHistoryToClipboard runCopyHistoryToClipboard
         bind HotkeyRegistry.AnnounceSessionLogPath runAnnounceSessionLogPath
+        // Cycle 43a — diagnostic chunk extractors + grep dialog.
+        // All menu-only (no keyboard accelerator); `bindHotkey`
+        // skips the KeyBinding installation but still registers
+        // the CommandBinding so MenuItem.Command dispatch works.
+        bind HotkeyRegistry.CopyLatestBundle runCopyLatestBundle
+        bind HotkeyRegistry.GrepDiagnostics runGrepDiagnostics
+        bind HotkeyRegistry.ExtractLast50LogLines runExtractLast50LogLines
+        bind HotkeyRegistry.ExtractErrorsAndWarnings runExtractErrorsAndWarnings
+        bind HotkeyRegistry.ExtractActiveConfig runExtractActiveConfig
+        bind HotkeyRegistry.ExtractVersionHeader runExtractVersionHeader
 
         // Stage 7-followup PR-F — background heartbeat. Every 5
         // seconds, log a single Information-level "Heartbeat" line
