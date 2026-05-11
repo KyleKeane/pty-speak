@@ -615,21 +615,35 @@ module StreamPathway =
         // user types). Fall back to the cached OnPromptBoundary
         // for cases where the inline regex didn't catch but the
         // heuristic detector did (custom prompts, OSC 133, etc.).
+        //
+        // **Policy** (Cycle 40a follow-up after dogfood test
+        // failure): only split when there's actual OUTPUT
+        // before the prompt. When the entire payload IS the
+        // prompt (e.g., fresh shell after hot-switch, prompt
+        // appearing with no preceding command output), the
+        // StreamChunk flows through unchanged so the user
+        // still hears confirmation that the new shell is
+        // ready. Empty-output splits would leave the user with
+        // NO audible signal that the prompt arrived.
         let outputPortion, promptPortion =
             match tryDetectPromptInPayload capped with
-            | Some (o, p) ->
-                // Inline detection succeeded; clear any cached
-                // boundary so it can't double-fire on the next
-                // chunk.
+            | Some (o, p) when not (String.IsNullOrEmpty o) ->
+                // Real output before the prompt; split.
                 state.LastPromptBoundary <- ValueNone
                 o, Some p
-            | None ->
+            | _ ->
+                // Either no prompt detected inline OR the entire
+                // payload was the prompt (no preceding output).
+                // Fall back to the cached boundary (also empty-
+                // output guarded, mirroring the same policy).
                 match state.LastPromptBoundary with
                 | ValueSome boundary ->
-                    let result = splitAtPromptBoundary capped boundary
-                    // Single-shot consumption: clear the cache.
+                    let cached = splitAtPromptBoundary capped boundary
                     state.LastPromptBoundary <- ValueNone
-                    result
+                    match cached with
+                    | o, Some _ when not (String.IsNullOrEmpty o) ->
+                        cached
+                    | _ -> capped, None
                 | ValueNone -> capped, None
         let events = ResizeArray<OutputEvent>()
         if not (String.IsNullOrEmpty outputPortion) then
