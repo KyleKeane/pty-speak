@@ -2,6 +2,7 @@ namespace Terminal.Core
 
 open System
 open System.Collections.Generic
+open System.Text
 open Microsoft.Extensions.Logging
 
 /// Phase A — Stream display pathway. Replaces the verbose-
