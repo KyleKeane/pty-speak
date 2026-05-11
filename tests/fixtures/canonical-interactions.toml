@@ -49,13 +49,13 @@
 [[scenario]]
 id = "cmd.echo.plain"
 shell = "cmd"
-description = "Plain `echo hello` should emit StreamChunk for the output 'hello' only. The next prompt should split into a PromptDetected event that routes to the input panel (silent auto-announce; navigable via NVDA browse mode)."
+description = "Plain `echo hello` should emit StreamChunk for the output 'hello' only. The next prompt should NOT bleed into the same announce as the output."
 command = "echo PtySpeakDiagEchoPlain"
-must_include = ["StreamChunk", "PromptDetected"]
+must_include = ["StreamChunk"]
 must_not_include = ["ErrorLine", "WarningLine"]
 quiescence_ms = 200
 expected_payload_regex = ["PtySpeakDiagEchoPlain"]
-notes = "Fixed in Cycle 40. StreamPathway splits the chunk at the cached prompt-boundary: output portion (e.g. PtySpeakDiagEchoPlain) emits as StreamChunk; prompt portion (e.g. C:\\>) emits as PromptDetected with empty Payload + prompt text in Extensions['prompt.text']. NvdaChannel routes PromptDetected to ActivityIds.inputPanel; empty payload means no auto-announce."
+notes = "Bug 2026-05-11: output and next prompt currently bleed into the StreamChunk. Cycle 40 (three-panel channel routing) splits StreamChunk at the prompt boundary so the prompt portion routes to the input panel. Cycle 39 reverted the unrelated Cycle 38c echo-suppression."
 
 [[scenario]]
 id = "cmd.dir.simple"

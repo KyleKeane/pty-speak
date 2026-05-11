@@ -82,16 +82,8 @@ module NvdaChannel =
         | SemanticCategory.SpinnerTick
         | SemanticCategory.BellRang
         | SemanticCategory.HyperlinkOpened
+        | SemanticCategory.PromptDetected
         | SemanticCategory.CommandSubmitted -> ActivityIds.output
-        // Cycle 40 — PromptDetected routes to the input panel.
-        // Events arrive with empty Payload by convention (the
-        // empty-payload trick from Cycle 8d.2 / 29b); NvdaChannel's
-        // existing `RenderText "" -> ()` skip means no auto-
-        // announce. The prompt text lives in
-        // `Extensions["prompt.text"]` and on the screen for
-        // browse-mode navigation. FileLogger logs the structured
-        // event for the audit trail.
-        | SemanticCategory.PromptDetected -> ActivityIds.inputPanel
         | SemanticCategory.Custom _ -> ActivityIds.output
 
     /// Construct a Channel that announces via the supplied
