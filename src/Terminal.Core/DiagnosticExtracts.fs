@@ -113,6 +113,20 @@ module DiagnosticExtracts =
             use reader = new StreamReader(stream, Encoding.UTF8)
             Some (reader.ReadToEnd())
 
+    /// Split a UTF-8 text body into lines, stripping the single
+    /// trailing empty element that `String.Split('\n')` produces
+    /// when the source ends with a newline. Keeps interior blank
+    /// lines (a blank line BETWEEN log entries is content; the
+    /// trailing empty AFTER the final newline is not). Centralised
+    /// here so `tailLogLines`, `filterLogLinesSince`, and
+    /// `filterLogBySemantic` share the same line-count semantics.
+    let private splitLinesStripTrailing (content: string) : string[] =
+        let lines = content.Split([| '\n' |], StringSplitOptions.None)
+        if lines.Length > 0 && lines.[lines.Length - 1] = "" then
+            lines |> Array.take (lines.Length - 1)
+        else
+            lines
+
     /// Read the last `n` lines of a UTF-8 text file. Returns the
     /// joined lines (without a trailing newline) plus a header note
     /// indicating the source path and the line count actually
@@ -131,25 +145,20 @@ module DiagnosticExtracts =
         | None ->
             sprintf "(file not present: %s)" path
         | Some content ->
-            let lines =
-                content.Split([| '\n' |], StringSplitOptions.None)
+            // Strip the trailing empty BEFORE computing the tail
+            // window so `lineCount` reflects real-line count, not
+            // the Split-artifact count. Without this strip the
+            // window includes the trailing-empty slot, eats one
+            // real line, and returns N-1 lines instead of N.
+            let lines = splitLinesStripTrailing content
             let lineCount = lines.Length
             let takeCount = if n < 0 then 0 else min n lineCount
             let startIdx = lineCount - takeCount
             let tail =
                 if startIdx <= 0 then lines
                 else lines |> Array.skip startIdx
-            // Strip the trailing empty element that always appears
-            // when the file ends with a newline (Split returns one
-            // empty string after the final `\n`). Keep interior
-            // blank lines.
-            let tail =
-                if tail.Length > 0 && tail.[tail.Length - 1] = "" then
-                    tail |> Array.take (tail.Length - 1)
-                else
-                    tail
-            // Also strip embedded \r so paste targets render cleanly
-            // on platforms that surface CR as a visible glyph.
+            // Strip embedded \r so paste targets render cleanly on
+            // platforms that surface CR as a visible glyph.
             let cleaned =
                 tail
                 |> Array.map (fun line -> line.TrimEnd('\r'))
@@ -190,8 +199,7 @@ module DiagnosticExtracts =
         | None ->
             sprintf "(file not present: %s)" path
         | Some content ->
-            let lines =
-                content.Split([| '\n' |], StringSplitOptions.None)
+            let lines = splitLinesStripTrailing content
             let kept = ResizeArray<string>()
             let mutable retainContinuations = false
             for rawLine in lines do
@@ -230,9 +238,7 @@ module DiagnosticExtracts =
                 let lineMatches (line: string) : bool =
                     needles
                     |> List.exists (fun n -> line.Contains(n))
-                let lines =
-                    content.Split(
-                        [| '\n' |], StringSplitOptions.None)
+                let lines = splitLinesStripTrailing content
                 let kept = ResizeArray<string>()
                 let mutable retainContinuations = false
                 for rawLine in lines do
