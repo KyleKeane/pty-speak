@@ -1790,3 +1790,83 @@ let ``Cycle 35c — SubstrateMode=ScreenDiff still gates spinners (regression)``
             suppressedCount emittedCount)
     // Sanity: the gate's state machine WAS engaged on this path.
     Assert.NotEmpty(state.PerRowHistory)
+
+// =====================================================================
+// Cycle 40 — Three-panel channel routing: splitAtPromptBoundary
+// =====================================================================
+
+let private fakeBoundary (matchedRowText: string) : PromptBoundaryData =
+    { Kind = BoundaryKind.PromptStart
+      Source = BoundarySource.Heuristic
+      DetectedAt = DateTime.UtcNow
+      CommandId = None
+      ExtraParams = Map.empty
+      MatchedRowText = Some matchedRowText
+      MatchedRowIndex = Some 0 }
+
+[<Fact>]
+let ``Cycle 40 — splitAtPromptBoundary splits when prompt is a suffix of the payload`` () =
+    let payload = "hello\r\nC:\\path>"
+    let boundary = fakeBoundary "C:\\path>"
+    let outputPortion, promptPortion =
+        StreamPathway.splitAtPromptBoundary payload boundary
+    Assert.Equal("hello", outputPortion)
+    Assert.Equal(Some "C:\\path>", promptPortion)
+
+[<Fact>]
+let ``Cycle 40 — splitAtPromptBoundary trims trailing whitespace after prompt`` () =
+    let payload = "hello\r\nC:\\path>   "
+    let boundary = fakeBoundary "C:\\path>"
+    let outputPortion, promptPortion =
+        StreamPathway.splitAtPromptBoundary payload boundary
+    Assert.Equal("hello", outputPortion)
+    Assert.Equal(Some "C:\\path>", promptPortion)
+
+[<Fact>]
+let ``Cycle 40 — splitAtPromptBoundary returns None when prompt is not a tail suffix`` () =
+    let payload = "hello world"
+    let boundary = fakeBoundary "C:\\path>"
+    let outputPortion, promptPortion =
+        StreamPathway.splitAtPromptBoundary payload boundary
+    Assert.Equal("hello world", outputPortion)
+    Assert.Equal(None, promptPortion)
+
+[<Fact>]
+let ``Cycle 40 — splitAtPromptBoundary returns whole-prompt + empty-output when entire payload is the prompt`` () =
+    let payload = "C:\\path>"
+    let boundary = fakeBoundary "C:\\path>"
+    let outputPortion, promptPortion =
+        StreamPathway.splitAtPromptBoundary payload boundary
+    Assert.Equal("", outputPortion)
+    Assert.Equal(Some "C:\\path>", promptPortion)
+
+[<Fact>]
+let ``Cycle 40 — splitAtPromptBoundary returns no-split when boundary has no MatchedRowText`` () =
+    let payload = "hello\r\nC:\\path>"
+    let boundary =
+        { Kind = BoundaryKind.PromptStart
+          Source = BoundarySource.Heuristic
+          DetectedAt = DateTime.UtcNow
+          CommandId = None
+          ExtraParams = Map.empty
+          MatchedRowText = None
+          MatchedRowIndex = None }
+    let outputPortion, promptPortion =
+        StreamPathway.splitAtPromptBoundary payload boundary
+    Assert.Equal("hello\r\nC:\\path>", outputPortion)
+    Assert.Equal(None, promptPortion)
+
+[<Fact>]
+let ``Cycle 40 — OnPromptBoundary caches the boundary on the pathway state`` () =
+    let pathway, exposedState =
+        StreamPathway.createWithExposedState
+            StreamPathway.defaultParameters
+            (LinearTextStream.create LinearTextStream.defaultParameters)
+    let boundary = fakeBoundary "C:\\path>"
+    let result = pathway.OnPromptBoundary boundary
+    Assert.Empty(result)
+    match exposedState.LastPromptBoundary with
+    | ValueSome cached ->
+        Assert.Equal(Some "C:\\path>", cached.MatchedRowText)
+    | ValueNone ->
+        Assert.Fail("expected LastPromptBoundary to be cached after OnPromptBoundary")

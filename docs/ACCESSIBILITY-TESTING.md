@@ -1263,6 +1263,38 @@ matrix's shrinking surface area over time.
   with the expected length floor) is now CI-pinned.
 
 <!-- DOGFOOD -->
+### Cycle 40 — Three-panel channel routing (announce-clarity)
+
+Cycle 40 splits the StreamChunk emitted by `StreamPathway` at the
+prompt boundary. The output portion stays in the StreamChunk (routes
+to NVDA at `ActivityIds.output`); the prompt portion lifts into a
+`PromptDetected` event with empty Payload + the prompt text in
+`Extensions["prompt.text"]`. `NvdaChannel` routes `PromptDetected`
+to `ActivityIds.inputPanel`; the empty-payload skip means no auto-
+announce of the prompt. Maintainer hears the command output and
+stops — the prompt is on-screen and navigable via NVDA browse mode.
+
+**Behavioural rule**: `StreamPathway.OnPromptBoundary` caches the
+boundary; the NEXT emit consults the cache. If the boundary's
+`MatchedRowText` is a suffix of the payload, the pathway splits.
+Cache is single-shot (cleared after consumption) so a stale
+boundary can't trigger a split on a later unrelated chunk.
+
+**Manual matrix rows**:
+
+| Test | Procedure | Expected |
+|---|---|---|
+| 40.1 — `echo` clarity on cmd | In cmd, type `echo hello` + Enter. | NVDA announces "hello" and STOPS. No reading of `C:\path>`. Pressing NVDA browse-mode down arrow / End reaches the prompt text on screen. |
+| 40.2 — `echo` clarity on PowerShell | Switch to PowerShell (Ctrl+Shift+2). Type `Write-Host hello` + Enter. | NVDA announces "hello" and stops. The PowerShell prompt does NOT auto-announce. |
+| 40.3 — Claude unaffected | Switch to Claude. Send a short message. | Claude behaviour unchanged (its OSC 133 boundaries also flow through `OnPromptBoundary` but the typical Claude payload pattern doesn't have a trailing prompt-row that triggers the split). |
+| 40.4 — Audit trail | After 40.1, press Ctrl+Shift+D. Inspect bundle's `--- FILELOGGER ACTIVE LOG ---` section. | Should find a `PromptDetected` event entry alongside the `StreamChunk` event for the output portion. |
+| 40.5 — Shell-switch cache clear | Type `echo hello` in cmd (without pressing Enter). Switch to PowerShell. Press Enter. | The `LastPromptBoundary` cache should clear on shell-switch (via `resetState`); the PowerShell session shouldn't reuse the cmd prompt to split. |
+| 40.6 — Corpus `cmd.echo.plain` | Press Ctrl+Shift+D. Inspect the `--- CANONICAL CORPUS RESULTS ---` section. | `cmd.echo.plain` should PASS with `must_include = ["StreamChunk", "PromptDetected"]` (both events fire post-split). |
+
+**Stopping gate for Cycle 40**: `echo hello` no longer reads the
+prompt inline. The reported regression is closed.
+
+<!-- DOGFOOD -->
 ### Cycle 38b + 38c — Per-shell route table + cmd/PowerShell echo-suppression
 
 Cycle 38b introduces a per-shell profile-set TOML override
