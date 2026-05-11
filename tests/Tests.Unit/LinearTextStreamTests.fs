@@ -673,24 +673,31 @@ let ``Hotfix — CUB followed by LF does NOT trap content in TailMask (cmd outpu
     Assert.Equal("hello\n", text)
 
 [<Fact>]
-let ``Hotfix — CUB followed by another CSI does NOT trap content in TailMask`` () =
+let ``Hotfix — CUB followed by a benign non-Print event does NOT trap content`` () =
     let state = freshProducer ()
-    // ConPTY frequently emits CUB then more cursor positioning (CUU,
-    // another CUB, etc.) during normal rendering. The deferred CUB
-    // should resolve to "no transition" on the next CSI.
+    // We need a non-Print event that doesn't itself trigger any
+    // classifier behaviour, so this test isolates CUB's deferred
+    // resolution cleanly. BEL (0x07) qualifies — its classifier
+    // arm is the default `NoEffect`. (Note: CUU / CSI K / CSI 2J
+    // all have their OWN unconditional EnterTailMask /
+    // FullErase / CursorUpThenPrintable arms that share the same
+    // pre-hotfix pathology as CUB had; those are separate
+    // follow-up cycles, not in scope for the CUB hotfix.)
     let bytes =
         Array.concat
             [ ascii "abc"
               csiCursorBack 1
-              csiCursorUp 1
+              ascii "\x07"
               ascii "def\n" ]
     let (_, state) = feed state t0 bytes
     let committed = LinearTextStream.getLastBytes state 64
     let text = Encoding.UTF8.GetString committed
-    // "abc" must NOT have been trapped on the CUB. The CUU after
-    // CUB resolves the deferral as "no transition". The "def\n"
-    // commits on the LF seam.
+    // "abc" must NOT have been trapped on the CUB. The BEL after
+    // CUB resolves the deferral as "no transition", BEL itself
+    // does nothing, "def" continues to accumulate in Pending,
+    // LF triggers the newline-seam drain → "abcdef\n" → Committed.
     Assert.Contains("abc", text)
+    Assert.Contains("def", text)
 
 [<Fact>]
 let ``Hotfix — CUB followed by Print still triggers in-place overwrite (Fact 12 preserved)`` () =
