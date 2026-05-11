@@ -630,3 +630,100 @@ let ``Hotfix — empty chunk after deferred CR keeps the deferral pending`` () =
     let committed = LinearTextStream.getLastBytes state 64
     let text = Encoding.UTF8.GetString committed
     Assert.Equal("x\n", text)
+
+// =====================================================================
+// HOTFIX (Cycle 44) — CUB-deferred-resolution: ConPTY emits CSI D
+// during normal rendering, not only as an overwrite preamble.
+// =====================================================================
+// Pre-existing 34a-era bug parallel to the bare-CR regression above:
+// classifyLiveRegion returned EnterTailMask for `CSI N D` (CUB)
+// unconditionally, assuming the CUB is always followed by a printable
+// that overwrites prior content (Fact 12's pattern). In practice
+// ConPTY emits CSI D constantly during ordinary cmd / PowerShell
+// rendering as part of cursor positioning, NOT only as an overwrite
+// preamble. Bytes accumulated in Pending got silently siphoned to
+// TailMask on every spurious CUB; TailMask only drains on a sealed
+// seam (OSC 133); cmd doesn't emit OSC 133; Committed never grew;
+// NVDA heard nothing. Manifested user-visible after Cycle 35b's
+// default flip to `Auto` substrate mode.
+//
+// Hotfix: defer the EnterTailMask transition on CUB. Resolve at the
+// next event — Print → in-place overwrite (Fact 12's pattern;
+// perform the transition); non-Print → bare cursor positioning
+// (clear flag; no transition). Idle-tick clears the flag without
+// transition (a bare CUB with no follow-up is NOT inherently a
+// tail-mask signal, unlike bare CR).
+
+[<Fact>]
+let ``Hotfix — CUB followed by LF does NOT trap content in TailMask (cmd output regression)`` () =
+    let state = freshProducer ()
+    // Mimics ConPTY-style output: text + CUB + LF (the LF is not a
+    // Print, so the deferred CUB resolves to "no transition").
+    let bytes =
+        Array.concat
+            [ ascii "hello"
+              csiCursorBack 1
+              ascii "\n" ]
+    let (_, state) = feed state t0 bytes
+    let committed = LinearTextStream.getLastBytes state 64
+    let text = Encoding.UTF8.GetString committed
+    // With the hotfix: "hello\n" commits to Committed (the CUB+LF
+    // pair doesn't trigger EnterTailMask). Without the hotfix:
+    // "hello" gets stuck in TailMask, only "\n" reaches Committed.
+    Assert.Equal("hello\n", text)
+
+[<Fact>]
+let ``Hotfix — CUB followed by a benign non-Print event does NOT trap content`` () =
+    let state = freshProducer ()
+    // We need a non-Print event that doesn't itself trigger any
+    // classifier behaviour, so this test isolates CUB's deferred
+    // resolution cleanly. BEL (0x07) qualifies — its classifier
+    // arm is the default `NoEffect`. (Note: CUU / CSI K / CSI 2J
+    // all have their OWN unconditional EnterTailMask /
+    // FullErase / CursorUpThenPrintable arms that share the same
+    // pre-hotfix pathology as CUB had; those are separate
+    // follow-up cycles, not in scope for the CUB hotfix.)
+    let bytes =
+        Array.concat
+            [ ascii "abc"
+              csiCursorBack 1
+              ascii "\x07"
+              ascii "def\n" ]
+    let (_, state) = feed state t0 bytes
+    let committed = LinearTextStream.getLastBytes state 64
+    let text = Encoding.UTF8.GetString committed
+    // "abc" must NOT have been trapped on the CUB. The BEL after
+    // CUB resolves the deferral as "no transition", BEL itself
+    // does nothing, "def" continues to accumulate in Pending,
+    // LF triggers the newline-seam drain → "abcdef\n" → Committed.
+    Assert.Contains("abc", text)
+    Assert.Contains("def", text)
+
+[<Fact>]
+let ``Hotfix — CUB followed by Print still triggers in-place overwrite (Fact 12 preserved)`` () =
+    let state = freshProducer ()
+    // The legitimate in-place overwrite pattern that Fact 12 pins:
+    // "abc" + CUB 3 + "XYZ" should trap "abc" in TailMask. The
+    // deferred CUB resolves on Print "X" → perform EnterTailMask
+    // transition.
+    let bytes = Array.concat [ ascii "abc"; csiCursorBack 3; ascii "XYZ" ]
+    let (preNotifs, state') = feed state t0 bytes
+    Assert.Empty(preNotifs |> List.choose extractEmittedChunk)
+    let (notifs, _) = LinearTextStream.tick state' (after 300)
+    Assert.NotEmpty(notifs |> List.filter isLiveRegionUpdate)
+
+[<Fact>]
+let ``Hotfix — bare CUB at end of chunk is cleared on idle without transition`` () =
+    let state = freshProducer ()
+    // A CUB at the end of a chunk with no follow-up event. The idle
+    // tick should clear the deferred flag without any tail-mask
+    // transition; Pending stays where it was and drains normally on
+    // the next LF.
+    let (_, state) = feed state t0 (Array.concat [ ascii "ok"; csiCursorBack 1 ])
+    // Idle tick — well past IdleQuantumMs.
+    let (_, state) = LinearTextStream.tick state (after 1000)
+    // Feed a newline to drain.
+    let (_, state) = feed state (after 2000) (ascii "\n")
+    let committed = LinearTextStream.getLastBytes state 64
+    let text = Encoding.UTF8.GetString committed
+    Assert.Contains("ok", text)

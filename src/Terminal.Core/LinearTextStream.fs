@@ -245,6 +245,35 @@ module LinearTextStream =
         /// 35b's default flip to `auto` substrate mode.
         member val internal PendingCRDeferred: bool = false with get, set
 
+        /// Cycle 44 hotfix — defer `EnterTailMask` on `CSI N D`
+        /// (CUB / Cursor Back) until the next event arrives,
+        /// mirroring the bare-CR deferred-resolution pattern.
+        ///
+        /// Background: Cycle 34a's `classifyLiveRegion` returned
+        /// `EnterTailMask` unconditionally for `CSI ... D`,
+        /// reasoning that CUB is always followed by a printable
+        /// that overwrites prior content (the
+        /// `"abc"+CUB 3+"XYZ"` overwrite-in-place pattern Fact 12
+        /// pins). In practice ConPTY emits `CSI N D` constantly
+        /// during ordinary cmd / PowerShell rendering as part of
+        /// cursor positioning, NOT only as an overwrite preamble.
+        /// Bytes accumulated in `Pending` got silently siphoned
+        /// to `TailMask` on every spurious CUB; `TailMask` only
+        /// drains on a sealed seam (OSC 133); cmd doesn't emit
+        /// OSC 133; `Committed` never grew; NVDA heard nothing.
+        /// Manifested user-visible after Cycle 35b's default flip
+        /// to `Auto` substrate mode.
+        ///
+        /// Fix: defer the `EnterTailMask` transition until the
+        /// NEXT event arrives. If the next event is a `Print`,
+        /// the CUB+printable pair is a real in-place overwrite —
+        /// perform the deferred transition (Fact 12 still
+        /// passes). Otherwise the CUB was bare cursor positioning
+        /// — clear the flag without a tail-mask transition (cmd
+        /// / PowerShell output now flows through Pending → Committed
+        /// normally on newline seams).
+        member val internal PendingCUBDeferred: bool = false with get, set
+
     // --------------------------------------------------------
     // Construction
     // --------------------------------------------------------
@@ -369,9 +398,14 @@ module LinearTextStream =
             let target = max 0 (currentRow - (max 1 n))
             CursorUpThenPrintable target
         | CsiDispatch (_, _, 'D', _) ->
-            // CUB (Cursor Back). Subsequent printable overwrites
-            // current row. Tail-mask.
-            EnterTailMask
+            // CUB (Cursor Back). Decision deferred to next event
+            // via `PendingCUBDeferred` in `append`. Returning
+            // `NoEffect` here is intentional — the caller observes
+            // CUB, sets `PendingCUBDeferred`, and resolves the
+            // tail-mask transition at the top of the NEXT
+            // iteration. See `T.PendingCUBDeferred` for the
+            // ConPTY-emits-CUB-everywhere rationale.
+            NoEffect
         | _ -> NoEffect
 
     // --------------------------------------------------------
@@ -534,6 +568,28 @@ module LinearTextStream =
                         state.TailMaskTimestamps <-
                             Map.add state.CurrentRow now state.TailMaskTimestamps
 
+                // Cycle 44 hotfix — resolve any deferred CUB
+                // from the previous iteration. If the current
+                // event is a `Print`, the CUB-then-printable
+                // pair is an in-place overwrite (Fact 12's
+                // pattern); perform the deferred `EnterTailMask`
+                // transition. Otherwise the CUB was bare cursor
+                // positioning emitted by ConPTY during ordinary
+                // rendering; clear the flag without a transition.
+                if state.PendingCUBDeferred then
+                    state.PendingCUBDeferred <- false
+                    let isFollowingPrint =
+                        match event with
+                        | Print _ -> true
+                        | _ -> false
+                    if isFollowingPrint then
+                        let pendingBytes = state.Pending.ToArray()
+                        state.Pending.Clear()
+                        state.TailMask <-
+                            Map.add state.CurrentRow pendingBytes state.TailMask
+                        state.TailMaskTimestamps <-
+                            Map.add state.CurrentRow now state.TailMaskTimestamps
+
                 // Special-case OSC 133 + alt-screen toggle
                 // FIRST since they take priority over any
                 // live-region effect; for everything else
@@ -591,7 +647,23 @@ module LinearTextStream =
                         // ExitAltScreen here would mean we're
                         // already not frozen; ignore.
                         handledByOsc133OrAltScreen <- true
-                    | None -> ()
+                    | None ->
+                        // Cycle 44 hotfix — CUB (Cursor Back).
+                        // Defer the tail-mask decision to the
+                        // next event (resolved at the top of the
+                        // next iteration). If the next event is a
+                        // `Print`, the CUB-then-printable pair is
+                        // a real in-place overwrite (Fact 12's
+                        // pattern); perform the EnterTailMask
+                        // transition then. Otherwise the CUB was
+                        // bare cursor positioning emitted by
+                        // ConPTY during ordinary rendering; clear
+                        // the flag without a transition. Pre-empt
+                        // the live-region classifier below so it
+                        // doesn't fire on every spurious CUB.
+                        if finalByte = 'D' then
+                            state.PendingCUBDeferred <- true
+                            handledByOsc133OrAltScreen <- true
 
                 | Execute b when b = 0x0Auy ->
                     // LF. Add to pending (newline is content);
@@ -732,6 +804,19 @@ module LinearTextStream =
                             state.CurrentRow
                             state.LastByteAt
                             state.TailMaskTimestamps
+
+            // Cycle 44 hotfix — parallel idle-resolution for
+            // deferred CUB. Unlike bare CR (which is itself an
+            // unambiguous "rewrite this line" signal), bare CUB
+            // with no following Print is just cursor positioning
+            // that wasn't followed by an overwrite. Clear the
+            // flag without any tail-mask transition; the Pending
+            // bytes stay where they are and drain normally on
+            // the next LF seam or max-bytes ceiling.
+            if state.PendingCUBDeferred
+               && idleElapsedMs >= float state.Parameters.IdleQuantumMs
+            then
+                state.PendingCUBDeferred <- false
 
             let pendingHasContent = state.Pending.Count > 0
 
