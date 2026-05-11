@@ -1870,3 +1870,56 @@ let ``Cycle 40 — OnPromptBoundary caches the boundary on the pathway state`` (
         Assert.Equal(Some "C:\\path>", cached.MatchedRowText)
     | ValueNone ->
         Assert.Fail("expected LastPromptBoundary to be cached after OnPromptBoundary")
+
+// =====================================================================
+// Cycle 40a — inline prompt-detection at emit time
+// =====================================================================
+
+[<Fact>]
+let ``Cycle 40a — tryDetectPromptInPayload detects cmd prompt at the tail`` () =
+    let payload = "hello\r\nC:\\Users\\me>"
+    match StreamPathway.tryDetectPromptInPayload payload with
+    | Some (outputPortion, promptText) ->
+        Assert.Equal("hello", outputPortion)
+        Assert.Equal("C:\\Users\\me>", promptText)
+    | None ->
+        Assert.Fail("expected cmd prompt to be detected")
+
+[<Fact>]
+let ``Cycle 40a — tryDetectPromptInPayload detects PowerShell prompt at the tail`` () =
+    let payload = "hello\r\nPS C:\\Users\\me> "
+    match StreamPathway.tryDetectPromptInPayload payload with
+    | Some (outputPortion, promptText) ->
+        Assert.Equal("hello", outputPortion)
+        Assert.StartsWith("PS C:\\Users\\me>", promptText)
+    | None ->
+        Assert.Fail("expected PowerShell prompt to be detected")
+
+[<Fact>]
+let ``Cycle 40a — tryDetectPromptInPayload returns None when last line is plain output`` () =
+    let payload = "hello world"
+    Assert.Equal(None, StreamPathway.tryDetectPromptInPayload payload)
+
+[<Fact>]
+let ``Cycle 40a — tryDetectPromptInPayload returns None for empty payload`` () =
+    Assert.Equal(None, StreamPathway.tryDetectPromptInPayload "")
+
+[<Fact>]
+let ``Cycle 40a — tryDetectPromptInPayload skips trailing whitespace-only lines`` () =
+    let payload = "hello\r\nC:\\>\r\n\r\n"
+    match StreamPathway.tryDetectPromptInPayload payload with
+    | Some (outputPortion, promptText) ->
+        Assert.Equal("hello", outputPortion)
+        Assert.Equal("C:\\>", promptText)
+    | None ->
+        Assert.Fail("expected cmd prompt to be detected even with trailing blank lines")
+
+[<Fact>]
+let ``Cycle 40a — tryDetectPromptInPayload returns empty output when the entire payload is just the prompt`` () =
+    let payload = "C:\\>"
+    match StreamPathway.tryDetectPromptInPayload payload with
+    | Some (outputPortion, promptText) ->
+        Assert.Equal("", outputPortion)
+        Assert.Equal("C:\\>", promptText)
+    | None ->
+        Assert.Fail("expected entire-payload prompt to be detected")
