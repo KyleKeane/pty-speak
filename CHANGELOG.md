@@ -15,6 +15,32 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed (Cycle 45 Commit 2 follow-up): SpeechCursor history persists across tuple boundaries
+
+Maintainer NVDA dogfood on preview.92 (the Commit 2 build)
+surfaced that `Display → Speech Cursor → Next Entry` and
+`Previous Entry` always reported "Already at the latest entry"
+/ "Already at the first entry" even after several commands.
+Root cause: `handlePromptBoundary` reset both `ContentHistory`
+and `SpeechCursor` every time a SessionModel tuple finalised
+— on the (wrong) assumption that the cursor's scope is "the
+active tuple." With that scope, every completed command
+emptied the history, leaving the cursor with nothing to
+navigate.
+
+Corrected scope: **the shell session.** ContentHistory entries
+now accumulate across tuple boundaries; the user can Speech-
+Cursor backwards through completed-command output. Reset on
+shell-switch (`switchToShell`) still fires — that's a
+legitimate fresh-slate boundary. Tuple-archive into
+`SessionTuple` is deferred to Cycle 45e (the visual-surface
+cycle that needs structured per-tuple history anyway).
+
+One-file change (`src/Terminal.App/Program.fs` — the
+`boundaryAction` closure inside `handlePromptBoundary`). The
+removed `if tupleFinalised then …` block + accompanying
+comment updates.
+
 ### Added (Cycle 45 Commit 2): ContentHistory + SpeechCursor wired into the live pipeline
 
 Second commit of the Cycle 45 architectural reset (Commit 1
