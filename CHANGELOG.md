@@ -15,6 +15,48 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Reverted (Cycle 39): Cycle 38c echo-suppression
+
+Cycle 38c (`EchoCorrelator` + `EchoSuppressorProfile`) was solving a
+problem the maintainer never reported. On 2026-05-10 the maintainer
+said "NVDA reads the entire new chunk including hello along with the
+next input line" — I parsed "next input line" as "the line cmd
+echoes when you type" (per-character byte echo). The maintainer's
+actual report: after `echo hello` produces the "hello" output, cmd
+writes the next prompt `C:\path>`, and NVDA reads ALL of it
+(output + next prompt) as one blob. EchoSuppressor doesn't address
+this — the prompt isn't an echo of typed input.
+
+Cycle 39 removes the misnamed fix:
+
+- DELETED:
+  [`src/Terminal.Core/EchoCorrelator.fs`](src/Terminal.Core/EchoCorrelator.fs),
+  [`src/Terminal.Core/EchoSuppressorProfile.fs`](src/Terminal.Core/EchoSuppressorProfile.fs),
+  [`tests/Tests.Unit/EchoCorrelatorTests.fs`](tests/Tests.Unit/EchoCorrelatorTests.fs),
+  [`tests/Tests.Unit/EchoSuppressorProfileTests.fs`](tests/Tests.Unit/EchoSuppressorProfileTests.fs).
+- `Terminal.Core.fsproj` + `Tests.Unit.fsproj`: dropped the
+  `<Compile Include>` entries.
+- `Program.fs`: dropped `EchoCorrelator.create` + profile
+  registration; reverted the WriteBytes wrap to a direct
+  `host.WriteBytes` call; removed `EchoCorrelator.reset` from
+  the shell-switch handler.
+- `Program.fs`: `resolveProfilesForShell` defaults all shells
+  to `["passthrough", "earcon", "selection"]` (was: cmd /
+  PowerShell got `["echo-suppressor", "earcon", "selection"]`).
+- `Config.fs`: `defaultsTemplate` per-shell-profiles example
+  block updated; "echo-suppressor" mention removed.
+- `tests/fixtures/canonical-interactions.toml`: `cmd.echo.plain`
+  row's `notes` field flips: "Fixed in Cycle 38c" → "Bug
+  2026-05-11; output and next prompt bleed; Cycle 40
+  three-panel routing fixes."
+
+**What stays from Cycle 38b**: the per-shell route table itself
+(`[shell.<key>] profiles = [...]` TOML parsing,
+`Config.resolveShellProfiles`, `resolveProfilesForShell` in
+`Program.fs`, `setActiveProfileSet` re-call on shell-switch).
+This infrastructure is still useful — future shell-specific
+profiles plug in via TOML without re-introducing 38b's surface.
+
 ### Added (Cycle 38b + 38c): Per-shell route table + cmd/PowerShell echo-suppression
 
 Closes the maintainer's 2026-05-10 dogfood regression: `echo hello`
