@@ -20,6 +20,293 @@ Track E E5 dated-snapshot discipline),
 [`CHANGELOG.md`](../CHANGELOG.md) in that order — see the full
 "Recommended reading order" at the bottom.
 
+## Status 2026-05-11 — Cycle 41 reverted; Cycle 42 strategy in research phase
+
+**Most recent merged**: PR #258 (commit `6d386e7`) —
+`Revert "feat(cycle-41): OSC 133 injection on cmd"`. Repo is in
+a stable post-revert state; working tree clean on `main`.
+
+**Stale-doc warning**: the "Where we left off" table further down
+was last refreshed at Cycle 29b (2026-05-09). Cycles 30 through 41
+shipped between then and now (a substrate inversion arc, a UIA
+listbox peer, a per-shell route table, two reverted prompt-split
+attempts, plus the just-reverted OSC 133 injection). A full
+backfill of the table is owed but lower-priority than the Cycle 42
+work captured here. To recover the missing cycle history:
+
+- `CHANGELOG.md` `[Unreleased]` — detailed entries from Cycle 25
+  through Cycle 39 revert. **Authoritative** for what's shipped vs.
+  reverted.
+- `git log --oneline 81ba608..main` — commit titles since the
+  Cycle 29b anchor `81ba608`.
+
+### Ground-truth bug status
+
+The `echo hello` regression that motivated Cycles 40 / 40a / 41 is
+**still present**. After `echo hello` produces "hello", cmd writes
+the next prompt `C:\path>`, and NVDA reads BOTH (output + next
+prompt) as one blob. Three remediation attempts so far:
+
+- **Cycle 40 / 40a** — heuristic regex prompt-split on the
+  StreamPathway payload's last line. Introduced regressions
+  (PR #255 broke NVDA announcement for some payload shapes).
+  Reverted in PR #256.
+- **Cycle 41** — deterministic OSC 133 injection on cmd via
+  `cmd.exe /K "@prompt $E]133;A$E\$P$G$E]133;B$E\""`. Shipped
+  CI-green; maintainer dogfood found NO `PromptBoundary` events
+  firing on cmd — the OSC 133 markers never reached the VT
+  parser. Reverted in PR #258. **Root cause unconfirmed**;
+  hypotheses below.
+
+### Cycle 42 strategy (research-pending; high-level only)
+
+A 2026-05-11 chat session drafted an observability-first staged-
+retry plan. The detailed implementation appendix lives in the
+chat's local plan file (`~/.claude/plans/we-do-not-need-fluffy-
+simon.md` §23) — **NOT in this repo**. The plan's file-level
+specifics (file paths, LOC estimates, exact batch-file content)
+are pre-research estimates and may be superseded by the research
+findings. This section captures only the parts that are
+research-independent and high-confidence.
+
+**The shape** (high confidence): three sub-PRs sequenced with
+stopping gates between them.
+
+- **Cycle 42a — Byte-level observability**. Env-var-gated raw-byte
+  hex-dump tracer on the ConPTY read loop (proposed env var:
+  `PTYSPEAK_RAW_BYTE_TRACE=1` → trace file in `%LOCALAPPDATA%\
+  PtySpeak\logs\`). New `--- LINEAR STREAM TAIL ---` section in the
+  `Ctrl+Shift+D` diagnostic bundle showing the last 256 bytes of
+  `LinearTextStream.Committed` + current `PromptStartOffset` /
+  `OutputStartOffset` / `HighWaterMark`. Pure observability; zero
+  behaviour change. **Research-independent** — can ship in
+  parallel with the research phase.
+- **Cycle 42b — Cmd OSC 133 injection retry via batch-file shim**.
+  Sidesteps the suspected `CommandLineToArgvW` mis-parse by
+  writing a small static batch file (proposed path:
+  `%LOCALAPPDATA%\PtySpeak\shell-init\cmd-init.bat`) containing
+  the PROMPT injection as raw text; cmd `Shell.Resolve` becomes
+  `cmd.exe /K "<bat-path>"`. **Stopping gate before Cycle 42c**:
+  maintainer dogfoods with 42a's tracer enabled; pastes hex-dump
+  excerpt; only proceed if bytes `1b 5d 31 33 33 3b 41 1b 5c`
+  (OSC 133;A header) are confirmed emerging from cmd. If absent,
+  hypothesis-test before proceeding.
+- **Cycle 42c — StreamPathway prompt-split logic**. Re-introduces
+  the Cycle 41 split logic (`tryReadPromptStartOffsetSince` +
+  `readSplitAt` + `buildEmittedEventsForLinear`). That code was
+  downstream of the Cycle 41 injection failure and never
+  exercised in production; the design is sound but needs the
+  injection working first. Proceeds only after 42b's gate passes.
+
+**The hypotheses** (medium confidence; research-pending):
+
+1. **CommandLineToArgvW mis-parse** (highest plausibility). The
+   trailing `$E\"` is interpreted by the Win32 argv tokenizer as
+   escape-quote (per Microsoft's documented `\"` rule), so cmd
+   receives `@prompt $E]133;A$E\$P$G$E]133;B$E"` — the ST
+   terminator `$E\` is mangled to `$E"`. The OSC sequence never
+   closes; VT parser keeps collecting bytes indefinitely; no
+   PromptBoundary event fires. **Unconfirmed**; Query 1 below
+   should resolve.
+2. cmd's PROMPT processor strips or mishandles `$E`. Low
+   plausibility (`$E` is documented).
+3. Our `Osc133.fs` rejects the specific ST-terminated bytes cmd
+   emits. Low (`Osc133Tests.fs` covers ST in isolation; missing
+   integration coverage for cmd-emitted sequences).
+
+**Lower confidence — defer until research lands**:
+
+- Specific batch-file content. Windows Terminal ships a canonical
+  cmd shell-integration script (Query 3 should locate it); our
+  batch file should be byte-equivalent if found.
+- Exact file placement (`Terminal.Core/Shells/ShellInit.fs` vs
+  `Terminal.App/ShellInit.fs`).
+- LOC estimates (rough: ~150-200 for 42a; ~80-120 for 42b;
+  ~110-150 for 42c).
+
+### Research queries — commission before Cycle 42b coding
+
+The maintainer confirmed three external research topics would
+reduce risk. Each query is self-contained (a researcher with no
+context on pty-speak can answer it) and falsifiable (the answer
+is a specific byte sequence / repo path / state-machine
+transition, not a vague design opinion). Take to Claude research;
+refine Cycle 42b's batch-file content + parser fixtures from the
+findings.
+
+#### Query 1 — CommandLineToArgvW parsing of the Cycle 41 command line
+
+```
+I'm building a Windows app that spawns cmd.exe via ConPTY with
+the following command line (the Win32 command-line that hits
+CreateProcess is exactly):
+
+    cmd.exe /K "@prompt $E]133;A$E\$P$G$E]133;B$E\"
+
+Intent: set cmd's PROMPT env-var to a template that emits OSC
+133;A (ESC ] 133 ; A ESC \) and 133;B markers via cmd's $E
+escape code. ESC ] 133 ; A ESC \ is the "OSC 133;A" prompt-
+boundary sequence terminated by ST (ESC \ = 0x1B 0x5C).
+
+I believe this command line is being mis-tokenized by Windows
+before cmd.exe sees it. Specifically, the `$E\"` near the end is
+the trailing ST terminator (ESC + backslash) immediately followed
+by the closing quote of the /K argument. Win32 documented escape
+rules treat `\"` as "literal embedded quote" — so the backslash
+gets consumed and the quote gets reinterpreted.
+
+Questions (each requires a specific verifiable answer):
+
+1. What is the EXACT argv that cmd.exe receives when given the
+   command line above? Trace through CommandLineToArgvW's
+   tokenization rules (or whatever rule cmd.exe uses internally
+   for /K argument parsing — they may differ) and show the
+   resulting argv array, byte by byte if necessary.
+
+2. Microsoft's documented "first-quote / last-quote" rule for
+   cmd.exe /K: does it apply BEFORE or AFTER
+   CommandLineToArgvW's argv tokenization? Is /K's argument the
+   post-CommandLineToArgvW argv[1], or is it the raw substring
+   of the original command line between the first and last
+   quote?
+
+3. Are there known bugs or quirks in CommandLineToArgvW (or
+   cmd.exe's /K parser) for the specific pattern `$E\"` followed
+   by another `"`? Citations to Microsoft docs, MSRC advisories,
+   or reputable blog posts (Raymond Chen, Microsoft documentation
+   archives) preferred over inference.
+
+4. If the answer to (1) confirms a mis-parse, what is the safest
+   way to pass an embedded command that contains backslashes
+   followed by quotes through cmd.exe /K? Compare:
+   - Using a batch file: cmd.exe /K "C:\path\setup.bat" where
+     setup.bat contains the prompt command verbatim.
+   - Triple-quote escape: cmd.exe /K """@prompt ..."""
+   - Cmd's caret-escape: cmd.exe /K ^"@prompt ...^"
+   - Setting an env-var via SET in the parent: not viable for us
+     because we control the env-block via an allow-list (PO-5
+     security; can't slip PROMPT through).
+   Provide an authoritative ranking with citations.
+```
+
+#### Query 2 — OSC 133 ST-terminator handling in real-world emulators
+
+```
+OSC 133 is a terminal protocol where shells emit escape sequences
+like ESC ] 133 ; A BEL or ESC ] 133 ; A ESC \ to signal prompt
+boundaries. The terminator is either BEL (0x07) or ST
+(ESC \ = 0x1B 0x5C). My VT parser handles both per VT500 spec,
+but I have no integration test for cmd-emitted ST-terminated
+133;A.
+
+Questions:
+
+1. How do major terminal emulators handle ST vs BEL terminators
+   for OSC 133? Specifically, code references in:
+   - Windows Terminal (microsoft/terminal repo) — which file/
+     function implements OSC 133 parsing? Does the parser handle
+     ST and BEL identically?
+   - iTerm2 (gnachman/iTerm2) — same.
+   - kitty (kovidgoyal/kitty) — same.
+   - alacritty (alacritty/alacritty) — same.
+   - wezterm (wezterm/wezterm) — same.
+   For each: file path + function name + a one-line description
+   of the parser's handling of OSC 133 termination.
+
+2. Are there subtle bugs in real-world VT parsers when ST is
+   preceded by certain byte sequences? Specifically, what
+   happens if:
+   - cmd's `$P` (path) substitution produces bytes containing
+     `\` or `"`? (cmd renders the current directory; paths can
+     contain backslashes.)
+   - The OSC parameters contain non-ASCII bytes (UTF-8 path
+     names with multi-byte chars).
+   - The parser is in OSC-collect state and encounters CR or LF
+     before ST. What does VT500 spec say? What do real emulators
+     do?
+
+3. What are the canonical test vectors for OSC 133 parsing? Are
+   there standard fixtures in the relevant repos (e.g., a
+   `tests/osc133/` directory or similar)?
+
+4. The xterm reference documentation (ctlseqs) describes OSC
+   parsing — what's the precise state machine? Where do real-
+   world parsers (libvterm, the parser in Windows Terminal,
+   kitty) deviate from it? Specifically interested in the
+   handling of the OSC-collect → ST transition.
+```
+
+#### Query 3 — Windows Terminal cmd OSC 133 injection prior art
+
+```
+Windows Terminal has shipped shell-integration scripts that
+inject OSC 133 markers into cmd.exe and PowerShell. These scripts
+exist in the microsoft/terminal repo and represent canonical
+prior art for the injection technique I'm implementing.
+
+Questions (each should be answerable with a specific repo path
+or file content):
+
+1. What is the EXACT mechanism Windows Terminal uses to inject
+   OSC 133 into cmd.exe? Where is this code in the
+   microsoft/terminal repo? (Looking for the cmd-specific
+   injection — there's also a PowerShell version which I'm not
+   asking about here.)
+
+2. Does Windows Terminal use:
+   (a) A batch file launched via `cmd.exe /K <bat-path>`?
+   (b) A direct PROMPT template via `cmd /K "@prompt ..."`?
+   (c) Something else (DOSKEY macros, registry AutoRun, etc.)?
+   Provide the file path + key lines.
+
+3. If using a batch file (option a), what is the batch file's
+   EXACT content? Specifically the PROMPT command line, including
+   any escaping tricks.
+
+4. What's the rationale documented in microsoft/terminal for
+   whatever approach was chosen? Were alternative approaches
+   considered and rejected? (Looking for PR descriptions, issue
+   threads, design docs.)
+
+5. What characters/sequences does Windows Terminal handle in the
+   PROMPT template that we might be missing? Any escaping
+   conventions specific to cmd.exe that aren't in the official
+   Microsoft PROMPT docs?
+
+6. Does Windows Terminal also inject 133;C (OutputStart) and
+   133;D (CommandFinished) for cmd? If yes, HOW (cmd has no
+   per-command pre/post hook)? If no, why not?
+
+7. Has Windows Terminal encountered the CommandLineToArgvW `\"`
+   parsing issue I'm hypothesising in Query 1? Are there issues
+   or PRs in microsoft/terminal that describe the workaround
+   they landed on?
+```
+
+### What a fresh agent should do first
+
+1. Read this section + `CHANGELOG.md` `[Unreleased]` (through
+   "Cycle 39 revert") + `git log --oneline -30` to orient on what
+   shipped, what was reverted, and where the bug stands.
+2. **If the maintainer has Claude-research findings ready**:
+   refine the Cycle 42 plan with them. Query 3's outcome is the
+   highest-leverage (canonical batch-file content). Query 1's
+   outcome confirms-or-refutes the mis-parse hypothesis. Query 2
+   informs parser-test fixtures.
+3. **If research is not yet available**: optionally start
+   Cycle 42a (research-independent observability infrastructure).
+   Suggested branch: `claude/cycle-42a-byte-level-observability`.
+4. **Do NOT start Cycle 42b without research** unless the
+   maintainer explicitly green-lights "research not needed; ship
+   best-guess batch-file content and rely on 42a's hex-dump gate
+   to catch errors". Cycle 41 burned a CI round-trip + NVDA
+   dogfood session on a guess; the next attempt should be
+   informed.
+5. Surface the stale-doc situation to the maintainer if asked
+   about anything beyond Cycle 29b — the existing "Where we left
+   off" table will mislead. CHANGELOG + git log are the
+   authoritative trail.
+
 ## Where we left off
 
 > **Authoritative plan**:
