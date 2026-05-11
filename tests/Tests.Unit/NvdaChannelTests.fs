@@ -60,29 +60,6 @@ let ``StreamChunk routes to ActivityIds.output`` () =
     Assert.Equal(1, calls.Count)
     Assert.Equal(("ls", ActivityIds.output), calls.[0])
 
-// Cycle 40 — PromptDetected routes to the input panel. The
-// empty-payload trick (Payload = "") means NvdaChannel's
-// existing skip-empty-RenderText guard fires and no announce
-// is recorded. The ActivityId mapping itself is exercised when
-// a non-empty payload is sent (rare for PromptDetected, but
-// tested here for completeness so the routing arm is pinned).
-[<Fact>]
-let ``Cycle 40 — PromptDetected routes to ActivityIds.inputPanel`` () =
-    let calls, recorder = makeRecorder ()
-    let channel = NvdaChannel.create recorder noOpRawRecorder
-    let event = buildEvent SemanticCategory.PromptDetected "C:\\path>"
-    channel.Send event (RenderText event.Payload)
-    Assert.Equal(1, calls.Count)
-    Assert.Equal(("C:\\path>", ActivityIds.inputPanel), calls.[0])
-
-[<Fact>]
-let ``Cycle 40 — PromptDetected with empty payload is skipped (silent auto-announce)`` () =
-    let calls, recorder = makeRecorder ()
-    let channel = NvdaChannel.create recorder noOpRawRecorder
-    let event = buildEvent SemanticCategory.PromptDetected ""
-    channel.Send event (RenderText event.Payload)
-    Assert.Empty(calls)
-
 [<Fact>]
 let ``ParserError routes to ActivityIds.error`` () =
     let calls, recorder = makeRecorder ()

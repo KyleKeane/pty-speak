@@ -2,7 +2,6 @@ namespace Terminal.Core
 
 open System
 open System.Collections.Generic
-open System.Text.RegularExpressions
 open Microsoft.Extensions.Logging
 
 /// Phase A — Stream display pathway. Replaces the verbose-
@@ -257,17 +256,6 @@ module StreamPathway =
           /// reads `LinearTextStream.suffixSince` from this
           /// watermark and updates it on emit.
           mutable LastLinearWatermark: int64
-          /// Cycle 40 — the most-recent `PromptBoundaryData`
-          /// received via `OnPromptBoundary`. Consumed at the
-          /// next StreamChunk emit: if the boundary's
-          /// `MatchedRowText` appears at the tail of the
-          /// payload, the pathway splits the payload into an
-          /// output portion (StreamChunk → output panel) and a
-          /// prompt portion (PromptDetected → input panel).
-          /// Cleared after consumption (single-shot per
-          /// boundary detection). `ValueNone` is the steady
-          /// state.
-          mutable LastPromptBoundary: PromptBoundaryData voption
           PerRowHistory: Dictionary<SpinnerKey, ResizeArray<DateTimeOffset>>
           HashHistory: Dictionary<uint64, ResizeArray<DateTimeOffset>> }
 
@@ -282,7 +270,6 @@ module StreamPathway =
           PendingSnapshot = ValueNone
           LastRowHashes = ValueNone
           LastLinearWatermark = 0L
-          LastPromptBoundary = ValueNone
           PerRowHistory = Dictionary()
           HashHistory = Dictionary() }
 
@@ -474,187 +461,6 @@ module StreamPathway =
             Priority.Polite
             id
             text
-
-    /// Cycle 40 — build a PromptDetected event carrying the
-    /// prompt-row text in `Extensions["prompt.text"]`. The
-    /// event's Payload is EMPTY by convention (the empty-
-    /// payload trick from Cycle 8d.2 / 29b) so `NvdaChannel`
-    /// skips the auto-announce. FileLogger logs the
-    /// structured payload (with the prompt text in
-    /// Extensions) for the audit trail. Routed to
-    /// `ActivityIds.inputPanel` per `NvdaChannel`'s mapping.
-    let private promptDetectedFromText (promptText: string) : OutputEvent =
-        let baseEvt =
-            OutputEvent.create
-                SemanticCategory.PromptDetected
-                Priority.Polite
-                id
-                ""
-        // F# 9 strict-nullness: `box` returns `obj | null`, but the
-        // Extensions map's value type is `obj` (non-nullable).
-        // Mirrors the `boxNN` helper pattern from SelectionDetector
-        // / SelectionProfile (Cycle 29a/b) per CLAUDE.md's "FS3261
-        // is the canonical CI failure" gotcha.
-        { baseEvt with
-            Extensions =
-                Map.ofList
-                    [ "prompt.text", nonNull (box promptText) ] }
-
-    /// Cycle 40a — inline prompt-detection at emit time.
-    /// Independent of the async `OnPromptBoundary` cache (which
-    /// has a 100ms stability window that's LONGER than the
-    /// StreamPathway debounce, so the first chunk after typing
-    /// often emits BEFORE the boundary fires).
-    ///
-    /// **Strategy.** Look at the last non-empty line of the
-    /// payload; if it matches one of the per-shell prompt regexes,
-    /// strip it from the announce.
-    ///
-    /// **Shell-agnostic.** We try ALL THREE shell regexes
-    /// (cmd, PowerShell, Claude) at every call rather than
-    /// threading shellKey through the pathway. Each regex is
-    /// strict enough that false-positive matches against real
-    /// output are unlikely; the cost is three Regex.IsMatch
-    /// checks per emit (microseconds).
-    let private cmdPromptPattern : Regex =
-        Regex(@"^[A-Z]:\\.*>\s*$", RegexOptions.Compiled)
-    let private powerShellPromptPattern : Regex =
-        Regex(@"^PS\s.*>\s*$", RegexOptions.Compiled)
-    let private claudePromptPattern : Regex =
-        Regex(@".*│\s*>.*$", RegexOptions.Compiled)
-
-    /// Returns `Some (outputPortion, promptText)` when the
-    /// payload's last non-empty line matches a known prompt
-    /// pattern. `outputPortion` is everything before the prompt
-    /// line, trimmed of trailing whitespace. Returns `None`
-    /// otherwise (caller emits the payload as a single
-    /// StreamChunk).
-    let internal tryDetectPromptInPayload
-            (payload: string)
-            : (string * string) option =
-        if String.IsNullOrEmpty payload then None
-        else
-            let lines = payload.Split([| '\n' |])
-            // Find the last non-empty line. Trailing CR / CRLF
-            // / whitespace-only lines are skipped — typical for
-            // payloads that end with a prompt followed by no
-            // newline.
-            let mutable lastNonEmpty = -1
-            for i in 0 .. lines.Length - 1 do
-                let trimmed = lines.[i].TrimEnd()
-                if not (String.IsNullOrEmpty trimmed) then
-                    lastNonEmpty <- i
-            if lastNonEmpty < 0 then None
-            else
-                let lastLine = lines.[lastNonEmpty].TrimEnd()
-                if cmdPromptPattern.IsMatch(lastLine)
-                   || powerShellPromptPattern.IsMatch(lastLine)
-                   || claudePromptPattern.IsMatch(lastLine) then
-                    let outputPortion =
-                        if lastNonEmpty = 0 then ""
-                        else
-                            let outputLines =
-                                lines.[0 .. lastNonEmpty - 1]
-                            (String.concat "\n" outputLines).TrimEnd()
-                    Some (outputPortion, lastLine)
-                else None
-
-    /// Cycle 40 — split a StreamChunk payload at the prompt
-    /// boundary, when a boundary is cached and its
-    /// `MatchedRowText` is a SUFFIX of the payload. Returns
-    /// `(outputPortion, promptPortion)` where `promptPortion`
-    /// is `None` when no split applies (the caller emits the
-    /// payload as a single StreamChunk).
-    ///
-    /// **Match rule.** The boundary's `MatchedRowText` (e.g.
-    /// `"C:\\path>"`) must appear at the END of the payload,
-    /// possibly preceded by whitespace / CRLF. The pathway
-    /// strips trailing whitespace after `MatchedRowText` when
-    /// computing the split point so a payload like
-    /// `"hello\r\nC:\\path>"` splits at the line break.
-    let internal splitAtPromptBoundary
-            (payload: string)
-            (boundary: PromptBoundaryData)
-            : string * string option =
-        match boundary.MatchedRowText with
-        | None -> payload, None
-        | Some promptText when promptText.Length = 0 ->
-            payload, None
-        | Some promptText ->
-            // Look for the prompt text near the tail. Trim
-            // trailing whitespace from the payload first so a
-            // payload like "hello\r\nC:\\path> " still splits
-            // at the prompt's start.
-            let trimmedPayload = payload.TrimEnd()
-            if trimmedPayload.EndsWith(promptText) then
-                let splitIdx = trimmedPayload.Length - promptText.Length
-                let outputPortion =
-                    if splitIdx <= 0 then ""
-                    else trimmedPayload.Substring(0, splitIdx).TrimEnd()
-                outputPortion, Some promptText
-            else
-                payload, None
-
-    /// Cycle 40 — build the OutputEvent array for an emitted
-    /// payload, accounting for the cached prompt boundary and
-    /// any dominant-colour event. Centralises the split logic
-    /// used by all three emit sites (leading-edge, trailing-
-    /// edge tick, mode-barrier flush).
-    ///
-    /// **Order of events** matters for FileLogger ordering:
-    /// `[streamChunk; promptDetected; color]`. NVDA dispatches
-    /// each independently; the order is purely for the audit
-    /// trail.
-    let private buildEmittedEvents
-            (state: State)
-            (capped: string)
-            (dominantColor: OutputEvent option)
-            : OutputEvent[] =
-        // Cycle 40a — try inline prompt-detection FIRST (no
-        // async dependency; works on the FIRST emit after the
-        // user types). Fall back to the cached OnPromptBoundary
-        // for cases where the inline regex didn't catch but the
-        // heuristic detector did (custom prompts, OSC 133, etc.).
-        //
-        // **Policy** (Cycle 40a follow-up after dogfood test
-        // failure): only split when there's actual OUTPUT
-        // before the prompt. When the entire payload IS the
-        // prompt (e.g., fresh shell after hot-switch, prompt
-        // appearing with no preceding command output), the
-        // StreamChunk flows through unchanged so the user
-        // still hears confirmation that the new shell is
-        // ready. Empty-output splits would leave the user with
-        // NO audible signal that the prompt arrived.
-        let outputPortion, promptPortion =
-            match tryDetectPromptInPayload capped with
-            | Some (o, p) when not (String.IsNullOrEmpty o) ->
-                // Real output before the prompt; split.
-                state.LastPromptBoundary <- ValueNone
-                o, Some p
-            | _ ->
-                // Either no prompt detected inline OR the entire
-                // payload was the prompt (no preceding output).
-                // Fall back to the cached boundary (also empty-
-                // output guarded, mirroring the same policy).
-                match state.LastPromptBoundary with
-                | ValueSome boundary ->
-                    let cached = splitAtPromptBoundary capped boundary
-                    state.LastPromptBoundary <- ValueNone
-                    match cached with
-                    | o, Some _ when not (String.IsNullOrEmpty o) ->
-                        cached
-                    | _ -> capped, None
-                | ValueNone -> capped, None
-        let events = ResizeArray<OutputEvent>()
-        if not (String.IsNullOrEmpty outputPortion) then
-            events.Add(streamOutputEvent outputPortion)
-        match promptPortion with
-        | Some promptText -> events.Add(promptDetectedFromText promptText)
-        | None -> ()
-        match dominantColor with
-        | Some evt -> events.Add(evt)
-        | None -> ()
-        events.ToArray()
 
     // -------------------------------------------------------------
     // Sub-row suffix-diff (PR #166).
@@ -1088,18 +894,9 @@ module StreamPathway =
                             // EarconProfile claims it semantically;
                             // NvdaChannel skips the empty payload so no
                             // double-announce.
-                            //
-                            // Cycle 40 — buildEmittedEvents also
-                            // consults `state.LastPromptBoundary`:
-                            // if a prompt boundary is cached and
-                            // its MatchedRowText is a suffix of the
-                            // payload, the StreamChunk is split into
-                            // output portion + PromptDetected event.
-                            // PromptDetected routes to inputPanel
-                            // (empty payload → silent auto-announce).
-                            let colorEvt =
-                                dominantColor |> Option.bind colorOutputEvent
-                            buildEmittedEvents state capped colorEvt
+                            match dominantColor |> Option.bind colorOutputEvent with
+                            | Some colorEvt -> [| streamOutputEvent capped; colorEvt |]
+                            | None -> [| streamOutputEvent capped |]
                 else
                     // Within debounce: accumulate the diff;
                     // trailing edge will flush. Stash the dominant
@@ -1237,10 +1034,9 @@ module StreamPathway =
                             "Emit StreamChunk (trailing-edge). FrameHash=0x{Hash:X16} ChangedRows={Rows} TextLen={Len} Color={Color}",
                             hash, diff.ChangedRows.Length, capped.Length,
                             (match pendingColor with ValueSome c -> c | ValueNone -> "none"))
-                        // Cycle 40 — consult cached prompt boundary
-                        // and split if applicable (see leading-edge
-                        // emit site at line ~898 for context).
-                        buildEmittedEvents state capped colorEvt
+                        match colorEvt with
+                        | Some evt -> [| streamOutputEvent capped; evt |]
+                        | None -> [| streamOutputEvent capped |]
             else
                 [||]
         | _ -> [||]
@@ -1275,13 +1071,7 @@ module StreamPathway =
             | Verbose ->
                 match state.PendingDiff with
                 | ValueSome diff when diff.ChangedRows.Length > 0 ->
-                    // Cycle 40 — buildEmittedEvents consults
-                    // the cached prompt boundary for split, then
-                    // emits the StreamChunk (with no
-                    // color event at mode-barrier flushes per
-                    // the existing PendingColor-clear semantics
-                    // documented just below).
-                    buildEmittedEvents state diff.ChangedText None
+                    [| streamOutputEvent diff.ChangedText |]
                 | _ -> [||]
             | SummaryOnly | Suppressed ->
                 [||]
@@ -1355,10 +1145,6 @@ module StreamPathway =
         // treats the producer's entire committed buffer as
         // unreceived suffix.
         state.LastLinearWatermark <- 0L
-        // Cycle 40 — clear cached prompt boundary so a stale
-        // entry from the prior shell can't trigger a split on
-        // the new shell's first chunk.
-        state.LastPromptBoundary <- ValueNone
         state.PerRowHistory.Clear()
         state.HashHistory.Clear()
 
@@ -1424,17 +1210,11 @@ module StreamPathway =
           SetBaseline =
             fun canonical -> seedBaseline state canonical
           OnPromptBoundary =
-            // Cycle 40 — cache the boundary so the NEXT
-            // `processCanonicalState` / `onTimerTick` /
-            // `onModeBarrier` emit can split the StreamChunk
-            // payload at the prompt boundary. Single-shot: the
-            // cache clears after the next emit consumes it
-            // (see `buildEmittedEvents`). Until consumed, the
-            // boundary's `MatchedRowText` is the suffix the
-            // pathway looks for in the upcoming payload.
-            fun boundary ->
-                state.LastPromptBoundary <- ValueSome boundary
-                [||] }
+            // SessionModel Tier 1.A: no-op default. StreamPathway
+            // doesn't yet integrate SessionModel data; future
+            // pathways (ReplPathway, ClaudeCodePathway) override
+            // with non-trivial implementations.
+            fun _boundary -> [||] }
 
     /// Test-only — expose the state for direct manipulation in
     /// the test harness. Production code never calls this.
@@ -1470,10 +1250,7 @@ module StreamPathway =
               SetBaseline =
                 fun canonical -> seedBaseline state canonical
               OnPromptBoundary =
-                // Cycle 40 — cache the boundary for the next
-                // emit's payload split (mirrors the production
-                // `create` factory above).
-                fun boundary ->
-                    state.LastPromptBoundary <- ValueSome boundary
-                    [||] }
+                // SessionModel Tier 1.A: no-op default (mirrors
+                // the production `create` factory above).
+                fun _boundary -> [||] }
         pathway, state
