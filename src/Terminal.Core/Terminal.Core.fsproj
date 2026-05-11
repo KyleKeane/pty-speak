@@ -54,6 +54,19 @@
     -->
     <Compile Include="DiagnosticExtracts.fs" />
     <Compile Include="DiagnosticGrep.fs" />
+    <!--
+      Cycle 45 Commit 1 — ContentHistory + SpeechCursor.
+      The new aural substrate (ContentHistory) and its announce-
+      and-navigate primitive (SpeechCursor). Purely additive in
+      Commit 1: no consumer in Terminal.App wires to them yet.
+      Commit 2 connects them to the reader loop + detectors +
+      NvdaChannel. Both modules live at the end of the compile
+      order because nothing else in Terminal.Core depends on
+      them. SpeechCursor depends on ContentHistory; the order is
+      load-bearing.
+    -->
+    <Compile Include="ContentHistory.fs" />
+    <Compile Include="SpeechCursor.fs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -67,6 +67,15 @@
     -->
     <Compile Include="DiagnosticExtractsTests.fs" />
     <Compile Include="DiagnosticGrepTests.fs" />
+    <!--
+      Cycle 45 Commit 1 — ContentHistory + SpeechCursor.
+      Tests pin the new aural substrate's contracts in isolation
+      before Commit 2 wires them into the live pipeline. Order
+      mirrors source compile order (ContentHistory before
+      SpeechCursor).
+    -->
+    <Compile Include="ContentHistoryTests.fs" />
+    <Compile Include="SpeechCursorTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
