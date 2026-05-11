@@ -133,12 +133,12 @@ let ``[shell.claude] pathway = "tui" parses correctly`` () =
 [<Fact>]
 let ``[shell.cmd] profiles = [...] resolves to the string array`` () =
     let toml =
-        "schema_version = 1\n[shell.cmd]\nprofiles = [\"echo-suppressor\", \"earcon\"]\n"
+        "schema_version = 1\n[shell.cmd]\nprofiles = [\"passthrough\", \"earcon\"]\n"
     let config, _ = loadFromText toml
     let result = Config.resolveShellProfiles config "cmd"
     Assert.True(result.IsSome)
     Assert.Equal<string[]>(
-        [| "echo-suppressor"; "earcon" |],
+        [| "passthrough"; "earcon" |],
         result.Value)
 
 [<Fact>]
@@ -161,13 +161,13 @@ let ``[shell.cmd] with both pathway and profiles preserves both`` () =
 [<Fact>]
 let ``[shell.cmd] with only profiles (no pathway) defaults pathway to stream`` () =
     let toml =
-        "schema_version = 1\n[shell.cmd]\nprofiles = [\"echo-suppressor\"]\n"
+        "schema_version = 1\n[shell.cmd]\nprofiles = [\"earcon\"]\n"
     let config, _ = loadFromText toml
     // pathway field absent → resolver returns the "stream" default.
     Assert.Equal("stream", Config.resolveShellPathway config "cmd")
     let profiles = Config.resolveShellProfiles config "cmd"
     Assert.True(profiles.IsSome)
-    Assert.Equal<string[]>([| "echo-suppressor" |], profiles.Value)
+    Assert.Equal<string[]>([| "earcon" |], profiles.Value)
 
 [<Fact>]
 let ``resolveShellProfiles returns None for a shell with no override section`` () =

@@ -79,13 +79,11 @@ module Config =
     type ShellPathwayConfig =
         { PathwayId: string
           /// Cycle 38b — per-shell profile-set override. `None`
-          /// means the shell uses the composition-root default
-          /// (`["passthrough", "earcon", "selection"]` for Claude;
-          /// `["echo-suppressor", "earcon", "selection"]` for
-          /// cmd / PowerShell). `Some [|...|]` overrides with the
-          /// listed profile IDs (validated against the registered
-          /// `ProfileId`s at composition time; unknown IDs are
-          /// logged + dropped).
+          /// means the shell uses the composition-root default of
+          /// `["passthrough", "earcon", "selection"]`. `Some [|...|]`
+          /// overrides with the listed profile IDs (validated
+          /// against the registered `ProfileId`s at composition
+          /// time; unknown IDs are logged + dropped).
           Profiles: string[] option }
 
     /// Optional overrides for `StreamPathway.Parameters`. Each
@@ -307,16 +305,14 @@ module Config =
             "# Cycle 38b — per-shell profile-set overrides."
             "# Each [shell.<key>] table may specify `profiles = [...]`"
             "# to override the composition-root default. Profile IDs:"
-            "#   \"passthrough\"     — fan every OutputEvent to NVDA + FileLogger."
-            "#   \"echo-suppressor\" — strip cmd / PowerShell input echo before NVDA."
-            "#   \"earcon\"          — bell-ping / error-tone / warning-tone."
-            "#   \"selection\"       — Claude tool-use prompts as ControlType.List."
-            "# Defaults (applied when `profiles` is unset):"
-            "#   cmd / powershell  → [\"echo-suppressor\", \"earcon\", \"selection\"]"
-            "#   claude            → [\"passthrough\", \"earcon\", \"selection\"]"
+            "#   \"passthrough\" — fan every OutputEvent to NVDA + FileLogger."
+            "#   \"earcon\"      — bell-ping / error-tone / warning-tone."
+            "#   \"selection\"   — Claude tool-use prompts as ControlType.List."
+            "# Default (applied when `profiles` is unset for any shell):"
+            "#   [\"passthrough\", \"earcon\", \"selection\"]"
             "# Uncomment + edit to override."
             "# [shell.cmd]"
-            "# profiles = [\"echo-suppressor\", \"earcon\", \"selection\"]"
+            "# profiles = [\"passthrough\", \"earcon\", \"selection\"]"
             ""
         ]
 
