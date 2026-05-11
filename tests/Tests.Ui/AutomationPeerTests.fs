@@ -68,9 +68,13 @@ let ``TerminalView is exposed as a UIA Document with the correct ClassName and N
         // PRs that touched only docs (#104) hit this same timeout
         // failure mode, ruling out code regressions; the fix is
         // runner-tolerance, not changing application behaviour.
-        match app.GetMainWindow(automation, TimeSpan.FromSeconds(30.0)) with
+        // Bumped again from 30s to 60s in Cycle 45 Commit 2
+        // (2026-05-11) after a fresh flake on its sibling test
+        // (TextPatternTests). Same root cause; same fix applied
+        // here pre-emptively to keep both UI tests in sync.
+        match app.GetMainWindow(automation, TimeSpan.FromSeconds(60.0)) with
         | null ->
-            failwith "Main window did not appear within 30 seconds. Possible causes: Velopack startup hang, WPF subsystem misconfiguration, or runner desktop session not available."
+            failwith "Main window did not appear within 60 seconds. Possible causes: Velopack startup hang, WPF subsystem misconfiguration, or runner desktop session not available."
         | mw -> mw
 
     let cf = automation.ConditionFactory
