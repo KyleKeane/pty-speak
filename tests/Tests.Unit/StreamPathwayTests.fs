@@ -1790,3 +1790,73 @@ let ``Cycle 35c — SubstrateMode=ScreenDiff still gates spinners (regression)``
             suppressedCount emittedCount)
     // Sanity: the gate's state machine WAS engaged on this path.
     Assert.NotEmpty(state.PerRowHistory)
+
+// =====================================================================
+// Cycle 41 — buildEmittedEventsForLinear (deterministic OSC 133;A split)
+// =====================================================================
+
+[<Fact>]
+let ``Cycle 41 — buildEmittedEventsForLinear without 133;A emits single StreamChunk`` () =
+    let stream = LinearTextStream.create LinearTextStream.defaultParameters
+    let parser = Terminal.Parser.Parser.create ()
+    let bytes = System.Text.Encoding.ASCII.GetBytes "hello world"
+    let events = Terminal.Parser.Parser.feedArray parser bytes
+    let (_, _) =
+        LinearTextStream.append stream DateTime.UtcNow bytes events
+    let result =
+        StreamPathway.buildEmittedEventsForLinear stream 0L "hello world" None
+    Assert.Equal(1, result.Length)
+    Assert.Equal(SemanticCategory.StreamChunk, result.[0].Semantic)
+    Assert.Equal("hello world", result.[0].Payload)
+
+[<Fact>]
+let ``Cycle 41 — buildEmittedEventsForLinear with 133;A splits into StreamChunk + PromptDetected`` () =
+    let stream = LinearTextStream.create LinearTextStream.defaultParameters
+    let parser = Terminal.Parser.Parser.create ()
+    let bytes =
+        Array.concat
+            [ System.Text.Encoding.ASCII.GetBytes "hello"
+              System.Text.Encoding.ASCII.GetBytes "\x1b]133;A\x07"
+              System.Text.Encoding.ASCII.GetBytes "C:\\>" ]
+    let events = Terminal.Parser.Parser.feedArray parser bytes
+    let (_, _) =
+        LinearTextStream.append stream DateTime.UtcNow bytes events
+    // The full text seen by NVDA's announce path would be the
+    // concatenation of "hello" and "C:\\>" (OSC sequence consumed
+    // by the parser). The split happens at PromptStartOffset
+    // which is set when 133;A fired — that's the HighWaterMark
+    // at the moment of the marker, which is just after "hello".
+    let result =
+        StreamPathway.buildEmittedEventsForLinear
+            stream 0L "helloC:\\>" None
+    Assert.Equal(2, result.Length)
+    Assert.Equal(SemanticCategory.StreamChunk, result.[0].Semantic)
+    Assert.Equal("hello", result.[0].Payload)
+    Assert.Equal(SemanticCategory.PromptDetected, result.[1].Semantic)
+    // PromptDetected has empty payload (silent auto-announce) +
+    // prompt text in Extensions["prompt.text"].
+    Assert.Equal("", result.[1].Payload)
+    match Map.tryFind "prompt.text" result.[1].Extensions with
+    | Some (:? string as t) -> Assert.Equal("C:\\>", t)
+    | _ -> Assert.Fail("expected prompt.text in Extensions to be a string")
+
+[<Fact>]
+let ``Cycle 41 — buildEmittedEventsForLinear with no output portion emits only PromptDetected`` () =
+    let stream = LinearTextStream.create LinearTextStream.defaultParameters
+    let parser = Terminal.Parser.Parser.create ()
+    // The byte stream begins with 133;A — no output bytes
+    // accumulate before the marker. Output portion is empty;
+    // only the prompt portion emits.
+    let bytes =
+        Array.concat
+            [ System.Text.Encoding.ASCII.GetBytes "\x1b]133;A\x07"
+              System.Text.Encoding.ASCII.GetBytes "PS C:\\>" ]
+    let events = Terminal.Parser.Parser.feedArray parser bytes
+    let (_, _) =
+        LinearTextStream.append stream DateTime.UtcNow bytes events
+    let result =
+        StreamPathway.buildEmittedEventsForLinear stream 0L "PS C:\\>" None
+    // No 133;A in window because PromptStartOffset == sinceOffset (0).
+    // Falls through to single-StreamChunk emit.
+    Assert.Equal(1, result.Length)
+    Assert.Equal(SemanticCategory.StreamChunk, result.[0].Semantic)

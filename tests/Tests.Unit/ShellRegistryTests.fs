@@ -210,3 +210,22 @@ let ``tryFindIn allows tests to inject deterministic Resolve closures`` () =
     match claude.Resolve() with
     | Error reason -> Assert.Equal("synthetic-failure-for-test", reason)
     | Ok _ -> Assert.Fail("Expected Error from synthetic resolver; got Ok")
+
+// =====================================================================
+// Cycle 41 — OSC 133 injection on cmd
+// =====================================================================
+
+[<Fact>]
+let ``Cycle 41 — cmd Shell.Resolve injects /K @prompt with OSC 133 markers`` () =
+    let cmd = (ShellRegistry.tryFind ShellRegistry.Cmd).Value
+    match cmd.Resolve() with
+    | Ok commandLine ->
+        Assert.Contains("cmd.exe", commandLine)
+        Assert.Contains("/K", commandLine)
+        Assert.Contains("@prompt", commandLine)
+        // Pin the OSC 133;A and 133;B injection literals so a
+        // future refactor doesn't silently drop them.
+        Assert.Contains("$E]133;A", commandLine)
+        Assert.Contains("$E]133;B", commandLine)
+        Assert.Contains("$P$G", commandLine)
+    | Error e -> Assert.Fail(sprintf "expected Ok command line; got Error: %s" e)

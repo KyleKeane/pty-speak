@@ -936,3 +936,54 @@ module LinearTextStream =
                 for i in 0 .. len - 1 do
                     result.[i] <- state.Committed.[start + i]
                 result)
+
+    /// Cycle 41 — return the most-recent OSC 133;A byte offset
+    /// IF it occurred strictly after `sinceOffset` AND no later
+    /// than the current `HighWaterMark`. Returns `None` when no
+    /// prompt-start marker fell in that window.
+    ///
+    /// Used by `StreamPathway.buildEmittedEventsForLinear` to
+    /// deterministically split an emitted payload at the
+    /// prompt boundary. The OSC 133;A marker is set in
+    /// `classifyOsc133` SYNCHRONOUSLY during `append`, so by
+    /// the time the StreamPathway runs (consuming
+    /// CanonicalState updates that arrive AFTER the parser
+    /// dispatched the OSC sequence), the offset is already
+    /// committed to state.
+    let tryReadPromptStartOffsetSince
+            (state: T)
+            (sinceOffset: int64)
+            : int64 option =
+        lock state.Gate (fun () ->
+            if state.PromptStartOffset > sinceOffset
+               && state.PromptStartOffset <= state.HighWaterMark then
+                Some state.PromptStartOffset
+            else None)
+
+    /// Cycle 41 — read two byte slices from the committed
+    /// buffer using the supplied offsets. Returns
+    /// `(outputBytes, promptBytes)` where:
+    ///   * `outputBytes` is `committed[from .. splitAt - 1]`
+    ///   * `promptBytes` is `committed[splitAt .. HighWaterMark - 1]`
+    /// Both arrays are empty when the corresponding range is
+    /// degenerate (start >= end). Thread-safe via the producer
+    /// gate.
+    let readSplitAt
+            (state: T)
+            (fromOffset: int64)
+            (splitAt: int64)
+            : byte[] * byte[] =
+        lock state.Gate (fun () ->
+            let total = int64 state.Committed.Count
+            let fromIdx = max 0L (min fromOffset total)
+            let splitIdx = max fromIdx (min splitAt total)
+            let endIdx = total
+            let len1 = int (splitIdx - fromIdx)
+            let len2 = int (endIdx - splitIdx)
+            let buf1 = Array.zeroCreate (max 0 len1)
+            let buf2 = Array.zeroCreate (max 0 len2)
+            for i in 0 .. len1 - 1 do
+                buf1.[i] <- state.Committed.[int fromIdx + i]
+            for i in 0 .. len2 - 1 do
+                buf2.[i] <- state.Committed.[int splitIdx + i]
+            buf1, buf2)

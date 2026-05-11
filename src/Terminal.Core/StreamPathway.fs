@@ -462,6 +462,83 @@ module StreamPathway =
             id
             text
 
+    /// Cycle 41 — build a PromptDetected event carrying the
+    /// prompt-row text in `Extensions["prompt.text"]`. Payload
+    /// is empty by convention (the empty-payload trick from
+    /// Cycle 8d.2 / 29b) so `NvdaChannel` skips the auto-
+    /// announce. Routed to `ActivityIds.output` by default
+    /// today (the channel-mapping change for inputPanel is a
+    /// future cycle); FileLogger still records the audit trail
+    /// via the structured Extensions.
+    ///
+    /// `nonNull (box ...)` per the established F# 9 nullness
+    /// pattern (`CLAUDE.md` "FS3261 is the canonical CI
+    /// failure").
+    let private promptDetectedFromText (promptText: string) : OutputEvent =
+        let baseEvt =
+            OutputEvent.create
+                SemanticCategory.PromptDetected
+                Priority.Polite
+                id
+                ""
+        { baseEvt with
+            Extensions =
+                Map.ofList
+                    [ "prompt.text", nonNull (box promptText) ] }
+
+    /// Cycle 41 — when the substrate mode is Linear and a
+    /// deterministic OSC 133;A offset fell inside the emit
+    /// window, split the payload at the byte offset. Returns
+    /// the event array directly: either `[| streamOutputEvent
+    /// outputText; promptDetectedFromText promptText |]` when
+    /// split fires, or the single-StreamChunk emit when no
+    /// split applies. ColorEvent (Phase A.2) is appended last.
+    ///
+    /// **Determinism**: the OSC 133;A marker is dispatched
+    /// SYNCHRONOUSLY by the parser. By the time the pathway
+    /// runs, `LinearTextStream.PromptStartOffset` is already
+    /// committed. No regex, no async cache.
+    let internal buildEmittedEventsForLinear
+            (linearStream: LinearTextStream.T)
+            (sinceOffset: int64)
+            (capped: string)
+            (dominantColor: OutputEvent option)
+            : OutputEvent[] =
+        let appendColor (events: ResizeArray<OutputEvent>) =
+            match dominantColor with
+            | Some evt -> events.Add(evt)
+            | None -> ()
+        match LinearTextStream.tryReadPromptStartOffsetSince
+                  linearStream sinceOffset with
+        | None ->
+            // No prompt-start marker in window. Emit as a
+            // single StreamChunk.
+            let events = ResizeArray<OutputEvent>()
+            if not (String.IsNullOrEmpty capped) then
+                events.Add(streamOutputEvent capped)
+            appendColor events
+            events.ToArray()
+        | Some promptStartOffset ->
+            // Deterministic split. Output portion is bytes
+            // [sinceOffset, promptStartOffset); prompt portion
+            // is bytes [promptStartOffset, HighWaterMark).
+            let outputBytes, promptBytes =
+                LinearTextStream.readSplitAt
+                    linearStream sinceOffset promptStartOffset
+            let outputText =
+                Encoding.UTF8.GetString(outputBytes)
+                |> AnnounceSanitiser.sanitise
+            let promptText =
+                Encoding.UTF8.GetString(promptBytes)
+                |> AnnounceSanitiser.sanitise
+            let events = ResizeArray<OutputEvent>()
+            if not (String.IsNullOrEmpty outputText) then
+                events.Add(streamOutputEvent outputText)
+            if not (String.IsNullOrEmpty promptText) then
+                events.Add(promptDetectedFromText promptText)
+            appendColor events
+            events.ToArray()
+
     // -------------------------------------------------------------
     // Sub-row suffix-diff (PR #166).
     //
@@ -880,6 +957,12 @@ module StreamPathway =
                                 "Emit StreamChunk (leading-edge). FrameHash=0x{Hash:X16} ChangedRows={Rows} TextLen={Len} Color={Color}",
                                 frameHash, diff.ChangedRows.Length, capped.Length,
                                 (match dominantColor with Some c -> c | None -> "none"))
+                            // Cycle 41 — capture the Linear
+                            // watermark BEFORE the update; the
+                            // split helper needs the old offset
+                            // to know where the emit window
+                            // started.
+                            let priorWatermark = state.LastLinearWatermark
                             // Cycle 35a — advance the linear
                             // watermark only on actual emit.
                             // ScreenDiff path leaves watermark
@@ -894,9 +977,25 @@ module StreamPathway =
                             // EarconProfile claims it semantically;
                             // NvdaChannel skips the empty payload so no
                             // double-announce.
-                            match dominantColor |> Option.bind colorOutputEvent with
-                            | Some colorEvt -> [| streamOutputEvent capped; colorEvt |]
-                            | None -> [| streamOutputEvent capped |]
+                            let colorEvt =
+                                dominantColor |> Option.bind colorOutputEvent
+                            // Cycle 41 — Linear mode gets the
+                            // deterministic OSC 133;A split via
+                            // buildEmittedEventsForLinear. ScreenDiff
+                            // mode keeps the single-StreamChunk
+                            // emit (no OSC 133 awareness; out of
+                            // scope this cycle).
+                            match watermarkUpdate with
+                            | ValueSome _ ->
+                                buildEmittedEventsForLinear
+                                    linearStream
+                                    priorWatermark
+                                    capped
+                                    colorEvt
+                            | ValueNone ->
+                                match colorEvt with
+                                | Some c -> [| streamOutputEvent capped; c |]
+                                | None -> [| streamOutputEvent capped |]
                 else
                     // Within debounce: accumulate the diff;
                     // trailing edge will flush. Stash the dominant
@@ -1020,6 +1119,10 @@ module StreamPathway =
                             hash, diff.ChangedRows.Length)
                         [||]
                     else
+                        // Cycle 41 — capture watermark BEFORE
+                        // the update; the split helper needs
+                        // the prior offset.
+                        let priorWatermark = state.LastLinearWatermark
                         // Cycle 35a — advance linear watermark
                         // only on actual emit (matches leading-
                         // edge contract).
@@ -1034,9 +1137,21 @@ module StreamPathway =
                             "Emit StreamChunk (trailing-edge). FrameHash=0x{Hash:X16} ChangedRows={Rows} TextLen={Len} Color={Color}",
                             hash, diff.ChangedRows.Length, capped.Length,
                             (match pendingColor with ValueSome c -> c | ValueNone -> "none"))
-                        match colorEvt with
-                        | Some evt -> [| streamOutputEvent capped; evt |]
-                        | None -> [| streamOutputEvent capped |]
+                        // Cycle 41 — Linear mode gets the
+                        // deterministic OSC 133;A split;
+                        // ScreenDiff mode keeps single-StreamChunk
+                        // emit.
+                        match watermarkUpdate with
+                        | ValueSome _ ->
+                            buildEmittedEventsForLinear
+                                linearStream
+                                priorWatermark
+                                capped
+                                colorEvt
+                        | ValueNone ->
+                            match colorEvt with
+                            | Some evt -> [| streamOutputEvent capped; evt |]
+                            | None -> [| streamOutputEvent capped |]
             else
                 [||]
         | _ -> [||]

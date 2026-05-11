@@ -1263,6 +1263,41 @@ matrix's shrinking surface area over time.
   with the expected length floor) is now CI-pinned.
 
 <!-- DOGFOOD -->
+### Cycle 41 — OSC 133 injection on cmd (deterministic prompt boundaries)
+
+Cycle 41 injects OSC 133;A/B markers into cmd's `PROMPT` template via
+the `/K "@prompt $E]133;A$E\$P$G$E]133;B$E\"` startup command in
+[`ShellRegistry.fs`](../src/Terminal.Pty/ShellRegistry.fs). Cmd's
+rendered prompt becomes `<OSC 133;A><path>><OSC 133;B>`; the OSC
+sequences are consumed by the VT parser and dispatched as
+`PromptBoundaryData` events with `Source = BoundarySource.Osc133`.
+
+`LinearTextStream` records the byte offset where 133;A fired
+(`PromptStartOffset`). `StreamPathway`'s new
+`buildEmittedEventsForLinear` helper reads that offset at emit time
+and DETERMINISTICALLY splits the announce: bytes before the offset →
+StreamChunk (output panel); bytes after → PromptDetected (empty
+Payload + prompt text in `Extensions["prompt.text"]`).
+
+**No regex, no async cache, no payload-shape heuristics.** Replaces
+the heuristic Cycles 40 / 40a that were reverted in PR #256.
+
+**Manual matrix rows**:
+
+| Test | Procedure | Expected |
+|---|---|---|
+| 41.1 — Prompt visual sanity | Rebuild and open cmd. | Prompt visually looks normal (`C:\path>`). OSC sequences are invisible. |
+| 41.2 — OSC 133 markers fire | Press Ctrl+Shift+D. Search bundle's `--- FILELOGGER ACTIVE LOG ---` for `PromptBoundary` events with `Source=Osc133`. | Should find at least one such event per command cycle. |
+| 41.3 — `echo` clarity | Type `echo hello` + Enter. | NVDA announces "hello" and STOPS. No `C:\path>` bleed inline. |
+| 41.4 — `dir` clarity | Type `dir` + Enter. | NVDA announces the directory listing. Prompt does NOT auto-announce. |
+| 41.5 — Browse-mode navigation | After 41.3 / 41.4, use NVDA browse-mode arrow keys / End. | The on-screen prompt text is reachable for navigation. |
+| 41.6 — PowerShell unchanged | Switch to PowerShell (Ctrl+Shift+2). Type `Write-Host hello` + Enter. | Prompt bleeds inline (PowerShell injection is Cycle 42; not yet shipped). |
+| 41.7 — Claude unchanged | Switch to Claude (Ctrl+Shift+3). | Claude emits OSC 133 natively; behaviour unchanged. |
+
+**Stopping gate**: cmd `echo hello` announces only "hello" via
+deterministic OSC 133 boundaries.
+
+<!-- DOGFOOD -->
 ### Cycle 38b + 38c — Per-shell route table + cmd/PowerShell echo-suppression
 
 Cycle 38b introduces a per-shell profile-set TOML override
