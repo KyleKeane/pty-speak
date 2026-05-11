@@ -856,16 +856,23 @@ module Program =
         let resolveInformationalVersion () : string =
             try
                 let asm = System.Reflection.Assembly.GetExecutingAssembly()
+                // F# can't use the C#-extension-method form of
+                // `Assembly.GetCustomAttribute<T>()`; route through
+                // the static `System.Attribute.GetCustomAttribute`
+                // instead and pattern-match on the boxed result.
                 let attr =
-                    asm.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
-                if isNull attr || System.String.IsNullOrWhiteSpace attr.InformationalVersion then
-                    "unknown"
-                else
-                    let raw = attr.InformationalVersion
+                    System.Attribute.GetCustomAttribute(
+                        asm,
+                        typeof<System.Reflection.AssemblyInformationalVersionAttribute>)
+                match attr with
+                | :? System.Reflection.AssemblyInformationalVersionAttribute as a
+                    when not (System.String.IsNullOrWhiteSpace a.InformationalVersion) ->
+                    let raw = a.InformationalVersion
                     // Strip any "+commit-sha" trailer SourceLink /
                     // deterministic-build pipelines append.
                     let plusIdx = raw.IndexOf('+')
                     if plusIdx > 0 then raw.Substring(0, plusIdx) else raw
+                | _ -> "unknown"
             with _ -> "unknown"
         log.LogInformation(
             "pty-speak starting. version={Version} os={Os} logs={LogDir}",
@@ -900,6 +907,28 @@ module Program =
             ContentHistory.create ContentHistory.defaultParameters
         let mutable speechCursor =
             SpeechCursor.create SpeechCursor.defaultParameters
+
+        // Cycle 45 Commit 2 — SpeechCursor announce callback +
+        // "wake up" trigger. Defined here (very early in compose)
+        // so the prompt-boundary handler and the selection-
+        // detector emit path (both lower in the file) can close
+        // over them. The callback runs on the WPF dispatcher
+        // thread — every caller dispatches its
+        // `SpeechCursor.onAppend` through `window.Dispatcher.InvokeAsync`,
+        // so `window.TerminalSurface.Announce` can be invoked
+        // directly here without another marshalling hop.
+        let speechCursorAnnounce ((text: string), (activityId: string)) =
+            window.TerminalSurface.Announce(text, activityId)
+
+        // "Wake up" trigger: ContentHistory has appended.
+        // SpeechCursor.onAppend reads from history directly
+        // (idempotent), so no entries-list parameter.
+        let onSpeechCursorWake () =
+            SpeechCursor.onAppend
+                speechCursor
+                contentHistory
+                speechCursorAnnounce
+
         window.TerminalSurface.SetScreen(screen)
 
         // Cycle 32b — first consumer of the IDisplayBuffer boundary
@@ -1636,9 +1665,14 @@ module Program =
                 |> Array.choose (fun ev ->
                     match ev.Semantic with
                     | SemanticCategory.SelectionShown ->
+                        // Extensions is `Map<string, obj>`; the
+                        // selection.allItems value SHOULD be a
+                        // string per `SelectionExtensions`'
+                        // schema, but extract defensively.
                         let payload =
-                            match ev.Extensions.TryGetValue(SelectionExtensions.AllItems) with
-                            | true, v when not (System.String.IsNullOrEmpty v) -> Some v
+                            match Map.tryFind SelectionExtensions.AllItems ev.Extensions with
+                            | Some (:? string as s) when not (System.String.IsNullOrEmpty s) ->
+                                Some s
                             | _ -> None
                         Some (ContentHistory.MarkerKind.SelectionShown, payload)
                     | SemanticCategory.SelectionDismissed ->
@@ -2981,27 +3015,11 @@ module Program =
                 host.EnvScrubKeptCount,
                 host.EnvScrubParentCount,
                 host.EnvScrubStrippedCount)
-            // Cycle 45 Commit 2 — SpeechCursor announce callback.
-            // The callback runs on the WPF dispatcher thread (the
-            // `startReaderLoop` callsite wraps it inside the
-            // dispatcher's `InvokeAsync(action)` block, and the
-            // pump-side appendMarker call sites likewise dispatch
-            // through `window.Dispatcher.InvokeAsync`). From the
-            // dispatcher we call `window.TerminalSurface.Announce`
-            // directly — no further marshalling.
-            let speechCursorAnnounce ((text: string), (activityId: string)) =
-                window.TerminalSurface.Announce(text, activityId)
-
-            // "Wake up" signal to SpeechCursor: invoked from the
-            // dispatcher whenever a caller has just appended to
-            // ContentHistory. SpeechCursor.onAppend reads from
-            // history directly (idempotent w.r.t. multiple
-            // concurrent wake-ups), so no entries list is passed.
-            let onSpeechCursorWake () =
-                SpeechCursor.onAppend
-                    speechCursor
-                    contentHistory
-                    speechCursorAnnounce
+            // Cycle 45 Commit 2 — `speechCursorAnnounce` and
+            // `onSpeechCursorWake` are defined earlier in
+            // `compose` so the prompt-boundary handler and
+            // selection-detector marker emission can close over
+            // them. See lines ~880-905.
 
             let _ =
                 startReaderLoop

@@ -767,14 +767,21 @@ module Diagnostics =
     let private resolveInformationalVersion () : string =
         try
             let asm = System.Reflection.Assembly.GetExecutingAssembly()
+            // F# can't use the C#-extension-method form of
+            // `Assembly.GetCustomAttribute<T>()`; route through
+            // the static `System.Attribute.GetCustomAttribute`
+            // instead and pattern-match on the boxed result.
             let attr =
-                asm.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
-            if isNull attr || System.String.IsNullOrWhiteSpace attr.InformationalVersion then
-                "unknown"
-            else
-                let raw = attr.InformationalVersion
+                System.Attribute.GetCustomAttribute(
+                    asm,
+                    typeof<System.Reflection.AssemblyInformationalVersionAttribute>)
+            match attr with
+            | :? System.Reflection.AssemblyInformationalVersionAttribute as a
+                when not (System.String.IsNullOrWhiteSpace a.InformationalVersion) ->
+                let raw = a.InformationalVersion
                 let plusIdx = raw.IndexOf('+')
                 if plusIdx > 0 then raw.Substring(0, plusIdx) else raw
+            | _ -> "unknown"
         with _ -> "unknown"
 
     let private resolveDiagnosticLogPath (now: DateTime) : string =
