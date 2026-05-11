@@ -131,16 +131,25 @@ module EchoCorrelator =
                 expireOld state now
                 let payloadBytes = Encoding.UTF8.GetBytes(payload)
                 let mutable payloadIdx = 0
-                let mutable currentNode = state.Pending.First
+                // F# 9 strict-nullness: `LinkedList<T>.First` and
+                // `LinkedListNode<T>.Next` both return
+                // `LinkedListNode<T> | null`. Annotate the cell
+                // explicitly and `nonNull`-coerce inside the loop
+                // body where the guard ensures non-null. Mirrors
+                // the F# 9 nullness pattern called out in
+                // `CLAUDE.md` ("FS3261 is the canonical CI failure").
+                let mutable currentNode : LinkedListNode<TimedByte> | null =
+                    state.Pending.First
                 let mutable stop = false
                 while not stop
                       && payloadIdx < payloadBytes.Length
                       && not (isNull currentNode) do
-                    let cByte = currentNode.Value.Byte
+                    let nodeNN = nonNull currentNode
+                    let cByte = nodeNN.Value.Byte
                     let pByte = payloadBytes.[payloadIdx]
                     if cByte = pByte then
                         payloadIdx <- payloadIdx + 1
-                        currentNode <- currentNode.Next
+                        currentNode <- nodeNN.Next
                         // CR-LF expansion: cmd translates a typed
                         // `\r` (the Enter keystroke per
                         // `KeyEncoding`) into `\r\n` on the
@@ -159,7 +168,8 @@ module EchoCorrelator =
                     else
                         stop <- true
                 // Consume the matched correlator entries.
-                let mutable head = state.Pending.First
+                let mutable head : LinkedListNode<TimedByte> | null =
+                    state.Pending.First
                 while not (isNull head)
                       && not (obj.ReferenceEquals(head, currentNode)) do
                     state.Pending.RemoveFirst()
