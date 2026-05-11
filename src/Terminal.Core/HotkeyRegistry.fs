@@ -142,6 +142,16 @@ module HotkeyRegistry =
         | ExtractErrorsAndWarnings
         | ExtractActiveConfig
         | ExtractVersionHeader
+        // Cycle 45 Commit 2 — SpeechCursor navigation. All
+        // menu-only (no keyboard accelerators in 45; future
+        // cycles can layer accelerators on after the muscle
+        // memory settles). Surfaced under Display → Speech
+        // Cursor → {Next | Previous | Jump to Latest | Toggle
+        // Mode}.
+        | SpeechCursorNext
+        | SpeechCursorPrevious
+        | SpeechCursorJumpToLatest
+        | SpeechCursorToggleMode
 
     /// Stable string name for a command, used as the
     /// `RoutedCommand` name passed to WPF and as a TOML key
@@ -172,6 +182,10 @@ module HotkeyRegistry =
         | ExtractErrorsAndWarnings -> "ExtractErrorsAndWarnings"
         | ExtractActiveConfig -> "ExtractActiveConfig"
         | ExtractVersionHeader -> "ExtractVersionHeader"
+        | SpeechCursorNext -> "SpeechCursorNext"
+        | SpeechCursorPrevious -> "SpeechCursorPrevious"
+        | SpeechCursorJumpToLatest -> "SpeechCursorJumpToLatest"
+        | SpeechCursorToggleMode -> "SpeechCursorToggleMode"
 
     /// Default key binding for a command. Mirrors the
     /// `AppReservedHotkeys` table in
@@ -310,7 +324,24 @@ module HotkeyRegistry =
           { Command = ExtractVersionHeader
             Key = None
             Modifiers = None
-            Description = "Extract the version + environment header (version, OS, .NET, PID) to the clipboard (Cycle 43a; Snapshot)" } ]
+            Description = "Extract the version + environment header (version, OS, .NET, PID) to the clipboard (Cycle 43a; Snapshot)" }
+          // Cycle 45 Commit 2 — SpeechCursor navigation. Menu-only.
+          { Command = SpeechCursorNext
+            Key = None
+            Modifiers = None
+            Description = "Speech Cursor: move to the next entry (Cycle 45 Commit 2)" }
+          { Command = SpeechCursorPrevious
+            Key = None
+            Modifiers = None
+            Description = "Speech Cursor: move to the previous entry (Cycle 45 Commit 2)" }
+          { Command = SpeechCursorJumpToLatest
+            Key = None
+            Modifiers = None
+            Description = "Speech Cursor: jump to the latest entry (Cycle 45 Commit 2)" }
+          { Command = SpeechCursorToggleMode
+            Key = None
+            Modifiers = None
+            Description = "Speech Cursor: toggle AutoDrive / Manual mode (Cycle 45 Commit 2)" } ]
 
     /// Look up the default Hotkey for a command. Throws
     /// `KeyNotFoundException` if the registry is incomplete —
@@ -396,7 +427,11 @@ module HotkeyRegistry =
           ExtractLast50LogLines
           ExtractErrorsAndWarnings
           ExtractActiveConfig
-          ExtractVersionHeader ]
+          ExtractVersionHeader
+          SpeechCursorNext
+          SpeechCursorPrevious
+          SpeechCursorJumpToLatest
+          SpeechCursorToggleMode ]
 
     // ---------------------------------------------------------------
     // Cycle 27 — Multi-state command paradigm
