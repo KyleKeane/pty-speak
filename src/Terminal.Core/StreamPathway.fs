@@ -2,6 +2,7 @@ namespace Terminal.Core
 
 open System
 open System.Collections.Generic
+open System.Text.RegularExpressions
 open Microsoft.Extensions.Logging
 
 /// Phase A — Stream display pathway. Replaces the verbose-
@@ -499,6 +500,65 @@ module StreamPathway =
                 Map.ofList
                     [ "prompt.text", nonNull (box promptText) ] }
 
+    /// Cycle 40a — inline prompt-detection at emit time.
+    /// Independent of the async `OnPromptBoundary` cache (which
+    /// has a 100ms stability window that's LONGER than the
+    /// StreamPathway debounce, so the first chunk after typing
+    /// often emits BEFORE the boundary fires).
+    ///
+    /// **Strategy.** Look at the last non-empty line of the
+    /// payload; if it matches one of the per-shell prompt regexes,
+    /// strip it from the announce.
+    ///
+    /// **Shell-agnostic.** We try ALL THREE shell regexes
+    /// (cmd, PowerShell, Claude) at every call rather than
+    /// threading shellKey through the pathway. Each regex is
+    /// strict enough that false-positive matches against real
+    /// output are unlikely; the cost is three Regex.IsMatch
+    /// checks per emit (microseconds).
+    let private cmdPromptPattern : Regex =
+        Regex(@"^[A-Z]:\\.*>\s*$", RegexOptions.Compiled)
+    let private powerShellPromptPattern : Regex =
+        Regex(@"^PS\s.*>\s*$", RegexOptions.Compiled)
+    let private claudePromptPattern : Regex =
+        Regex(@".*│\s*>.*$", RegexOptions.Compiled)
+
+    /// Returns `Some (outputPortion, promptText)` when the
+    /// payload's last non-empty line matches a known prompt
+    /// pattern. `outputPortion` is everything before the prompt
+    /// line, trimmed of trailing whitespace. Returns `None`
+    /// otherwise (caller emits the payload as a single
+    /// StreamChunk).
+    let internal tryDetectPromptInPayload
+            (payload: string)
+            : (string * string) option =
+        if String.IsNullOrEmpty payload then None
+        else
+            let lines = payload.Split([| '\n' |])
+            // Find the last non-empty line. Trailing CR / CRLF
+            // / whitespace-only lines are skipped — typical for
+            // payloads that end with a prompt followed by no
+            // newline.
+            let mutable lastNonEmpty = -1
+            for i in 0 .. lines.Length - 1 do
+                let trimmed = lines.[i].TrimEnd()
+                if not (String.IsNullOrEmpty trimmed) then
+                    lastNonEmpty <- i
+            if lastNonEmpty < 0 then None
+            else
+                let lastLine = lines.[lastNonEmpty].TrimEnd()
+                if cmdPromptPattern.IsMatch(lastLine)
+                   || powerShellPromptPattern.IsMatch(lastLine)
+                   || claudePromptPattern.IsMatch(lastLine) then
+                    let outputPortion =
+                        if lastNonEmpty = 0 then ""
+                        else
+                            let outputLines =
+                                lines.[0 .. lastNonEmpty - 1]
+                            (String.concat "\n" outputLines).TrimEnd()
+                    Some (outputPortion, lastLine)
+                else None
+
     /// Cycle 40 — split a StreamChunk payload at the prompt
     /// boundary, when a boundary is cached and its
     /// `MatchedRowText` is a SUFFIX of the payload. Returns
@@ -550,16 +610,27 @@ module StreamPathway =
             (capped: string)
             (dominantColor: OutputEvent option)
             : OutputEvent[] =
+        // Cycle 40a — try inline prompt-detection FIRST (no
+        // async dependency; works on the FIRST emit after the
+        // user types). Fall back to the cached OnPromptBoundary
+        // for cases where the inline regex didn't catch but the
+        // heuristic detector did (custom prompts, OSC 133, etc.).
         let outputPortion, promptPortion =
-            match state.LastPromptBoundary with
-            | ValueSome boundary ->
-                let result = splitAtPromptBoundary capped boundary
-                // Single-shot consumption: clear the cache so
-                // a later StreamChunk that doesn't contain the
-                // prompt doesn't accidentally trigger a split.
+            match tryDetectPromptInPayload capped with
+            | Some (o, p) ->
+                // Inline detection succeeded; clear any cached
+                // boundary so it can't double-fire on the next
+                // chunk.
                 state.LastPromptBoundary <- ValueNone
-                result
-            | ValueNone -> capped, None
+                o, Some p
+            | None ->
+                match state.LastPromptBoundary with
+                | ValueSome boundary ->
+                    let result = splitAtPromptBoundary capped boundary
+                    // Single-shot consumption: clear the cache.
+                    state.LastPromptBoundary <- ValueNone
+                    result
+                | ValueNone -> capped, None
         let events = ResizeArray<OutputEvent>()
         if not (String.IsNullOrEmpty outputPortion) then
             events.Add(streamOutputEvent outputPortion)
