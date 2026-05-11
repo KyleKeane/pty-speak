@@ -895,14 +895,16 @@ module Program =
 
         // Cycle 45 Commit 2 — ContentHistory + SpeechCursor are the
         // new aural substrate (parallel to the screen-grid + UIA
-        // surface). ContentHistory holds the active tuple's
-        // append-only typed log; SpeechCursor announces from it.
-        // Both are bounded by tuple lifetime — `ContentHistory.reset`
-        // fires when SessionModel finalises a tuple AND when the
-        // shell hot-switches (a new shell session starts fresh).
-        // LinearTextStream is kept in parallel through Commit 2 so
-        // the existing pump path stays functional; Commit 3 deletes
-        // it after the NVDA validation gate.
+        // surface). ContentHistory holds the shell session's
+        // append-only typed log; SpeechCursor announces from it
+        // (AutoDrive) and lets the user navigate it (Manual).
+        // Scope is the shell session (NOT individual tuples) so
+        // the user can Speech-Cursor backwards through completed
+        // commands — `ContentHistory.reset` fires only when the
+        // shell hot-switches, which is a legitimate fresh-slate
+        // boundary. LinearTextStream is kept in parallel through
+        // Commit 2 so the existing pump path stays functional;
+        // Commit 3 deletes it after the NVDA validation gate.
         let mutable contentHistory =
             ContentHistory.create ContentHistory.defaultParameters
         let mutable speechCursor =
@@ -1553,15 +1555,23 @@ module Program =
             | None -> ()
 
             // Cycle 45 Commit 2 — ContentHistory + SpeechCursor
-            // boundary handling. Mirrors the SessionModel state
-            // machine: on tuple finalise (Some), the previous
-            // tuple's history is no longer needed, so we reset
-            // both ContentHistory and SpeechCursor before the
-            // new tuple's boundary marker is emitted. The reset
-            // + appendMarker + SpeechCursor.onAppend are bundled
-            // into a single dispatcher action so they serialise
-            // with reader-thread-driven appends and hotkey-
-            // driven cursor moves (both also on the dispatcher).
+            // boundary handling. Emit a `MarkerKind` matching the
+            // SessionModel state-transition kind so SpeechCursor
+            // can navigate the prompt-boundary structure of the
+            // shell session.
+            //
+            // Cycle 45 Commit 2 follow-up (2026-05-11): the
+            // original wiring ALSO reset ContentHistory +
+            // SpeechCursor on tuple seal, on the assumption that
+            // a tuple boundary closed out the addressable history.
+            // User dogfood surfaced that this leaves the cursor
+            // with nothing to navigate — every Next/Previous
+            // gesture after a completed command returns "already
+            // at first/latest entry" because the history is
+            // empty post-reset. The corrected scope is "the
+            // shell session": entries accumulate across tuple
+            // boundaries; reset only on shell-switch (handled in
+            // `switchToShell` further below).
             let markerKind =
                 match augmented.Kind with
                 | BoundaryKind.PromptStart ->
@@ -1572,11 +1582,21 @@ module Program =
                     Some ContentHistory.MarkerKind.OutputStart
                 | BoundaryKind.CommandFinished _ ->
                     Some ContentHistory.MarkerKind.CommandFinished
-            let tupleFinalised = finalisedOpt.IsSome
+            // Cycle 45 Commit 2 follow-up — do NOT reset
+            // ContentHistory + SpeechCursor on tuple seal.
+            // Original Commit 2 reset here on the assumption that
+            // ContentHistory's scope is "the active tuple"; user
+            // dogfood (2026-05-11) surfaced that this leaves the
+            // SpeechCursor with nothing to navigate the moment a
+            // command completes — every Next / Previous gesture
+            // returns "Already at the first/latest entry" because
+            // the history is empty post-reset. The right scope is
+            // "the shell session" — entries accumulate across
+            // tuple boundaries; the user can Speech-Cursor back
+            // through completed commands. Reset on shell-switch
+            // (in `switchToShell` below) still fires; that's a
+            // legitimate fresh-slate boundary.
             let boundaryAction () =
-                if tupleFinalised then
-                    ContentHistory.reset contentHistory
-                    SpeechCursor.reset speechCursor
                 match markerKind with
                 | Some k ->
                     ContentHistory.appendMarker
