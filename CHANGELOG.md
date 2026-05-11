@@ -15,36 +15,6 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
-### Fixed (Cycle 40a): inline prompt-detection at emit time
-
-Cycle 40 shipped the channel-layer split but the `OnPromptBoundary`
-cache populates ASYNCHRONOUSLY: `HeuristicPromptDetector`'s stability
-window for cmd is 100ms while `StreamPathway`'s debounce is 60ms.
-The first emit after the user types fires BEFORE the boundary
-cache populates, so the StreamChunk still bundled the prompt and
-NVDA read both parts inline. Maintainer reported the bleed-through
-persisted on dogfood despite Cycle 40 being on `main`.
-
-Cycle 40a adds inline detection at emit time, independent of the
-async cache:
-
-- New `tryDetectPromptInPayload : string -> (output * prompt) option`
-  in [`src/Terminal.Core/StreamPathway.fs`](src/Terminal.Core/StreamPathway.fs).
-  Looks at the payload's last non-empty line; if it matches one of
-  three per-shell prompt regexes (cmd: `^[A-Z]:\\.*>\s*$`,
-  PowerShell: `^PS\s.*>\s*$`, Claude: `.*│\s*>.*$`), returns the
-  output portion + prompt text.
-- `buildEmittedEvents` calls `tryDetectPromptInPayload` FIRST; falls
-  back to the `LastPromptBoundary` cache if no match. Inline path
-  works on the FIRST emit after typing without waiting for the
-  detector's stability window. Cache stays as a fallback for
-  custom prompts the inline regex doesn't catch.
-- 6 new test facts in
-  [`tests/Tests.Unit/StreamPathwayTests.fs`](tests/Tests.Unit/StreamPathwayTests.fs)
-  pinning detection on cmd prompt, PowerShell prompt, plain
-  output (no match), empty payload, trailing whitespace-only lines,
-  entire-payload-is-prompt edge case.
-
 ### Added (Cycle 40): Three-panel channel routing (announce-clarity)
 
 Closes the maintainer's actual 2026-05-11 reported regression:
