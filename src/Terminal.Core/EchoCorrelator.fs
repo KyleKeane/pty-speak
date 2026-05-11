@@ -56,8 +56,11 @@ module EchoCorrelator =
 
     /// Internal per-byte record. Each byte the user types is
     /// stored alongside the timestamp at which it was written
-    /// to PTY-stdin.
-    type private TimedByte =
+    /// to PTY-stdin. `internal` (not `private`) because the
+    /// `T.Pending` member is `internal` and F# requires the
+    /// element type be at least as accessible as the member
+    /// that exposes it.
+    type internal TimedByte =
         { Byte: byte
           RecordedAt: DateTime }
 
