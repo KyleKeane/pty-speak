@@ -15,6 +15,107 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 43a): Diagnostic chunk extractors + Grep dialog
+
+Closes the long-standing iOS-paste-crash failure mode for triage
+workflows. The `Ctrl+Shift+D` diagnostic bundle is comprehensive
+but routinely exceeds the paste-back limits of chat clients used
+in triage (the Cycle 29b NVDA test produced a multi-megabyte
+bundle that crashed the maintainer's iOS chat app on paste).
+CLAUDE.md previously codified "request chunks, not full bundles"
+but only as instructions to Claude; the app gave the maintainer
+no tools to actually produce chunks — every triage required
+shell-quoting `findstr` from cmd or `Select-String` from PowerShell,
+both of which are friction for keyboard-only / screen-reader
+usage. Cycle 43a converts that workflow from "unusable" to "the
+primary triage path."
+
+**Surface** — six new menu-only commands under `Diagnostics`:
+
+- `Copy Latest Bundle to Clipboard` — fast lightweight bundle
+  (~100 ms; FileLogger active log + config.toml + session log
+  summary + linear stream tail + redacted environment;
+  no diagnostic-battery run).
+- `Grep Diagnostics...` — modal dialog (pattern + case-sensitive
+  flag + regex flag + context-lines spinner); regenerates the
+  lightweight bundle in-memory and produces a formatted match
+  list; clipboard + extract file.
+- `Extract → By Recency → Last 50 Log Lines` — tail of the active
+  FileLogger log.
+- `Extract → By Event Type → Errors and Warnings` — log entries
+  with `Semantic=ErrorLine`, `WarningLine`, or `ParserError`.
+- `Extract → By Bundle Section → Active Config` — current
+  `config.toml` content.
+- `Extract → Snapshot → Version Header` — version + OS + .NET +
+  PID + active shell (small status snapshot).
+
+All extractors:
+
+- Copy the result to the Windows clipboard via the
+  STA-thread + 3 s-timeout pattern (mirrors
+  `runCopyHistoryToClipboard`).
+- Cap the clipboard payload at **60 KB** (the Cycle 29b
+  iOS-paste-crash safety ceiling) and append a
+  `[... truncated at <N> bytes; full results in extract file ...]`
+  footer if larger.
+- Write the **full untruncated** extract to
+  `%LOCALAPPDATA%\PtySpeak\extracts\<extractor>-<timestamp>.txt`
+  as paste-fallback for clipboard-unfriendly chat clients.
+- Announce result size + extract file path via NVDA
+  (`ActivityIds.diagnostic`).
+
+**Architecture** — two new pure F# modules in `Terminal.Core`:
+
+- [`src/Terminal.Core/DiagnosticExtracts.fs`](src/Terminal.Core/DiagnosticExtracts.fs):
+  `tailLogLines`, `filterLogLinesSince`, `filterLogBySemantic`,
+  `slugifyForFilename`, `extractFilePath`, `truncateForClipboard`,
+  `formatExtractHeader`, `formatBytesForAnnounce`. No WPF /
+  clipboard / logger dependencies.
+- [`src/Terminal.Core/DiagnosticGrep.fs`](src/Terminal.Core/DiagnosticGrep.fs):
+  `GrepOptions` record + `formatGrep` + `countMatches`. Pure
+  function over a string; orchestrator owns side effects.
+
+Orchestration in `Terminal.App/Program.fs` adds a shared
+`runExtractorClipboard` helper that every menu item delegates to;
+per-command logic reduces to "compute body string, hand to
+helper." `Diagnostics.fs` gains a new internal
+`formatLightweightBundle` that mirrors `formatDiagnosticBundle`'s
+section structure minus the battery + corpus sections; this is
+the source `Copy Latest Bundle` copies and `Grep Diagnostics`
+searches over.
+
+**Dialog** — new [`src/Views/GrepDialog.xaml`](src/Views/GrepDialog.xaml)
++ code-behind. UIA-labeled controls (`AutomationProperties.Name`
+on every focusable element); explicit tab order; Enter activates
+OK, Escape activates Cancel; LiveSetting=Assertive validation
+message for context-lines range errors.
+
+**Tests** — 22 new facts across
+[`tests/Tests.Unit/DiagnosticExtractsTests.fs`](tests/Tests.Unit/DiagnosticExtractsTests.fs)
+(slug shape, timestamp parsing, tail behaviour, time-filter,
+Semantic-filter, truncation budget, header format) and
+[`tests/Tests.Unit/DiagnosticGrepTests.fs`](tests/Tests.Unit/DiagnosticGrepTests.fs)
+(empty pattern, regex compile errors, case sensitivity, context
+clamping at file edges, summary footer, match marker).
+`HotkeyRegistryTests.allCommands contains exactly the documented
+commands (PR-O)` updated with the 6 new AppCommand cases.
+
+**Docs** — `CLAUDE.md` "Diagnostic logs — request chunks, not full
+bundles" section refreshed: shell-recipe `findstr` /
+`Select-String` examples replaced with "ask the maintainer to use
+`Diagnostics → Grep diagnostics...`" or
+"`Diagnostics → Extract → X`" as the new primary triage path.
+Shell recipes retained as fallback for the few cases where the
+extractor catalog doesn't cover the specific slice. New NVDA
+matrix rows in [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
+for the grep dialog + each proof-of-concept extractor.
+
+**Deferred to Cycle 43b** — the remaining ~16 extractors across
+the four sub-submenus per the
+[`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md) catalog.
+Cycle 43a ships one proof-of-concept extractor per sub-submenu
+to validate the pattern end-to-end before fan-out.
+
 ### Reverted (Cycle 39): Cycle 38c echo-suppression
 
 Cycle 38c (`EchoCorrelator` + `EchoSuppressorProfile`) was solving a

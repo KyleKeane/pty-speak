@@ -432,6 +432,15 @@ let ``Logger module returns the configured factory's logger after configure`` ()
     let logger = Logger.get "Configured.Category"
     Assert.True(logger.IsEnabled(LogLevel.Information))
     logger.LogInformation("via configured factory")
+    // Same flake-fix pattern PR #213 applied to the
+    // `day-folder-creation` test in this file (lines 213-223):
+    // `Dispose`'s implicit drain-wait is racy under CI load, so
+    // an explicit `FlushPending` call is required before reading
+    // the log back. Without it, this test intermittently sees an
+    // empty log file because the async drain task hasn't yet
+    // written the LogInformation entry. Caught on Cycle 43a CI
+    // run; the race pre-dates this PR.
+    sink.FlushPending(5000).Wait() |> ignore
     (provider :> IDisposable).Dispose()
     let content = readActiveLog sink
     Assert.Contains("[Configured.Category]", content)

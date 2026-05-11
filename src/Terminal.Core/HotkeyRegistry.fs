@@ -122,6 +122,26 @@ module HotkeyRegistry =
         // and opens it in the default browser. NVDA browse-mode H
         // key jumps headings; D key jumps the `<main>` landmark.
         | OpenManualTests
+        // Cycle 43a — diagnostic chunk extractors. All menu-only;
+        // no keyboard accelerators (accelerator budget is saturated
+        // per the maintainer's hotkey-count working-memory ceiling,
+        // and chunking is power-user enough that menu access is the
+        // right shape). The full catalog lives under
+        // `Diagnostics → Extract → {Recency | Event Type | Bundle
+        // Section | Snapshot}` with first-cut representatives in
+        // 43a; subsequent extractors plug into the same shape in
+        // 43b. The two top-level items
+        // (`CopyLatestBundle` and `GrepDiagnostics`) bypass the
+        // submenu hierarchy because they're the load-bearing
+        // triage tools — every chunking session starts by either
+        // copying the current state in one keystroke or grepping
+        // it with a pattern.
+        | CopyLatestBundle
+        | GrepDiagnostics
+        | ExtractLast50LogLines
+        | ExtractErrorsAndWarnings
+        | ExtractActiveConfig
+        | ExtractVersionHeader
 
     /// Stable string name for a command, used as the
     /// `RoutedCommand` name passed to WPF and as a TOML key
@@ -146,6 +166,12 @@ module HotkeyRegistry =
         | CloseWindow -> "CloseWindow"
         | ExitApp -> "ExitApp"
         | OpenManualTests -> "OpenManualTests"
+        | CopyLatestBundle -> "CopyLatestBundle"
+        | GrepDiagnostics -> "GrepDiagnostics"
+        | ExtractLast50LogLines -> "ExtractLast50LogLines"
+        | ExtractErrorsAndWarnings -> "ExtractErrorsAndWarnings"
+        | ExtractActiveConfig -> "ExtractActiveConfig"
+        | ExtractVersionHeader -> "ExtractVersionHeader"
 
     /// Default key binding for a command. Mirrors the
     /// `AppReservedHotkeys` table in
@@ -254,7 +280,37 @@ module HotkeyRegistry =
           { Command = OpenManualTests
             Key = None
             Modifiers = None
-            Description = "Open the dogfood-filtered manual-tests HTML quickref in the default browser (Cycle 38a-followup)" } ]
+            Description = "Open the dogfood-filtered manual-tests HTML quickref in the default browser (Cycle 38a-followup)" }
+          // Cycle 43a — diagnostic chunk extractors. All menu-only.
+          // The two top-level items live under Diagnostics directly;
+          // the four `Extract*` items live under
+          // Diagnostics → Extract → {Recency | Event Type | Bundle
+          // Section | Snapshot} (one representative per sub-submenu
+          // in 43a; the remaining catalog ships in 43b).
+          { Command = CopyLatestBundle
+            Key = None
+            Modifiers = None
+            Description = "Copy the latest lightweight diagnostic bundle to the clipboard (Cycle 43a; no battery run, no test commands — fast current-state snapshot)" }
+          { Command = GrepDiagnostics
+            Key = None
+            Modifiers = None
+            Description = "Open a dialog to grep the lightweight diagnostic bundle for a pattern; copies matches to the clipboard (Cycle 43a)" }
+          { Command = ExtractLast50LogLines
+            Key = None
+            Modifiers = None
+            Description = "Extract the last 50 lines of the active FileLogger log to the clipboard (Cycle 43a; Recency)" }
+          { Command = ExtractErrorsAndWarnings
+            Key = None
+            Modifiers = None
+            Description = "Extract FileLogger entries with Semantic=ErrorLine, WarningLine, or ParserError (Cycle 43a; Event Type)" }
+          { Command = ExtractActiveConfig
+            Key = None
+            Modifiers = None
+            Description = "Extract the active config.toml to the clipboard (Cycle 43a; Bundle Section)" }
+          { Command = ExtractVersionHeader
+            Key = None
+            Modifiers = None
+            Description = "Extract the version + environment header (version, OS, .NET, PID) to the clipboard (Cycle 43a; Snapshot)" } ]
 
     /// Look up the default Hotkey for a command. Throws
     /// `KeyNotFoundException` if the registry is incomplete —
@@ -334,7 +390,13 @@ module HotkeyRegistry =
           RunProcessCleanupScript
           CloseWindow
           ExitApp
-          OpenManualTests ]
+          OpenManualTests
+          CopyLatestBundle
+          GrepDiagnostics
+          ExtractLast50LogLines
+          ExtractErrorsAndWarnings
+          ExtractActiveConfig
+          ExtractVersionHeader ]
 
     // ---------------------------------------------------------------
     // Cycle 27 — Multi-state command paradigm

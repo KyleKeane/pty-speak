@@ -801,7 +801,12 @@ module Diagnostics =
     /// throwing — the bundle should always include something for
     /// each section so the maintainer can see "config not
     /// present" vs "config read failed".
-    let private readFileSafe (path: string) : string =
+    ///
+    /// Cycle 43a — bumped from `private` to `internal` so the new
+    /// `formatLightweightBundle` (consumed by `CopyLatestBundle`
+    /// and `GrepDiagnostics` from Program.fs) can reuse the same
+    /// FileShare.ReadWrite + missing-file fallback semantics.
+    let internal readFileSafe (path: string) : string =
         try
             if not (File.Exists path) then
                 sprintf "(file not present: %s)" path
@@ -841,7 +846,12 @@ module Diagnostics =
     /// Snapshot the current process environment, sorted by name,
     /// with sensitive values redacted. Format: one `NAME=value`
     /// line per variable.
-    let private formatEnvironmentRedacted () : string =
+    ///
+    /// Cycle 43a — bumped from `private` to `internal` so the
+    /// `formatLightweightBundle` orchestrator + future
+    /// extractors can reuse the redaction logic without
+    /// duplicating the deny-list.
+    let internal formatEnvironmentRedacted () : string =
         let table = Environment.GetEnvironmentVariables()
         let names = ResizeArray<string>()
         for entry in table do
@@ -942,6 +952,81 @@ module Diagnostics =
         // corpus file is missing or no scenarios match the shell.
         appendLine "--- CANONICAL CORPUS RESULTS ---"
         appendLine corpusResultsSection
+        appendLine ""
+
+        appendLine "--- ENVIRONMENT (deny-listed values redacted) ---"
+        appendLine (formatEnvironmentRedacted ())
+        appendLine ""
+
+        appendLine "--- END OF SNAPSHOT ---"
+        sb.ToString()
+
+    /// Cycle 43a — assemble a "lightweight" bundle: the same
+    /// section structure as `formatDiagnosticBundle` minus the
+    /// `--- DIAGNOSTIC BATTERY LOG ---` and
+    /// `--- CANONICAL CORPUS RESULTS ---` sections that require
+    /// running test commands against the live shell (~10 seconds
+    /// of wall time + an externally-visible side effect on the
+    /// shell). The lightweight variant assembles in ~100 ms from
+    /// already-on-disk artifacts and is what the new top-level
+    /// `Diagnostics → Copy latest diagnostic bundle to clipboard`
+    /// item produces, plus the corpus the
+    /// `Diagnostics → Grep diagnostics...` dialog searches over.
+    ///
+    /// The bundle banner reads "lightweight" so paste-back
+    /// consumers know which variant they got — distinguishes
+    /// "you got a full battery run" from "you got a fast
+    /// current-state snapshot".
+    ///
+    /// `internal` rather than `public`: Program.fs (same
+    /// assembly) is the only intended caller.
+    let internal formatLightweightBundle
+            (now: DateTime)
+            (fileLoggerLogPath: string option)
+            (configPath: string)
+            (sessionLogSummary: string)
+            (linearStreamSection: string)
+            : string =
+        let sb = StringBuilder()
+        let appendLine (s: string) = sb.AppendLine(s) |> ignore
+        let separator = "========================================================="
+        appendLine separator
+        appendLine "pty-speak diagnostic snapshot (Cycle 43a lightweight)"
+        appendLine (sprintf "Captured: %s UTC" (now.ToString("yyyy-MM-dd HH:mm:ss")))
+        let version =
+            try
+                let asm = System.Reflection.Assembly.GetExecutingAssembly()
+                let v = asm.GetName().Version
+                if isNull v then "unknown" else string v
+            with _ -> "unknown"
+        appendLine (sprintf "Version: %s" version)
+        appendLine (sprintf "OS: %s" (Environment.OSVersion.VersionString))
+        appendLine (sprintf ".NET: %s" (Environment.Version.ToString()))
+        appendLine (sprintf "Process ID: %d" (System.Diagnostics.Process.GetCurrentProcess().Id))
+        appendLine "Variant: lightweight (no diagnostic battery; no canonical corpus)"
+        appendLine separator
+        appendLine ""
+
+        appendLine "--- FILELOGGER ACTIVE LOG ---"
+        match fileLoggerLogPath with
+        | Some path ->
+            appendLine (sprintf "(source: %s)" path)
+            appendLine (readFileSafe path)
+        | None ->
+            appendLine "(FileLogger not configured)"
+        appendLine ""
+
+        appendLine "--- CONFIG.TOML ---"
+        appendLine (sprintf "(source: %s)" configPath)
+        appendLine (readFileSafe configPath)
+        appendLine ""
+
+        appendLine "--- SESSION LOG ---"
+        appendLine sessionLogSummary
+        appendLine ""
+
+        appendLine "--- LINEAR STREAM (last 64KB) ---"
+        appendLine linearStreamSection
         appendLine ""
 
         appendLine "--- ENVIRONMENT (deny-listed values redacted) ---"
