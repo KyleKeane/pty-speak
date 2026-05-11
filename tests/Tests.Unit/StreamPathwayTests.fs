@@ -1797,7 +1797,7 @@ let ``Cycle 35c — SubstrateMode=ScreenDiff still gates spinners (regression)``
 
 let private fakeBoundary (matchedRowText: string) : PromptBoundaryData =
     { Kind = BoundaryKind.PromptStart
-      Source = BoundarySource.Heuristic
+      Source = BoundarySource.HeuristicPromptRegex
       DetectedAt = DateTime.UtcNow
       CommandId = None
       ExtraParams = Map.empty
@@ -1845,7 +1845,7 @@ let ``Cycle 40 — splitAtPromptBoundary returns no-split when boundary has no M
     let payload = "hello\r\nC:\\path>"
     let boundary =
         { Kind = BoundaryKind.PromptStart
-          Source = BoundarySource.Heuristic
+          Source = BoundarySource.HeuristicPromptRegex
           DetectedAt = DateTime.UtcNow
           CommandId = None
           ExtraParams = Map.empty
