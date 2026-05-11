@@ -216,7 +216,7 @@ let ``tryFindIn allows tests to inject deterministic Resolve closures`` () =
 // =====================================================================
 
 [<Fact>]
-let ``Cycle 41 — cmd Shell.Resolve injects /K @prompt with OSC 133 markers`` () =
+let ``Cycle 41 — cmd Shell.Resolve injects prompt command with OSC 133 markers`` () =
     let cmd = (ShellRegistry.tryFind ShellRegistry.Cmd).Value
     match cmd.Resolve() with
     | Ok commandLine ->
