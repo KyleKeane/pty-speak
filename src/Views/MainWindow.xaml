@@ -79,6 +79,26 @@
                               x:FieldModifier="public"
                               Header="_Muted" />
                 </MenuItem>
+                <!-- Cycle 45 Commit 2 — SpeechCursor navigation
+                     (menu-only). The cursor is the announce-and-
+                     navigate primitive over the ContentHistory
+                     substrate; AutoDrive announces new entries as
+                     they arrive; Manual lets the user navigate
+                     the history at their own pace. -->
+                <MenuItem Header="_Speech Cursor">
+                    <MenuItem x:Name="MenuItem_SpeechCursorNext"
+                              x:FieldModifier="public"
+                              Header="_Next Entry" />
+                    <MenuItem x:Name="MenuItem_SpeechCursorPrevious"
+                              x:FieldModifier="public"
+                              Header="_Previous Entry" />
+                    <MenuItem x:Name="MenuItem_SpeechCursorJumpToLatest"
+                              x:FieldModifier="public"
+                              Header="Jump to _Latest" />
+                    <MenuItem x:Name="MenuItem_SpeechCursorToggleMode"
+                              x:FieldModifier="public"
+                              Header="Toggle _Mode (AutoDrive / Manual)" />
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="_Data">
                 <MenuItem x:Name="MenuItem_OpenDataFolder"

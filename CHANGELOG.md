@@ -15,6 +15,94 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 45 Commit 2): ContentHistory + SpeechCursor wired into the live pipeline
+
+Second commit of the Cycle 45 architectural reset (Commit 1
+shipped in PR #262 as additive substrate). This commit wires
+the new aural substrate (`ContentHistory`) and its announce-and-
+navigate primitive (`SpeechCursor`) into the live reader-loop +
+detector pipeline. The existing `StreamPathway` / `LinearTextStream`
+machinery is **still present** and runs in parallel; Commit 3
+deletes it after the NVDA validation gate.
+
+**What's new**:
+
+- `Terminal.App/Program.fs:startReaderLoop` now feeds
+  `ContentHistory.appendFromEvent` for every parser event
+  alongside the existing `LinearTextStream.append` and
+  `Screen.Apply` calls.
+- After each chunk produces new ContentHistory entries, the
+  reader's dispatcher action invokes `SpeechCursor.onAppend`
+  to drive AutoDrive announces.
+- `HeuristicPromptDetector` boundary events (PromptStart /
+  CommandStart / OutputStart / CommandFinished) emit
+  `ContentHistory.appendMarker` calls of the matching
+  `MarkerKind`. SessionModel tuple-finalize triggers a
+  `ContentHistory.reset` + `SpeechCursor.reset` so the
+  next tuple starts with a clean substrate.
+- `SelectionDetector` `SelectionShown` and `SelectionDismissed`
+  events emit corresponding ContentHistory markers. The
+  `SelectionShown` marker carries the item-list text as
+  payload so SpeechCursor's `renderEntry` can announce
+  "Selection prompt: Edit, Yes, Always, No." then suspend
+  AutoDrive for the duration of the list interaction.
+- Shell-switch (`Ctrl+Shift+1/2/3`) resets ContentHistory +
+  SpeechCursor alongside the existing `promptDetector` +
+  `selectionDetector` resets.
+- 4 new menu-only AppCommands under `Display → Speech Cursor →`:
+  `Next Entry`, `Previous Entry`, `Jump to Latest`,
+  `Toggle Mode (AutoDrive / Manual)`. No keyboard
+  accelerators in this cycle.
+
+**Architectural refinement in this commit**:
+`SpeechCursor.onAppend`'s signature changed — it no longer
+takes an entries list. The caller's invocation is now a "wake
+up, history may have changed" signal; SpeechCursor reads
+directly from `ContentHistory` and announces every entry with
+`Seq > LastSpokenSeq`. This makes the function idempotent w.r.t.
+multiple concurrent appenders (reader thread + pump thread)
+and eliminates an out-of-order-delivery race where a marker
+emitted on the pump thread could land before reader-thread
+TextSpans, causing the TextSpans to be skipped via the
+LastSpokenSeq gate.
+
+The `SelectionShown` marker's announce-then-suspend ordering
+was also fixed: previously the marker silently failed to
+announce (suspend was set BEFORE the announce decision).
+The fix splits modulation into pre-suspend (SelectionDismissed
+clears the bit before announce) and post-suspend
+(SelectionShown sets the bit after announce).
+
+**Version-in-log fix**:
+`Program.fs:startup`, `Diagnostics.fs:formatDiagnosticBundle`,
+`Diagnostics.fs:formatLightweightBundle`, and
+`Program.fs:runExtractVersionHeader` now use
+`AssemblyInformationalVersionAttribute` (matching
+`MainWindow.xaml.cs:29-42`) instead of
+`Assembly.GetName().Version`. Future diagnostic bundles
+unambiguously report the prerelease identifier (e.g.
+"0.0.1-preview.92") rather than the System.Version-truncated
+"0.0.1.0" that misled triage on Cycle 41 / 44.
+
+**Tests**:
+`tests/Tests.Unit/SpeechCursorTests.fs` rewritten to match the
+new `onAppend` signature (entries list removed). The Spinner-
+skip test was deleted (will be re-pinned in the cycle that
+wires the Spinner-detection coalescer; no public API to inject
+a synthetic Spinner entry through the substrate without it).
+`HotkeyRegistryTests.fs` `allCommands contains exactly` updated
+with the 4 new SpeechCursor commands.
+
+**Out of scope** (Commit 3, after NVDA validation gate):
+- DELETE `StreamPathway.fs`, `LinearTextStream.fs`,
+  `DisplayPathway.fs`, `TuiPathway.fs`, `PathwaySelector.fs`,
+  `Coalescer.fs`, `Channels/IDisplayBuffer.fs`
+- REMOVE `[pathway.stream]` config section
+- REMOVE corresponding tests
+- UPDATE docs (`CORE-ABSTRACTION-BOUNDARY.md`,
+  `rfc/0001-linear-text-substrate.md`, `ARCHITECTURE.md`,
+  `PANE-MODEL.md`)
+
 ### Added (Cycle 43a): Diagnostic chunk extractors + Grep dialog
 
 Closes the long-standing iOS-paste-crash failure mode for triage

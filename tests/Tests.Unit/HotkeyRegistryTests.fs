@@ -101,7 +101,13 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               HotkeyRegistry.ExtractLast50LogLines
               HotkeyRegistry.ExtractErrorsAndWarnings
               HotkeyRegistry.ExtractActiveConfig
-              HotkeyRegistry.ExtractVersionHeader ]
+              HotkeyRegistry.ExtractVersionHeader
+              // Cycle 45 Commit 2 — SpeechCursor navigation
+              // (menu-only).
+              HotkeyRegistry.SpeechCursorNext
+              HotkeyRegistry.SpeechCursorPrevious
+              HotkeyRegistry.SpeechCursorJumpToLatest
+              HotkeyRegistry.SpeechCursorToggleMode ]
     let actual = Set.ofList HotkeyRegistry.allCommands
     Assert.Equal<Set<HotkeyRegistry.AppCommand>>(expected, actual)
 

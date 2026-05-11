@@ -333,41 +333,74 @@ module SpeechCursor =
         spokenCount
 
     /// Event hook: invoked when ContentHistory has appended one
-    /// or more new entries. In AutoDrive mode, the cursor
-    /// advances through the new entries and announces each. In
-    /// Manual mode, the cursor stays parked and nothing
-    /// announces. SelectionShown / SelectionDismissed markers
-    /// modulate the SelectionSuspend bit regardless of mode so a
-    /// future user resumption picks up the right state.
+    /// or more new entries. The caller's invocation is a "wake
+    /// up, something changed" signal; the actual content to
+    /// announce is read from `history` directly (specifically,
+    /// every entry with `Seq > LastSpokenSeq`).
+    ///
+    /// **Why read from history rather than take an entries list**:
+    /// concurrent appenders (the reader thread feeding parser
+    /// output + the pump thread firing marker insertions on
+    /// boundary events) can schedule dispatcher actions in
+    /// either order. Reading from history makes onAppend
+    /// idempotent: whichever invocation runs first processes
+    /// everything new; the second invocation finds nothing new
+    /// to do. No race; no dropped announces.
+    ///
+    /// **Selection-suspend ordering** matters: the `SelectionShown`
+    /// marker ITSELF should announce ("selection prompt: …") and
+    /// then suspend AutoDrive for entries that follow. Symmetric
+    /// for `SelectionDismissed`: clear suspend FIRST so the
+    /// "Selection dismissed." announce fires, then continue with
+    /// any trailing entries (now in AutoDrive). The two
+    /// modulation points sandwich the announce decision below.
+    ///
+    /// **Threading contract**: caller must serialise calls —
+    /// all invocations must come from the same logical thread
+    /// (the WPF dispatcher per Cycle 45 Commit 2's wiring). The
+    /// single-threaded discipline is what keeps `LastSpokenSeq`
+    /// monotonic without an explicit lock.
     let onAppend
             (state: T)
             (history: ContentHistory.T)
             (announce: string * string -> unit)
-            (newEntries: ContentHistory.Entry list)
             : unit =
-        for entry in newEntries do
-            // Modulate selection-suspend regardless of drive mode.
-            match entry with
-            | ContentHistory.Marker m ->
-                match m.Kind with
-                | ContentHistory.MarkerKind.SelectionShown ->
-                    if state.Parameters.SuspendAutoDriveOnSelection then
-                        state.SelectionSuspend <- true
-                | ContentHistory.MarkerKind.SelectionDismissed ->
+        let snapshot = ContentHistory.snapshot history
+        let lower = state.LastSpokenSeq
+        for entry in snapshot do
+            let s = ContentHistory.entrySeq entry
+            if s > lower then
+                // (1) Pre-suspend modulation: SelectionDismissed
+                //     clears the suspend bit BEFORE the announce
+                //     decision so the dismissal announce fires.
+                match entry with
+                | ContentHistory.Marker m
+                    when m.Kind = ContentHistory.MarkerKind.SelectionDismissed ->
                     state.SelectionSuspend <- false
                 | _ -> ()
-            | _ -> ()
 
-            if autoDriveActive state && autoDriveAdvanceable state entry then
-                let s = ContentHistory.entrySeq entry
-                if s > state.Position then
-                    state.Position <- s
-                if s > state.LastSpokenSeq then
+                // (2) Announce decision uses the current effective
+                //     drive.
+                if autoDriveActive state && autoDriveAdvanceable state entry then
+                    if s > state.Position then
+                        state.Position <- s
                     match renderEntry entry with
                     | Some (text, activityId) ->
                         announce (text, activityId)
                     | None -> ()
                     state.LastSpokenSeq <- s
+
+                // (3) Post-suspend modulation: SelectionShown sets
+                //     suspend AFTER the announce decision so the
+                //     marker itself ("selection prompt: ...") is
+                //     spoken, then subsequent entries in the batch
+                //     skip auto-announce.
+                match entry with
+                | ContentHistory.Marker m
+                    when m.Kind = ContentHistory.MarkerKind.SelectionShown ->
+                    if state.Parameters.SuspendAutoDriveOnSelection then
+                        state.SelectionSuspend <- true
+                | _ -> ()
 
     /// Reset cursor state. Called when the tuple seals and
     /// ContentHistory itself resets.

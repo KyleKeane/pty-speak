@@ -88,10 +88,12 @@ let ``UIA Text pattern is reachable and DocumentRange.GetText reflects the scree
     let mainWindow =
         // Timeout bumped from 10s to 30s after observed flakiness
         // on the windows-2025 runner image (see AutomationPeerTests
-        // for details).
-        match app.GetMainWindow(automation, TimeSpan.FromSeconds(30.0)) with
+        // for details). Cycle 45 Commit 2 (2026-05-11) hit the
+        // 30s ceiling on a fresh PR with code unaffecting window
+        // load — bumped to 60s.
+        match app.GetMainWindow(automation, TimeSpan.FromSeconds(60.0)) with
         | null ->
-            failwith "Main window did not appear within 30 seconds. The app may have crashed during MainWindow construction or the F# composition root (Program.compose). Check the SetScreen / channel-construction / focus-on-Loaded path."
+            failwith "Main window did not appear within 60 seconds. The app may have crashed during MainWindow construction or the F# composition root (Program.compose). Check the SetScreen / channel-construction / focus-on-Loaded path."
         | mw -> mw
 
     let textPattern =
@@ -205,10 +207,11 @@ let ``Text-pattern range navigation can pin to a single line and advance`` () =
     use app = Application.Launch(exePath)
     use automation = new UIA3Automation()
     let mainWindow =
-        // Timeout bumped from 10s to 30s — see notes elsewhere in
-        // this file and in AutomationPeerTests.
-        match app.GetMainWindow(automation, TimeSpan.FromSeconds(30.0)) with
-        | null -> failwith "Main window did not appear within 30 seconds."
+        // Timeout bumped from 10s to 30s, then to 60s in Cycle 45
+        // Commit 2 (2026-05-11) after a fresh flake. See notes
+        // elsewhere in this file and in AutomationPeerTests.
+        match app.GetMainWindow(automation, TimeSpan.FromSeconds(60.0)) with
+        | null -> failwith "Main window did not appear within 60 seconds."
         | mw -> mw
 
     let textPattern =

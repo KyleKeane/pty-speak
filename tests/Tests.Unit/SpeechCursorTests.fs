@@ -67,11 +67,10 @@ let ``AutoDrive announces appended TextSpans in seq order`` () =
     let cursor = freshCursor ()
     let history = freshHistory ()
     let announce, snap = capture ()
-    let entries =
-        ContentHistory.appendFromEvent history t0 (printRune 'h')
-        @ ContentHistory.appendFromEvent history t0 (printRune 'i')
-        @ ContentHistory.appendFromEvent history t0 lf
-    SpeechCursor.onAppend cursor history announce entries
+    ContentHistory.appendFromEvent history t0 (printRune 'h') |> ignore
+    ContentHistory.appendFromEvent history t0 (printRune 'i') |> ignore
+    ContentHistory.appendFromEvent history t0 lf |> ignore
+    SpeechCursor.onAppend cursor history announce
     let said = snap ()
     // Expect ONE announce for the sealed "hi" TextSpan; the
     // Newline entry's renderEntry returns None.
@@ -86,13 +85,12 @@ let ``AutoDrive does not re-announce entries it has already spoken`` () =
     let cursor = freshCursor ()
     let history = freshHistory ()
     let announce, snap = capture ()
-    let entries =
-        ContentHistory.appendFromEvent history t0 (printRune 'a')
-        @ ContentHistory.appendFromEvent history t0 lf
-    SpeechCursor.onAppend cursor history announce entries
-    // Now re-invoke onAppend with the SAME entries. The cursor's
-    // LastSpokenSeq gate should suppress duplicates.
-    SpeechCursor.onAppend cursor history announce entries
+    ContentHistory.appendFromEvent history t0 (printRune 'a') |> ignore
+    ContentHistory.appendFromEvent history t0 lf |> ignore
+    SpeechCursor.onAppend cursor history announce
+    // Re-invoke onAppend with no further appends. The cursor's
+    // LastSpokenSeq gate should suppress duplicates (idempotent).
+    SpeechCursor.onAppend cursor history announce
     Assert.Equal(1, (snap ()).Length)
 
 // ---------------------------------------------------------------------
@@ -105,10 +103,9 @@ let ``Manual mode does NOT announce on append`` () =
     SpeechCursor.setMode cursor SpeechCursor.Manual
     let history = freshHistory ()
     let announce, snap = capture ()
-    let entries =
-        ContentHistory.appendFromEvent history t0 (printRune 'h')
-        @ ContentHistory.appendFromEvent history t0 lf
-    SpeechCursor.onAppend cursor history announce entries
+    ContentHistory.appendFromEvent history t0 (printRune 'h') |> ignore
+    ContentHistory.appendFromEvent history t0 lf |> ignore
+    SpeechCursor.onAppend cursor history announce
     Assert.Empty(snap ())
     Assert.Equal(-1L, cursor.LastSpokenSeq)
 
@@ -251,57 +248,55 @@ let ``SelectionShown marker suspends AutoDrive announces`` () =
     let cursor = freshCursor ()
     let history = freshHistory ()
     let announce, snap = capture ()
-    let prelude =
-        ContentHistory.appendFromEvent history t0 (printRune 'h')
-        @ ContentHistory.appendFromEvent history t0 lf
-    SpeechCursor.onAppend cursor history announce prelude
+    ContentHistory.appendFromEvent history t0 (printRune 'h') |> ignore
+    ContentHistory.appendFromEvent history t0 lf |> ignore
+    SpeechCursor.onAppend cursor history announce
     Assert.Equal(1, (snap ()).Length)
     // SelectionShown marker fires.
-    let selection =
-        ContentHistory.appendMarker
-            history
-            ContentHistory.MarkerKind.SelectionShown
-            (after 10)
-            (Some "Yes, No")
-    SpeechCursor.onAppend cursor history announce selection
-    // The SelectionShown marker itself announces; AutoDrive
-    // then suspends.
-    let beforeText =
-        ContentHistory.appendFromEvent history (after 20) (printRune 'X')
-        @ ContentHistory.appendFromEvent history (after 20) lf
-    SpeechCursor.onAppend cursor history announce beforeText
-    // The "X" TextSpan should NOT be auto-announced — selection
-    // suspends AutoDrive.
+    ContentHistory.appendMarker
+        history
+        ContentHistory.MarkerKind.SelectionShown
+        (after 10)
+        (Some "Yes, No")
+    |> ignore
+    SpeechCursor.onAppend cursor history announce
+    // The SelectionShown marker itself announces (Cycle 45
+    // post-ordering of the suspend bit); then AutoDrive
+    // suspends so subsequent entries don't auto-announce.
+    ContentHistory.appendFromEvent history (after 20) (printRune 'X') |> ignore
+    ContentHistory.appendFromEvent history (after 20) lf |> ignore
+    SpeechCursor.onAppend cursor history announce
     let said = snap ()
     let lastTexts = said |> List.map fst
     Assert.DoesNotContain("X", lastTexts)
+    // The marker announce is in the list.
+    let hasSelectionAnnounce =
+        lastTexts |> List.exists (fun t -> t.Contains("Selection prompt"))
+    Assert.True(hasSelectionAnnounce)
 
 [<Fact>]
 let ``SelectionDismissed marker resumes AutoDrive announces`` () =
     let cursor = freshCursor ()
     let history = freshHistory ()
     let announce, snap = capture ()
-    let _ =
-        ContentHistory.appendMarker
-            history
-            ContentHistory.MarkerKind.SelectionShown
-            t0
-            None
-    SpeechCursor.onAppend
-        cursor history announce
-        (ContentHistory.snapshot history |> Array.toList)
-    // Reset snap to focus on post-resume behavior.
-    let dismissed =
-        ContentHistory.appendMarker
-            history
-            ContentHistory.MarkerKind.SelectionDismissed
-            (after 100)
-            None
-    SpeechCursor.onAppend cursor history announce dismissed
-    let post =
-        ContentHistory.appendFromEvent history (after 110) (printRune 'Z')
-        @ ContentHistory.appendFromEvent history (after 110) lf
-    SpeechCursor.onAppend cursor history announce post
+    ContentHistory.appendMarker
+        history
+        ContentHistory.MarkerKind.SelectionShown
+        t0
+        None
+    |> ignore
+    SpeechCursor.onAppend cursor history announce
+    // Now dismiss the selection.
+    ContentHistory.appendMarker
+        history
+        ContentHistory.MarkerKind.SelectionDismissed
+        (after 100)
+        None
+    |> ignore
+    SpeechCursor.onAppend cursor history announce
+    ContentHistory.appendFromEvent history (after 110) (printRune 'Z') |> ignore
+    ContentHistory.appendFromEvent history (after 110) lf |> ignore
+    SpeechCursor.onAppend cursor history announce
     let said = snap () |> List.map fst
     Assert.Contains("Z", said)
 
@@ -399,26 +394,17 @@ let ``speakSince emits nothing when there's nothing new`` () =
     Assert.Empty(snap ())
 
 // ---------------------------------------------------------------------
-// Spinner skip
+// Spinner skip — re-pinned in a future commit once ContentHistory has
+// a Spinner-emit path through `appendFromEvent` / `appendMarker`.
+// With Cycle 45 Commit 2's `onAppend` reading directly from history
+// (rather than from a passed-in entries list), there's no longer a
+// public way to inject a synthetic Spinner entry into the history
+// for testing in isolation. The cursor's `autoDriveAdvanceable`
+// gate is still visible to the runtime via the `Parameters.SkipSpinnersInAutoDrive`
+// flag, but the integration test will live alongside the spinner
+// detector when it lands. Deleted for now to keep the test suite
+// honest about what's actually pinned.
 // ---------------------------------------------------------------------
-
-[<Fact>]
-let ``AutoDrive skips Spinner entries by default`` () =
-    let cursor = freshCursor ()
-    let history = freshHistory ()
-    let announce, snap = capture ()
-    // Synthesize a Spinner entry directly via the entry list
-    // (Spinner detection isn't wired yet in Commit 1, but the
-    // cursor's skip behaviour must hold once detection lands).
-    let spinner =
-        ContentHistory.Spinner
-            { Seq = 0L
-              LatestText = "/"
-              FrameCount = 5
-              FirstAt = t0
-              LastAt = after 200 }
-    SpeechCursor.onAppend cursor history announce [ spinner ]
-    Assert.Empty(snap ())
 
 // ---------------------------------------------------------------------
 // Reset

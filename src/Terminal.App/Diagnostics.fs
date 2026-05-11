@@ -754,6 +754,36 @@ module Diagnostics =
     /// Cycle 25b: takes `now` so the diagnostic-log file and the
     /// snapshot bundle file share an identical stamp for
     /// cross-referencing.
+    /// Cycle 45 Commit 2 — resolve the version string for log
+    /// + diagnostic-bundle headers. Uses `AssemblyInformationalVersionAttribute`
+    /// so prerelease suffixes like "0.0.1-preview.90" survive
+    /// (System.Version's 4-part shape collapses them to
+    /// "0.0.1.0"). Strips any "+commit-sha" trailer
+    /// SourceLink / deterministic builds append. Mirror of
+    /// `MainWindow.xaml.cs:29-42` and
+    /// `Program.fs:resolveInformationalVersion`. Defensive try/with
+    /// returns "unknown" rather than throwing — version reporting
+    /// must never crash diagnostic capture.
+    let private resolveInformationalVersion () : string =
+        try
+            let asm = System.Reflection.Assembly.GetExecutingAssembly()
+            // F# can't use the C#-extension-method form of
+            // `Assembly.GetCustomAttribute<T>()`; route through
+            // the static `System.Attribute.GetCustomAttribute`
+            // instead and pattern-match on the boxed result.
+            let attr =
+                System.Attribute.GetCustomAttribute(
+                    asm,
+                    typeof<System.Reflection.AssemblyInformationalVersionAttribute>)
+            match attr with
+            | :? System.Reflection.AssemblyInformationalVersionAttribute as a
+                when not (System.String.IsNullOrWhiteSpace a.InformationalVersion) ->
+                let raw = a.InformationalVersion
+                let plusIdx = raw.IndexOf('+')
+                if plusIdx > 0 then raw.Substring(0, plusIdx) else raw
+            | _ -> "unknown"
+        with _ -> "unknown"
+
     let private resolveDiagnosticLogPath (now: DateTime) : string =
         let root =
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
@@ -897,12 +927,7 @@ module Diagnostics =
         appendLine separator
         appendLine "pty-speak diagnostic snapshot (Cycle 25b)"
         appendLine (sprintf "Captured: %s UTC" (now.ToString("yyyy-MM-dd HH:mm:ss")))
-        let version =
-            try
-                let asm = System.Reflection.Assembly.GetExecutingAssembly()
-                let v = asm.GetName().Version
-                if isNull v then "unknown" else string v
-            with _ -> "unknown"
+        let version = resolveInformationalVersion ()
         appendLine (sprintf "Version: %s" version)
         appendLine (sprintf "OS: %s" (Environment.OSVersion.VersionString))
         appendLine (sprintf ".NET: %s" (Environment.Version.ToString()))
@@ -993,12 +1018,7 @@ module Diagnostics =
         appendLine separator
         appendLine "pty-speak diagnostic snapshot (Cycle 43a lightweight)"
         appendLine (sprintf "Captured: %s UTC" (now.ToString("yyyy-MM-dd HH:mm:ss")))
-        let version =
-            try
-                let asm = System.Reflection.Assembly.GetExecutingAssembly()
-                let v = asm.GetName().Version
-                if isNull v then "unknown" else string v
-            with _ -> "unknown"
+        let version = resolveInformationalVersion ()
         appendLine (sprintf "Version: %s" version)
         appendLine (sprintf "OS: %s" (Environment.OSVersion.VersionString))
         appendLine (sprintf ".NET: %s" (Environment.Version.ToString()))

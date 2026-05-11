@@ -89,6 +89,8 @@ module Program =
             (screen: Screen)
             (view: TerminalView)
             (linearStream: LinearTextStream.T)
+            (contentHistory: ContentHistory.T)
+            (onSpeechCursorWake: unit -> unit)
             (notifications: System.Threading.Channels.ChannelWriter<PumpInput>)
             (onChunkRead: int -> unit)
             (ct: CancellationToken) : Task =
@@ -115,16 +117,52 @@ module Program =
                             // returned T is the same class reference
                             // as `linearStream` (state mutates
                             // in-place); discard.
+                            //
+                            // Cycle 45 Commit 2 — feed ContentHistory
+                            // (the new aural substrate) in parallel.
+                            // Thread-safe via the ContentHistory.Gate
+                            // lock. Returned entries accumulate
+                            // per-chunk; the caller-supplied
+                            // `onContentEntries` callback receives
+                            // the batch and is responsible for
+                            // marshalling to the dispatcher thread
+                            // for `SpeechCursor.onAppend`.
                             let _, _ =
                                 LinearTextStream.append
                                     linearStream
                                     DateTime.UtcNow
                                     chunk
                                     events
+                            // Cycle 45 Commit 2 — feed
+                            // ContentHistory in parallel. `append-
+                            // FromEvent` is Gate-locked so the
+                            // reader-thread feed is safe alongside
+                            // pump-thread `appendMarker` calls
+                            // from the boundary handler.
+                            let now = DateTime.UtcNow
+                            let mutable contentDirty = false
+                            for ev in events do
+                                let appended =
+                                    ContentHistory.appendFromEvent
+                                        contentHistory
+                                        now
+                                        ev
+                                if not (List.isEmpty appended) then
+                                    contentDirty <- true
                             if events.Length > 0 then
                                 let action () =
                                     for e in events do screen.Apply(e)
                                     view.InvalidateScreen()
+                                    // Cycle 45 Commit 2 —
+                                    // SpeechCursor.onAppend reads
+                                    // from ContentHistory directly
+                                    // (idempotent w.r.t. multiple
+                                    // dispatchers). We call it iff
+                                    // this chunk produced new
+                                    // entries; otherwise the
+                                    // history is unchanged.
+                                    if contentDirty then
+                                        onSpeechCursorWake ()
                                 let! _ =
                                     dispatcher
                                         .InvokeAsync(Action(action))
@@ -808,10 +846,37 @@ module Program =
         let logFactory = Logger.createFactory (provider :> ILoggerProvider)
         Logger.configure logFactory
         let log = Logger.get "Terminal.App.Program"
+        // Cycle 45 Commit 2 — version reporting via the
+        // `AssemblyInformationalVersionAttribute`. The build
+        // pipeline injects the GitHub release tag (e.g.
+        // "0.0.1-preview.90") at publish time; `Assembly.GetName()
+        // .Version` (the old call) only carries the System.Version
+        // 4-part shape (e.g. "0.0.1.0") which can't represent
+        // prerelease suffixes. Mirror of MainWindow.xaml.cs:29-42.
+        let resolveInformationalVersion () : string =
+            try
+                let asm = System.Reflection.Assembly.GetExecutingAssembly()
+                // F# can't use the C#-extension-method form of
+                // `Assembly.GetCustomAttribute<T>()`; route through
+                // the static `System.Attribute.GetCustomAttribute`
+                // instead and pattern-match on the boxed result.
+                let attr =
+                    System.Attribute.GetCustomAttribute(
+                        asm,
+                        typeof<System.Reflection.AssemblyInformationalVersionAttribute>)
+                match attr with
+                | :? System.Reflection.AssemblyInformationalVersionAttribute as a
+                    when not (System.String.IsNullOrWhiteSpace a.InformationalVersion) ->
+                    let raw = a.InformationalVersion
+                    // Strip any "+commit-sha" trailer SourceLink /
+                    // deterministic-build pipelines append.
+                    let plusIdx = raw.IndexOf('+')
+                    if plusIdx > 0 then raw.Substring(0, plusIdx) else raw
+                | _ -> "unknown"
+            with _ -> "unknown"
         log.LogInformation(
             "pty-speak starting. version={Version} os={Os} logs={LogDir}",
-            System.Reflection.Assembly.GetExecutingAssembly()
-                .GetName().Version,
+            resolveInformationalVersion (),
             System.Runtime.InteropServices.RuntimeInformation.OSDescription,
             sink.LogDirectory)
 
@@ -827,6 +892,43 @@ module Program =
         // across `append` calls (T is mutable internally).
         let mutable linearStream =
             LinearTextStream.create LinearTextStream.defaultParameters
+
+        // Cycle 45 Commit 2 — ContentHistory + SpeechCursor are the
+        // new aural substrate (parallel to the screen-grid + UIA
+        // surface). ContentHistory holds the active tuple's
+        // append-only typed log; SpeechCursor announces from it.
+        // Both are bounded by tuple lifetime — `ContentHistory.reset`
+        // fires when SessionModel finalises a tuple AND when the
+        // shell hot-switches (a new shell session starts fresh).
+        // LinearTextStream is kept in parallel through Commit 2 so
+        // the existing pump path stays functional; Commit 3 deletes
+        // it after the NVDA validation gate.
+        let mutable contentHistory =
+            ContentHistory.create ContentHistory.defaultParameters
+        let mutable speechCursor =
+            SpeechCursor.create SpeechCursor.defaultParameters
+
+        // Cycle 45 Commit 2 — SpeechCursor announce callback +
+        // "wake up" trigger. Defined here (very early in compose)
+        // so the prompt-boundary handler and the selection-
+        // detector emit path (both lower in the file) can close
+        // over them. The callback runs on the WPF dispatcher
+        // thread — every caller dispatches its
+        // `SpeechCursor.onAppend` through `window.Dispatcher.InvokeAsync`,
+        // so `window.TerminalSurface.Announce` can be invoked
+        // directly here without another marshalling hop.
+        let speechCursorAnnounce ((text: string), (activityId: string)) =
+            window.TerminalSurface.Announce(text, activityId)
+
+        // "Wake up" trigger: ContentHistory has appended.
+        // SpeechCursor.onAppend reads from history directly
+        // (idempotent), so no entries-list parameter.
+        let onSpeechCursorWake () =
+            SpeechCursor.onAppend
+                speechCursor
+                contentHistory
+                speechCursorAnnounce
+
         window.TerminalSurface.SetScreen(screen)
 
         // Cycle 32b — first consumer of the IDisplayBuffer boundary
@@ -1449,6 +1551,45 @@ module Program =
             match finalisedOpt with
             | Some tuple -> dispatchTupleToWriter tuple
             | None -> ()
+
+            // Cycle 45 Commit 2 — ContentHistory + SpeechCursor
+            // boundary handling. Mirrors the SessionModel state
+            // machine: on tuple finalise (Some), the previous
+            // tuple's history is no longer needed, so we reset
+            // both ContentHistory and SpeechCursor before the
+            // new tuple's boundary marker is emitted. The reset
+            // + appendMarker + SpeechCursor.onAppend are bundled
+            // into a single dispatcher action so they serialise
+            // with reader-thread-driven appends and hotkey-
+            // driven cursor moves (both also on the dispatcher).
+            let markerKind =
+                match augmented.Kind with
+                | BoundaryKind.PromptStart ->
+                    Some ContentHistory.MarkerKind.PromptStart
+                | BoundaryKind.CommandStart ->
+                    Some ContentHistory.MarkerKind.CommandStart
+                | BoundaryKind.OutputStart ->
+                    Some ContentHistory.MarkerKind.OutputStart
+                | BoundaryKind.CommandFinished _ ->
+                    Some ContentHistory.MarkerKind.CommandFinished
+            let tupleFinalised = finalisedOpt.IsSome
+            let boundaryAction () =
+                if tupleFinalised then
+                    ContentHistory.reset contentHistory
+                    SpeechCursor.reset speechCursor
+                match markerKind with
+                | Some k ->
+                    ContentHistory.appendMarker
+                        contentHistory k DateTime.UtcNow None
+                    |> ignore
+                    SpeechCursor.onAppend
+                        speechCursor
+                        contentHistory
+                        speechCursorAnnounce
+                | None -> ()
+            window.Dispatcher.InvokeAsync(Action(boundaryAction))
+            |> ignore
+
             let emitted = activePathway.OnPromptBoundary augmented
             pumpLog.LogDebug(
                 "PathwayPump PromptBoundary {Kind} → {Pathway}.OnPromptBoundary → {Count} events.",
@@ -1504,6 +1645,51 @@ module Program =
             selectionDetector <- nextSelectionDetector
             for event in selectionEvents do
                 OutputDispatcher.dispatch event
+
+            // Cycle 45 Commit 2 — also mirror selection events
+            // into ContentHistory as `MarkerKind.SelectionShown`
+            // / `SelectionDismissed` markers. SelectionItem
+            // events do NOT emit markers (they're item-by-item
+            // additions to the already-active selection; the
+            // SpeechCursor's list-navigation mode handles
+            // per-item announcement separately when the user
+            // arrows through). Payload for `SelectionShown`
+            // carries the item-list text so `renderEntry` can
+            // announce "Selection prompt: Edit, Yes, Always,
+            // No." All ContentHistory + SpeechCursor mutations
+            // dispatch through the WPF dispatcher for serialised
+            // ordering with reader-thread appends and hotkey-
+            // driven cursor moves.
+            let selectionMarkerWork =
+                selectionEvents
+                |> Array.choose (fun ev ->
+                    match ev.Semantic with
+                    | SemanticCategory.SelectionShown ->
+                        // Extensions is `Map<string, obj>`; the
+                        // selection.allItems value SHOULD be a
+                        // string per `SelectionExtensions`'
+                        // schema, but extract defensively.
+                        let payload =
+                            match Map.tryFind SelectionExtensions.AllItems ev.Extensions with
+                            | Some (:? string as s) when not (System.String.IsNullOrEmpty s) ->
+                                Some s
+                            | _ -> None
+                        Some (ContentHistory.MarkerKind.SelectionShown, payload)
+                    | SemanticCategory.SelectionDismissed ->
+                        Some (ContentHistory.MarkerKind.SelectionDismissed, None)
+                    | _ -> None)
+            if selectionMarkerWork.Length > 0 then
+                let selectionMarkerAction () =
+                    for kind, payload in selectionMarkerWork do
+                        ContentHistory.appendMarker
+                            contentHistory kind DateTime.UtcNow payload
+                        |> ignore
+                    SpeechCursor.onAppend
+                        speechCursor
+                        contentHistory
+                        speechCursorAnnounce
+                window.Dispatcher.InvokeAsync(Action(selectionMarkerAction))
+                |> ignore
 
         let handleRowsChanged () : unit =
             let seq, cursorPos, snapshot = screen.SnapshotRows(0, screen.Rows)
@@ -2616,13 +2802,7 @@ module Program =
                 "ExtractVersionHeader"
                 "process version + OS + .NET + PID (small status snapshot)"
                 (fun () ->
-                    let version =
-                        try
-                            let asm =
-                                System.Reflection.Assembly.GetExecutingAssembly()
-                            let v = asm.GetName().Version
-                            if isNull v then "unknown" else string v
-                        with _ -> "unknown"
+                    let version = resolveInformationalVersion ()
                     let pid =
                         System.Diagnostics.Process.GetCurrentProcess().Id
                     let sb = System.Text.StringBuilder()
@@ -2663,6 +2843,77 @@ module Program =
         bind HotkeyRegistry.ExtractErrorsAndWarnings runExtractErrorsAndWarnings
         bind HotkeyRegistry.ExtractActiveConfig runExtractActiveConfig
         bind HotkeyRegistry.ExtractVersionHeader runExtractVersionHeader
+
+        // Cycle 45 Commit 2 — SpeechCursor navigation commands.
+        // Menu-only (no keyboard accelerators in this cycle —
+        // adding them risks NVDA collisions; revisit once
+        // SpeechCursor's UX has settled in the maintainer's
+        // dogfood). Each handler runs on the WPF dispatcher
+        // (where the binding fires), the same thread the
+        // reader-loop dispatcher actions use; serialisation
+        // is preserved.
+        let runSpeechCursorNext () : unit =
+            match SpeechCursor.next speechCursor contentHistory with
+            | Some entry ->
+                match SpeechCursor.renderEntry entry with
+                | Some (text, _) ->
+                    // Manual-step announce uses a fresh activity
+                    // id so users can per-tag-mute live announces
+                    // separately from explicit navigation.
+                    window.TerminalSurface.Announce(
+                        text, ActivityIds.diagnostic)
+                | None ->
+                    window.TerminalSurface.Announce(
+                        "(no announcement for this entry)",
+                        ActivityIds.diagnostic)
+            | None ->
+                window.TerminalSurface.Announce(
+                    "Already at the latest entry.",
+                    ActivityIds.diagnostic)
+
+        let runSpeechCursorPrevious () : unit =
+            match SpeechCursor.previous speechCursor contentHistory with
+            | Some entry ->
+                match SpeechCursor.renderEntry entry with
+                | Some (text, _) ->
+                    window.TerminalSurface.Announce(
+                        text, ActivityIds.diagnostic)
+                | None ->
+                    window.TerminalSurface.Announce(
+                        "(no announcement for this entry)",
+                        ActivityIds.diagnostic)
+            | None ->
+                window.TerminalSurface.Announce(
+                    "Already at the first entry.",
+                    ActivityIds.diagnostic)
+
+        let runSpeechCursorJumpToLatest () : unit =
+            match SpeechCursor.toLatest speechCursor contentHistory with
+            | Some entry ->
+                match SpeechCursor.renderEntry entry with
+                | Some (text, _) ->
+                    window.TerminalSurface.Announce(
+                        text, ActivityIds.diagnostic)
+                | None ->
+                    window.TerminalSurface.Announce(
+                        "Jumped to latest entry.",
+                        ActivityIds.diagnostic)
+            | None ->
+                window.TerminalSurface.Announce(
+                    "History is empty.", ActivityIds.diagnostic)
+
+        let runSpeechCursorToggleMode () : unit =
+            let newMode = SpeechCursor.toggleMode speechCursor
+            let label =
+                match newMode with
+                | SpeechCursor.AutoDrive -> "Speech cursor mode: AutoDrive."
+                | SpeechCursor.Manual -> "Speech cursor mode: Manual."
+            window.TerminalSurface.Announce(label, ActivityIds.diagnostic)
+
+        bind HotkeyRegistry.SpeechCursorNext runSpeechCursorNext
+        bind HotkeyRegistry.SpeechCursorPrevious runSpeechCursorPrevious
+        bind HotkeyRegistry.SpeechCursorJumpToLatest runSpeechCursorJumpToLatest
+        bind HotkeyRegistry.SpeechCursorToggleMode runSpeechCursorToggleMode
 
         // Stage 7-followup PR-F — background heartbeat. Every 5
         // seconds, log a single Information-level "Heartbeat" line
@@ -2764,6 +3015,12 @@ module Program =
                 host.EnvScrubKeptCount,
                 host.EnvScrubParentCount,
                 host.EnvScrubStrippedCount)
+            // Cycle 45 Commit 2 — `speechCursorAnnounce` and
+            // `onSpeechCursorWake` are defined earlier in
+            // `compose` so the prompt-boundary handler and
+            // selection-detector marker emission can close over
+            // them. See lines ~880-905.
+
             let _ =
                 startReaderLoop
                     window.Dispatcher
@@ -2772,6 +3029,8 @@ module Program =
                     screen
                     window.TerminalSurface
                     linearStream
+                    contentHistory
+                    onSpeechCursorWake
                     pumpChannel.Writer
                     (fun _ -> lastReadUtc <- DateTimeOffset.UtcNow)
                     cts.Token
@@ -3056,6 +3315,21 @@ module Program =
                                         selectionDetector <-
                                             SelectionDetector.reset
                                                 selectionDetector
+                                        // Cycle 45 Commit 2 —
+                                        // ContentHistory +
+                                        // SpeechCursor companion
+                                        // resets. The previous
+                                        // shell's tuple history
+                                        // is no longer relevant;
+                                        // start the new shell
+                                        // with empty substrate.
+                                        // Runs directly here (no
+                                        // dispatcher hop) because
+                                        // switchToShell already
+                                        // executes on the
+                                        // dispatcher thread.
+                                        ContentHistory.reset contentHistory
+                                        SpeechCursor.reset speechCursor
                                         // Cycle 38b — re-resolve
                                         // the active profile set
                                         // for the new shell so its
