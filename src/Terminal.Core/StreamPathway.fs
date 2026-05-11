@@ -489,9 +489,15 @@ module StreamPathway =
                 Priority.Polite
                 id
                 ""
+        // F# 9 strict-nullness: `box` returns `obj | null`, but the
+        // Extensions map's value type is `obj` (non-nullable).
+        // Mirrors the `boxNN` helper pattern from SelectionDetector
+        // / SelectionProfile (Cycle 29a/b) per CLAUDE.md's "FS3261
+        // is the canonical CI failure" gotcha.
         { baseEvt with
             Extensions =
-                Map.ofList [ "prompt.text", box promptText ] }
+                Map.ofList
+                    [ "prompt.text", nonNull (box promptText) ] }
 
     /// Cycle 40 — split a StreamChunk payload at the prompt
     /// boundary, when a boundary is cached and its
