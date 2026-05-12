@@ -1596,6 +1596,27 @@ module Program =
             // through completed commands. Reset on shell-switch
             // (in `switchToShell` below) still fires; that's a
             // legitimate fresh-slate boundary.
+            // Cycle 45 fixup (2026-05-12) — tuple-finalise output
+            // announce. cmd's command-line editing reprints suffix
+            // bytes whose Print events accumulate into the active
+            // TextSpan, so auto-announcing TextSpans on seal produces
+            // inflated narrations that don't match what the user
+            // actually ran. SessionModel's `SessionTuple` captures
+            // CommandText + OutputText from the screen grid at
+            // finalise time (authoritative) — announce OutputText
+            // here on tuple seal as the user-facing "what did the
+            // shell print" cue. SpeechCursor's TextSpan auto-
+            // announce is suppressed by default
+            // (`Parameters.SkipTextSpansInAutoDrive`); Manual
+            // navigation can still revisit individual TextSpans.
+            // Cycle 45f will introduce verbosity modes that govern
+            // streaming-vs-tuple-final policy per shell.
+            let tupleFinaliseAnnounce =
+                match finalisedOpt with
+                | Some tuple
+                    when not (System.String.IsNullOrWhiteSpace tuple.OutputText) ->
+                    Some tuple.OutputText
+                | _ -> None
             let boundaryAction () =
                 match markerKind with
                 | Some k ->
@@ -1606,6 +1627,10 @@ module Program =
                         speechCursor
                         contentHistory
                         speechCursorAnnounce
+                | None -> ()
+                match tupleFinaliseAnnounce with
+                | Some text ->
+                    speechCursorAnnounce (text, ActivityIds.output)
                 | None -> ()
             window.Dispatcher.InvokeAsync(Action(boundaryAction))
             |> ignore
