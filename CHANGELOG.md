@@ -27,20 +27,26 @@ read it to completion (~2 minutes) even when the user pressed
 Alt or started typing the next command, because nothing else
 displaced it.
 
-`OnPreviewKeyDown` now fires an empty `MostRecent` notification
-on every key that isn't a bare modifier — `Shift` (NVDA pause),
-`Ctrl`, `Win`, `NumLock`, `Scroll`, `Insert` (NVDA modifier),
-`CapsLock`, and the numpad-NoLock cluster are deliberately
-skipped so screen-reader gestures keep working. Alt is **not**
-skipped — pressing Alt to open the menu now interrupts a long
-output read as the user expects. Function keys are not skipped
-either; the empty MostRecent is cheap and consistent with the
-rule "any user-initiated activity resets the speech state".
+`OnPreviewKeyDown` now fires a single-space `MostRecent`
+notification on every key that isn't a bare modifier — `Shift`
+(NVDA pause), `Ctrl`, `Win`, `NumLock`, `Scroll`, `Insert` (NVDA
+modifier), `CapsLock`, and the numpad-NoLock cluster are
+deliberately skipped so screen-reader gestures keep working.
+Alt is **not** skipped — pressing Alt to open the menu now
+interrupts a long output read as the user expects. Function
+keys are not skipped either; the call is cheap and consistent
+with the rule "any user-initiated activity resets the speech
+state".
 
-Currently-synthesised audio still plays to its natural chunk
-boundary (NVDA only clears chunks it hasn't handed to SAPI
-yet), so there can be a brief residual "tail" before silence —
-that's the cost of NVDA's pipeline, not our queue logic.
+The payload is a single space, NOT the empty string. PR #284
+shipped this with `string.Empty` and the maintainer reported
+"this did not fix it" — NVDA's UIA notification handler
+short-circuits on falsy `displayString` (no
+`speech.cancelSpeech()`, no queue clear, no interrupt). A lone
+space character has no phoneme so SAPI renders it as silence,
+but the notification still reaches NVDA's cancel-pending path
+and interrupts the currently-playing audio at the SAPI driver
+level.
 
 ### Changed (Cycle 45c follow-up): silence idle FileLogger spam in `HeuristicPromptDetector`
 

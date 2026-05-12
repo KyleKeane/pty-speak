@@ -1052,19 +1052,25 @@ public class TerminalView : FrameworkElement
 
     /// <summary>
     /// Cycle 45c follow-up — clear NVDA's pending output speech
-    /// queue. Fires an empty <c>MostRecent</c> notification on
-    /// <c>ActivityIds.output</c>; per the UIA contract this
+    /// queue. Fires a single-space <c>MostRecent</c> notification
+    /// on <c>ActivityIds.output</c>; per the UIA contract this
     /// removes all previously-queued notifications with the same
-    /// property. Currently-synthesised audio still plays to its
-    /// natural chunk boundary (NVDA only clears chunks it hasn't
-    /// handed to SAPI yet), but the long tail of a 3 KB <c>dir</c>
-    /// read becomes ~one chunk of speech instead of two minutes.
+    /// property AND triggers NVDA's <c>speech.cancelSpeech()</c>
+    /// path, which interrupts currently-playing audio at the SAPI
+    /// driver — not just the un-synthesised tail.
+    ///
+    /// The payload is a single space, NOT the empty string,
+    /// because NVDA's UIA notification handler short-circuits on
+    /// empty <c>displayString</c> (no cancel, no queue clear,
+    /// nothing) — first version of this method shipped in
+    /// PR #284 with empty string and the maintainer reported
+    /// "this did not fix it". A lone space character has no
+    /// phoneme so SAPI renders it as silence, but the
+    /// notification still reaches NVDA's cancel-pending path.
     ///
     /// Called from <see cref="OnPreviewKeyDown"/> for every key
     /// that isn't a bare modifier — see
     /// <see cref="IsBareModifierKey"/> for the exclusion list.
-    /// Cheap: when the queue is empty the call is a no-op at the
-    /// UIA layer.
     /// </summary>
     private void FlushPendingOutputSpeech()
     {
@@ -1073,7 +1079,7 @@ public class TerminalView : FrameworkElement
         peer.RaiseNotificationEvent(
             AutomationNotificationKind.Other,
             AutomationNotificationProcessing.MostRecent,
-            string.Empty,
+            " ",
             ActivityIds.output);
     }
 
