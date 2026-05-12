@@ -2565,12 +2565,21 @@ module Program =
                     ContentHistory.tailText contentHistory (64 * 1024)
                     |> AnnounceSanitiser.sanitise
                 with _ -> "(ContentHistory tail unavailable)"
+            // Cycle 45c follow-up — prepend the ContentHistory
+            // stats header so the lightweight bundle carries the
+            // same "did the substrate see anything?" answer as the
+            // full bundle.
+            let statsHeader =
+                try Diagnostics.formatContentHistoryStats contentHistory
+                with _ -> "(ContentHistory stats unavailable)"
+            let contentHistorySection =
+                sprintf "%s\n%s" statsHeader tailText
             Diagnostics.formatLightweightBundle
                 now
                 fileLoggerPath
                 configPath
                 sessionLogSummary
-                tailText
+                contentHistorySection
 
         // Cycle 43a — the canonical "extractor → clipboard + file
         // + announce" pipeline. Captures `window` from compose-

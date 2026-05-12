@@ -449,19 +449,40 @@ module SessionModel =
             (linearOverride: (unit -> (string * string) option) option)
             : T * SessionTuple option
             =
-        let commandText, outputText =
+        let commandText, outputText, extractionPath =
             let fromLinear =
                 match linearOverride with
                 | Some thunk -> thunk ()
                 | None -> None
             match fromLinear with
-            | Some (cmd, out) -> cmd, out
+            | Some (cmd, out) -> cmd, out, "content-history"
             | None ->
-                extractContent
-                    tuple.PromptText
-                    oldPromptRowIndex
-                    newPromptRowIndex
-                    snapshot
+                let cmd, out =
+                    extractContent
+                        tuple.PromptText
+                        oldPromptRowIndex
+                        newPromptRowIndex
+                        snapshot
+                let label =
+                    match linearOverride with
+                    | Some _ -> "row-walk-after-content-history-miss"
+                    | None -> "row-walk-only"
+                cmd, out, label
+        // Cycle 45c follow-up — make the extraction path visible
+        // in the diagnostic bundle. The silent-third-echo bug
+        // (PR #280) hid behind an empty CommandText / OutputText
+        // pair that looked identical regardless of which path
+        // produced it. With this line, a paste of
+        // `--- FILELOGGER ACTIVE LOG ---` immediately shows
+        // whether the row-walk got hit (and therefore whether
+        // the ContentHistory thunk returned None unexpectedly).
+        logger.LogDebug(
+            "SessionModel finalize extraction Path={Path} CmdLen={CmdLen} OutLen={OutLen} OldRow={OldRow} NewRow={NewRow}",
+            extractionPath,
+            commandText.Length,
+            outputText.Length,
+            (match oldPromptRowIndex with Some r -> r | None -> -1),
+            (match newPromptRowIndex with Some r -> r | None -> -1))
         let finalised =
             { tuple with
                 CommandFinishedAt = Some finishedAt
