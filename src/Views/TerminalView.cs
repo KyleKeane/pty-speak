@@ -284,10 +284,24 @@ public class TerminalView : FrameworkElement
     /// </remarks>
     public void Announce(string message, string activityId)
     {
-        var processing = activityId == ActivityIds.output
-            ? AutomationNotificationProcessing.ImportantAll
-            : AutomationNotificationProcessing.MostRecent;
-        Announce(message, activityId, processing);
+        // Cycle 45c follow-up (2026-05-12) — every announce uses
+        // `MostRecent`. Prior behaviour kept `ActivityIds.output`
+        // on `ImportantAll`, which queues every announce and asks
+        // NVDA to read them all to completion. Combined with
+        // Cycle 45f's `TupleFinalOnly` streaming default the
+        // result was: one `dir` produced a single ~3 KB output
+        // announce; NVDA would chew through it for ~2 minutes
+        // before any subsequent announce (the next command's
+        // tuple-final, `Alt` to open a menu, hotkey announces)
+        // could be heard. Maintainer dogfood 2026-05-12 named
+        // the symptom: "I can't use the menus until that large
+        // cue is cleared". `MostRecent` lets a later announce
+        // displace the queued long-output read; UX prioritises
+        // responsiveness over completeness for streaming output.
+        // Users who want every byte read to completion can pivot
+        // to manual speech-cursor navigation
+        // (Ctrl+Shift+Up/Down/End — see SpeechCursor.fs).
+        Announce(message, activityId, AutomationNotificationProcessing.MostRecent);
     }
 
     /// <summary>

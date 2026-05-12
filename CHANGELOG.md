@@ -15,6 +15,29 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 45c follow-up): announce queueing now uses `MostRecent` for every activity-id
+
+Maintainer dogfood 2026-05-12 named the symptom: after running
+`dir` in cmd the NVDA queue could spend ~2 minutes reading the
+~3 KB tuple-final output. During that read, **nothing else**
+got airtime — the next command's tuple-final, `Alt`-opened
+menus, hotkey announces all sat behind it. The "silent third
+echo" wasn't silence; it was speech queued behind a wall.
+
+`TerminalView.Announce(msg, activityId)` previously routed
+`ActivityIds.output` to `AutomationNotificationProcessing.ImportantAll`
+("queue every announce, read them all"). The 2-arg overload
+now uses `MostRecent` uniformly — a later announce displaces
+the still-queued prior one, so NVDA always reads the most
+recent thing the user did rather than completing a back-log.
+The 3-arg overload remains available for callers that need
+explicit control.
+
+Trade-off: long output reads can be interrupted by a
+subsequent command's announce. Users who want every byte read
+to completion can pivot to manual speech-cursor navigation
+(`Ctrl+Shift+Up` / `Down` / `End`).
+
 ### Changed (Cycle 45c follow-up): diagnostic battery + ContentHistory observability
 
 The `Ctrl+Shift+D` self-test battery's per-shell tests still
