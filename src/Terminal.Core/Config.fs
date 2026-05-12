@@ -84,7 +84,19 @@ module Config =
           /// overrides with the listed profile IDs (validated
           /// against the registered `ProfileId`s at composition
           /// time; unknown IDs are logged + dropped).
-          Profiles: string[] option }
+          Profiles: string[] option
+          /// Cycle 45f — per-shell streaming announce mode.
+          /// `None` falls back to `ShellPolicy.forShell` defaults.
+          /// TOML values: `"tuple_final"`, `"line_by_line"`,
+          /// `"off"`. Unknown / non-string values log a Warning
+          /// and fall back.
+          Verbosity: ShellPolicy.StreamingMode option
+          /// Cycle 45f — per-shell prompt-path verbosity. `None`
+          /// falls back to `ShellPolicy.forShell` defaults. TOML
+          /// values: `"suppress"`, `"final_dir_only"`, `"full"`.
+          /// Unknown / non-string values log a Warning and fall
+          /// back.
+          PromptPath: ShellPolicy.PromptPathMode option }
 
     /// Optional overrides for `StreamPathway.Parameters`. Each
     /// field is `int option` so the resolver can merge with
@@ -313,6 +325,46 @@ module Config =
             "# Uncomment + edit to override."
             "# [shell.cmd]"
             "# profiles = [\"passthrough\", \"earcon\", \"selection\"]"
+            ""
+            "# Cycle 45f — per-shell verbosity modes."
+            "# Each [shell.<key>] table may specify `verbosity` and"
+            "# `prompt_path` to govern how NVDA narrates that shell's"
+            "# output. Both keys are independent and optional; omitted"
+            "# keys fall back to the compiled defaults (cmd / PowerShell"
+            "# = \"tuple_final\" + \"suppress\"; claude = same)."
+            "#"
+            "# verbosity values:"
+            "#   \"tuple_final\"  — narrate SessionTuple.OutputText on"
+            "#                     each tuple seal (cmd / PowerShell"
+            "#                     default; matches Cycle 45 behaviour)."
+            "#   \"line_by_line\" — narrate each TextSpan as it seals."
+            "#                     Intended for streaming-heavy shells"
+            "#                     (Claude / `ping -t`). Opting cmd in"
+            "#                     to this re-introduces cmd's"
+            "#                     edit-conflation regression (PR #268)."
+            "#   \"off\"          — suppress every streaming + tuple"
+            "#                     announce. Manual SpeechCursor"
+            "#                     navigation is the only way to hear"
+            "#                     output."
+            "#"
+            "# prompt_path values:"
+            "#   \"suppress\"        — narrate nothing on PromptStart"
+            "#                        (default; the user knows where"
+            "#                        they are)."
+            "#   \"final_dir_only\"  — trim path-like prompts to the"
+            "#                        last directory + delimiter"
+            "#                        (e.g. \"Local>\" from"
+            "#                        \"C:\\Users\\Kyle\\Local>\")."
+            "#   \"full\"            — narrate the prompt verbatim."
+            "#"
+            "# Menu changes via `View → Output Verbosity` /"
+            "# `View → Prompt Path` are runtime overrides (Layer 3);"
+            "# this TOML file is Layer 2 and persists across restarts."
+            "# See docs/USER-SETTINGS.md \"Verbosity\" for the full"
+            "# three-layer resolution model."
+            "# [shell.claude]"
+            "# verbosity = \"line_by_line\""
+            "# prompt_path = \"suppress\""
             ""
         ]
 
@@ -716,6 +768,9 @@ module Config =
                         // default `"stream"` (matching the prior
                         // behaviour for a shell that omitted
                         // `pathway`).
+                        // Cycle 45f — also accepts `verbosity` and
+                        // `prompt_path` enum-string keys; same
+                        // option-typed semantics.
                         let pathwayId =
                             tryGetString shellTable "pathway"
                             |> Option.defaultValue "stream"
@@ -733,16 +788,60 @@ module Config =
                                         key)
                                     None
                                 | _ -> None
+                        // Cycle 45f enum-string parsers — same
+                        // shape as the [pathway.stream]
+                        // backspace_policy / mode_barrier_flush
+                        // parsers. Unknown / non-string values
+                        // log a Warning and return None (falls
+                        // back to ShellPolicy.forShell default).
+                        let readVerbosity () : ShellPolicy.StreamingMode option =
+                            match tryGetString shellTable "verbosity" with
+                            | None ->
+                                if shellTable.ContainsKey("verbosity") then
+                                    logger.LogWarning(
+                                        "Config: [shell.{Key}] verbosity is non-string; ignored.",
+                                        key)
+                                None
+                            | Some "tuple_final" -> Some ShellPolicy.TupleFinalOnly
+                            | Some "line_by_line" -> Some ShellPolicy.LineByLine
+                            | Some "off" -> Some ShellPolicy.Off
+                            | Some other ->
+                                logger.LogWarning(
+                                    "Config: [shell.{Key}] verbosity = '{Value}' is not one of 'tuple_final' / 'line_by_line' / 'off'; ignored.",
+                                    key, other)
+                                None
+                        let readPromptPath () : ShellPolicy.PromptPathMode option =
+                            match tryGetString shellTable "prompt_path" with
+                            | None ->
+                                if shellTable.ContainsKey("prompt_path") then
+                                    logger.LogWarning(
+                                        "Config: [shell.{Key}] prompt_path is non-string; ignored.",
+                                        key)
+                                None
+                            | Some "suppress" -> Some ShellPolicy.Suppress
+                            | Some "final_dir_only" -> Some ShellPolicy.FinalDirOnly
+                            | Some "full" -> Some ShellPolicy.Full
+                            | Some other ->
+                                logger.LogWarning(
+                                    "Config: [shell.{Key}] prompt_path = '{Value}' is not one of 'suppress' / 'final_dir_only' / 'full'; ignored.",
+                                    key, other)
+                                None
+                        let verbosity = readVerbosity ()
+                        let promptPath = readPromptPath ()
                         let hasOverride =
                             tryGetString shellTable "pathway" |> Option.isSome
                             || profiles |> Option.isSome
+                            || verbosity |> Option.isSome
+                            || promptPath |> Option.isSome
                         if hasOverride then
                             result <-
                                 result
                                 |> Map.add
                                     key
                                     { PathwayId = pathwayId
-                                      Profiles = profiles }
+                                      Profiles = profiles
+                                      Verbosity = verbosity
+                                      PromptPath = promptPath }
             result
 
     /// Cycle 19 — parse `[startup]` table. Recognises only
@@ -1083,6 +1182,27 @@ module Config =
         match Map.tryFind shellKey config.ShellOverrides with
         | Some entry -> entry.Profiles
         | None -> None
+
+    /// Cycle 45f — resolve the per-shell policy (Layer 1 +
+    /// Layer 2 of the three-layer settings model). Starts from
+    /// `ShellPolicy.forShell shellKey` (Layer 1 — compiled
+    /// defaults) and overlays any TOML-supplied `verbosity` /
+    /// `prompt_path` keys (Layer 2). Layer 3 (runtime overrides
+    /// from the menu) lives in `Terminal.App.Program.fs` and is
+    /// applied on top of this result at shell-switch time.
+    let resolveShellPolicy
+            (config: Config)
+            (shellKey: string)
+            : ShellPolicy.T =
+        let baseline = ShellPolicy.forShell shellKey
+        match Map.tryFind shellKey config.ShellOverrides with
+        | None -> baseline
+        | Some entry ->
+            { baseline with
+                Streaming =
+                    Option.defaultValue baseline.Streaming entry.Verbosity
+                PromptPath =
+                    Option.defaultValue baseline.PromptPath entry.PromptPath }
 
     /// Resolve the StreamPathway parameters from a Config.
     /// Each field that's `None` in `StreamOverrides` falls

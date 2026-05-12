@@ -175,6 +175,72 @@ let ``resolveShellProfiles returns None for a shell with no override section`` (
     let config, _ = loadFromText toml
     Assert.Equal(None, Config.resolveShellProfiles config "cmd")
 
+// ---- Cycle 45f — per-shell verbosity / prompt_path ----------------
+
+[<Fact>]
+let ``[shell.claude] verbosity = "line_by_line" resolves through resolveShellPolicy`` () =
+    let toml =
+        "schema_version = 1\n[shell.claude]\nverbosity = \"line_by_line\"\n"
+    let config, _ = loadFromText toml
+    let policy = Config.resolveShellPolicy config "claude"
+    Assert.Equal(ShellPolicy.LineByLine, policy.Streaming)
+    // PromptPath not overridden — falls back to the compiled default.
+    Assert.Equal(ShellPolicy.Suppress, policy.PromptPath)
+
+[<Fact>]
+let ``[shell.cmd] prompt_path = "final_dir_only" resolves through resolveShellPolicy`` () =
+    let toml =
+        "schema_version = 1\n[shell.cmd]\nprompt_path = \"final_dir_only\"\n"
+    let config, _ = loadFromText toml
+    let policy = Config.resolveShellPolicy config "cmd"
+    Assert.Equal(ShellPolicy.FinalDirOnly, policy.PromptPath)
+    // Streaming not overridden — compiled default (TupleFinalOnly).
+    Assert.Equal(ShellPolicy.TupleFinalOnly, policy.Streaming)
+
+[<Fact>]
+let ``[shell.cmd] both verbosity and prompt_path resolve together`` () =
+    let toml =
+        "schema_version = 1\n[shell.cmd]\nverbosity = \"off\"\nprompt_path = \"full\"\n"
+    let config, _ = loadFromText toml
+    let policy = Config.resolveShellPolicy config "cmd"
+    Assert.Equal(ShellPolicy.Off, policy.Streaming)
+    Assert.Equal(ShellPolicy.Full, policy.PromptPath)
+
+[<Fact>]
+let ``unknown verbosity value logs Warning and falls back`` () =
+    let toml =
+        "schema_version = 1\n[shell.cmd]\nverbosity = \"banana\"\n"
+    let config, logger = loadFromText toml
+    let policy = Config.resolveShellPolicy config "cmd"
+    Assert.Equal(ShellPolicy.TupleFinalOnly, policy.Streaming)
+    Assert.True(logger.HasLevel(LogLevel.Warning))
+    let warnings =
+        logger.MessagesAtLevel(LogLevel.Warning) |> Seq.toList
+    Assert.Contains(warnings, fun m -> m.Contains("verbosity"))
+
+[<Fact>]
+let ``unknown prompt_path value logs Warning and falls back`` () =
+    let toml =
+        "schema_version = 1\n[shell.cmd]\nprompt_path = \"banana\"\n"
+    let config, logger = loadFromText toml
+    let policy = Config.resolveShellPolicy config "cmd"
+    Assert.Equal(ShellPolicy.Suppress, policy.PromptPath)
+    Assert.True(logger.HasLevel(LogLevel.Warning))
+    let warnings =
+        logger.MessagesAtLevel(LogLevel.Warning) |> Seq.toList
+    Assert.Contains(warnings, fun m -> m.Contains("prompt_path"))
+
+[<Fact>]
+let ``resolveShellPolicy with no TOML override returns compiled defaults`` () =
+    let toml = "schema_version = 1\n"
+    let config, _ = loadFromText toml
+    let cmdPolicy = Config.resolveShellPolicy config "cmd"
+    let claudePolicy = Config.resolveShellPolicy config "claude"
+    Assert.Equal(ShellPolicy.TupleFinalOnly, cmdPolicy.Streaming)
+    Assert.Equal(ShellPolicy.Suppress, cmdPolicy.PromptPath)
+    Assert.Equal(ShellPolicy.TupleFinalOnly, claudePolicy.Streaming)
+    Assert.True(claudePolicy.SelectionEnabled)
+
 // ---- Per-pathway parameter override --------------------------------
 
 [<Fact>]
