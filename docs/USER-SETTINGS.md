@@ -2121,3 +2121,121 @@ a fixture to `HotkeyRegistryTests.fs` pinning the gesture as
 unbound (mirrors the `Ctrl+Shift+G is unbound` and
 `Ctrl+Shift+M is unbound` fixtures Cycle 27 added).
 
+## Cycle 45 aural-UX backlog (planned settings + features)
+
+Captured 2026-05-12 from maintainer dogfood on the post-Cycle-45
+build. These are user-facing preferences and small features the
+maintainer flagged during validation — none are blocking, but
+each is a concrete improvement worth tracking until a dedicated
+follow-up cycle (likely "Cycle 45f — verbosity modes") picks
+them up.
+
+### Navigation-key announce shape
+
+The Cycle 45 nav-key echo (PR #265 + #266) announces a single
+character when the user presses Backspace / Delete / Left /
+Right / Home. The current behaviour matches NVDA's text-editor
+convention. Maintainer-requested alternative settings:
+
+- **Home key**: announce the entire current line (the typed
+  input AND/OR the prompt path) instead of just the char at
+  column 0. Variant: announce just the typed input portion
+  WITHOUT the prompt path prefix (more useful when the prompt
+  is a long absolute path).
+- Insertion point for the future toggle:
+  `src/Views/TerminalView.cs` `AnnounceNavigationEcho`
+  (the `Key.Home` arm of the switch). Surrounding doc-comment
+  carries a `// Cycle 45 backlog:` marker.
+
+### Prompt-path verbosity
+
+For shells whose prompt is a long absolute path
+(`C:\Users\Kyle\AppData\Local\...\>`), the path content
+dominates the announce. Maintainer-requested settings:
+
+- **Suppress the full path** in announces, leaving just the
+  final directory name (`Local>` rather than `C:\Users\…\Local>`)
+- **Suppress the path entirely** for a minimal prompt cue
+- **Keep the full path** (today's default)
+- Insertion point: SpeechCursor `renderEntry` for the
+  PromptStart marker (currently returns `None`; future logic
+  could read the prompt text from the SessionTuple's
+  ActivePromptText and apply the user-selected verbosity rule)
+
+### Speech-cursor keyboard accelerators
+
+Speech-cursor navigation is currently menu-only (`Display →
+Speech Cursor → ...`). Maintainer-requested accelerator:
+
+- **`Ctrl+Up` / `Ctrl+Down`** for entry-by-entry navigation —
+  `SpeechCursorPrevious` / `SpeechCursorNext`. Direct keyboard
+  access is much faster than menu walks for review-driven use.
+- **`Ctrl+Shift+Up` / `Ctrl+Shift+Down`** for chunk-level
+  navigation (jump to the START of a logical input or output
+  chunk, skipping over multiple TextSpans within one chunk).
+  Requires the semantic-label work below.
+- Implementation: change the `Key = None, Modifiers = None`
+  rows in `HotkeyRegistry.builtIns` for `SpeechCursorPrevious`
+  / `SpeechCursorNext` / `SpeechCursorJumpToLatest` /
+  `SpeechCursorToggleMode` to bind the gesture; mirror in
+  `src/Views/TerminalView.cs` `AppReservedHotkeys` (Cycle 26b
+  mirror invariant). Verify no NVDA collision on Ctrl+Up/Down
+  — NVDA's default review-cursor commands use `NVDA+Up/Down`
+  not `Ctrl+Up/Down`, so the gesture is free in screen-reader
+  mode.
+
+### ContentHistory semantic labels (input vs output)
+
+To support the "inject past input into current input" feature
+the maintainer flagged for the future, every `ContentHistory.Entry`
+needs to carry a label of whether it originated from typed
+input or cmd output. The label powers:
+
+- **"Output chunk 2 of 5"** style navigation announces that
+  collapse multiple consecutive TextSpans within a single
+  output chunk into one navigable unit
+- **`Ctrl+Shift+Up/Down`** chunk-level jump (above)
+- **Future "inject this past input"** action — when the speech
+  cursor is parked on a labelled-as-input entry, the user can
+  trigger an action that pastes that text back into the
+  current input buffer
+
+Implementation sketch: add a `Source: EntrySource` field to
+each Entry record (DU: `TypedInput | CmdOutput | Marker`); set
+it at `appendFromEvent` / `appendMarker` time based on
+SessionModel's current ActiveTupleState. The post-tuple-seal
+labelling pass that counts output chunks ("2 of 5") can run as
+part of the tuple-finalise side effect, mutating the entries'
+labels with index information.
+
+### NVDA "Read Current Line" follows the cmd cursor
+
+NVDA's "Read Current Line" command (default gesture
+`NVDA+Up Arrow`) typically reads the line at the **system
+caret** position. In a normal text edit (Notepad, web form),
+the system caret follows the user's typing. In pty-speak's
+`TerminalAutomationPeer`, the UIA peer exposes a Document
+with a Text pattern but does NOT track a caret position;
+NVDA's read-current-line consequently reads whatever line the
+review cursor was last on, which can drift away from the
+actual cmd input row.
+
+The proper fix is to expose a caret via the Text pattern's
+`ITextRangeProvider.GetCaretRange` (or equivalent) and fire
+`AutomationEvents.TextSelectionChangedEvent` whenever cmd's
+cursor moves (which we already track via Screen state changes).
+That'd make NVDA read the correct line on each read-current-line
+gesture, AND eliminate the need for the manual nav-echo we
+shipped in #265 — NVDA's keyboard echo would Just Work.
+
+Insertion point:
+`src/Terminal.Accessibility/TerminalAutomationPeer.fs` — the
+ITextProvider implementation. Likely needs a substantial
+revisit; not a one-line fix.
+
+This is arguably the highest-leverage UIA improvement in the
+backlog because it fixes nav-echo, read-current-line, AND
+brings pty-speak closer to "indistinguishable from a normal
+text input control" from NVDA's perspective. Worth scoping
+properly before tackling.
+

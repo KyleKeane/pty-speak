@@ -133,6 +133,20 @@ module ContentHistory =
     /// The complete entry taxonomy. Order of cases doesn't matter
     /// for correctness; this listing matches the canonical
     /// architectural docs.
+    ///
+    /// Cycle 45 backlog (docs/USER-SETTINGS.md "ContentHistory
+    /// semantic labels"): every entry will eventually carry a
+    /// `Source` label distinguishing typed-input from
+    /// cmd-output. The label powers "Output chunk 2 of 5" style
+    /// navigation announces, `Ctrl+Shift+Up/Down` chunk jumps,
+    /// and the maintainer's future "inject this past input into
+    /// current input" action. Cheapest implementation: add a
+    /// `Source: EntrySource` field to each *Data record; set it
+    /// at append-time based on SessionModel's `ActiveTupleState`
+    /// (`AwaitingCommandStart` → TypedInput; `EditingCommand` /
+    /// `OutputStreaming` → CmdOutput). The "chunk index" labels
+    /// can be added as a post-tuple-seal pass that walks the
+    /// entries grouped by Source and writes back the index.
     type Entry =
         | TextSpan of TextSpanData
         | Newline of NewlineData

@@ -269,6 +269,16 @@ module SpeechCursor =
                 // Tuple-internal boundary markers don't announce
                 // by themselves. The TextSpans they bracket are
                 // what the user hears.
+                //
+                // Cycle 45 backlog (docs/USER-SETTINGS.md
+                // "Prompt-path verbosity"): future user setting
+                // could announce a shortened form of the prompt
+                // here (final-directory-only, or fully
+                // suppressed) so a sighted-style "I'm in
+                // C:\Users\Kyle\...>" cue is replaced with a
+                // briefer "Kyle>" or with silence. Pull the
+                // prompt text from m.Payload or from
+                // SessionModel.ActivePromptText.
                 None
             | ContentHistory.MarkerKind.Custom _ ->
                 // Future modes will define their own announce
