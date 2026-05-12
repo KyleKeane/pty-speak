@@ -618,6 +618,28 @@ public class TerminalView : FrameworkElement
 
         var pressedModifiers = Keyboard.Modifiers;
 
+        // Cycle 45c follow-up (2026-05-12) — speech-queue flush
+        // hook. ANY meaningful keystroke fires an empty
+        // `MostRecent` announce to clear NVDA's pending output
+        // queue. This is the architectural answer to the "I
+        // can't interrupt a long `dir` read by typing or
+        // pressing Alt" problem: the prior queue stays alive
+        // until the next `Announce` fires, and typing /
+        // Alt-menu don't naturally fire `Announce` (typing
+        // goes to PTY only; Alt opens a WPF menu through a
+        // separate UIA channel). Calling
+        // `FlushPendingOutputSpeech` here makes every keystroke
+        // a flush event. Filtered to skip bare modifier-only
+        // presses so `Shift` (NVDA pause), `Ctrl`, `Win`,
+        // `CapsLock`, etc. do NOT inadvertently clear speech.
+        // `Insert` and the numpad-NoLock cluster are filtered
+        // by `IsScreenReaderCandidate` further down and via
+        // the same exclusion here.
+        if (!IsBareModifierKey(e.Key) && !IsScreenReaderCandidate(e.Key))
+        {
+            FlushPendingOutputSpeech();
+        }
+
         // For Alt-modified gestures WPF reports e.Key == Key.System
         // and the actual key in e.SystemKey. We deliberately do NOT
         // unwrap that here: every reserved hotkey today is a clean
@@ -1000,6 +1022,61 @@ public class TerminalView : FrameworkElement
     /// and Numpad-as-arrow with NumLock off is suppressed. Both
     /// trade-offs are accepted to preserve screen-reader navigation.
     /// </summary>
+    /// <summary>
+    /// Cycle 45c follow-up — keys that are JUST a modifier press
+    /// (no character produced, no command issued). Pressing one of
+    /// these on its own should NOT flush the NVDA speech queue:
+    /// <c>Shift</c> is NVDA's pause-speech gesture; <c>Ctrl</c> /
+    /// <c>Win</c> / <c>CapsLock</c> on their own are chord
+    /// preludes or system-level toggles, not user-initiated
+    /// activity that wants a fresh start. Alt is deliberately NOT
+    /// in this list — pressing Alt activates a WPF menu and the
+    /// user's expectation is that the previous read interrupts.
+    /// Function keys (F1..F12) are also NOT in this list — they
+    /// may trigger app behaviour (help, fullscreen) whose own
+    /// announces would displace the prior queue anyway, and a
+    /// pre-emptive flush is consistent with the rule "any user
+    /// action that's not a bare modifier resets the speech state".
+    /// </summary>
+    private static bool IsBareModifierKey(Key key)
+    {
+        return key == Key.LeftShift
+            || key == Key.RightShift
+            || key == Key.LeftCtrl
+            || key == Key.RightCtrl
+            || key == Key.LWin
+            || key == Key.RWin
+            || key == Key.NumLock
+            || key == Key.Scroll;
+    }
+
+    /// <summary>
+    /// Cycle 45c follow-up — clear NVDA's pending output speech
+    /// queue. Fires an empty <c>MostRecent</c> notification on
+    /// <c>ActivityIds.output</c>; per the UIA contract this
+    /// removes all previously-queued notifications with the same
+    /// property. Currently-synthesised audio still plays to its
+    /// natural chunk boundary (NVDA only clears chunks it hasn't
+    /// handed to SAPI yet), but the long tail of a 3 KB <c>dir</c>
+    /// read becomes ~one chunk of speech instead of two minutes.
+    ///
+    /// Called from <see cref="OnPreviewKeyDown"/> for every key
+    /// that isn't a bare modifier — see
+    /// <see cref="IsBareModifierKey"/> for the exclusion list.
+    /// Cheap: when the queue is empty the call is a no-op at the
+    /// UIA layer.
+    /// </summary>
+    private void FlushPendingOutputSpeech()
+    {
+        var peer = UIElementAutomationPeer.FromElement(this);
+        if (peer is null) return;
+        peer.RaiseNotificationEvent(
+            AutomationNotificationKind.Other,
+            AutomationNotificationProcessing.MostRecent,
+            string.Empty,
+            ActivityIds.output);
+    }
+
     private static bool IsScreenReaderCandidate(Key key)
     {
         if (key == Key.Insert) return true;
