@@ -130,6 +130,23 @@ let ``WarningLine Apply emits one pair with warning-tone ChannelDecision`` () =
     | other -> Assert.Fail(sprintf "Expected RenderEarcon; got %A" other)
 
 [<Fact>]
+let ``ReadyForInput Apply emits one pair with ready-prompt ChannelDecision`` () =
+    // Cycle 45 — fired by `Program.fs handlePromptBoundary`
+    // on tuple finalise. Maps to the 1200Hz × 60ms chime
+    // defined in `EarconPalette.defaultPalette`.
+    let profile = EarconProfile.create ()
+    let event = buildEvent SemanticCategory.ReadyForInput
+    let pairs = profile.Apply event
+    Assert.Equal(1, pairs.Length)
+    let _, decisions = pairs.[0]
+    Assert.Equal(1, decisions.Length)
+    Assert.Equal(EarconChannel.id, decisions.[0].Channel)
+    match decisions.[0].Render with
+    | RenderEarcon earconId ->
+        Assert.Equal("ready-prompt", earconId)
+    | other -> Assert.Fail(sprintf "Expected RenderEarcon; got %A" other)
+
+[<Fact>]
 let ``Custom Semantic Apply returns empty pair array`` () =
     let profile = EarconProfile.create ()
     let event = buildEvent (SemanticCategory.Custom "user-event")

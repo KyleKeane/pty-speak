@@ -1635,6 +1635,27 @@ module Program =
             window.Dispatcher.InvokeAsync(Action(boundaryAction))
             |> ignore
 
+            // Cycle 45 (2026-05-12) — ready-for-input earcon. When a
+            // tuple just sealed (a command actually completed, not
+            // just a prompt redraw), fire a `ReadyForInput`
+            // OutputEvent. The EarconProfile maps this to
+            // `ready-prompt` (1200Hz × 60ms chime); EarconChannel
+            // plays on a separate WASAPI stream, non-blocking, so
+            // NVDA's read-back of the OutputText (queued above via
+            // window.Dispatcher) is NOT interrupted — the chime and
+            // the speech play concurrently. Empty payload means
+            // NvdaChannel skips its decision (no double-up).
+            // Honours the existing View → Earcons → Enabled / Muted
+            // toggle (the channel itself short-circuits when muted).
+            if finalisedOpt.IsSome then
+                let readyEvent =
+                    OutputEvent.create
+                        SemanticCategory.ReadyForInput
+                        Priority.Background
+                        "session-model"
+                        ""
+                OutputDispatcher.dispatch readyEvent
+
             let emitted = activePathway.OnPromptBoundary augmented
             pumpLog.LogDebug(
                 "PathwayPump PromptBoundary {Kind} → {Pathway}.OnPromptBoundary → {Count} events.",

@@ -150,6 +150,7 @@ module CanonicalCorpus =
         | "AltScreenEntered" -> Some SemanticCategory.AltScreenEntered
         | "ModeBarrier" -> Some SemanticCategory.ModeBarrier
         | "ParserError" -> Some SemanticCategory.ParserError
+        | "ReadyForInput" -> Some SemanticCategory.ReadyForInput
         | _ -> None
 
     let private parsePaneRouting (s: string) : PaneRouting option =

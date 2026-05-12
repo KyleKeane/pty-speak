@@ -15,6 +15,29 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 45 follow-up): ready-for-input earcon
+
+A brief 1200Hz × 60ms chime now plays when the shell finishes a
+command and is ready for the next input. The chime routes
+through the existing `EarconChannel` (WASAPI on a separate
+audio stream from NVDA's TTS), so it plays **concurrently with**
+— and does **not interrupt** — NVDA's read-back of the command
+output. Honours the existing `View → Earcons → Enabled / Muted`
+toggle.
+
+Trigger: `Program.fs handlePromptBoundary` emits a new
+`SemanticCategory.ReadyForInput` OutputEvent when
+`SessionModel.applyAndCapture` returns `finalisedOpt = Some
+tuple` (i.e. a real command-finished boundary, not just a
+prompt redraw). `EarconProfile` maps the new semantic to a new
+`"ready-prompt"` palette entry. Empty payload means
+`NvdaChannel` skips its decision, so the chime never produces
+double speech.
+
+The earcon is audibly distinct from the existing `"bell-ping"`
+(800Hz × 100ms) so users hearing both within a session can
+distinguish "shell BEL'd at me" from "shell finished a command."
+
 ### Fixed (Cycle 45 follow-up): edit-conflated narration on tuple finalise
 
 Maintainer dogfood (2026-05-12): typing `echo hi`, editing the

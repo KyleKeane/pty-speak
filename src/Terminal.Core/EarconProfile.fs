@@ -91,6 +91,17 @@ module EarconProfile =
                         event,
                         [| earconDecision "warning-tone" |]
                     |]
+                | SemanticCategory.ReadyForInput ->
+                    // Cycle 45 — shell-ready cue. 1200Hz × 60ms
+                    // chime; non-interrupting (separate WASAPI
+                    // stream from NVDA's TTS). Empty Payload on
+                    // the producer side so NvdaChannel skips —
+                    // earcon plays alongside the OutputText
+                    // read-back without doubling.
+                    [|
+                        event,
+                        [| earconDecision "ready-prompt" |]
+                    |]
                 | _ ->
                     // No earcon for other Semantic categories.
                     [||]
