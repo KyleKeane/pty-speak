@@ -139,6 +139,16 @@ module SpeechCursor =
     let create (parameters: Parameters) : T =
         T(parameters)
 
+    /// Read the cursor's current `Parameters`. Cycle 45f —
+    /// public accessor so cross-assembly callers (Program.fs,
+    /// hosted in Terminal.App) can construct a `{ existing with
+    /// ... }` update before handing it back to `setParameters`.
+    /// The underlying `member val Parameters` is `internal` so
+    /// direct field access from Terminal.App fails;
+    /// `getParameters` is the module-level lens.
+    let getParameters (state: T) : Parameters =
+        state.Parameters
+
     /// Replace the cursor's `Parameters` (Cycle 45f). Subsequent
     /// `onAppend` invocations observe the new values; entries
     /// already announced under the previous policy stay

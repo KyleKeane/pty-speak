@@ -1429,8 +1429,9 @@ module Program =
                 | ShellPolicy.TupleFinalOnly -> true
                 | ShellPolicy.LineByLine -> false
                 | ShellPolicy.Off -> true
+            let current = SpeechCursor.getParameters speechCursor
             let parameters =
-                { speechCursor.Parameters with
+                { current with
                     SkipTextSpansInAutoDrive = skipText
                     PromptPath = resolved.PromptPath }
             SpeechCursor.setParameters speechCursor parameters
