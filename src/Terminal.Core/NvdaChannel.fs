@@ -83,7 +83,8 @@ module NvdaChannel =
         | SemanticCategory.BellRang
         | SemanticCategory.HyperlinkOpened
         | SemanticCategory.PromptDetected
-        | SemanticCategory.CommandSubmitted -> ActivityIds.output
+        | SemanticCategory.CommandSubmitted
+        | SemanticCategory.ReadyForInput -> ActivityIds.output
         | SemanticCategory.Custom _ -> ActivityIds.output
 
     /// Construct a Channel that announces via the supplied

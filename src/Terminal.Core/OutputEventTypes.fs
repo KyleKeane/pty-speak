@@ -103,6 +103,18 @@ type SemanticCategory =
     /// activates in 8b/8c when profiles + channels start
     /// reading `Priority`.
     | ParserError
+    /// Cycle 45 — fired when a tuple finalises (a command
+    /// completed AND the shell has redrawn the next prompt).
+    /// Carries an empty payload; the EarconProfile maps this
+    /// to `ready-prompt` so the user hears a brief audible
+    /// "shell is ready for the next input" cue alongside NVDA's
+    /// read-back of the OutputText. NvdaChannel skips empty
+    /// payloads so this never produces speech — earcon-only.
+    /// Producer: `Program.fs handlePromptBoundary` on the
+    /// PromptStart-after-completion transition (i.e. only when
+    /// `SessionModel.applyAndCapture` returns `finalisedOpt =
+    /// Some tuple`, not on the very first prompt of a session).
+    | ReadyForInput
     /// User-defined event category. The string is the stable
     /// identifier the producer chooses (e.g. a third-party
     /// Phase 2 extension's "git-prompt-segment"). The `Custom`

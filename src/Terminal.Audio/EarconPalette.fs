@@ -30,8 +30,8 @@ module EarconPalette =
     /// compatibility (Phase 2).
     type EarconId = string
 
-    /// Default palette. Three entries — the audio side of the
-    /// 8d sub-stages.
+    /// Default palette. Four entries — the audio side of the
+    /// 8d sub-stages plus the Cycle 45 ready-for-input cue.
     /// - `bell-ping` (800Hz × 100ms): triggered by BEL (0x07).
     /// - `error-tone` (400Hz × 150ms): triggered by future
     ///   colour-detection (red rows). Currently unused by any
@@ -44,6 +44,15 @@ module EarconPalette =
     ///   colour-detection (yellow rows). Same status as
     ///   error-tone — present in the palette for diagnostic
     ///   coverage, no producer wired yet.
+    /// - `ready-prompt` (1200Hz × 60ms): Cycle 45 — a brief
+    ///   high-pitched chime fired when a command finishes and
+    ///   the shell is ready for the next input. Higher-pitched
+    ///   + shorter than `bell-ping` so it's audibly distinct
+    ///   from the BEL ping; brief enough that consecutive
+    ///   commands don't overlap. Routes through the same
+    ///   non-blocking WASAPI stream as every other earcon, so
+    ///   it plays alongside NVDA's read-back of the OutputText
+    ///   without interrupting speech.
     /// All earcons stay shorter than the StreamProfile's 200ms
     /// debounce window so consecutive earcons don't overlap.
     /// Tunable in Phase 2 via TOML.
@@ -60,4 +69,8 @@ module EarconPalette =
               "warning-tone",
               { FrequencyHz = 600.0
                 DurationMs = 120
-                AttackMs = 10 } ]
+                AttackMs = 10 }
+              "ready-prompt",
+              { FrequencyHz = 1200.0
+                DurationMs = 60
+                AttackMs = 5 } ]

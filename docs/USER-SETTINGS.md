@@ -2404,3 +2404,68 @@ Insertion points:
 - `src/Terminal.Core/Config.fs` — `ShellOverrides` becomes
   user-supplied overrides ON TOP of the default policy table
 
+### Semantic output rendering — navigable units instead of stream chunks
+
+Captured 2026-05-12 from maintainer dogfood on the
+PR #268 build. Validated outcomes:
+
+- `echo hi` with arrow / backspace / delete editing now
+  narrates cleanly as "hi" (the screen-grid-derived
+  `SessionTuple.OutputText`) instead of the inflated edit-
+  conflated TextSpan from before #268.
+- Long `dir` output reads all the way to the end without
+  truncation; NVDA chunks the payload internally with small
+  pauses between chunks.
+
+Maintainer observation from this dogfood: the inter-chunk
+pauses on long outputs are NVDA's natural read cadence over a
+single `ImportantAll` payload — we don't control the pause
+from the producer side. The next-level shape, which the
+maintainer explicitly raised, is to **render output in a
+semantically navigable format** so the user navigates units
+(rows of `dir`, individual error lines, individual `git log`
+entries, individual `ping` echoes, etc.) rather than waiting
+for NVDA's read-back to traverse a single multi-kilobyte
+payload.
+
+This is not a single feature — it's the natural endpoint of
+work already flagged in the strategic plan. Explicit linkage:
+
+- **Cycle 45e** (ContentHistory-driven visual surface for
+  sighted-pair collaboration, per `PROJECT-PLAN-2026-05-09.md`
+  and `CORE-ABSTRACTION-BOUNDARY.md`) introduces the
+  ContentHistory → primary visual rendering and routes the
+  UIA Document at the same data. Once that lands, NVDA's
+  review cursor speaks the same per-entry units the visual
+  surface highlights — semantic navigation Just Works for
+  any output ContentHistory has typed entries for.
+- **Cycle 45f** (verbosity modes) introduces per-shell
+  streaming-vs-tuple-final policy AND the
+  `ContentHistory.Entry.Source` semantic label work (see
+  "ContentHistory semantic labels (input vs output)" above)
+  — those labels are the input-vs-output dimension of the
+  unit taxonomy. Per-line / per-section / per-chunk units
+  are the orthogonal dimension and would come from per-
+  shell or per-output-type detectors.
+- **Per-shell policy table** (above) — the unit-detector for
+  cmd's `dir` (one row per file), Claude Code's streaming
+  response (one chunk per dialogue turn), `git log` (one
+  entry per commit), etc. each becomes a row in the policy
+  table rather than scattered inline logic. New shells / new
+  output types plug in as additional rows.
+
+The headline payoff for the screen-reader UX: SpeechCursor
+Next / Previous (and the Ctrl+Up/Down accelerators above)
+moves the user through SEMANTIC units regardless of how the
+underlying shell happened to draw them. `dir` becomes 50
+navigable rows; `git log` becomes one navigable commit at a
+time; Claude's streaming response becomes one navigable
+paragraph; the inter-chunk NVDA pause is replaced by the
+user's own pace.
+
+Scope: substantial — depends on Cycle 45e's visual surface
+landing first AND Cycle 45f's semantic-label work. Worth
+naming explicitly here so the connection between the three
+cycles is documented; the actual implementation slots after
+they settle.
+
