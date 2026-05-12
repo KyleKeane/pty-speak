@@ -15,6 +15,59 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Removed (Cycle 45c cleanup PR-3b): pathway-pipeline wiring from Program.fs
+
+Strips the dead `StreamPathway` / `LinearTextStream` /
+`DisplayPathway` / `TuiPathway` / `PathwaySelector` call sites
+from `src/Terminal.App/Program.fs`. Cycle 45's ContentHistory +
+SpeechCursor pipeline has been the live announce path since
+PRs #263–#270; the pathway calls were parallel-but-uncalled,
+dispatching OutputEvents with empty Payloads that produced no
+NVDA effect.
+
+Deleted in Program.fs:
+
+- `activePathway` mutable + initial `StreamPathway.create`
+- `selectPathwayForShell` helper
+- `swapPathwayForAltScreen` helper
+- `dispatchPathwayEvents` helper (no callers)
+- `activePathway.OnPromptBoundary` call in `handlePromptBoundary`
+- `activePathway.Consume` call in `handleRowsChanged`
+- `activePathway.OnModeBarrier` + `PathwaySelector.decideAltScreenAction`
+  match + `swapPathwayForAltScreen` swap in `handleModeChanged`
+- `activePathway.Tick` call in `handleTick`
+- Startup `activePathway.Reset` + `selectPathwayForShell` swap
+- `switchToShell`'s pathway Reset / reassignment / SetBaseline block
+
+`handleModeChanged` simplified to a direct `if screen.Modes.AltScreen`
+branch that toggles `SessionModel.enterAltScreen` / `exitAltScreen`
++ resets the prompt + selection detectors. The `barrier` OutputEvent
+dispatch is retained so the FileLogger still captures mode transitions.
+
+Cycle 35b's `SubstrateMode` enum dispatch (Linear / ScreenDiff /
+Auto) is collapsed to `useContentHistory = true`. ContentHistory
+is now the universal substrate; the fallback to `extractContent`'s
+row-walk happens organically inside
+`extractContentFromContentHistory` when no OSC 133 markers are
+present, and `SessionModel.IsAltScreenActive` separately gates
+boundary processing during alt-screen TUI apps. The `substrate_mode`
+TOML key is effectively dead (already stripped by PR-2).
+
+User-visible behaviour: unchanged. Cycle 45 NVDA dogfood confirmed
+the pathway calls weren't on the announce path; PR-3b validates
+that by deleting them with zero user-facing impact. Alt-screen
+TUI apps (vim, less, htop, etc.) still get their entry/exit
+acknowledged via the SessionModel state-machine call retained in
+`handleModeChanged`.
+
+Diagnostic plumbing retained:
+- `LinearTextStream` reader-loop feed + `getLastBytes` for the
+  bundle's `--- LINEAR STREAM ---` section (PR-3c migrates this
+  to ContentHistory + renames the section).
+- `Diagnostics.captureSessionModel`'s `activePathwayId` parameter
+  receives a constant `"content-history"` (PR-3c renames the
+  parameter).
+
 ### Added (Cycle 45c cleanup PR-3a): ContentHistory-driven OSC 133 substrate
 
 Migration step toward deleting the `LinearTextStream` substrate.
