@@ -15,6 +15,89 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Removed (Cycle 45c cleanup PR-3c): pathway-pipeline source modules + LinearTextStream substrate
+
+Final step in the Cycle 45c cleanup sequence. The pre-Cycle-45
+substrate pipeline is now fully retired in code.
+
+Deleted source files (~3,584 LOC):
+- `src/Terminal.Core/StreamPathway.fs` (1,256 LOC)
+- `src/Terminal.Core/LinearTextStream.fs` (1,023 LOC)
+- `src/Terminal.Core/DisplayPathway.fs` (111 LOC)
+- `src/Terminal.Core/TuiPathway.fs` (105 LOC)
+- `src/Terminal.Core/PathwaySelector.fs` (99 LOC)
+
+Removed from `src/Terminal.Core/Terminal.Core.fsproj`:
+- 5 `<Compile Include>` entries for the source files above
+
+Removed from `src/Terminal.Core/Config.fs`:
+- `StreamParameterOverrides` record type
+- `StreamOverrides` field on the `Config` record
+- `resolveStreamParameters` function (stub from PR-2)
+- Loader branch that populated `StreamOverrides`
+
+Removed from `src/Terminal.Core/SessionModel.fs`:
+- `extractContentFromLinearStream` (private)
+- `applyAndCaptureWithSubstrate` (public)
+- `applyWithSubstrate` (public)
+
+Removed from `tests/Tests.Unit/SessionModelTests.fs`:
+- `freshLinear` + `feedLinear` fixture helpers
+- 5 Cycle 35b OSC 133 LinearTextStream test cases (the Cycle
+  45c ContentHistory equivalents added in PR-3a cover the same
+  contract).
+
+Removed from `tests/Tests.Unit/ConfigTests.fs`:
+- 4 "defaultConfig has X" smoke tests for the stripped
+  `resolveStreamParameters` API (the bridge tests retained in
+  PR-2 are now dead).
+
+Removed from `src/Terminal.App/Program.fs`:
+- `linearStream` mutable creation in `compose ()`
+- `LinearTextStream.append` call in the reader loop
+- `linearStream` parameter from `startReaderLoop` signature
+- All `LinearTextStream.getLastBytes` diagnostic calls
+
+ContentHistory grows one helper (`ContentHistory.tailText`) to
+back the diagnostic bundle's `--- CONTENT HISTORY (last 64KB) ---`
+section. Walks `Entries` from tail, accumulating until the byte
+cap is hit, then reverses to chronological order.
+
+Renamed in `src/Terminal.App/Diagnostics.fs`:
+- `--- LINEAR STREAM (last 64KB) ---` bundle section →
+  `--- CONTENT HISTORY (last 64KB) ---`
+- Sibling file `linear-stream-<ts>.txt` →
+  `content-history-<ts>.txt`
+- `resolveLinearStreamPath` → `resolveContentHistoryPath`
+- `runFullBattery`'s `resolveLinearStream` parameter →
+  `resolveContentHistory`
+- `linearStreamSection` parameter on `formatDiagnosticBundle` +
+  `formatLightweightBundle` → `contentHistorySection`
+
+Updated docs:
+- `docs/CORE-ABSTRACTION-BOUNDARY.md` — Cycle 45c header note
+  explaining the pathway pipeline retirement.
+- `docs/ARCHITECTURE.md` — data-flow ASCII diagram + module
+  map updated to reflect ContentHistory + SpeechCursor as the
+  aural substrate. Pathway modules removed from the inventory.
+- `docs/ACCESSIBILITY-TESTING.md` — new Cycle 45c NVDA matrix
+  with 6 rows (45c-1 through 45c-6) covering cmd narration,
+  long output through NVDA chunking, alt-screen TUI apps,
+  Claude streaming, the renamed diagnostic bundle section, and
+  OSC 133 boundary detection.
+
+**Diagnostic bundle compatibility**: old bundles in
+`%LOCALAPPDATA%\PtySpeak\diagnostic-snapshots\` carry the
+`--- LINEAR STREAM ---` header; triage scripts grepping for that
+string will break. Acceptable — bundles are session-local triage
+artefacts, not interchange format.
+
+**User-visible behaviour**: unchanged in the happy path. Cycle 45
+NVDA dogfood confirmed the pathway calls weren't on the announce
+path. **NVDA matrix walk required** (rows 45c-1 through 45c-6 in
+`docs/ACCESSIBILITY-TESTING.md`) before tagging a release; this
+PR cannot fast-merge.
+
 ### Removed (Cycle 45c cleanup PR-3b): pathway-pipeline wiring from Program.fs
 
 Strips the dead `StreamPathway` / `LinearTextStream` /

@@ -1192,6 +1192,25 @@ fails: check `%LOCALAPPDATA%\PtySpeak\` disk space / permissions
 — the error path will report "Extract file write failed" but
 clipboard copy still works.
 
+### Cycle 45c — Pathway-pipeline cleanup (PR-3a → PR-3c)
+
+The Cycle 5-9 screen-grid-diff pathway pipeline
+(`StreamPathway` / `LinearTextStream` / `DisplayPathway` /
+`TuiPathway` / `PathwaySelector`) was retired across three PRs.
+The aural substrate is now `ContentHistory` + `SpeechCursor`.
+The Cycle 45 NVDA dogfood confirmed the pathway calls weren't
+on the announce path, so user-visible behaviour should be
+unchanged; this matrix confirms.
+
+| Row | Test | Pass criterion |
+|---|---|---|
+| **45c-1** | cmd + `echo hi` + mid-command edit | Narrates "hi" cleanly. Regression pin for the cmd suffix-reprint conflation fix (PR #268). |
+| **45c-2** | cmd + `dir` long output | Reads end-to-end through NVDA chunking. No spinner-storm. |
+| **45c-3** | cmd + alt-screen-using TUI app (`vim`, or `more <largefile>`) | Entry + exit announce as expected. NVDA mode behaviour matches pre-Cycle-45c (alt-screen suppresses boundary processing in `SessionModel`). |
+| **45c-4** | Claude shell + long response | Mid-stream narration intact (depends on shell verbosity policy; `LineByLine` opt-in via `View → Output Verbosity`). |
+| **45c-5** | `Ctrl+Shift+D` diagnostic bundle | Bundle contains `--- CONTENT HISTORY (last 64KB) ---` section (renamed from `--- LINEAR STREAM ---`). Sibling `content-history-<ts>.txt` file is created under `%LOCALAPPDATA%\PtySpeak\diagnostic-snapshots\`. |
+| **45c-6** | OSC 133-emitting tool (`pwsh` with PSReadLine, or `cmd` with the `set prompt=` OSC 133 prefix) | Tuple boundaries detected correctly; SessionTuple `CommandText` / `OutputText` are populated via `ContentHistory.sliceText` (regression pin for the OSC 133 migration from PR-3a). Verify by pressing `Ctrl+Shift+Y` after a command finishes — the clipboard payload should contain the command text + output, not row-walk fragments. |
+
 ## Recording results
 
 For each release tag:

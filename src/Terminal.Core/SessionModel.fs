@@ -757,23 +757,10 @@ module SessionModel =
     // the `linearOverride` fallback both go away.
 
     /// Cycle 35b — peek the linear stream's per-tuple OSC 133
-    /// state. Returns `Some (commandText, outputText)` when
-    /// markers are present (linear path is authoritative); else
-    /// `None` so the caller falls back to `extractContent`.
-    let private extractContentFromLinearStream
-            (linearStream: LinearTextStream.T)
-            : (string * string) option
-            =
-        if not (LinearTextStream.hasOsc133Markers linearStream) then
-            None
-        else
-            let chunk, _ = LinearTextStream.finalizeHighWaterMark linearStream
-            Some (chunk.CommandText, chunk.OutputText)
-
-    /// Cycle 45c — ContentHistory replacement for
-    /// `extractContentFromLinearStream`. Locates the latest
-    /// PromptStart + OutputStart markers in the current tuple's
-    /// ContentHistory and slices the bracketed text.
+    /// Cycle 45c — ContentHistory text extraction at tuple-seal
+    /// time. Locates the latest PromptStart + OutputStart markers
+    /// in the current tuple's ContentHistory and slices the
+    /// bracketed text.
     ///
     /// Returns `Some (commandText, outputText)` when both
     /// markers are present (ContentHistory path is authoritative);
@@ -805,59 +792,6 @@ module SessionModel =
                     history outputStart.Seq System.Int64.MaxValue
             Some (commandText, outputText)
         | _ -> None
-
-    /// Cycle 35b — substrate-aware finalize. The caller (a
-    /// composition root or pathway-pump callback) resolves the
-    /// substrate mode against `StreamPathway.SubstrateMode` and
-    /// `canonical.IsAltScreenActive` (mirroring
-    /// `StreamPathway.resolveSubstrateMode`) and passes the
-    /// boolean result here. SessionModel doesn't reference
-    /// `StreamPathway.SubstrateMode` directly because the
-    /// compile order (SessionModel.fs precedes StreamPathway.fs
-    /// in `Terminal.Core.fsproj`) wouldn't allow it; passing the
-    /// boolean is functionally equivalent and keeps the
-    /// dependency direction clean.
-    ///
-    /// `useLinear = true` AND OSC 133 markers observed → linear
-    /// path (override is `Some (cmd, out)`). Otherwise →
-    /// `extractContent` row-walk fallback.
-    let applyAndCaptureWithSubstrate
-            (state: T)
-            (boundary: PromptBoundaryData)
-            (snapshot: Cell[][])
-            (linearStream: LinearTextStream.T)
-            (useLinear: bool)
-            : T * SessionTuple option
-            =
-        // Cycle 35b — the override is a THUNK so the linear
-        // stream's `finalizeHighWaterMark` (which has the side
-        // effect of resetting per-tuple offsets + the OSC 133
-        // marker flag) is only invoked when `finalizeAndEnqueue`
-        // actually fires inside `applyAndCaptureCore`.
-        // Non-finalize boundaries (CommandStart, OutputStart,
-        // and PromptStart-with-no-Active) leave the linear
-        // stream untouched.
-        let linearOverride : (unit -> (string * string) option) option =
-            if useLinear then
-                Some (fun () -> extractContentFromLinearStream linearStream)
-            else
-                None
-        applyAndCaptureCore state boundary snapshot linearOverride
-
-    /// Cycle 35b — state-only wrapper around
-    /// `applyAndCaptureWithSubstrate`. Mirrors `apply`'s
-    /// relationship to `applyAndCapture`.
-    let applyWithSubstrate
-            (state: T)
-            (boundary: PromptBoundaryData)
-            (snapshot: Cell[][])
-            (linearStream: LinearTextStream.T)
-            (useLinear: bool)
-            : T
-            =
-        applyAndCaptureWithSubstrate
-            state boundary snapshot linearStream useLinear
-        |> fst
 
     /// Cycle 45c — ContentHistory-driven substrate finalize.
     /// Companion to `applyAndCaptureWithSubstrate`, threaded with

@@ -265,6 +265,53 @@ module ContentHistory =
                 i <- i - 1
             found)
 
+    /// Cycle 45c — tail of the reconstructed text. Used by the
+    /// diagnostic bundle to render a `--- CONTENT HISTORY (last
+    /// N KB) ---` section without forcing the caller to allocate
+    /// the full reconstruction first. Walks `Entries` from tail,
+    /// accumulating until the byte cap is hit, then reverses to
+    /// chronological order.
+    let tailText (state: T) (maxBytes: int) : string =
+        lock state.Gate (fun () ->
+            let frames = ResizeArray<string>()
+            let mutable bytes = 0
+            // Active span first (it's the most recent content).
+            if state.ActiveSpanText.Length > 0 then
+                let text = state.ActiveSpanText.ToString()
+                frames.Add(text)
+                bytes <- bytes + System.Text.Encoding.UTF8.GetByteCount(text)
+            let entries = state.Entries
+            let mutable i = entries.Count - 1
+            while bytes < maxBytes && i >= 0 do
+                let contribution =
+                    match entries.[i] with
+                    | TextSpan d -> d.Text
+                    | Newline _ -> "\n"
+                    | Overwrite d -> d.Text
+                    | Spinner d -> d.LatestText
+                    | Marker _ -> ""
+                if contribution.Length > 0 then
+                    frames.Add(contribution)
+                    bytes <- bytes + System.Text.Encoding.UTF8.GetByteCount(contribution)
+                i <- i - 1
+            // frames is tail-first; reverse for chronological order.
+            let sb = StringBuilder(bytes)
+            for j = frames.Count - 1 downto 0 do
+                sb.Append(frames.[j]) |> ignore
+            let full = sb.ToString()
+            // Final truncation: if we overshot maxBytes (the last
+            // included entry may have pushed us over), trim from
+            // the head (oldest) so the most recent content is
+            // preserved.
+            if System.Text.Encoding.UTF8.GetByteCount(full) <= maxBytes then
+                full
+            else
+                // Walk char-by-char from the tail until we've fit.
+                let bytesArr = System.Text.Encoding.UTF8.GetBytes(full)
+                let startOffset = bytesArr.Length - maxBytes
+                System.Text.Encoding.UTF8.GetString(
+                    bytesArr, startOffset, maxBytes))
+
     /// Cycle 45c — reconstruct the user-visible text payload for
     /// entries whose Seq is strictly between `fromSeqExclusive`
     /// and `toSeqExclusive`. The caller typically passes adjacent

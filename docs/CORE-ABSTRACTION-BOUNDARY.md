@@ -1,5 +1,18 @@
 # Core abstraction boundary
 
+> **Cycle 45c update (2026-05-12)**: the Cycle 5-9 screen-grid-diff
+> pipeline this doc references throughout (`StreamPathway` /
+> `LinearTextStream` / `DisplayPathway` / `TuiPathway` /
+> `PathwaySelector`) was retired in PR-3a → PR-3c. The aural
+> substrate is now `ContentHistory` (append-only typed-entry log
+> per shell session) + `SpeechCursor` (announce-and-navigate
+> primitive). RFC 0001 is archived at
+> [`archive/pre-cycle-45/0001-linear-text-substrate.md`](archive/pre-cycle-45/0001-linear-text-substrate.md).
+> The substrate/channel dichotomy this doc describes is unchanged
+> — only the substrate implementation differs. Where the prose
+> below names a pathway module, read it as "historical reference;
+> ContentHistory is the live equivalent."
+
 > **Snapshot**: 2026-05-09
 > **Status**: architectural framing — locks the substrate /
 > channel dichotomy that all downstream stages build against.

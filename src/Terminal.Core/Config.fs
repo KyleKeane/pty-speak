@@ -98,51 +98,6 @@ module Config =
           /// back.
           PromptPath: ShellPolicy.PromptPathMode option }
 
-    /// Optional overrides for `StreamPathway.Parameters`. Each
-    /// field is `int option` so the resolver can merge with
-    /// `StreamPathway.defaultParameters` field-by-field — a
-    /// user who overrides only `debounce_window_ms` keeps the
-    /// other three at their hardcoded defaults.
-    type StreamParameterOverrides =
-        { DebounceWindowMs: int option
-          SpinnerWindowMs: int option
-          SpinnerThreshold: int option
-          MaxAnnounceChars: int option
-          /// Phase A.2 — toggle SGR colour-detection emission.
-          /// `None` falls back to the default (`true`); `Some
-          /// false` disables the supplementary
-          /// ErrorLine/WarningLine OutputEvents and the
-          /// associated error-tone/warning-tone earcons.
-          ColorDetection: bool option
-          /// PR #168 — Tier 1 parameter from
-          /// `docs/USER-SETTINGS.md` "Suffix-diff parameters".
-          /// `None` falls back to the default (3). Above this
-          /// many changed rows in one frame, the suffix-diff
-          /// stage bypasses per-row LCP and emits the full
-          /// ChangedText (verbose fallback).
-          BulkChangeThreshold: int option
-          /// PR #168 — backspace policy for the suffix-diff
-          /// Shrink branch. `None` falls back to the default
-          /// (`AnnounceDeletedCharacter`). TOML values:
-          /// `"silent"`, `"announce_deleted_character"`,
-          /// `"announce_deleted_word"`. Unknown / non-string
-          /// values log a Warning and fall back.
-          BackspacePolicy: StreamPathway.BackspacePolicy option
-          /// PR #168 — mode-barrier flush policy. `None` falls
-          /// back to the default (`SummaryOnly`). TOML values:
-          /// `"verbose"`, `"summary_only"`, `"suppressed"`.
-          /// Unknown / non-string values log a Warning and
-          /// fall back.
-          ModeBarrierFlushPolicy: StreamPathway.ModeBarrierFlushPolicy option
-          /// Cycle 35a — substrate mode override. `None`
-          /// falls back to default `ScreenDiff` (existing
-          /// behaviour; 35b flips default to `Auto` after
-          /// the §3 advanced-CMD 8-row matrix passes manual
-          /// NVDA validation). TOML values: `"linear"`,
-          /// `"screen-diff"`, `"auto"`. Unknown / non-string
-          /// values log a Warning and fall back.
-          SubstrateMode: StreamPathway.SubstrateMode option }
-
     /// Cycle 19 — `[startup]` TOML section: composition-root
     /// startup-shell override. When `DefaultShell` is `Some`,
     /// the composition root's `resolveStartupShell` uses it
@@ -206,7 +161,6 @@ module Config =
     type Config =
         { SchemaVersion: int
           ShellOverrides: Map<string, ShellPathwayConfig>
-          StreamOverrides: StreamParameterOverrides
           StartupOverrides: StartupOverrides
           /// Cycle 24a — `[session_model.persistence]` table.
           /// Pure config substrate; Cycles 24b-d wire actual I/O.
@@ -223,27 +177,10 @@ module Config =
           SelectionOverrides: SelectionParameterOverrides }
 
     /// The all-defaults Config — equivalent to "no config file
-    /// present". `defaultConfig` is the authoritative source
-    /// of truth for the byte-equivalence test in
-    /// `ConfigTests.fs`; if `StreamPathway.defaultParameters`
-    /// changes, this module's resolver picks up the new
-    /// defaults automatically (no constants are duplicated).
+    /// present".
     let defaultConfig: Config =
         { SchemaVersion = CurrentSchemaVersion
           ShellOverrides = Map.empty
-          StreamOverrides =
-            { DebounceWindowMs = None
-              SpinnerWindowMs = None
-              SpinnerThreshold = None
-              MaxAnnounceChars = None
-              ColorDetection = None
-              // PR #168 — Tier 1 parameters from
-              // `docs/USER-SETTINGS.md`'s "Suffix-diff
-              // parameters" section.
-              BulkChangeThreshold = None
-              BackspacePolicy = None
-              ModeBarrierFlushPolicy = None
-              SubstrateMode = None }
           StartupOverrides =
             { DefaultShell = None }
           SessionPersistence = SessionPersistence.defaultConfig
@@ -982,16 +919,6 @@ module Config =
                     else
                         let shellOverrides =
                             parseShellOverrides logger model
-                        // Cycle 45c — `[pathway.stream]` parsing
-                        // removed (StreamPathway substrate replaced
-                        // by ContentHistory in Cycle 45). The
-                        // StreamOverrides record stays for now so
-                        // `resolveStreamParameters` continues to
-                        // return `StreamPathway.defaultParameters`
-                        // for any code still consuming it; the
-                        // field is deleted alongside StreamPathway
-                        // in the PR-3 code prune.
-                        let streamOverrides = defaultConfig.StreamOverrides
                         let startupOverrides =
                             parseStartupOverrides logger model
                         let sessionPersistence =
@@ -1003,7 +930,6 @@ module Config =
                         let result =
                             { SchemaVersion = version
                               ShellOverrides = shellOverrides
-                              StreamOverrides = streamOverrides
                               StartupOverrides = startupOverrides
                               SessionPersistence = sessionPersistence
                               LoggingOverrides = loggingOverrides
@@ -1082,34 +1008,6 @@ module Config =
                     Option.defaultValue baseline.Streaming entry.Verbosity
                 PromptPath =
                     Option.defaultValue baseline.PromptPath entry.PromptPath }
-
-    /// Resolve the StreamPathway parameters from a Config.
-    /// Each field that's `None` in `StreamOverrides` falls
-    /// back to `StreamPathway.defaultParameters`'s value.
-    let resolveStreamParameters
-            (config: Config)
-            : StreamPathway.Parameters
-            =
-        let defaults = StreamPathway.defaultParameters
-        let ov = config.StreamOverrides
-        { DebounceWindowMs =
-            Option.defaultValue defaults.DebounceWindowMs ov.DebounceWindowMs
-          SpinnerWindowMs =
-            Option.defaultValue defaults.SpinnerWindowMs ov.SpinnerWindowMs
-          SpinnerThreshold =
-            Option.defaultValue defaults.SpinnerThreshold ov.SpinnerThreshold
-          MaxAnnounceChars =
-            Option.defaultValue defaults.MaxAnnounceChars ov.MaxAnnounceChars
-          ColorDetection =
-            Option.defaultValue defaults.ColorDetection ov.ColorDetection
-          BulkChangeThreshold =
-            Option.defaultValue defaults.BulkChangeThreshold ov.BulkChangeThreshold
-          BackspacePolicy =
-            Option.defaultValue defaults.BackspacePolicy ov.BackspacePolicy
-          ModeBarrierFlushPolicy =
-            Option.defaultValue defaults.ModeBarrierFlushPolicy ov.ModeBarrierFlushPolicy
-          SubstrateMode =
-            Option.defaultValue defaults.SubstrateMode ov.SubstrateMode }
 
     /// Cycle 32a — resolve the SelectionDetector parameters from
     /// a Config. Each field that's `None` in `SelectionOverrides`

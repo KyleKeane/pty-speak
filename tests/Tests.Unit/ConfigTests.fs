@@ -64,15 +64,6 @@ let private loadFromText (toml: string) : Config.Config * RecordingLogger =
 // ---- defaultConfig + resolver byte-equivalence ---------------------
 
 [<Fact>]
-let ``defaultConfig resolveStreamParameters matches StreamPathway.defaultParameters exactly`` () =
-    // The substrate-wide invariant: "no config = pre-C2 behaviour".
-    // If StreamPathway.defaultParameters changes, the resolver
-    // picks up the new defaults automatically (no constant
-    // duplication in Config).
-    let resolved = Config.resolveStreamParameters Config.defaultConfig
-    Assert.Equal(StreamPathway.defaultParameters, resolved)
-
-[<Fact>]
 let ``defaultConfig resolveShellPathway returns "stream" for any shell key`` () =
     Assert.Equal("stream", Config.resolveShellPathway Config.defaultConfig "cmd")
     Assert.Equal("stream", Config.resolveShellPathway Config.defaultConfig "claude")
@@ -108,7 +99,6 @@ let ``tryLoad on minimal valid TOML returns default-shape Config`` () =
     let config, _ = loadFromText toml
     Assert.Equal(1, config.SchemaVersion)
     Assert.Equal<Map<string, Config.ShellPathwayConfig>>(Map.empty, config.ShellOverrides)
-    Assert.Equal(StreamPathway.defaultParameters, Config.resolveStreamParameters config)
 
 // ---- Per-shell pathway override ------------------------------------
 
@@ -341,33 +331,6 @@ let ``TOML containing [[bindings]] (future input-binding spec section) parses cl
 let ``defaultConfigFilePath ends with PtySpeak\config.toml`` () =
     let path = Config.defaultConfigFilePath ()
     Assert.EndsWith(@"PtySpeak\config.toml", path)
-
-// ---- Phase A.2 — color_detection knob -----------------------------
-
-[<Fact>]
-let ``defaultConfig resolveStreamParameters has ColorDetection = true`` () =
-    // Sensible-defaults invariant: byte-equivalent to the
-    // hardcoded behaviour. Phase A.2 enables colour detection
-    // by default.
-    let resolved = Config.resolveStreamParameters Config.defaultConfig
-    Assert.True(resolved.ColorDetection)
-
-// ---- PR #168 — Tier 1 parameters ---------------------------------
-
-[<Fact>]
-let ``defaultConfig resolveStreamParameters has BulkChangeThreshold = 3`` () =
-    let resolved = Config.resolveStreamParameters Config.defaultConfig
-    Assert.Equal(3, resolved.BulkChangeThreshold)
-
-[<Fact>]
-let ``defaultConfig resolveStreamParameters has BackspacePolicy = AnnounceDeletedCharacter`` () =
-    let resolved = Config.resolveStreamParameters Config.defaultConfig
-    Assert.Equal(StreamPathway.AnnounceDeletedCharacter, resolved.BackspacePolicy)
-
-[<Fact>]
-let ``defaultConfig resolveStreamParameters has ModeBarrierFlushPolicy = SummaryOnly`` () =
-    let resolved = Config.resolveStreamParameters Config.defaultConfig
-    Assert.Equal(StreamPathway.SummaryOnly, resolved.ModeBarrierFlushPolicy)
 
 // =====================================================================
 // Cycle 19 — `[startup] default_shell` TOML override
