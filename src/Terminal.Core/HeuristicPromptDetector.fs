@@ -413,7 +413,22 @@ module HeuristicPromptDetector =
             // silence regression; the trace tells us whether the
             // dirty flag was correctly true or wrongly false at
             // the suppression moment.
-            elif stableMatches.Count > 0 then
+            //
+            // Cycle 45c follow-up (2026-05-12) — gate this trace
+            // on `rowDirtyAccumulated=True`. Without the gate the
+            // line fires every 50 ms tick at idle (the stable
+            // match is always the same prompt the detector just
+            // emitted), producing ~5 KB/sec of pure-noise log
+            // output and ~18 MB/hour of FileLogger writes at
+            // idle. Maintainer dogfood 2026-05-12: every line of
+            // a 50-line `--- LAST 50 LOG LINES ---` extract was
+            // this message. The diagnostic value (the regression
+            // hunt) lives entirely in the `True` branch — that's
+            // the "row went dirty then came back to the same
+            // prompt" case. The `False` branch is just the
+            // expected steady-state suppression and has nothing
+            // to learn from.
+            elif stableMatches.Count > 0 && rowDirtyAccumulated then
                 let bestRow, bestText =
                     stableMatches.[stableMatches.Count - 1]
                 logger.LogDebug(

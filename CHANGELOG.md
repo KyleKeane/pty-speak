@@ -15,6 +15,24 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 45c follow-up): silence idle FileLogger spam in `HeuristicPromptDetector`
+
+Maintainer dogfood 2026-05-12: every line of a 50-line
+`Diagnostics → Extract → Last 50 Log Lines` extract was
+`HeuristicPromptDetector SUPPRESSED PromptStart … rowDirtyAccumulated=False`.
+At idle the detector ticks every 50 ms and the steady-state
+prompt always passes the "stable match" gate but fails the
+"row went dirty since last emit" gate, so the suppression
+trace fired ~20 times per second — ~5 KB/sec of pure-noise log
+output and ~18 MB/hour of FileLogger writes.
+
+Gated the trace on `rowDirtyAccumulated=true`. The diagnostic
+value (the post-screen-fill silence regression hunt this line
+was originally added for) lives entirely in the `true` branch
+— that's the "row went dirty then came back to the same
+prompt" case. The `false` branch is steady-state suppression
+with nothing to learn from.
+
 ### Changed (Cycle 45c follow-up): announce queueing now uses `MostRecent` for every activity-id
 
 Maintainer dogfood 2026-05-12 named the symptom: after running
