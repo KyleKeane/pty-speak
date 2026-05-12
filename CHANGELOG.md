@@ -15,6 +15,49 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed (Cycle 45 follow-up): Right-arrow + Delete nav-echo direction
+
+Maintainer NVDA dogfood on the post-#265 build confirmed that
+Backspace announces the deleted character correctly (matches
+NVDA's text-editor behaviour), but called out two refinements:
+
+1. **Right arrow** previously announced the cell being moved
+   PAST (`Col`). NVDA's text-editor convention is to announce
+   the cell now to the right of the cursor after the move
+   (`Col + 1`). Fixed.
+
+2. **Delete key** was deliberately skipped in #265 pending
+   semantic clarity. The maintainer confirmed the desired
+   behaviour matches NVDA's text-editor convention: announce
+   the char that will shift left into the cursor's position
+   after the delete (`Col + 1`, read BEFORE forwarding to PTY).
+   Added.
+
+Backspace, Left, and Home are unchanged; their existing
+behaviour already matches NVDA's text-editor convention.
+
+### Deferred — Up / Down arrow recall announce + verbosity defaults
+
+Both concerns share a design space: when does typed-echo
+announce, when does cmd-driven content announce, and how does
+that interact with shells (cmd's typed echo + history recall,
+PowerShell's PSReadLine, Claude's streaming output)?
+
+The Up arrow case is concrete: cmd's response writes the
+recalled command line without a trailing newline, so
+ContentHistory's active TextSpan never seals and SpeechCursor
+never announces. The fix is wiring `ContentHistory.tick`
+(idle-seal) into the pump's `handleTick`, but the threshold
+choice is a trade-off — aggressive (200ms) double-announces
+typed text with NVDA's keyboard echo; slow (1000ms+) delays
+the Up arrow announce.
+
+Scoped as a follow-up cycle (likely "Cycle 45f — verbosity
+modes") that also addresses the maintainer's
+"echo hi → hi → C:\\Users" verbosity concern (suppress
+typed-command-echo and next-prompt-line by default with
+per-shell config knobs).
+
 ### Added (Cycle 45 follow-up): Navigation-key echo for backspace + arrows
 
 Maintainer NVDA dogfood surfaced that Backspace / Left arrow /
