@@ -772,6 +772,7 @@ module SessionModel =
     /// degenerate case of a shell that emits A but not C / D.
     let private extractContentFromContentHistory
             (history: ContentHistory.T)
+            (newPromptText: string option)
             : (string * string) option
             =
         match
@@ -781,6 +782,9 @@ module SessionModel =
                 history ContentHistory.MarkerKind.OutputStart
         with
         | Some promptStart, Some outputStart ->
+            // OSC 133 path — shell emitted both PromptStart and
+            // OutputStart, so we have a clean (command, output)
+            // split.
             let commandText =
                 ContentHistory.sliceText
                     history promptStart.Seq outputStart.Seq
@@ -788,6 +792,66 @@ module SessionModel =
                 ContentHistory.sliceText
                     history outputStart.Seq System.Int64.MaxValue
             Some (commandText, outputText)
+        | Some promptStart, None ->
+            // Cycle 45c fixup (2026-05-12) — heuristic-only path
+            // (cmd / vanilla PowerShell). No OSC 133 markers, so
+            // we slice the entire blob between the prior
+            // PromptStart marker (the only one in ContentHistory
+            // at extraction time — the new boundary's marker is
+            // appended *after* this function returns, by the
+            // dispatcher-scheduled boundaryAction in Program.fs)
+            // and the tail. That blob is the just-finalising
+            // tuple's combined (command + output) text.
+            //
+            // Why this exists: the prior `extractContent` row-walk
+            // against the screen snapshot fails when the output
+            // scrolls enough that the prior prompt and the new
+            // prompt land on the same `rowIdx`. The maintainer's
+            // 2026-05-12 dogfood after `dir` + second `echo hi`
+            // reproduced this: tuple finalised with empty
+            // CmdText/OutText, NVDA went silent. ContentHistory's
+            // sequenced typed-entry log doesn't have the
+            // same-rowIdx ambiguity.
+            //
+            // The trailing portion of the blob carries the *new*
+            // prompt's rendered text (it arrived in
+            // ContentHistory before the heuristic detector
+            // declared "stable PromptStart"). Trim it via
+            // `newPromptText` if present.
+            //
+            // Split on first newline: cmd's wire format is
+            // "echo hi\r\nhi\r\n<new-prompt>". First line is the
+            // typed command (cmd echoes the keystrokes back);
+            // the rest is shell output.
+            let raw =
+                ContentHistory.sliceText
+                    history promptStart.Seq System.Int64.MaxValue
+            let withoutNewPrompt =
+                match newPromptText with
+                | Some p when not (System.String.IsNullOrEmpty p)
+                              && raw.EndsWith(p) ->
+                    raw.Substring(0, raw.Length - p.Length)
+                | _ -> raw
+            let trimmed =
+                (withoutNewPrompt.TrimStart('\r', '\n')).TrimEnd('\r', '\n')
+            if System.String.IsNullOrWhiteSpace trimmed then None
+            else
+                let nlIdx = trimmed.IndexOf('\n')
+                if nlIdx < 0 then
+                    // No newline in the blob — the user typed
+                    // something that the shell didn't echo a
+                    // separate output line for (rare in cmd; can
+                    // happen for `cd` etc. that print nothing).
+                    // Attribute it to CommandText so OutputText
+                    // stays empty (avoids announcing the typed
+                    // command at NVDA when there was no output).
+                    Some (trimmed, "")
+                else
+                    let cmd =
+                        trimmed.Substring(0, nlIdx).TrimEnd('\r')
+                    let out =
+                        trimmed.Substring(nlIdx + 1)
+                    Some (cmd, out)
         | _ -> None
 
     /// Cycle 45c — ContentHistory-driven substrate finalize.
@@ -815,7 +879,12 @@ module SessionModel =
         // boundary). Other boundary kinds skip the thunk.
         let contentOverride : (unit -> (string * string) option) option =
             if useContentHistory then
-                Some (fun () -> extractContentFromContentHistory history)
+                // Pass the new boundary's MatchedRowText so the
+                // heuristic-only path can trim it off the blob's
+                // tail (see comment in extractContentFromContentHistory).
+                let newPromptText = boundary.MatchedRowText
+                Some (fun () ->
+                    extractContentFromContentHistory history newPromptText)
             else
                 None
         applyAndCaptureCore state boundary snapshot contentOverride

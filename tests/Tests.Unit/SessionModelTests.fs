@@ -1669,3 +1669,103 @@ let ``Cycle 45c — applyAndCaptureWithContentHistory preserves Active state thr
                 history true
     Assert.True(s3.Active.IsSome)
     Assert.Equal(SessionModel.ActiveTupleState.OutputStreaming, s3.Active.Value.State)
+
+// =====================================================================
+// Cycle 45c fixup (2026-05-12) — heuristic-only path: when only
+// PromptStart markers are present (no OSC 133 OutputStart), slice
+// the blob between the prior PromptStart and the tail. Reproduces
+// the maintainer's "second echo hi after dir is silent" report:
+// the prior `extractContent` row-walk fails when output scrolls
+// enough that consecutive prompts share a row index, but the
+// ContentHistory has the typed-input + output bytes accurately.
+// =====================================================================
+
+[<Fact>]
+let ``Cycle 45c fixup — PromptStart-only path slices blob between consecutive prompts`` () =
+    // Simulate cmd: prior PromptStart marker in history; then typed
+    // input "echo hi", newline, output "hi", newline, new prompt text.
+    // The boundary fires with MatchedRowText = the new prompt text.
+    let initial = SessionModel.create "cmd" 100
+    let history = freshHistory ()
+    // Prior prompt's PromptStart marker
+    let history = appendHistoryMarker history t0 ContentHistory.MarkerKind.PromptStart
+    // User-typed input + shell echo + output + new prompt text
+    let history = feedHistoryBytes history (after 5) (System.Text.Encoding.ASCII.GetBytes "echo hi\nhi\nC:\\>")
+    // Drive the SessionModel cycle. handlePromptBoundary calls
+    // applyAndCaptureWithContentHistory with the new boundary; the
+    // thunk runs extractContentFromContentHistory which should
+    // detect "PromptStart present, OutputStart absent" and slice.
+    let s1 = SessionModel.applyWithContentHistory
+                initial (boundaryWithText BoundaryKind.PromptStart t0 "$ ") [||]
+                history true
+    let s2 = SessionModel.applyWithContentHistory
+                s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
+                history true
+    let _s3, finalisedOpt =
+        SessionModel.applyAndCaptureWithContentHistory
+            s2 (boundaryWithText (BoundaryKind.CommandFinished (Some 0)) (after 200) "C:\\>")
+            [||]
+            history true
+    Assert.True(finalisedOpt.IsSome)
+    let tuple = finalisedOpt.Value
+    // The blob "echo hi\nhi\nC:\\>" with new-prompt trim → "echo hi\nhi"
+    // → split on first newline → ("echo hi", "hi").
+    Assert.Equal("echo hi", tuple.CommandText)
+    Assert.Equal("hi", tuple.OutputText)
+
+[<Fact>]
+let ``Cycle 45c fixup — PromptStart-only path with empty newPromptText doesn't crash`` () =
+    // When the boundary has no MatchedRowText (e.g. OSC 133 source),
+    // the trim path is skipped. The blob then includes any trailing
+    // text that may have been added; it's still split on newline.
+    let initial = SessionModel.create "cmd" 100
+    let history = freshHistory ()
+    let history = appendHistoryMarker history t0 ContentHistory.MarkerKind.PromptStart
+    let history = feedHistoryBytes history (after 5) (System.Text.Encoding.ASCII.GetBytes "ls\nfile1\nfile2\n")
+    let s1 = SessionModel.applyWithContentHistory
+                initial (boundaryWithText BoundaryKind.PromptStart t0 "$ ") [||]
+                history true
+    let s2 = SessionModel.applyWithContentHistory
+                s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
+                history true
+    // CommandFinished boundary with no MatchedRowText (MatchedRowText=None).
+    let _s3, finalisedOpt =
+        SessionModel.applyAndCaptureWithContentHistory
+            s2 (boundary (BoundaryKind.CommandFinished (Some 0)) (after 200)) [||]
+            history true
+    Assert.True(finalisedOpt.IsSome)
+    let tuple = finalisedOpt.Value
+    Assert.Equal("ls", tuple.CommandText)
+    Assert.Contains("file1", tuple.OutputText)
+    Assert.Contains("file2", tuple.OutputText)
+
+[<Fact>]
+let ``Cycle 45c fixup — OSC 133 path still wins when both markers present`` () =
+    // Regression pin: if both PromptStart AND OutputStart are
+    // present, the OSC 133 split must win — not the heuristic
+    // blob path.
+    let initial = SessionModel.create "claude" 100
+    let history = freshHistory ()
+    let history = appendHistoryMarker history t0 ContentHistory.MarkerKind.PromptStart
+    let history = feedHistoryBytes history (after 5) (System.Text.Encoding.ASCII.GetBytes "explain this\n")
+    let history = appendHistoryMarker history (after 10) ContentHistory.MarkerKind.OutputStart
+    let history = feedHistoryBytes history (after 15) (System.Text.Encoding.ASCII.GetBytes "Here is the explanation.\n")
+    let s1 = SessionModel.applyWithContentHistory
+                initial (boundaryWithText BoundaryKind.PromptStart t0 "$ ") [||]
+                history true
+    let s2 = SessionModel.applyWithContentHistory
+                s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
+                history true
+    let _s3, finalisedOpt =
+        SessionModel.applyAndCaptureWithContentHistory
+            s2 (boundary (BoundaryKind.CommandFinished (Some 0)) (after 200)) [||]
+            history true
+    Assert.True(finalisedOpt.IsSome)
+    let tuple = finalisedOpt.Value
+    // OSC 133 split: command between PromptStart and OutputStart,
+    // output between OutputStart and tail.
+    Assert.Contains("explain this", tuple.CommandText)
+    Assert.Contains("Here is the explanation", tuple.OutputText)
+    // The command must NOT appear in the output (OSC 133 split is
+    // clean).
+    Assert.DoesNotContain("explain this", tuple.OutputText)

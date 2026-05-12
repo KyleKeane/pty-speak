@@ -15,6 +15,50 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed (Cycle 45c fixup): NVDA silent after second command following scrolled output
+
+Maintainer reproducer 2026-05-12: run `echo hi` → `dir` → `echo hi`.
+NVDA announces the first two but goes silent on the third. The
+diagnostic snapshot showed the just-finalised `SessionTuple` had
+empty `CommandText` AND empty `OutputText`, so the
+tuple-finalise-announce path (gated on non-whitespace `OutputText`)
+produced nothing for NVDA to read.
+
+**Root cause** (pre-existing, not introduced by Cycle 45c): cmd
+doesn't emit OSC 133 markers, so
+`extractContentFromContentHistory` returned `None` (it required
+both `PromptStart` AND `OutputStart` markers). SessionModel then
+fell back to `extractContent`'s screen-row walk against the
+snapshot — which fails when the output has scrolled enough that
+the prior prompt and the new prompt share a `rowIdx` (both at
+the bottom of the screen at row 29). The row-walk can't
+distinguish "same row" from "no content between prompts" and
+returns empty.
+
+ContentHistory had the data (sequenced typed-entry log, no
+same-row ambiguity) — we just weren't slicing it for the
+heuristic-only path.
+
+**Fix**: extend `extractContentFromContentHistory` with a
+PromptStart-only fallback. When the OSC 133 `OutputStart` marker
+is absent but a prior `PromptStart` marker is present, slice
+the blob from that marker to MaxValue — that's the just-
+finalising tuple's combined typed-input + output text. The
+trailing portion (the new prompt's rendered text, which landed
+in ContentHistory before the boundary fired) is trimmed via
+the boundary's `MatchedRowText`. The remainder is split on the
+first newline (cmd's wire format is "echo hi\nhi\n…") into
+`(CommandText, OutputText)`.
+
+OSC 133-emitting shells (Claude, future ones) keep the clean
+two-marker split. Shells without any markers (initial-startup
+case) keep falling back to `extractContent`.
+
+Tests: `tests/Tests.Unit/SessionModelTests.fs` gains 3 new cases
+pinning the PromptStart-only path (with + without
+`newPromptText` trim) and the OSC 133 regression pin (both
+markers → OSC 133 split wins).
+
 ### Changed (Cycle 45c follow-up): post-cleanup docs + onboarding refresh
 
 Post-Cycle-45c audit + documentation sweep ensuring the repo's
