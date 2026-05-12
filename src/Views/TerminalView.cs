@@ -665,6 +665,23 @@ public class TerminalView : FrameworkElement
             return;
         }
 
+        // 4.5. Cycle 45 follow-up — navigation-key echo for
+        // screen-reader users. Backspace / Left / Right / Home
+        // don't fire UIA TextSelectionChangedEvent on our
+        // TerminalAutomationPeer the way Notepad's text-edit
+        // does, so NVDA's keyboard-echo path has no signal to
+        // react to. We bridge the gap by announcing the
+        // screen-cell character at the destination/source
+        // position BEFORE forwarding the keystroke to the PTY.
+        // Read-only — doesn't suppress the key event; the
+        // encoder + writeBytes step below still runs.
+        if (_screen is not null &&
+            !ctrlOrAltHeld &&
+            !pressedModifiers.HasFlag(ModifierKeys.Shift))
+        {
+            AnnounceNavigationEcho(e.Key);
+        }
+
         // 5. Encode and write. If the screen isn't attached yet
         // (very early init / teardown) drop the key gracefully —
         // there's nowhere meaningful to send it. _screen is set
@@ -682,6 +699,77 @@ public class TerminalView : FrameworkElement
         }
         _writeBytes(bytes);
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// Cycle 45 follow-up — read-only helper that announces the
+    /// screen-cell character at the navigation key's destination
+    /// position. Called from <see cref="OnPreviewKeyDown"/> for
+    /// Backspace / Left / Right / Home before the keystroke is
+    /// encoded and forwarded to the PTY. The PTY-side processing
+    /// continues unaffected; this is purely an additional NVDA
+    /// signal to fill the gap left by our UIA peer not firing
+    /// caret-change events.
+    /// </summary>
+    /// <remarks>
+    /// Per-key mapping:
+    /// <list type="bullet">
+    ///   <item><description><see cref="Key.Back"/> — char that will be
+    ///   deleted (cell at <c>(Cursor.Row, Cursor.Col - 1)</c>). Skipped
+    ///   when cursor is already at column 0.</description></item>
+    ///   <item><description><see cref="Key.Left"/> — char the cursor
+    ///   will move onto (cell at <c>(Cursor.Row, Cursor.Col - 1)</c>).
+    ///   Skipped at column 0.</description></item>
+    ///   <item><description><see cref="Key.Right"/> — char the cursor
+    ///   will move PAST (current cell, <c>(Cursor.Row, Cursor.Col)</c>).
+    ///   Skipped at the last column.</description></item>
+    ///   <item><description><see cref="Key.Home"/> — char at
+    ///   <c>(Cursor.Row, 0)</c>.</description></item>
+    /// </list>
+    /// Up / Down / End / PgUp / PgDn / Delete are intentionally NOT
+    /// handled here. Up/Down in cmd recall history (the screen
+    /// rewrites after cmd responds; SpeechCursor picks that up
+    /// via the normal append path). End requires scanning for the
+    /// last non-blank cell which has unclear semantics for cmd's
+    /// prompt-line edit buffer. Delete's behaviour varies by shell.
+    /// All five can be added in a follow-up once their specific
+    /// announcement semantics are nailed down.
+    /// </remarks>
+    private void AnnounceNavigationEcho(Key key)
+    {
+        if (_screen is null)
+        {
+            return;
+        }
+        var cursor = _screen.Cursor;
+        var row = cursor.Row;
+        var col = cursor.Col;
+        int? targetCol = key switch
+        {
+            Key.Back => col > 0 ? col - 1 : (int?)null,
+            Key.Left => col > 0 ? col - 1 : (int?)null,
+            Key.Right => col < _screen.Cols - 1 ? col : (int?)null,
+            Key.Home => 0,
+            _ => null,
+        };
+        if (targetCol is null)
+        {
+            return;
+        }
+        if (row < 0 || row >= _screen.Rows)
+        {
+            return;
+        }
+        var cell = _screen.GetCell(row, targetCol.Value);
+        var text = cell.Ch.ToString();
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+        // NVDA itself substitutes "space" / "blank" for ASCII 0x20
+        // on review-cursor reads; we forward the raw character and
+        // let NVDA's TTS handle the substitution.
+        Announce(text, ActivityIds.navigation);
     }
 
     /// <summary>

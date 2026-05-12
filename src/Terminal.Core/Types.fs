@@ -493,6 +493,25 @@ module ActivityIds =
     /// focus.
     let openConfig = "pty-speak.open-config"
 
+    /// Cycle 45 follow-up — navigation-key echo. Fired when the
+    /// user presses Backspace / Left / Right / Home and the
+    /// terminal-view handler announces the screen-cell char at
+    /// the cursor's effective destination. Uses MostRecent
+    /// processing so rapid keystrokes (held-down Backspace,
+    /// arrow-spamming) supersede rather than queue.
+    ///
+    /// Background: in any other text-input control (Notepad, a
+    /// web form, an IDE), NVDA reads the character at the
+    /// caret's new position after Backspace / arrow key presses
+    /// via the UIA `TextSelectionChangedEvent` the control
+    /// fires. pty-speak's `TerminalAutomationPeer` exposes a
+    /// Text pattern for review-cursor navigation but does NOT
+    /// fire caret-change events when cmd's cursor moves in
+    /// response to those keys, so NVDA's keyboard echo has no
+    /// signal to react to. This activity id is the explicit
+    /// announce path for those keys.
+    let navigation = "pty-speak.navigation"
+
     /// Process-cleanup-script launch announcements (Cycle 26c
     /// Diagnostics → Test Process Cleanup menu item — no
     /// keyboard accelerator). Emits "Launching process-cleanup
