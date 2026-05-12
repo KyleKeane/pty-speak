@@ -15,6 +15,49 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 45 follow-up): Navigation-key echo for backspace + arrows
+
+Maintainer NVDA dogfood surfaced that Backspace / Left arrow /
+Right arrow / Home keys produce NO audible echo in pty-speak,
+even though the same keys announce the relevant character via
+NVDA's keyboard echo in Notepad and other text controls.
+
+Root cause: in any text-input control (Notepad, web forms,
+IDEs), the control fires a UIA `TextSelectionChangedEvent`
+when the caret moves, and NVDA reads the character at the new
+caret position. pty-speak's `TerminalAutomationPeer` exposes
+a Text pattern for review-cursor navigation but does NOT fire
+caret-change events when cmd's cursor moves in response to
+these keys — so NVDA's keyboard echo has nothing to react to.
+
+Fix: in `TerminalView.OnPreviewKeyDown`, before encoding the
+keystroke for the PTY, read the screen cell at the relevant
+position and call `Announce` directly with the new
+`ActivityIds.navigation` activity id (MostRecent processing
+so rapid keystrokes supersede rather than queue).
+
+Per-key mapping:
+- **Backspace** — char that will be deleted (cell at
+  `(Cursor.Row, Cursor.Col - 1)`). Skipped at column 0.
+- **Left arrow** — char the cursor will move onto (same
+  cell as Backspace). Skipped at column 0.
+- **Right arrow** — char the cursor will move past
+  (cell at `(Cursor.Row, Cursor.Col)`). Skipped at the last
+  column.
+- **Home** — char at `(Cursor.Row, 0)`.
+
+Not handled in this commit (semantics need design):
+- **Up / Down** — cmd recalls command history; the screen
+  rewrites after cmd responds, and SpeechCursor picks the
+  recalled line up via the normal append path. No
+  pre-emptive announce.
+- **End** — requires scanning for the last non-blank cell;
+  unclear semantics for cmd's prompt-line edit buffer.
+- **Delete** — behaviour varies by shell.
+
+Read-only helper; doesn't suppress the keystroke. PTY-side
+processing continues unaffected.
+
 ### Fixed (Cycle 45 Commit 2 follow-up): SpeechCursor history persists across tuple boundaries
 
 Maintainer NVDA dogfood on preview.92 (the Commit 2 build)
