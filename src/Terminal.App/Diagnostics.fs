@@ -784,6 +784,29 @@ module Diagnostics =
             | _ -> "unknown"
         with _ -> "unknown"
 
+    /// Cycle 45f-followup (2026-05-12) — full informational
+    /// version *including* any `+sha` trailer that the build
+    /// pipeline appends. The stripped variant above is intended
+    /// for human-facing surfaces (startup log, "About" UI);
+    /// the raw variant is for diagnostic-bundle headers so a
+    /// paste-back unambiguously records WHICH commit produced
+    /// the build (handy for verifying "is my fix actually in
+    /// the build I'm dogfooding?"). Returns `"unknown"` only
+    /// if the attribute is missing entirely.
+    let private resolveInformationalVersionWithSha () : string =
+        try
+            let asm = System.Reflection.Assembly.GetExecutingAssembly()
+            let attr =
+                System.Attribute.GetCustomAttribute(
+                    asm,
+                    typeof<System.Reflection.AssemblyInformationalVersionAttribute>)
+            match attr with
+            | :? System.Reflection.AssemblyInformationalVersionAttribute as a
+                when not (System.String.IsNullOrWhiteSpace a.InformationalVersion) ->
+                a.InformationalVersion
+            | _ -> "unknown"
+        with _ -> "unknown"
+
     let private resolveDiagnosticLogPath (now: DateTime) : string =
         let root =
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
@@ -928,7 +951,16 @@ module Diagnostics =
         appendLine "pty-speak diagnostic snapshot (Cycle 25b)"
         appendLine (sprintf "Captured: %s UTC" (now.ToString("yyyy-MM-dd HH:mm:ss")))
         let version = resolveInformationalVersion ()
+        let versionFull = resolveInformationalVersionWithSha ()
         appendLine (sprintf "Version: %s" version)
+        // Cycle 45f-followup — emit the full +sha-suffixed
+        // version (when the build pipeline stamped it) on a
+        // separate line so a paste-back unambiguously identifies
+        // which commit produced this build. Skip the line if
+        // there's no SHA to differentiate.
+        if versionFull <> version
+           && versionFull <> "unknown" then
+            appendLine (sprintf "Build: %s" versionFull)
         appendLine (sprintf "OS: %s" (Environment.OSVersion.VersionString))
         appendLine (sprintf ".NET: %s" (Environment.Version.ToString()))
         appendLine (sprintf "Process ID: %d" (System.Diagnostics.Process.GetCurrentProcess().Id))
@@ -1019,7 +1051,14 @@ module Diagnostics =
         appendLine "pty-speak diagnostic snapshot (Cycle 43a lightweight)"
         appendLine (sprintf "Captured: %s UTC" (now.ToString("yyyy-MM-dd HH:mm:ss")))
         let version = resolveInformationalVersion ()
+        let versionFull = resolveInformationalVersionWithSha ()
         appendLine (sprintf "Version: %s" version)
+        // Cycle 45f-followup — `Build:` line carries the full
+        // SHA-suffixed informational version when the build
+        // pipeline stamped one (mirrors the full-bundle header).
+        if versionFull <> version
+           && versionFull <> "unknown" then
+            appendLine (sprintf "Build: %s" versionFull)
         appendLine (sprintf "OS: %s" (Environment.OSVersion.VersionString))
         appendLine (sprintf ".NET: %s" (Environment.Version.ToString()))
         appendLine (sprintf "Process ID: %d" (System.Diagnostics.Process.GetCurrentProcess().Id))

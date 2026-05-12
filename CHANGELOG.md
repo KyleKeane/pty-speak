@@ -15,6 +15,35 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 45f follow-up): diagnostic build provenance + detector trace
+
+Diagnostic bundles now emit a `Build:` line in the header
+carrying the full `AssemblyInformationalVersion` (including
+the `+sha` suffix the release pipeline stamps). The existing
+`Version:` line keeps the bare semver for human-readable
+contexts; the new `Build:` line gives a paste-back the exact
+commit identity so maintainer + Claude can verify which fixes
+are in the build being dogfooded. Skipped when the SHA suffix
+isn't present (avoids a redundant duplicate line).
+
+`HeuristicPromptDetector` gained two Debug-level trace lines
+to make the dirty-flag fix (PR #272) observable in dogfood
+logs:
+- `dirty-flag set for shell ...` — fires on the
+  `false → true` transition (when the previously-emitted
+  prompt row stops matching, i.e. the user just typed on the
+  prompt). Single log per dirty episode, no 20Hz noise.
+- `SUPPRESSED PromptStart for shell ... rowDirtyAccumulated=...`
+  — fires when the gate sees a stable prompt match but the
+  identity check (`(text, row, dirty)`) decides "not a new
+  prompt." Captures the case where a legitimate new prompt is
+  being incorrectly dedupe-suppressed; the `rowDirtyAccumulated`
+  value reveals whether the dirty bit fired as expected.
+
+Together these tell us, on the next post-screen-fill silence
+regression, exactly whether the detector saw the prompt at
+all and what the gate decided.
+
 ### Fixed (Cycle 45f follow-up): silence after screen-filling output
 
 Maintainer NVDA dogfood on the Cycle 45f build surfaced a real

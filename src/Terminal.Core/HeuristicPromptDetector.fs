@@ -300,6 +300,25 @@ module HeuristicPromptDetector =
                         not (regex.IsMatch(priorRowText))
             let rowDirtyAccumulated =
                 state.RowDirtyAfterEmit || dirtyThisTick
+            // Cycle 45f-followup — trace the dirty-bit
+            // transitions so a screen-filling-output dogfood
+            // can show whether the gate is seeing the
+            // intermission. Only logs on the transition
+            // (false → true) to avoid 20Hz noise during
+            // sustained dirty state.
+            if dirtyThisTick && not state.RowDirtyAfterEmit then
+                let priorRowText =
+                    match state.LastEmittedPromptRowIndex with
+                    | Some priorRow
+                        when priorRow >= 0
+                        && priorRow < snapshot.Length ->
+                        CanonicalState.renderRow snapshot priorRow
+                    | _ -> "<n/a>"
+                logger.LogDebug(
+                    "HeuristicPromptDetector dirty-flag set for shell {Shell}: priorRow={PriorRow} priorRowText='{PriorRowText}' (previously-emitted prompt row no longer matches the regex).",
+                    shellKey,
+                    state.LastEmittedPromptRowIndex,
+                    priorRowText)
 
             // PASS 2 — pick highest-rowIdx among stable matches,
             // apply the row-index-aware emission gate.
@@ -383,8 +402,28 @@ module HeuristicPromptDetector =
 
             if emitted.IsSome then
                 logger.LogDebug(
-                    "HeuristicPromptDetector emitted PromptStart for shell {Shell} (stability {Ms}ms; rowIdx={Row}).",
-                    shellKey, stabilityMs, emittedRowIndex)
+                    "HeuristicPromptDetector emitted PromptStart for shell {Shell} (stability {Ms}ms; rowIdx={Row}; rowDirtyAccumulated={Dirty}).",
+                    shellKey, stabilityMs, emittedRowIndex, rowDirtyAccumulated)
+            // Cycle 45f-followup — also trace the gate-suppression
+            // case. If we found a stable match but the gate said
+            // "not new" (text + row matched the last emission AND
+            // we never observed a dirty intermission), log the
+            // suppression with enough context to diagnose. This
+            // is the case that produces the post-screen-fill
+            // silence regression; the trace tells us whether the
+            // dirty flag was correctly true or wrongly false at
+            // the suppression moment.
+            elif stableMatches.Count > 0 then
+                let bestRow, bestText =
+                    stableMatches.[stableMatches.Count - 1]
+                logger.LogDebug(
+                    "HeuristicPromptDetector SUPPRESSED PromptStart for shell {Shell} at rowIdx={Row} text='{Text}': priorRow={PriorRow} priorText='{PriorText}' rowDirtyAccumulated={Dirty}.",
+                    shellKey,
+                    bestRow,
+                    bestText,
+                    state.LastEmittedPromptRowIndex,
+                    state.LastEmittedPromptText,
+                    rowDirtyAccumulated)
 
             // Cycle 45f-followup — reset dirty on emit; otherwise
             // carry the accumulated value forward.
