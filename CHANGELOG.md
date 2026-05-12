@@ -15,6 +15,56 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 45c cleanup PR-3a): ContentHistory-driven OSC 133 substrate
+
+Migration step toward deleting the `LinearTextStream` substrate.
+SessionModel can now extract `(CommandText, OutputText)` for each
+SessionTuple from ContentHistory directly. The LinearTextStream
+path stays alive in this PR (parallel-but-uncalled); PR-3c deletes
+it.
+
+`src/Terminal.Core/ContentHistory.fs` grows two helpers:
+- `tryLatestMarker` — locates the most recent Marker entry of a
+  given Kind in the current tuple's history (used to find
+  PromptStart / OutputStart at tuple-seal time).
+- `sliceText` — reconstructs user-visible text from entries
+  whose Seq is strictly between two boundary seqs. TextSpan +
+  Overwrite + Spinner contribute their text; Newline contributes
+  `\n`; Markers contribute nothing. The unsealed active TextSpan
+  is included when its implicit Seq is in-region (important at
+  tuple-seal time when the closing marker hasn't been appended
+  yet).
+
+`src/Terminal.Core/SessionModel.fs` grows three companions:
+- `extractContentFromContentHistory` (private) — the
+  ContentHistory analogue of `extractContentFromLinearStream`.
+- `applyAndCaptureWithContentHistory` — public substrate-aware
+  finalize taking a `ContentHistory.T` + `useContentHistory: bool`.
+- `applyWithContentHistory` — state-only wrapper.
+
+`src/Terminal.App/Program.fs` (`handlePromptBoundary`) switches
+to call `applyAndCaptureWithContentHistory`; the old
+`applyAndCaptureWithSubstrate(... linearStream)` call site is
+gone. The `StreamPathway.SubstrateMode` enum dispatch shape is
+preserved verbatim — collapses to a single bool in PR-3b once
+StreamPathway gets deleted.
+
+Compile order: `Terminal.Core.fsproj` reordered to put
+`ContentHistory.fs` above `SessionModel.fs` (it depends on
+`Types.fs` only, so it slots in next to `LinearTextStream.fs`).
+`SpeechCursor.fs` follows `ShellPolicy.fs` since it depends on
+both `ContentHistory` and `ShellPolicy`.
+
+Tests:
+- `tests/Tests.Unit/ContentHistoryTests.fs` gains 9 new cases
+  pinning `tryLatestMarker` + `sliceText`: empty / present /
+  repeated / wrong-kind / multi-entry slice / active-span
+  inclusion / empty region / marker-text exclusion.
+- `tests/Tests.Unit/SessionModelTests.fs` gains a parallel
+  block of 5 Cycle 45c cases mirroring the existing Cycle 35b
+  block; the Cycle 35b LinearTextStream cases stay until PR-3c
+  retires the substrate.
+
 ### Removed (Cycle 45c cleanup PR-2): pathway-pipeline test files + `[pathway.stream]` TOML parsing
 
 Test-side prune of the pathway pipeline Cycle 45 replaced. Deleted

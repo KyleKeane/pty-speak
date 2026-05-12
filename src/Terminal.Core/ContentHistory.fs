@@ -248,6 +248,71 @@ module ContentHistory =
                 i <- i + 1
             found)
 
+    /// Cycle 45c — most recent Marker entry of the given Kind, or
+    /// `None` if absent. Walks `Entries` from tail. Used by
+    /// `SessionModel.extractContentFromContentHistory` at
+    /// tuple-seal time to locate the PromptStart + OutputStart
+    /// boundaries of the just-sealed tuple.
+    let tryLatestMarker (state: T) (kind: MarkerKind) : MarkerData option =
+        lock state.Gate (fun () ->
+            let entries = state.Entries
+            let mutable found = None
+            let mutable i = entries.Count - 1
+            while found.IsNone && i >= 0 do
+                match entries.[i] with
+                | Marker m when m.Kind = kind -> found <- Some m
+                | _ -> ()
+                i <- i - 1
+            found)
+
+    /// Cycle 45c — reconstruct the user-visible text payload for
+    /// entries whose Seq is strictly between `fromSeqExclusive`
+    /// and `toSeqExclusive`. The caller typically passes adjacent
+    /// Marker seqs (e.g. PromptStart.Seq, OutputStart.Seq) to
+    /// extract a single bracketed region.
+    ///
+    /// Contribution per entry kind:
+    ///   - `TextSpan` / `Overwrite` / `Spinner` → their text
+    ///   - `Newline`                            → "\n"
+    ///   - `Marker`                             → ""  (boundary
+    ///                                                token only)
+    ///
+    /// The unsealed active TextSpan also contributes if its
+    /// implicit Seq (`NextSeq`) is in-region — important at
+    /// tuple-seal time when bytes have arrived since the most
+    /// recent seal but the closing marker hasn't been appended
+    /// yet.
+    ///
+    /// "User-visible" semantics: Overwrites contribute the
+    /// post-overwrite text (not the original); Spinners
+    /// contribute their `LatestText` frame. The reconstruction
+    /// reflects what the user actually saw, not the byte trail.
+    let sliceText
+            (state: T)
+            (fromSeqExclusive: int64)
+            (toSeqExclusive: int64)
+            : string =
+        lock state.Gate (fun () ->
+            let sb = StringBuilder()
+            for entry in state.Entries do
+                let seq = entrySeq entry
+                if seq > fromSeqExclusive && seq < toSeqExclusive then
+                    match entry with
+                    | TextSpan d -> sb.Append(d.Text) |> ignore
+                    | Newline _ -> sb.Append('\n') |> ignore
+                    | Overwrite d -> sb.Append(d.Text) |> ignore
+                    | Spinner d -> sb.Append(d.LatestText) |> ignore
+                    | Marker _ -> ()
+            // The unsealed active span's implicit Seq is NextSeq;
+            // include its content iff that lands in-region.
+            if state.ActiveSpanText.Length > 0 then
+                let activeSeq = state.NextSeq
+                if activeSeq > fromSeqExclusive
+                   && activeSeq < toSeqExclusive then
+                    sb.Append(state.ActiveSpanText.ToString())
+                    |> ignore
+            sb.ToString())
+
     /// Internal: allocate the next Seq.
     let private nextSeq (state: T) : int64 =
         let s = state.NextSeq

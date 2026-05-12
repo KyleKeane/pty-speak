@@ -15,6 +15,15 @@
     <Compile Include="FileLogger.fs" />
     <Compile Include="Coalescer.fs" />
     <Compile Include="LinearTextStream.fs" />
+    <!--
+      Cycle 45 — ContentHistory is the new aural substrate. It
+      depends only on `Types.fs` (VtEvent), so it slots in
+      alongside LinearTextStream. Cycle 45c (PR-3a) moved it
+      above SessionModel.fs because SessionModel.fs now consumes
+      `ContentHistory.tryLatestMarker` + `sliceText` for OSC 133
+      text reconstruction.
+    -->
+    <Compile Include="ContentHistory.fs" />
     <Compile Include="OutputEventTypes.fs" />
     <Compile Include="CanonicalCorpus.fs" />
     <Compile Include="OutputEventBuilder.fs" />
@@ -26,6 +35,11 @@
     <Compile Include="SessionSanitiser.fs" />
     <Compile Include="SessionLogWriter.fs" />
     <Compile Include="ShellPolicy.fs" />
+    <!--
+      Cycle 45 — SpeechCursor depends on ContentHistory + ShellPolicy.
+      Placed after ShellPolicy so both deps are in scope.
+    -->
+    <Compile Include="SpeechCursor.fs" />
     <Compile Include="HeuristicPromptDetector.fs" />
     <Compile Include="SelectionDetector.fs" />
     <Compile Include="DisplayPathway.fs" />
@@ -55,19 +69,6 @@
     -->
     <Compile Include="DiagnosticExtracts.fs" />
     <Compile Include="DiagnosticGrep.fs" />
-    <!--
-      Cycle 45 Commit 1 — ContentHistory + SpeechCursor.
-      The new aural substrate (ContentHistory) and its announce-
-      and-navigate primitive (SpeechCursor). Purely additive in
-      Commit 1: no consumer in Terminal.App wires to them yet.
-      Commit 2 connects them to the reader loop + detectors +
-      NvdaChannel. Both modules live at the end of the compile
-      order because nothing else in Terminal.Core depends on
-      them. SpeechCursor depends on ContentHistory; the order is
-      load-bearing.
-    -->
-    <Compile Include="ContentHistory.fs" />
-    <Compile Include="SpeechCursor.fs" />
   </ItemGroup>
 
   <ItemGroup>

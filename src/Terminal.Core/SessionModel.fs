@@ -770,6 +770,42 @@ module SessionModel =
             let chunk, _ = LinearTextStream.finalizeHighWaterMark linearStream
             Some (chunk.CommandText, chunk.OutputText)
 
+    /// Cycle 45c — ContentHistory replacement for
+    /// `extractContentFromLinearStream`. Locates the latest
+    /// PromptStart + OutputStart markers in the current tuple's
+    /// ContentHistory and slices the bracketed text.
+    ///
+    /// Returns `Some (commandText, outputText)` when both
+    /// markers are present (ContentHistory path is authoritative);
+    /// else `None` so the caller falls back to `extractContent`'s
+    /// row-walk (vanilla cmd / vanilla PowerShell with no OSC 133
+    /// shim).
+    ///
+    /// PromptStart-only (no OutputStart yet) is treated as
+    /// "fallback" because we can't reconstruct the output region.
+    /// In practice CommandFinished always follows OutputStart when
+    /// any OSC 133 marker is emitted; PromptStart-only is the
+    /// degenerate case of a shell that emits A but not C / D.
+    let private extractContentFromContentHistory
+            (history: ContentHistory.T)
+            : (string * string) option
+            =
+        match
+            ContentHistory.tryLatestMarker
+                history ContentHistory.MarkerKind.PromptStart,
+            ContentHistory.tryLatestMarker
+                history ContentHistory.MarkerKind.OutputStart
+        with
+        | Some promptStart, Some outputStart ->
+            let commandText =
+                ContentHistory.sliceText
+                    history promptStart.Seq outputStart.Seq
+            let outputText =
+                ContentHistory.sliceText
+                    history outputStart.Seq System.Int64.MaxValue
+            Some (commandText, outputText)
+        | _ -> None
+
     /// Cycle 35b — substrate-aware finalize. The caller (a
     /// composition root or pathway-pump callback) resolves the
     /// substrate mode against `StreamPathway.SubstrateMode` and
@@ -821,6 +857,50 @@ module SessionModel =
             =
         applyAndCaptureWithSubstrate
             state boundary snapshot linearStream useLinear
+        |> fst
+
+    /// Cycle 45c — ContentHistory-driven substrate finalize.
+    /// Companion to `applyAndCaptureWithSubstrate`, threaded with
+    /// the new ContentHistory substrate instead of LinearTextStream.
+    ///
+    /// `useContentHistory = true` → invoke the
+    /// `extractContentFromContentHistory` thunk inside
+    /// `finalizeAndEnqueue`; `false` → row-walk fallback. The
+    /// boolean exists for future shells that might opt out of
+    /// the substrate; current shells (cmd / PowerShell / claude)
+    /// all default to `true`.
+    let applyAndCaptureWithContentHistory
+            (state: T)
+            (boundary: PromptBoundaryData)
+            (snapshot: Cell[][])
+            (history: ContentHistory.T)
+            (useContentHistory: bool)
+            : T * SessionTuple option
+            =
+        // Mirror `applyAndCaptureWithSubstrate`'s thunk-lazy
+        // pattern: the override only invokes
+        // `extractContentFromContentHistory` when
+        // `finalizeAndEnqueue` actually fires (CommandFinished
+        // boundary). Other boundary kinds skip the thunk.
+        let contentOverride : (unit -> (string * string) option) option =
+            if useContentHistory then
+                Some (fun () -> extractContentFromContentHistory history)
+            else
+                None
+        applyAndCaptureCore state boundary snapshot contentOverride
+
+    /// Cycle 45c — state-only wrapper around
+    /// `applyAndCaptureWithContentHistory`.
+    let applyWithContentHistory
+            (state: T)
+            (boundary: PromptBoundaryData)
+            (snapshot: Cell[][])
+            (history: ContentHistory.T)
+            (useContentHistory: bool)
+            : T
+            =
+        applyAndCaptureWithContentHistory
+            state boundary snapshot history useContentHistory
         |> fst
 
     // -----------------------------------------------------------------
