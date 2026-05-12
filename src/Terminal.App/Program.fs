@@ -1388,6 +1388,54 @@ module Program =
         let mutable currentShellId : ShellRegistry.ShellId =
             ShellRegistry.Cmd
 
+        // Cycle 45f — per-shell verbosity policy. Resolved at
+        // shell-switch time through a three-layer model:
+        //   1. ShellPolicy.defaults (compiled baseline)
+        //   2. Config.resolveShellPolicy (TOML overlay)
+        //   3. runtimeShellPolicy (menu-driven runtime override;
+        //      lost on app restart)
+        //
+        // `currentShellPolicy` always carries the effective
+        // policy for the active shell — handlePromptBoundary
+        // reads its `Streaming` to gate the tuple-finalise
+        // announce; switchToShell + the View → Output Verbosity
+        // menu mutate it via `applyShellPolicy`.
+        let mutable currentShellPolicy : ShellPolicy.T =
+            ShellPolicy.forShell (shellIdToConfigKey ShellRegistry.Cmd)
+        let mutable runtimeShellPolicy : Map<string, ShellPolicy.T> =
+            Map.empty
+
+        // Resolve and apply the effective policy for `shellKey`
+        // through the three-layer overlay (runtime → TOML →
+        // compiled defaults). Updates `currentShellPolicy` AND
+        // pushes the verbosity dials into
+        // `speechCursor.Parameters` so subsequent `onAppend`
+        // invocations observe the new policy.
+        //
+        // Call sites:
+        //   - Startup-shell alignment (after `chosenShell` resolves)
+        //   - `switchToShell`'s `Ok newHost` branch
+        //   - `View → Output Verbosity` / `Prompt Path` menu picks
+        //     (which write to `runtimeShellPolicy` first, then
+        //     call this to push the change into SpeechCursor)
+        let applyShellPolicy (shellKey: string) : unit =
+            let resolved =
+                match Map.tryFind shellKey runtimeShellPolicy with
+                | Some p -> p
+                | None -> Config.resolveShellPolicy config shellKey
+            currentShellPolicy <- resolved
+            let skipText =
+                match resolved.Streaming with
+                | ShellPolicy.TupleFinalOnly -> true
+                | ShellPolicy.LineByLine -> false
+                | ShellPolicy.Off -> true
+            let current = SpeechCursor.getParameters speechCursor
+            let parameters =
+                { current with
+                    SkipTextSpansInAutoDrive = skipText
+                    PromptPath = resolved.PromptPath }
+            SpeechCursor.setParameters speechCursor parameters
+
         // SessionModel Tier 1.C — structured-history substrate.
         // One instance per shell session; replaced on
         // Ctrl+Shift+1/2/3 hot-switch (per Q5 resolution
@@ -1605,23 +1653,38 @@ module Program =
             // CommandText + OutputText from the screen grid at
             // finalise time (authoritative) — announce OutputText
             // here on tuple seal as the user-facing "what did the
-            // shell print" cue. SpeechCursor's TextSpan auto-
-            // announce is suppressed by default
-            // (`Parameters.SkipTextSpansInAutoDrive`); Manual
-            // navigation can still revisit individual TextSpans.
-            // Cycle 45f will introduce verbosity modes that govern
-            // streaming-vs-tuple-final policy per shell.
+            // shell print" cue.
+            //
+            // Cycle 45f (2026-05-12) — gate the tuple-finalise
+            // announce on `currentShellPolicy.Streaming`. Under
+            // `TupleFinalOnly` (cmd / PowerShell default) the
+            // announce fires as before. Under `LineByLine` the
+            // per-TextSpan announces already covered the output;
+            // suppressing here avoids double-narration. Under `Off`
+            // both streaming AND tuple-finalise are silent —
+            // SpeechCursor manual navigation is the only way to
+            // hear output.
             let tupleFinaliseAnnounce =
-                match finalisedOpt with
-                | Some tuple
+                match finalisedOpt, currentShellPolicy.Streaming with
+                | Some tuple, ShellPolicy.TupleFinalOnly
                     when not (System.String.IsNullOrWhiteSpace tuple.OutputText) ->
                     Some tuple.OutputText
+                | _ -> None
+            // Cycle 45f — pass `MatchedRowText` as the PromptStart
+            // marker's payload so SpeechCursor.renderEntryWithPolicy
+            // can apply the per-shell `PromptPathMode` (Suppress /
+            // FinalDirOnly / Full). Other marker kinds carry no
+            // payload (renderEntry returns None for them anyway).
+            let markerPayload =
+                match markerKind with
+                | Some ContentHistory.MarkerKind.PromptStart ->
+                    augmented.MatchedRowText
                 | _ -> None
             let boundaryAction () =
                 match markerKind with
                 | Some k ->
                     ContentHistory.appendMarker
-                        contentHistory k DateTime.UtcNow None
+                        contentHistory k DateTime.UtcNow markerPayload
                     |> ignore
                     SpeechCursor.onAppend
                         speechCursor
@@ -2184,6 +2247,14 @@ module Program =
         // resolves to the correct pathway for the running
         // shell.
         currentShellId <- chosenShell.Id
+
+        // Cycle 45f — apply the startup shell's verbosity policy
+        // before any reader output flows. Layer 1 + Layer 2
+        // (compiled defaults + TOML overlay; Layer 3 is empty at
+        // startup). This pushes `Streaming` / `PromptPath` into
+        // `speechCursor.Parameters` so the first PromptStart
+        // marker + first tuple seal respect the policy.
+        applyShellPolicy (shellIdToConfigKey chosenShell.Id)
 
         // Cycle 38b — resolve the active profile set for the
         // chosen shell. Defined here (after `chosenShell` is
@@ -3396,6 +3467,24 @@ module Program =
                                         // dispatcher thread.
                                         ContentHistory.reset contentHistory
                                         SpeechCursor.reset speechCursor
+                                        // Cycle 45f — apply the
+                                        // new shell's verbosity
+                                        // policy through the
+                                        // three-layer overlay
+                                        // (runtime → TOML →
+                                        // compiled defaults).
+                                        // Runs AFTER
+                                        // SpeechCursor.reset (so
+                                        // Position / LastSpokenSeq
+                                        // are clean for the new
+                                        // shell's history) and
+                                        // BEFORE wirePostSpawn
+                                        // below, so the first
+                                        // paint of the new shell
+                                        // narrates under the
+                                        // right policy.
+                                        applyShellPolicy
+                                            (shellIdToConfigKey shell.Id)
                                         // Cycle 38b — re-resolve
                                         // the active profile set
                                         // for the new shell so its
@@ -3572,6 +3661,112 @@ module Program =
                                 | _ -> "Debug logging off."
                             window.TerminalSurface.Announce(cue, ActivityIds.logToggle))
         multiStateBindings.[HotkeyRegistry.LoggingLevel] <- loggingBinding
+
+        // Cycle 45f — Output Verbosity menu binding. Menu pick
+        // writes to `runtimeShellPolicy.[currentShellKey]`
+        // (Layer 3 of the three-layer settings model) then
+        // `applyShellPolicy` pushes the new policy into
+        // `speechCursor.Parameters`. Subsequent
+        // `SpeechCursor.onAppend` invocations observe the new
+        // mode; entries already announced under the previous
+        // policy stay announced (no rewind).
+        let outputVerbosityLog =
+            Logger.get "Terminal.App.Program.bindMultiState.OutputVerbosity"
+        let outputVerbosityDef =
+            HotkeyRegistry.multiStateOf HotkeyRegistry.OutputVerbosity
+        let outputVerbosityBinding =
+            bindMultiState
+                window
+                outputVerbosityDef
+                (fun () ->
+                    match currentShellPolicy.Streaming with
+                    | ShellPolicy.TupleFinalOnly -> "tuple_final"
+                    | ShellPolicy.LineByLine -> "line_by_line"
+                    | ShellPolicy.Off -> "off")
+                (fun target ->
+                    let next =
+                        match target with
+                        | "line_by_line" -> Some ShellPolicy.LineByLine
+                        | "off" -> Some ShellPolicy.Off
+                        | "tuple_final" -> Some ShellPolicy.TupleFinalOnly
+                        | _ -> None
+                    match next with
+                    | None ->
+                        outputVerbosityLog.LogWarning(
+                            "OutputVerbosity set unknown target '{Target}'; ignored.",
+                            target)
+                    | Some streaming ->
+                        let shellKey = shellIdToConfigKey currentShellId
+                        let updated =
+                            { currentShellPolicy with
+                                Streaming = streaming }
+                        runtimeShellPolicy <-
+                            Map.add shellKey updated runtimeShellPolicy
+                        applyShellPolicy shellKey
+                        outputVerbosityLog.LogInformation(
+                            "OutputVerbosity set to {Target} for shell {Shell}.",
+                            target, shellKey)
+                        let cue =
+                            match streaming with
+                            | ShellPolicy.TupleFinalOnly ->
+                                "Output verbosity tuple final."
+                            | ShellPolicy.LineByLine ->
+                                "Output verbosity line by line."
+                            | ShellPolicy.Off ->
+                                "Output verbosity off."
+                        window.TerminalSurface.Announce(
+                            cue, ActivityIds.logToggle))
+        multiStateBindings.[HotkeyRegistry.OutputVerbosity] <-
+            outputVerbosityBinding
+
+        // Cycle 45f — Prompt Path menu binding. Same shape +
+        // scoping as OutputVerbosity.
+        let promptPathLog =
+            Logger.get "Terminal.App.Program.bindMultiState.PromptPathVerbosity"
+        let promptPathDef =
+            HotkeyRegistry.multiStateOf HotkeyRegistry.PromptPathVerbosity
+        let promptPathBinding =
+            bindMultiState
+                window
+                promptPathDef
+                (fun () ->
+                    match currentShellPolicy.PromptPath with
+                    | ShellPolicy.Suppress -> "suppress"
+                    | ShellPolicy.FinalDirOnly -> "final_dir_only"
+                    | ShellPolicy.Full -> "full")
+                (fun target ->
+                    let next =
+                        match target with
+                        | "final_dir_only" -> Some ShellPolicy.FinalDirOnly
+                        | "full" -> Some ShellPolicy.Full
+                        | "suppress" -> Some ShellPolicy.Suppress
+                        | _ -> None
+                    match next with
+                    | None ->
+                        promptPathLog.LogWarning(
+                            "PromptPathVerbosity set unknown target '{Target}'; ignored.",
+                            target)
+                    | Some promptPath ->
+                        let shellKey = shellIdToConfigKey currentShellId
+                        let updated =
+                            { currentShellPolicy with
+                                PromptPath = promptPath }
+                        runtimeShellPolicy <-
+                            Map.add shellKey updated runtimeShellPolicy
+                        applyShellPolicy shellKey
+                        promptPathLog.LogInformation(
+                            "PromptPathVerbosity set to {Target} for shell {Shell}.",
+                            target, shellKey)
+                        let cue =
+                            match promptPath with
+                            | ShellPolicy.Suppress -> "Prompt path suppressed."
+                            | ShellPolicy.FinalDirOnly ->
+                                "Prompt path final directory only."
+                            | ShellPolicy.Full -> "Prompt path full."
+                        window.TerminalSurface.Announce(
+                            cue, ActivityIds.logToggle))
+        multiStateBindings.[HotkeyRegistry.PromptPathVerbosity] <-
+            promptPathBinding
 
         // Cycle 26b — wire the menu items. Walk the
         // `menuCommands` dictionary populated by the `bind`

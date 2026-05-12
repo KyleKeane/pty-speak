@@ -410,6 +410,126 @@ let ``renderEntry returns selection announce for SelectionShown with payload`` (
     | None -> Assert.Fail("expected announce for SelectionShown")
 
 // ---------------------------------------------------------------------
+// Cycle 45f — renderEntryWithPolicy / PromptPathMode
+// ---------------------------------------------------------------------
+
+let private promptMarker (payload: string option) : ContentHistory.Entry =
+    ContentHistory.Marker
+        { Seq = 0L
+          Kind = ContentHistory.MarkerKind.PromptStart
+          At = t0
+          Payload = payload }
+
+[<Fact>]
+let ``PromptStart under Suppress returns None`` () =
+    let entry = promptMarker (Some "C:\\Users\\Kyle\\Local>")
+    Assert.Equal(
+        None,
+        SpeechCursor.renderEntryWithPolicy ShellPolicy.Suppress entry)
+
+[<Fact>]
+let ``PromptStart under FinalDirOnly trims to last directory`` () =
+    let entry = promptMarker (Some "C:\\Users\\Kyle\\Local>")
+    match
+        SpeechCursor.renderEntryWithPolicy ShellPolicy.FinalDirOnly entry
+    with
+    | Some (text, activityId) ->
+        Assert.Equal("Local>", text)
+        Assert.Equal(ActivityIds.output, activityId)
+    | None -> Assert.Fail("expected announce under FinalDirOnly")
+
+[<Fact>]
+let ``PromptStart under Full returns the payload verbatim`` () =
+    let entry = promptMarker (Some "C:\\Users\\Kyle\\Local>")
+    match
+        SpeechCursor.renderEntryWithPolicy ShellPolicy.Full entry
+    with
+    | Some (text, _) ->
+        Assert.Equal("C:\\Users\\Kyle\\Local>", text)
+    | None -> Assert.Fail("expected announce under Full")
+
+[<Fact>]
+let ``PromptStart with empty payload returns None under every mode`` () =
+    let entry = promptMarker (Some "")
+    for mode in [ ShellPolicy.Suppress; ShellPolicy.FinalDirOnly; ShellPolicy.Full ] do
+        Assert.Equal(None, SpeechCursor.renderEntryWithPolicy mode entry)
+
+[<Fact>]
+let ``PromptStart with no payload returns None under every mode`` () =
+    let entry = promptMarker None
+    for mode in [ ShellPolicy.Suppress; ShellPolicy.FinalDirOnly; ShellPolicy.Full ] do
+        Assert.Equal(None, SpeechCursor.renderEntryWithPolicy mode entry)
+
+[<Fact>]
+let ``backwards-compat renderEntry suppresses PromptStart`` () =
+    // The no-policy overload uses Suppress for backwards-compat;
+    // Cycle 45f pinned this so existing tests + callers don't
+    // spontaneously start announcing prompts.
+    let entry = promptMarker (Some "C:\\Users\\Kyle>")
+    Assert.Equal(None, SpeechCursor.renderEntry entry)
+
+// ---------------------------------------------------------------------
+// Cycle 45f — setParameters + LineByLine streaming + Off mode
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``setParameters flips SkipTextSpansInAutoDrive at runtime`` () =
+    let cursor = freshCursor ()
+    Assert.True(cursor.Parameters.SkipTextSpansInAutoDrive)
+    let updated =
+        { cursor.Parameters with SkipTextSpansInAutoDrive = false }
+    SpeechCursor.setParameters cursor updated
+    Assert.False(cursor.Parameters.SkipTextSpansInAutoDrive)
+    // Position + LastSpokenSeq + Mode preserved.
+    Assert.Equal(-1L, cursor.Position)
+    Assert.Equal(-1L, cursor.LastSpokenSeq)
+
+[<Fact>]
+let ``onAppend with SkipTextSpansInAutoDrive=false announces every TextSpan`` () =
+    // Equivalent to flipping the policy to LineByLine — every
+    // sealed TextSpan narrates as it arrives.
+    let cursor = freshCursor ()
+    let lineByLineParams =
+        { cursor.Parameters with SkipTextSpansInAutoDrive = false }
+    SpeechCursor.setParameters cursor lineByLineParams
+    let history = freshHistory ()
+    let announce, snap = capture ()
+    ContentHistory.appendFromEvent history t0 (printRune 'a') |> ignore
+    ContentHistory.appendFromEvent history t0 lf |> ignore
+    ContentHistory.appendFromEvent history (after 10) (printRune 'b') |> ignore
+    ContentHistory.appendFromEvent history (after 10) lf |> ignore
+    SpeechCursor.onAppend cursor history announce
+    let said = snap () |> List.map fst
+    Assert.Equal<string list>([ "a"; "b" ], said)
+
+[<Fact>]
+let ``setParameters mid-stream only affects subsequent appends`` () =
+    // Cycle 45f edge case: flipping the policy does NOT replay
+    // or rewind. Entries already announced under the prior
+    // policy stay announced; subsequent appends obey the new
+    // mode.
+    let cursor = freshCursor ()
+    // Start in LineByLine — first batch will announce.
+    SpeechCursor.setParameters
+        cursor
+        { cursor.Parameters with SkipTextSpansInAutoDrive = false }
+    let history = freshHistory ()
+    let announce, snap = capture ()
+    ContentHistory.appendFromEvent history t0 (printRune 'a') |> ignore
+    ContentHistory.appendFromEvent history t0 lf |> ignore
+    SpeechCursor.onAppend cursor history announce
+    Assert.Equal<string list>([ "a" ], snap () |> List.map fst)
+    // Flip to TupleFinalOnly mid-stream.
+    SpeechCursor.setParameters
+        cursor
+        { cursor.Parameters with SkipTextSpansInAutoDrive = true }
+    ContentHistory.appendFromEvent history (after 10) (printRune 'b') |> ignore
+    ContentHistory.appendFromEvent history (after 10) lf |> ignore
+    SpeechCursor.onAppend cursor history announce
+    // No new announce — "b" was suppressed under the new policy.
+    Assert.Equal<string list>([ "a" ], snap () |> List.map fst)
+
+// ---------------------------------------------------------------------
 // speakSince
 // ---------------------------------------------------------------------
 

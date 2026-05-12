@@ -76,6 +76,7 @@
     -->
     <Compile Include="ContentHistoryTests.fs" />
     <Compile Include="SpeechCursorTests.fs" />
+    <Compile Include="ShellPolicyTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

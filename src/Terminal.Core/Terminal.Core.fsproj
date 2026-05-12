@@ -25,6 +25,7 @@
     <Compile Include="SessionPersistence.fs" />
     <Compile Include="SessionSanitiser.fs" />
     <Compile Include="SessionLogWriter.fs" />
+    <Compile Include="ShellPolicy.fs" />
     <Compile Include="HeuristicPromptDetector.fs" />
     <Compile Include="SelectionDetector.fs" />
     <Compile Include="DisplayPathway.fs" />

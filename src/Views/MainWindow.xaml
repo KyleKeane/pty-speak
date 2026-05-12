@@ -99,6 +99,38 @@
                               x:FieldModifier="public"
                               Header="Toggle _Mode (AutoDrive / Manual)" />
                 </MenuItem>
+                <!-- Cycle 45f — per-shell verbosity modes. Pick
+                     applies to the currently-active shell's
+                     runtime override (Layer 3 of the three-layer
+                     settings model); persists across hot-switches
+                     until app restart. See docs/USER-SETTINGS.md
+                     "Verbosity" for the resolution model. -->
+                <MenuItem x:Name="MenuItem_OutputVerbosity"
+                          x:FieldModifier="public"
+                          Header="_Output Verbosity">
+                    <MenuItem x:Name="MenuItem_OutputVerbosity_tuple_final"
+                              x:FieldModifier="public"
+                              Header="_Tuple Final" />
+                    <MenuItem x:Name="MenuItem_OutputVerbosity_line_by_line"
+                              x:FieldModifier="public"
+                              Header="_Line By Line" />
+                    <MenuItem x:Name="MenuItem_OutputVerbosity_off"
+                              x:FieldModifier="public"
+                              Header="O_ff" />
+                </MenuItem>
+                <MenuItem x:Name="MenuItem_PromptPathVerbosity"
+                          x:FieldModifier="public"
+                          Header="_Prompt Path">
+                    <MenuItem x:Name="MenuItem_PromptPathVerbosity_suppress"
+                              x:FieldModifier="public"
+                              Header="_Suppress" />
+                    <MenuItem x:Name="MenuItem_PromptPathVerbosity_final_dir_only"
+                              x:FieldModifier="public"
+                              Header="_Final Directory Only" />
+                    <MenuItem x:Name="MenuItem_PromptPathVerbosity_full"
+                              x:FieldModifier="public"
+                              Header="F_ull" />
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="_Data">
                 <MenuItem x:Name="MenuItem_OpenDataFolder"
