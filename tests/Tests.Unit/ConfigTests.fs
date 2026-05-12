@@ -241,44 +241,7 @@ let ``resolveShellPolicy with no TOML override returns compiled defaults`` () =
     Assert.Equal(ShellPolicy.TupleFinalOnly, claudePolicy.Streaming)
     Assert.True(claudePolicy.SelectionEnabled)
 
-// ---- Per-pathway parameter override --------------------------------
-
-[<Fact>]
-let ``[pathway.stream] debounce_window_ms = 50 flows through resolveStreamParameters`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\ndebounce_window_ms = 50\n"
-    let config, _ = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(50, resolved.DebounceWindowMs)
-    // Other fields fall back to defaults
-    Assert.Equal(StreamPathway.defaultParameters.SpinnerWindowMs, resolved.SpinnerWindowMs)
-    Assert.Equal(StreamPathway.defaultParameters.SpinnerThreshold, resolved.SpinnerThreshold)
-    Assert.Equal(StreamPathway.defaultParameters.MaxAnnounceChars, resolved.MaxAnnounceChars)
-
-[<Fact>]
-let ``partial [pathway.stream] override merges with defaults field-by-field`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\nspinner_threshold = 10\nmax_announce_chars = 1000\n"
-    let config, _ = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(StreamPathway.defaultParameters.DebounceWindowMs, resolved.DebounceWindowMs)
-    Assert.Equal(StreamPathway.defaultParameters.SpinnerWindowMs, resolved.SpinnerWindowMs)
-    Assert.Equal(10, resolved.SpinnerThreshold)
-    Assert.Equal(1000, resolved.MaxAnnounceChars)
-
 // ---- Unknown keys / invalid values ----------------------------------
-
-[<Fact>]
-let ``unknown parameter key in [pathway.stream] logs Warning and is dropped`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\ndebounce_window_ms = 50\ncebounce = 99\n"
-    let config, logger = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(50, resolved.DebounceWindowMs)
-    Assert.True(logger.HasLevel(LogLevel.Warning))
-    let warnings =
-        logger.MessagesAtLevel(LogLevel.Warning) |> Seq.toList
-    Assert.Contains(warnings, fun m -> m.Contains("cebounce"))
 
 [<Fact>]
 let ``unknown shell section [shell.bash] logs Warning and is ignored`` () =
@@ -290,24 +253,6 @@ let ``unknown shell section [shell.bash] logs Warning and is ignored`` () =
     let warnings =
         logger.MessagesAtLevel(LogLevel.Warning) |> Seq.toList
     Assert.Contains(warnings, fun m -> m.Contains("bash"))
-
-[<Fact>]
-let ``negative parameter value logs Warning and falls back to default`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\ndebounce_window_ms = -50\n"
-    let config, logger = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(StreamPathway.defaultParameters.DebounceWindowMs, resolved.DebounceWindowMs)
-    Assert.True(logger.HasLevel(LogLevel.Warning))
-
-[<Fact>]
-let ``zero parameter value logs Warning and falls back to default`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\ndebounce_window_ms = 0\n"
-    let config, logger = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(StreamPathway.defaultParameters.DebounceWindowMs, resolved.DebounceWindowMs)
-    Assert.True(logger.HasLevel(LogLevel.Warning))
 
 // ---- Schema versioning --------------------------------------------
 
@@ -340,7 +285,7 @@ let ``missing schema_version logs Warning and treats as 1`` () =
 // ---- Round-trip --------------------------------------------------
 
 [<Fact>]
-let ``round-trip: comprehensive TOML parses to expected resolved values`` () =
+let ``round-trip: shell-pathway TOML parses to expected resolved values`` () =
     let toml =
         String.concat "\n"
             [ "schema_version = 1"
@@ -353,22 +298,11 @@ let ``round-trip: comprehensive TOML parses to expected resolved values`` () =
               ""
               "[shell.powershell]"
               "pathway = \"stream\""
-              ""
-              "[pathway.stream]"
-              "debounce_window_ms = 100"
-              "spinner_window_ms = 2000"
-              "spinner_threshold = 8"
-              "max_announce_chars = 750"
               "" ]
     let config, _ = loadFromText toml
     Assert.Equal("stream", Config.resolveShellPathway config "cmd")
     Assert.Equal("tui", Config.resolveShellPathway config "claude")
     Assert.Equal("stream", Config.resolveShellPathway config "powershell")
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(100, resolved.DebounceWindowMs)
-    Assert.Equal(2000, resolved.SpinnerWindowMs)
-    Assert.Equal(8, resolved.SpinnerThreshold)
-    Assert.Equal(750, resolved.MaxAnnounceChars)
 
 // ---- Forward-compat: ignore unknown sections ----------------------
 
@@ -418,36 +352,6 @@ let ``defaultConfig resolveStreamParameters has ColorDetection = true`` () =
     let resolved = Config.resolveStreamParameters Config.defaultConfig
     Assert.True(resolved.ColorDetection)
 
-[<Fact>]
-let ``[pathway.stream] color_detection = false flows through resolveStreamParameters`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\ncolor_detection = false\n"
-    let config, _ = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.False(resolved.ColorDetection)
-    // Other fields fall back to defaults.
-    Assert.Equal(StreamPathway.defaultParameters.DebounceWindowMs, resolved.DebounceWindowMs)
-
-[<Fact>]
-let ``[pathway.stream] color_detection = true is parsed as override (still true)`` () =
-    // Even when matching the default, the override is recorded
-    // — semantically a no-op, but the user-set flag survives
-    // round-trip.
-    let toml =
-        "schema_version = 1\n[pathway.stream]\ncolor_detection = true\n"
-    let config, _ = loadFromText toml
-    Assert.Equal(Some true, config.StreamOverrides.ColorDetection)
-    Assert.True((Config.resolveStreamParameters config).ColorDetection)
-
-[<Fact>]
-let ``non-bool color_detection logs Warning and falls back to default`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\ncolor_detection = 42\n"
-    let config, logger = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.True(resolved.ColorDetection)
-    Assert.True(logger.HasLevel(LogLevel.Warning))
-
 // ---- PR #168 — Tier 1 parameters ---------------------------------
 
 [<Fact>]
@@ -464,143 +368,6 @@ let ``defaultConfig resolveStreamParameters has BackspacePolicy = AnnounceDelete
 let ``defaultConfig resolveStreamParameters has ModeBarrierFlushPolicy = SummaryOnly`` () =
     let resolved = Config.resolveStreamParameters Config.defaultConfig
     Assert.Equal(StreamPathway.SummaryOnly, resolved.ModeBarrierFlushPolicy)
-
-[<Fact>]
-let ``[pathway.stream] bulk_change_threshold = 5 flows through resolveStreamParameters`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\nbulk_change_threshold = 5\n"
-    let config, _ = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(5, resolved.BulkChangeThreshold)
-
-[<Fact>]
-let ``[pathway.stream] backspace_policy = silent maps to SuppressShrink`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\nbackspace_policy = \"silent\"\n"
-    let config, _ = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(StreamPathway.SuppressShrink, resolved.BackspacePolicy)
-
-[<Fact>]
-let ``[pathway.stream] backspace_policy = announce_deleted_character maps to AnnounceDeletedCharacter`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\nbackspace_policy = \"announce_deleted_character\"\n"
-    let config, _ = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(StreamPathway.AnnounceDeletedCharacter, resolved.BackspacePolicy)
-
-[<Fact>]
-let ``[pathway.stream] backspace_policy = announce_deleted_word maps to AnnounceDeletedWord`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\nbackspace_policy = \"announce_deleted_word\"\n"
-    let config, _ = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(StreamPathway.AnnounceDeletedWord, resolved.BackspacePolicy)
-
-[<Fact>]
-let ``unknown backspace_policy value logs Warning and falls back to default`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\nbackspace_policy = \"chirp\"\n"
-    let config, logger = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(StreamPathway.AnnounceDeletedCharacter, resolved.BackspacePolicy)
-    Assert.True(logger.HasLevel(LogLevel.Warning))
-
-[<Fact>]
-let ``[pathway.stream] mode_barrier_flush_policy = verbose maps to Verbose`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\nmode_barrier_flush_policy = \"verbose\"\n"
-    let config, _ = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(StreamPathway.Verbose, resolved.ModeBarrierFlushPolicy)
-
-[<Fact>]
-let ``[pathway.stream] mode_barrier_flush_policy = summary_only maps to SummaryOnly`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\nmode_barrier_flush_policy = \"summary_only\"\n"
-    let config, _ = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(StreamPathway.SummaryOnly, resolved.ModeBarrierFlushPolicy)
-
-[<Fact>]
-let ``[pathway.stream] mode_barrier_flush_policy = suppressed maps to Suppressed`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\nmode_barrier_flush_policy = \"suppressed\"\n"
-    let config, _ = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(StreamPathway.Suppressed, resolved.ModeBarrierFlushPolicy)
-
-[<Fact>]
-let ``unknown mode_barrier_flush_policy value logs Warning and falls back to default`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\nmode_barrier_flush_policy = \"warbly\"\n"
-    let config, logger = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(StreamPathway.SummaryOnly, resolved.ModeBarrierFlushPolicy)
-    Assert.True(logger.HasLevel(LogLevel.Warning))
-
-// =====================================================================
-// Cycle 35a — `[pathway.stream] substrate_mode` TOML override.
-// Selects which substrate the StreamPathway announces from:
-//   "linear"      → LinearTextStream (RFC 0001)
-//   "screen-diff" → existing PR #166 suffix-diff
-//   "auto"        → linear for non-alt-screen, screen-diff for alt-screen
-//
-// Cycle 35b — flipped the default from "screen-diff" to "auto"
-// after the §3 advanced-CMD matrix passed manual NVDA validation.
-// The "absent" + invalid-value facts now assert Auto as the
-// fallback default; the explicit-string facts continue to map
-// each TOML value to its DU constructor unchanged.
-// =====================================================================
-
-[<Fact>]
-let ``[pathway.stream] substrate_mode absent — defaults to Auto (Cycle 35b)`` () =
-    let toml = "schema_version = 1\n"
-    let config, _ = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(StreamPathway.Auto, resolved.SubstrateMode)
-
-[<Fact>]
-let ``[pathway.stream] substrate_mode = "linear" maps to Linear`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\nsubstrate_mode = \"linear\"\n"
-    let config, _ = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(StreamPathway.Linear, resolved.SubstrateMode)
-
-[<Fact>]
-let ``[pathway.stream] substrate_mode = "screen-diff" maps to ScreenDiff`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\nsubstrate_mode = \"screen-diff\"\n"
-    let config, _ = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(StreamPathway.ScreenDiff, resolved.SubstrateMode)
-
-[<Fact>]
-let ``[pathway.stream] substrate_mode = "auto" maps to Auto`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\nsubstrate_mode = \"auto\"\n"
-    let config, _ = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(StreamPathway.Auto, resolved.SubstrateMode)
-
-[<Fact>]
-let ``unknown substrate_mode value logs Warning and falls back to default (Cycle 35b: Auto)`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\nsubstrate_mode = \"fictional\"\n"
-    let config, logger = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(StreamPathway.Auto, resolved.SubstrateMode)
-    Assert.True(logger.HasLevel(LogLevel.Warning))
-
-[<Fact>]
-let ``non-string substrate_mode value logs Warning and falls back to default (Cycle 35b: Auto)`` () =
-    let toml =
-        "schema_version = 1\n[pathway.stream]\nsubstrate_mode = 123\n"
-    let config, logger = loadFromText toml
-    let resolved = Config.resolveStreamParameters config
-    Assert.Equal(StreamPathway.Auto, resolved.SubstrateMode)
-    Assert.True(logger.HasLevel(LogLevel.Warning))
 
 // =====================================================================
 // Cycle 19 — `[startup] default_shell` TOML override

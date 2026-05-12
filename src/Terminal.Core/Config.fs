@@ -468,22 +468,6 @@ module Config =
             if ok then Some (buf.ToArray()) else None
         | _ -> None
 
-    /// Internal — known parameter keys for `[pathway.stream]`.
-    /// Used to detect typos and log Warnings for unknown keys.
-    let private knownStreamKeys : Set<string> =
-        Set.ofList
-            [ "debounce_window_ms"
-              "spinner_window_ms"
-              "spinner_threshold"
-              "max_announce_chars"
-              "color_detection"
-              // PR #168 — Tier 1 parameters.
-              "bulk_change_threshold"
-              "backspace_policy"
-              "mode_barrier_flush_policy"
-              // Cycle 35a — substrate mode selection.
-              "substrate_mode" ]
-
     /// Cycle 24g — emit a JSON-shaped hierarchical dump of a
     /// parsed `TomlTable` so a maintainer can compare what
     /// Tomlyn actually understood against what they wrote in
@@ -625,113 +609,6 @@ module Config =
             None
         else
             Some (int raw)
-
-    /// Internal — parse the `[pathway.stream]` table into
-    /// `StreamParameterOverrides`. Unknown keys produce a
-    /// Warning + are dropped; non-int values produce a
-    /// Warning + fall back to default for that field. Returns
-    /// the override record (each field `Some` if user-set
-    /// + valid, `None` otherwise).
-    let private parseStreamOverrides
-            (logger: ILogger)
-            (table: TomlTable)
-            : StreamParameterOverrides
-            =
-        // Walk the user-supplied keys to surface typos.
-        for key in table.Keys do
-            if not (knownStreamKeys.Contains(key)) then
-                logger.LogWarning(
-                    "Config: [pathway.stream] unknown key '{Key}'; ignored.",
-                    key)
-        let readField (key: string) : int option =
-            match tryGetInt table key with
-            | None ->
-                // `tryGetInt` returns None both for "key absent"
-                // and "key present but non-int". Distinguish via
-                // `ContainsKey` so the user gets a typo Warning
-                // for the latter (a silently-dropped non-int
-                // value would hide schema mistakes).
-                if table.ContainsKey(key) then
-                    logger.LogWarning(
-                        "Config: [pathway.stream] {Key} is non-integer; ignored.",
-                        key)
-                None
-            | Some raw -> parsePositiveInt logger "[pathway.stream]" key raw
-        let readBool (key: string) : bool option =
-            match tryGetBool table key with
-            | None ->
-                // Same key-present-but-wrong-type Warning
-                // pattern as readField above.
-                if table.ContainsKey(key) then
-                    logger.LogWarning(
-                        "Config: [pathway.stream] {Key} is non-boolean; ignored.",
-                        key)
-                None
-            | Some b -> Some b
-        // PR #168 — enum-string parsers for backspace_policy
-        // and mode_barrier_flush_policy. Unknown / non-string
-        // values log a Warning and return None (falls back to
-        // default).
-        let readBackspacePolicy (key: string) : StreamPathway.BackspacePolicy option =
-            match tryGetString table key with
-            | None ->
-                if table.ContainsKey(key) then
-                    logger.LogWarning(
-                        "Config: [pathway.stream] {Key} is non-string; ignored.",
-                        key)
-                None
-            | Some "silent" -> Some StreamPathway.SuppressShrink
-            | Some "announce_deleted_character" -> Some StreamPathway.AnnounceDeletedCharacter
-            | Some "announce_deleted_word" -> Some StreamPathway.AnnounceDeletedWord
-            | Some other ->
-                logger.LogWarning(
-                    "Config: [pathway.stream] {Key} = '{Value}' is not one of 'silent' / 'announce_deleted_character' / 'announce_deleted_word'; ignored.",
-                    key, other)
-                None
-        let readModeBarrierFlushPolicy (key: string) : StreamPathway.ModeBarrierFlushPolicy option =
-            match tryGetString table key with
-            | None ->
-                if table.ContainsKey(key) then
-                    logger.LogWarning(
-                        "Config: [pathway.stream] {Key} is non-string; ignored.",
-                        key)
-                None
-            | Some "verbose" -> Some StreamPathway.Verbose
-            | Some "summary_only" -> Some StreamPathway.SummaryOnly
-            | Some "suppressed" -> Some StreamPathway.Suppressed
-            | Some other ->
-                logger.LogWarning(
-                    "Config: [pathway.stream] {Key} = '{Value}' is not one of 'verbose' / 'summary_only' / 'suppressed'; ignored.",
-                    key, other)
-                None
-        // Cycle 35a — substrate mode enum-string parser.
-        let readSubstrateMode (key: string) : StreamPathway.SubstrateMode option =
-            match tryGetString table key with
-            | None ->
-                if table.ContainsKey(key) then
-                    logger.LogWarning(
-                        "Config: [pathway.stream] {Key} is non-string; ignored.",
-                        key)
-                None
-            | Some raw ->
-                match raw.Trim().ToLowerInvariant() with
-                | "linear" -> Some StreamPathway.Linear
-                | "screen-diff" -> Some StreamPathway.ScreenDiff
-                | "auto" -> Some StreamPathway.Auto
-                | other ->
-                    logger.LogWarning(
-                        "Config: [pathway.stream] {Key} = '{Value}' is not one of 'linear' / 'screen-diff' / 'auto'; ignored.",
-                        key, other)
-                    None
-        { DebounceWindowMs = readField "debounce_window_ms"
-          SpinnerWindowMs = readField "spinner_window_ms"
-          SpinnerThreshold = readField "spinner_threshold"
-          MaxAnnounceChars = readField "max_announce_chars"
-          ColorDetection = readBool "color_detection"
-          BulkChangeThreshold = readField "bulk_change_threshold"
-          BackspacePolicy = readBackspacePolicy "backspace_policy"
-          ModeBarrierFlushPolicy = readModeBarrierFlushPolicy "mode_barrier_flush_policy"
-          SubstrateMode = readSubstrateMode "substrate_mode" }
 
     /// Internal — parse the `[shell.X]` family into
     /// `Map<string, ShellPathwayConfig>`. Unknown shell keys
@@ -1105,14 +982,16 @@ module Config =
                     else
                         let shellOverrides =
                             parseShellOverrides logger model
-                        let streamOverrides =
-                            match tryGetTable model "pathway" with
-                            | None -> defaultConfig.StreamOverrides
-                            | Some pathwayRoot ->
-                                match tryGetTable pathwayRoot "stream" with
-                                | None -> defaultConfig.StreamOverrides
-                                | Some streamTable ->
-                                    parseStreamOverrides logger streamTable
+                        // Cycle 45c — `[pathway.stream]` parsing
+                        // removed (StreamPathway substrate replaced
+                        // by ContentHistory in Cycle 45). The
+                        // StreamOverrides record stays for now so
+                        // `resolveStreamParameters` continues to
+                        // return `StreamPathway.defaultParameters`
+                        // for any code still consuming it; the
+                        // field is deleted alongside StreamPathway
+                        // in the PR-3 code prune.
+                        let streamOverrides = defaultConfig.StreamOverrides
                         let startupOverrides =
                             parseStartupOverrides logger model
                         let sessionPersistence =
