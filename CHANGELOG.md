@@ -15,6 +15,33 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 45c follow-up): every keystroke flushes pending NVDA output speech
+
+`MostRecent` (shipped 2026-05-12 in PR #282) clears NVDA's
+pending speech queue, but only when **we** call `Announce`
+again. The pipeline only fires `Announce` on tuple-finalise,
+hotkey announces, diagnostics, and SpeechCursor navigation —
+plain typing into the prompt and Alt-opening a menu don't.
+Result: after `dir` produced a ~3 KB output announce, NVDA
+read it to completion (~2 minutes) even when the user pressed
+Alt or started typing the next command, because nothing else
+displaced it.
+
+`OnPreviewKeyDown` now fires an empty `MostRecent` notification
+on every key that isn't a bare modifier — `Shift` (NVDA pause),
+`Ctrl`, `Win`, `NumLock`, `Scroll`, `Insert` (NVDA modifier),
+`CapsLock`, and the numpad-NoLock cluster are deliberately
+skipped so screen-reader gestures keep working. Alt is **not**
+skipped — pressing Alt to open the menu now interrupts a long
+output read as the user expects. Function keys are not skipped
+either; the empty MostRecent is cheap and consistent with the
+rule "any user-initiated activity resets the speech state".
+
+Currently-synthesised audio still plays to its natural chunk
+boundary (NVDA only clears chunks it hasn't handed to SAPI
+yet), so there can be a brief residual "tail" before silence —
+that's the cost of NVDA's pipeline, not our queue logic.
+
 ### Changed (Cycle 45c follow-up): silence idle FileLogger spam in `HeuristicPromptDetector`
 
 Maintainer dogfood 2026-05-12: every line of a 50-line
