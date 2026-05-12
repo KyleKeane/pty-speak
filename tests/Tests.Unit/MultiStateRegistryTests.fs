@@ -57,7 +57,10 @@ let ``multiStateAllCommands contains exactly the documented commands (Cycle 27)`
             [ // Cycle 27 — migrated from MuteEarcons toggle.
               HotkeyRegistry.EarconsMode
               // Cycle 27 — migrated from ToggleDebugLog toggle.
-              HotkeyRegistry.LoggingLevel ]
+              HotkeyRegistry.LoggingLevel
+              // Cycle 45f — per-shell verbosity modes.
+              HotkeyRegistry.OutputVerbosity
+              HotkeyRegistry.PromptPathVerbosity ]
     let actual = Set.ofList HotkeyRegistry.multiStateAllCommands
     Assert.Equal<Set<HotkeyRegistry.MultiStateCommand>>(expected, actual)
 

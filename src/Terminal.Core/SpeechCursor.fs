@@ -80,23 +80,45 @@ module SpeechCursor =
           /// what did the shell print" is `SessionTuple` (see
           /// `SessionModel.SessionTuple.{CommandText,OutputText}`);
           /// `Program.fs handlePromptBoundary` announces that
-          /// on tuple finalise. SpeechCursor's TextSpan-by-
-          /// TextSpan auto-announce stays suppressed by default
-          /// until verbosity-mode work (Cycle 45f) introduces
-          /// per-shell streaming-vs-tuple-final policy.
-          SkipTextSpansInAutoDrive: bool }
+          /// on tuple finalise.
+          ///
+          /// Cycle 45f (2026-05-12): this flag now carries the
+          /// `ShellPolicy.StreamingMode = TupleFinalOnly`
+          /// semantics. The per-shell policy resolved at shell-
+          /// switch time flips it on/off — `TupleFinalOnly` /
+          /// `Off` map to `true` (suppress TextSpan announce);
+          /// `LineByLine` maps to `false` (announce on each
+          /// TextSpan seal). The `PromptPath` field below
+          /// carries the orthogonal prompt-verbosity dimension.
+          SkipTextSpansInAutoDrive: bool
+          /// Cycle 45f — how `PromptStart` markers narrate
+          /// their `Payload` text. Default `Suppress` matches
+          /// today's behaviour (no prompt announce at all).
+          /// `FinalDirOnly` trims path-like prompts to the last
+          /// directory segment; `Full` narrates verbatim. See
+          /// `ShellPolicy.PromptPathMode` for full semantics.
+          PromptPath: ShellPolicy.PromptPathMode }
 
     let defaultParameters : Parameters =
         { InitialMode = AutoDrive
           SkipSpinnersInAutoDrive = true
           SuspendAutoDriveOnSelection = true
-          SkipTextSpansInAutoDrive = true }
+          SkipTextSpansInAutoDrive = true
+          PromptPath = ShellPolicy.Suppress }
 
     /// Cursor state. Mutated in-place by the navigation /
     /// announce APIs. Single-threaded by convention (dispatcher
     /// thread); no internal gate needed.
+    ///
+    /// `Parameters` is mutable on the instance (Cycle 45f) so
+    /// shell-switch + the `View → Output Verbosity` menu can
+    /// flip per-shell verbosity without reconstructing the
+    /// cursor (which would lose `Position` + `LastSpokenSeq`).
+    /// Use `setParameters` to update — replays / rewinds are
+    /// not in scope; the new policy applies to subsequent
+    /// appends only.
     type T internal (parameters: Parameters) =
-        member val internal Parameters: Parameters = parameters with get
+        member val internal Parameters: Parameters = parameters with get, set
         /// The Seq of the entry the cursor is currently parked
         /// on. -1 means "before the first entry" (initial state
         /// or after `reset`).
@@ -116,6 +138,15 @@ module SpeechCursor =
     /// Construct a fresh cursor.
     let create (parameters: Parameters) : T =
         T(parameters)
+
+    /// Replace the cursor's `Parameters` (Cycle 45f). Subsequent
+    /// `onAppend` invocations observe the new values; entries
+    /// already announced under the previous policy stay
+    /// announced — `setParameters` does NOT replay or rewind.
+    /// `Position`, `LastSpokenSeq`, `Mode`, and `SelectionSuspend`
+    /// are preserved across the update.
+    let setParameters (state: T) (parameters: Parameters) : unit =
+        state.Parameters <- parameters
 
     /// Current cursor mode (Manual / AutoDrive). The
     /// SelectionSuspend bit doesn't change the reported mode —
@@ -234,23 +265,27 @@ module SpeechCursor =
             Some e
         | None -> None
 
-    /// Render an entry to the (text, activityId) pair the
-    /// announce callback will receive. Pure; tests use this
-    /// directly to assert format.
+    /// Cycle 45f — render an entry under a specific
+    /// `PromptPathMode`. PromptStart markers consult the policy
+    /// to decide whether (and how) to narrate their payload.
+    /// Every other entry kind is unaffected.
     ///
     /// Activity-id choices mirror `NvdaChannel.semanticToActivityId`:
     /// streaming text + selection / prompt boundaries route on
-    /// `pty-speak.output`; alt-screen toggles on `pty-speak.mode`;
-    /// bell on `pty-speak.output` (no dedicated id for bell-via-
-    /// announce; the earcon channel handles the audible cue
-    /// separately).
+    /// `pty-speak.output`; alt-screen toggles on
+    /// `pty-speak.mode`; bell on `pty-speak.output` (no
+    /// dedicated id for bell-via-announce; the earcon channel
+    /// handles the audible cue separately).
     ///
     /// Note: AutoDrive's TextSpan-skip behaviour
     /// (`Parameters.SkipTextSpansInAutoDrive`) is enforced in
     /// `onAppend`, not here. Manual navigation (`speakCurrent`)
     /// still renders TextSpans so the user can review them
     /// explicitly.
-    let renderEntry (entry: ContentHistory.Entry) : (string * string) option =
+    let renderEntryWithPolicy
+            (promptPath: ShellPolicy.PromptPathMode)
+            (entry: ContentHistory.Entry)
+            : (string * string) option =
         match entry with
         | ContentHistory.TextSpan d ->
             if String.IsNullOrEmpty d.Text then None
@@ -291,23 +326,34 @@ module SpeechCursor =
                 // flip this to announce "Bell." for users who
                 // have earcons muted.
                 None
-            | ContentHistory.MarkerKind.PromptStart
+            | ContentHistory.MarkerKind.PromptStart ->
+                // Cycle 45f — narrate the prompt under the
+                // active shell's PromptPathMode.
+                //
+                // - `Suppress` (default for every shell):
+                //   `trimPromptPath` returns `None`; we emit
+                //   nothing.
+                // - `FinalDirOnly`: trims path-like prompts to
+                //   the last directory + delimiter (e.g.
+                //   `"Local>"` from
+                //   `"C:\Users\Kyle\AppData\Local\>"`).
+                // - `Full`: narrates the payload verbatim.
+                //
+                // Empty / missing payload returns `None` under
+                // every mode (the heuristic detector
+                // occasionally captures a blank cursor row).
+                match m.Payload with
+                | None -> None
+                | Some text ->
+                    ShellPolicy.trimPromptPath promptPath text
+                    |> Option.map (fun rendered ->
+                        (rendered, ActivityIds.output))
             | ContentHistory.MarkerKind.CommandStart
             | ContentHistory.MarkerKind.OutputStart
             | ContentHistory.MarkerKind.CommandFinished ->
                 // Tuple-internal boundary markers don't announce
                 // by themselves. The TextSpans they bracket are
                 // what the user hears.
-                //
-                // Cycle 45 backlog (docs/USER-SETTINGS.md
-                // "Prompt-path verbosity"): future user setting
-                // could announce a shortened form of the prompt
-                // here (final-directory-only, or fully
-                // suppressed) so a sighted-style "I'm in
-                // C:\Users\Kyle\...>" cue is replaced with a
-                // briefer "Kyle>" or with silence. Pull the
-                // prompt text from m.Payload or from
-                // SessionModel.ActivePromptText.
                 None
             | ContentHistory.MarkerKind.Custom _ ->
                 // Future modes will define their own announce
@@ -319,6 +365,14 @@ module SpeechCursor =
             // user can navigate to them manually for inspection
             // but they're not narrated by default.
             None
+
+    /// Backwards-compatible wrapper — render an entry under the
+    /// default `PromptPathMode.Suppress`. Existing tests that
+    /// don't care about prompt-path verbosity use this form;
+    /// PromptStart-marker rendering is unaffected (Suppress
+    /// returns `None`, matching pre-Cycle-45f behaviour).
+    let renderEntry (entry: ContentHistory.Entry) : (string * string) option =
+        renderEntryWithPolicy ShellPolicy.Suppress entry
 
     /// Announce the entry at the cursor's current position via
     /// the supplied callback. Updates `LastSpokenSeq` to the
@@ -332,7 +386,7 @@ module SpeechCursor =
         match current state history with
         | None -> false
         | Some entry ->
-            match renderEntry entry with
+            match renderEntryWithPolicy state.Parameters.PromptPath entry with
             | None ->
                 // The entry exists but has no audible
                 // announcement (e.g. Newline, Overwrite). Still
@@ -363,7 +417,7 @@ module SpeechCursor =
         for e in entries do
             let s = ContentHistory.entrySeq e
             if s > lower && s <= throughSeq then
-                match renderEntry e with
+                match renderEntryWithPolicy state.Parameters.PromptPath e with
                 | Some (text, activityId) ->
                     announce (text, activityId)
                     spokenCount <- spokenCount + 1
@@ -435,7 +489,11 @@ module SpeechCursor =
                             state.Parameters.SkipTextSpansInAutoDrive
                         | _ -> false
                     if not suppressTextSpan then
-                        match renderEntry entry with
+                        match
+                            renderEntryWithPolicy
+                                state.Parameters.PromptPath
+                                entry
+                        with
                         | Some (text, activityId) ->
                             announce (text, activityId)
                         | None -> ()

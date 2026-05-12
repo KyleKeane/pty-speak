@@ -15,6 +15,56 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Added (Cycle 45f): per-shell verbosity modes
+
+Two new menu items under `Display`:
+
+- **`Output Verbosity`** (Tuple Final / Line By Line / Off):
+  governs how streaming output narrates per shell. `Tuple
+  Final` (cmd / PowerShell default) keeps PR #268's behaviour
+  — `SessionTuple.OutputText` announces on each tuple seal,
+  individual TextSpans stay quiet during the streaming
+  window. `Line By Line` announces each `TextSpan` as it seals
+  — intended for Claude / `ping -t` / other streaming-heavy
+  shells where the user wants mid-stream cues. `Off` suppresses
+  every streaming AND tuple-finalise announce; SpeechCursor's
+  manual navigation (Next / Previous / Jump To Latest) is the
+  only way to hear output.
+- **`Prompt Path`** (Suppress / Final Directory Only / Full):
+  governs how `PromptStart` markers narrate their payload.
+  `Suppress` (default for every shell) returns nothing.
+  `Final Directory Only` trims path-like prompts to the last
+  directory segment + delimiter (e.g. `"Local>"` from
+  `"C:\Users\Kyle\AppData\Local\>"`). `Full` narrates verbatim.
+
+### Three-layer settings model (Cycle 45f)
+
+A new `src/Terminal.Core/ShellPolicy.fs` module carries the
+per-shell policy record. The effective policy at any moment
+is resolved through three overlay layers:
+
+1. **Compiled defaults** — `ShellPolicy.defaults`; hardcoded
+   baseline per shell.
+2. **TOML user config** — `[shell.<id>] verbosity = "…"` and
+   `prompt_path = "…"` in `config.toml`. Persists across
+   restarts. Loaded once at startup; overlayed on Layer 1 via
+   `Config.resolveShellPolicy`.
+3. **Runtime overrides** — menu picks. Per-shell, ephemeral
+   (lost on app restart). Hot-switching cmd → Claude → cmd
+   preserves the cmd override; switching to Claude reads
+   Claude's own (separate) override / TOML / default.
+
+Defaults match today's behaviour exactly — cmd / PowerShell /
+Claude all start at `Tuple Final` + `Suppress`. No regression
+on the post-#270 baseline.
+
+The `ShellPolicy` record also reserves seats for the Cycle
+45g consolidation refactor (PromptRegex, PromptStabilityMs,
+SelectionEnabled mirroring `HeuristicPromptDetector.fs:184`
+and `SelectionDetector.fs` shell gate). 45g migrates those
+inline match arms to read from the table; 45f keeps them
+inert so this PR stays small.
+
 ### Added (Cycle 45 follow-up): ready-for-input earcon
 
 A brief 1200Hz × 60ms chime now plays when the shell finishes a

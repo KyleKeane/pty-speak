@@ -491,6 +491,16 @@ module HotkeyRegistry =
         // Cycle 27 — Migrated from the Ctrl+Shift+G toggle.
         // Options: information / debug.
         | LoggingLevel
+        // Cycle 45f — per-shell streaming announce mode. Pick
+        // applies to the currently-active shell's runtime
+        // override (Layer 3 of the three-layer settings model);
+        // hot-switching reverts to that shell's TOML / compiled
+        // default. Options: tuple_final / line_by_line / off.
+        | OutputVerbosity
+        // Cycle 45f — per-shell prompt-path verbosity. Same
+        // scoping as OutputVerbosity. Options: suppress /
+        // final_dir_only / full.
+        | PromptPathVerbosity
 
     /// Stable string name for a multi-state command. Used as
     /// the XAML field-name prefix (`MenuItem_<name>`) for the
@@ -500,6 +510,8 @@ module HotkeyRegistry =
         match cmd with
         | EarconsMode -> "EarconsMode"
         | LoggingLevel -> "LoggingLevel"
+        | OutputVerbosity -> "OutputVerbosity"
+        | PromptPathVerbosity -> "PromptPathVerbosity"
 
     /// One option within a multi-state command. `OptionId` is
     /// the stable snake_case identifier used in XAML field
@@ -542,7 +554,21 @@ module HotkeyRegistry =
             Options =
               [ { OptionId = "information"; DisplayName = "Information" }
                 { OptionId = "debug"; DisplayName = "Debug" } ]
-            Description = "FileLogger min-level Information / Debug (migrated from Ctrl+Shift+G; menu-only since Cycle 27)" } ]
+            Description = "FileLogger min-level Information / Debug (migrated from Ctrl+Shift+G; menu-only since Cycle 27)" }
+          { Command = OutputVerbosity
+            DisplayName = "Output Verbosity"
+            Options =
+              [ { OptionId = "tuple_final"; DisplayName = "Tuple Final" }
+                { OptionId = "line_by_line"; DisplayName = "Line By Line" }
+                { OptionId = "off"; DisplayName = "Off" } ]
+            Description = "Per-shell streaming announce mode (Cycle 45f). Runtime override on the active shell; persists across hot-switches until app restart. See docs/USER-SETTINGS.md \"Verbosity\"." }
+          { Command = PromptPathVerbosity
+            DisplayName = "Prompt Path"
+            Options =
+              [ { OptionId = "suppress"; DisplayName = "Suppress" }
+                { OptionId = "final_dir_only"; DisplayName = "Final Directory Only" }
+                { OptionId = "full"; DisplayName = "Full" } ]
+            Description = "Per-shell prompt-path verbosity on PromptStart marker (Cycle 45f). Same scoping as Output Verbosity." } ]
 
     /// Look up the `MultiStateDef` for a `MultiStateCommand`.
     /// Throws `KeyNotFoundException` if missing — pinned by
@@ -562,4 +588,6 @@ module HotkeyRegistry =
     /// maintained; pinned by `MultiStateRegistryTests`.
     let multiStateAllCommands : MultiStateCommand list =
         [ EarconsMode
-          LoggingLevel ]
+          LoggingLevel
+          OutputVerbosity
+          PromptPathVerbosity ]
