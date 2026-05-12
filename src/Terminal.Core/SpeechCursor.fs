@@ -62,12 +62,35 @@ module SpeechCursor =
           /// When true, AutoDrive suspends on `SelectionShown`
           /// (and resumes on `SelectionDismissed`). Defaults
           /// true; the standard interaction-mode handoff.
-          SuspendAutoDriveOnSelection: bool }
+          SuspendAutoDriveOnSelection: bool
+          /// When true, AutoDrive does NOT announce `TextSpan`
+          /// entries; the cursor still advances (Position +
+          /// LastSpokenSeq) so Manual navigation can revisit
+          /// them, but no live announce fires.
+          ///
+          /// Cycle 45 fixup (2026-05-12): cmd's command-line
+          /// editing (arrows / backspace / delete reflowing the
+          /// suffix) reprints suffix bytes whose `Print` events
+          /// accumulate into the active TextSpan. Auto-
+          /// announcing that span on seal produces inflated /
+          /// edit-history-conflated narrations that do not
+          /// match the actual `CommandText` / `OutputText`
+          /// SessionModel captures from the screen grid. The
+          /// authoritative source for "what did the user run +
+          /// what did the shell print" is `SessionTuple` (see
+          /// `SessionModel.SessionTuple.{CommandText,OutputText}`);
+          /// `Program.fs handlePromptBoundary` announces that
+          /// on tuple finalise. SpeechCursor's TextSpan-by-
+          /// TextSpan auto-announce stays suppressed by default
+          /// until verbosity-mode work (Cycle 45f) introduces
+          /// per-shell streaming-vs-tuple-final policy.
+          SkipTextSpansInAutoDrive: bool }
 
     let defaultParameters : Parameters =
         { InitialMode = AutoDrive
           SkipSpinnersInAutoDrive = true
-          SuspendAutoDriveOnSelection = true }
+          SuspendAutoDriveOnSelection = true
+          SkipTextSpansInAutoDrive = true }
 
     /// Cursor state. Mutated in-place by the navigation /
     /// announce APIs. Single-threaded by convention (dispatcher
@@ -221,6 +244,12 @@ module SpeechCursor =
     /// bell on `pty-speak.output` (no dedicated id for bell-via-
     /// announce; the earcon channel handles the audible cue
     /// separately).
+    ///
+    /// Note: AutoDrive's TextSpan-skip behaviour
+    /// (`Parameters.SkipTextSpansInAutoDrive`) is enforced in
+    /// `onAppend`, not here. Manual navigation (`speakCurrent`)
+    /// still renders TextSpans so the user can review them
+    /// explicitly.
     let renderEntry (entry: ContentHistory.Entry) : (string * string) option =
         match entry with
         | ContentHistory.TextSpan d ->
@@ -390,14 +419,26 @@ module SpeechCursor =
                 | _ -> ()
 
                 // (2) Announce decision uses the current effective
-                //     drive.
+                //     drive. TextSpan entries advance the cursor
+                //     silently when SkipTextSpansInAutoDrive is on
+                //     (the default, per the Cycle 45 fixup note on
+                //     Parameters): the live announce is suppressed
+                //     but Position + LastSpokenSeq still update so
+                //     Manual navigation finds them and the
+                //     "already spoken?" gate stays monotonic.
                 if autoDriveActive state && autoDriveAdvanceable state entry then
                     if s > state.Position then
                         state.Position <- s
-                    match renderEntry entry with
-                    | Some (text, activityId) ->
-                        announce (text, activityId)
-                    | None -> ()
+                    let suppressTextSpan =
+                        match entry with
+                        | ContentHistory.TextSpan _ ->
+                            state.Parameters.SkipTextSpansInAutoDrive
+                        | _ -> false
+                    if not suppressTextSpan then
+                        match renderEntry entry with
+                        | Some (text, activityId) ->
+                            announce (text, activityId)
+                        | None -> ()
                     state.LastSpokenSeq <- s
 
                 // (3) Post-suspend modulation: SelectionShown sets

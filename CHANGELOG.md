@@ -15,6 +15,45 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed (Cycle 45 follow-up): edit-conflated narration on tuple finalise
+
+Maintainer dogfood (2026-05-12): typing `echo hi`, editing the
+command line with arrows / backspace / delete, restoring it to
+`echo hi`, then pressing Enter produced a "very complex and
+strange result" — inflated 23-character and 48-character
+announces that did not match the actual command (`echo hi`,
+7 chars) or output (`hi`, 2 chars).
+
+Root cause: cmd's command-line editing reprints suffix bytes
+each time the cursor moves over them. Every reprint becomes a
+`Print` VtEvent that accumulates into the active `TextSpan` in
+`ContentHistory`. When the span seals (Enter → newline),
+SpeechCursor's AutoDrive auto-announces the inflated span.
+SessionModel's `SessionTuple.CommandText` / `OutputText` were
+already correct — they capture from the screen grid, which is
+the canonical view of "what cmd thinks is on the line" — but
+the SpeechCursor auto-announce path was unaware of them.
+
+Fix:
+
+1. Added `SkipTextSpansInAutoDrive: bool` to
+   `SpeechCursor.Parameters` (defaults `true`). When set,
+   `onAppend` advances the cursor's `Position` and
+   `LastSpokenSeq` for TextSpan entries without firing an
+   announce; Manual navigation can still revisit them.
+2. `Program.fs handlePromptBoundary` announces
+   `SessionTuple.OutputText` on tuple finalise. Authoritative
+   source: screen-grid-derived capture at the
+   PromptStart-after-completion transition.
+
+Trade-off: streaming output no longer auto-announces line-by-
+line until the next tuple seals. That's the right shape for
+cmd / PowerShell short commands (which always seal on Enter)
+but a regression for long-running streaming workloads
+(Claude's thinking text, `ping -t`, etc.). Cycle 45f will
+introduce per-shell verbosity modes that toggle streaming
+auto-announce back on for streaming-heavy shells.
+
 ### Fixed (Cycle 45 follow-up): Right-arrow + Delete nav-echo direction
 
 Maintainer NVDA dogfood on the post-#265 build confirmed that

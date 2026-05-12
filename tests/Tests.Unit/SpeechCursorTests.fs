@@ -35,6 +35,18 @@ let private freshHistory () : ContentHistory.T =
 let private freshCursor () : SpeechCursor.T =
     SpeechCursor.create SpeechCursor.defaultParameters
 
+/// Cycle 45 fixup (2026-05-12): the default
+/// `SkipTextSpansInAutoDrive = true` suppresses TextSpan
+/// auto-announce in production (cmd's edit-suffix-reprint
+/// pattern would otherwise produce inflated narrations).
+/// Tests that pin the underlying TextSpan-announce mechanism
+/// (so verbosity-mode work can still toggle it back on per
+/// shell) construct a cursor with the flag flipped off.
+let private cursorWithTextSpanAnnounce () : SpeechCursor.T =
+    SpeechCursor.create
+        { SpeechCursor.defaultParameters with
+            SkipTextSpansInAutoDrive = false }
+
 /// Capture-collector for announce callbacks. Returns the
 /// callback + a getter for the accumulated (text, activityId)
 /// pairs.
@@ -64,7 +76,11 @@ let ``new cursor starts in AutoDrive at Position -1 with nothing spoken`` () =
 
 [<Fact>]
 let ``AutoDrive announces appended TextSpans in seq order`` () =
-    let cursor = freshCursor ()
+    // Uses the TextSpan-announce variant: the production
+    // default suppresses TextSpan auto-announce
+    // (`SkipTextSpansInAutoDrive = true`), so this test
+    // explicitly opts the underlying mechanism back on.
+    let cursor = cursorWithTextSpanAnnounce ()
     let history = freshHistory ()
     let announce, snap = capture ()
     ContentHistory.appendFromEvent history t0 (printRune 'h') |> ignore
@@ -81,8 +97,34 @@ let ``AutoDrive announces appended TextSpans in seq order`` () =
     Assert.True(cursor.LastSpokenSeq >= 0L)
 
 [<Fact>]
-let ``AutoDrive does not re-announce entries it has already spoken`` () =
+let ``AutoDrive default suppresses TextSpan announces but advances cursor`` () =
+    // Cycle 45 fixup (2026-05-12): `SkipTextSpansInAutoDrive`
+    // defaults to true so cmd's edit-suffix-reprint pattern
+    // doesn't produce inflated narrations. The cursor still
+    // advances (Position + LastSpokenSeq) so Manual review
+    // can revisit the entry. Authoritative output-narration
+    // happens at tuple-finalise via `SessionTuple.OutputText`
+    // (see `Program.fs handlePromptBoundary`).
     let cursor = freshCursor ()
+    let history = freshHistory ()
+    let announce, snap = capture ()
+    ContentHistory.appendFromEvent history t0 (printRune 'h') |> ignore
+    ContentHistory.appendFromEvent history t0 (printRune 'i') |> ignore
+    ContentHistory.appendFromEvent history t0 lf |> ignore
+    SpeechCursor.onAppend cursor history announce
+    // No live announce — the TextSpan is silenced under the
+    // new default.
+    Assert.Empty(snap ())
+    // Cursor still advanced and the watermark moved, so the
+    // entry is reachable via Manual navigation and won't be
+    // re-spoken on a duplicate onAppend call.
+    let latest = ContentHistory.latestSeq history
+    Assert.Equal(latest, cursor.Position)
+    Assert.Equal(latest, cursor.LastSpokenSeq)
+
+[<Fact>]
+let ``AutoDrive does not re-announce entries it has already spoken`` () =
+    let cursor = cursorWithTextSpanAnnounce ()
     let history = freshHistory ()
     let announce, snap = capture ()
     ContentHistory.appendFromEvent history t0 (printRune 'a') |> ignore
@@ -245,7 +287,12 @@ let ``toMarker with no matching kind returns None`` () =
 
 [<Fact>]
 let ``SelectionShown marker suspends AutoDrive announces`` () =
-    let cursor = freshCursor ()
+    // Uses the TextSpan-announce variant so the "X" suffix
+    // suppression is checked against an actually-announceable
+    // TextSpan (under the production default, TextSpans are
+    // silenced regardless of suspend state — the suppression
+    // would be untestable without flipping the flag).
+    let cursor = cursorWithTextSpanAnnounce ()
     let history = freshHistory ()
     let announce, snap = capture ()
     ContentHistory.appendFromEvent history t0 (printRune 'h') |> ignore
@@ -276,7 +323,10 @@ let ``SelectionShown marker suspends AutoDrive announces`` () =
 
 [<Fact>]
 let ``SelectionDismissed marker resumes AutoDrive announces`` () =
-    let cursor = freshCursor ()
+    // Uses the TextSpan-announce variant so "Z" is a
+    // detectable resume signal (TextSpans are silenced under
+    // the production default).
+    let cursor = cursorWithTextSpanAnnounce ()
     let history = freshHistory ()
     let announce, snap = capture ()
     ContentHistory.appendMarker
