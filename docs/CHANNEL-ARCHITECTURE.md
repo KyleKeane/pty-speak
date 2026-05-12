@@ -1,5 +1,15 @@
 # Channel Architecture
 
+> **Cycle 45c update (2026-05-12)**: the channel-based-communication
+> architectural principle survives Cycle 45c unchanged. The
+> concrete examples below name `PathwayPump` / `activePathway` /
+> `PathwayTickPump` — those identifiers were retired in Cycle 45c.
+> The thread role survives as the "notification-consumer task"
+> in `Program.fs` (single owner of `currentSession`,
+> `promptDetector`, `selectionDetector`, `contentHistory`,
+> `speechCursor`). The `pumpChannel` remains. Treat
+> pathway-specific terminology below as historical naming.
+
 > **Snapshot**: 2026-05-08
 > **Status**: design / descriptive document — formalizes the
 >   channel-based-communication architectural principle the

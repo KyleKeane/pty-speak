@@ -1,5 +1,13 @@
 # Pane Model
 
+> **Cycle 45c update (2026-05-12)**: this doc references the
+> archived `PIPELINE-NARRATIVE.md` for pipeline vocabulary. The
+> Pane abstraction (six-concern contract, Pane Coordinator,
+> five-pane catalog, three coordination protocols) is
+> substrate-agnostic and survives Cycle 45c. Per-pane pipeline
+> references should be read against the live ContentHistory +
+> SpeechCursor substrate.
+
 > **Snapshot**: 2026-05-09
 > **Status**: design / forward-looking — sketch only; not a full spec; not yet implemented
 > **Authoring item**: backlog item 30 (research stage)

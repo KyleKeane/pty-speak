@@ -23,12 +23,16 @@ log directory) and is parsed via
 [Tomlyn](https://github.com/xoofx/Tomlyn). v1 of the schema
 exposes:
 
-- **Per-shell pathway override** — which display pathway runs
-  for `cmd` / `claude` / `powershell` (see "Pathway selection"
-  below).
-- **Per-pathway parameter override** — debounce window,
-  spinner-window, spinner threshold, and max-announce-chars for
-  `StreamPathway`.
+- **Per-shell verbosity / prompt-path overrides** (Cycle 45f) —
+  `verbosity = "tuple_final" | "line_by_line" | "off"` and
+  `prompt_path = "suppress" | "final_dir_only" | "full"` under
+  `[shell.<id>]`. Runtime-togglable via `View → Output Verbosity`
+  / `View → Prompt Path`. Layer 3 (menu) overlays Layer 2 (TOML)
+  overlays Layer 1 (compiled defaults in
+  `src/Terminal.Core/ShellPolicy.fs`).
+- **Per-shell profile-set override** (Cycle 38b) —
+  `profiles = ["passthrough", "earcon", "selection"]` under
+  `[shell.<id>]`. Composition-root default applies when absent.
 
 Everything else in this catalog remains a "candidate" — known
 and tracked, not yet exposed. The Phase B sub-stages will keep
@@ -223,7 +227,7 @@ designing for.
 
 **No audio shipped yet** — Stage 9 (earcons via NAudio) is
 **subsumed** into Part 3 Stage G of the
-[May-2026 plan](PROJECT-PLAN-2026-05-09.md): earcons land as a
+[May-2026 plan](PROJECT-PLAN-2026-05-12.md): earcons land as a
 presentation sink the Output framework drives, with
 colour-to-earcon mapping as a profile-tunable strategy. The
 current state is "all the candidate settings are
@@ -396,213 +400,43 @@ Three plausible levels of configurability, increasing in cost:
   their shell environment or via a launcher wrapper. Future TOML
   config persists across launches.
 
-## Pathway selection (shipped — Phase B subset, C2)
+## Pathway / substrate selection (retired Cycle 45c)
 
-The display-pathway substrate (Phase A, PR #159) introduced the
-abstraction "for each shell, which pathway translates canonical
-screen state into NVDA-bound events". The substrate ships
-`StreamPathway` (per-frame diff) and `TuiPathway` (alt-screen-
-aware suppression). C2 makes the choice config-driven so users
-can override the hardcoded mapping without rebuilding pty-speak.
+The pre-Cycle-45 `[pathway.stream]` + `[shell.<id>] pathway` +
+`substrate_mode` TOML knobs were retired across PRs #275 + #278
+(Cycle 45c, 2026-05-12). The pathway-selection abstraction
+they configured (`StreamPathway` / `TuiPathway` /
+`PathwaySelector` / `LinearTextStream` substrate-mode dispatch)
+is gone. `ContentHistory` + `SpeechCursor` is the sole aural
+substrate; pathway choice is no longer user-configurable.
 
-### Current state
+Old `config.toml` files that still carry `[pathway.stream]`,
+`[shell.<id>] pathway`, or `substrate_mode` keys parse
+silently — the loader's unknown-section tolerance treats them
+as no-ops. No migration step is required; the entries simply
+have no effect.
 
-- Config file: `%LOCALAPPDATA%\PtySpeak\config.toml` (optional;
-  absent → hardcoded defaults).
-- Schema:
+**Per-shell knobs that did survive Cycle 45c** live under
+`[shell.<id>]`:
 
-  ```toml
-  schema_version = 1
+- `verbosity` — `tuple_final` / `line_by_line` / `off` (Cycle
+  45f; runtime-togglable via `View → Output Verbosity`)
+- `prompt_path` — `suppress` / `final_dir_only` / `full` (Cycle
+  45f; runtime-togglable via `View → Prompt Path`)
+- `profiles = [...]` — per-shell profile-set override (Cycle 38b)
 
-  [shell.cmd]
-  pathway = "stream"
+Implementation pointer: `src/Terminal.Core/ShellPolicy.fs`
+holds the per-shell policy record + defaults table;
+`Config.resolveShellPolicy` overlays TOML on the compiled
+defaults; menu picks layer a per-shell runtime override on
+top.
 
-  [shell.powershell]
-  pathway = "stream"
-
-  [shell.claude]
-  pathway = "stream"
-
-  [pathway.stream]
-  debounce_window_ms = 200
-  spinner_window_ms = 1000
-  spinner_threshold = 5
-  max_announce_chars = 500
-  color_detection = true
-
-  [pathway.tui]
-  # reserved; no parameters today
-  ```
-
-- Defaults table:
-
-  | Setting | Default | What it controls |
-  |---|---|---|
-  | `[shell.cmd] pathway` | `"stream"` | Pathway used by `cmd.exe` |
-  | `[shell.powershell] pathway` | `"stream"` | Pathway used by `powershell.exe` (and `pwsh.exe` alias) |
-  | `[shell.claude] pathway` | `"stream"` | Pathway used by `claude.exe` |
-  | `[pathway.stream] debounce_window_ms` | `200` | Trailing-edge flush window for diff accumulation |
-  | `[pathway.stream] spinner_window_ms` | `1000` | History window for spinner-suppress detection |
-  | `[pathway.stream] spinner_threshold` | `5` | Row/content-hash change count to trigger suppression |
-  | `[pathway.stream] max_announce_chars` | `500` | Text truncation cap for NVDA announcements |
-  | `[pathway.stream] color_detection` | `true` | Emit error-tone (red text) and warning-tone (yellow text) earcons alongside NVDA reading. `false` disables both earcons. |
-
-- Available pathway IDs: `"stream"`, `"tui"`. Future Phase 2
-  IDs (`"claude-code"`, `"repl"`, `"form"`) will be added
-  without schema migration.
-- Loader: `src/Terminal.Core/Config.fs` parses + resolves;
-  `src/Terminal.App/Program.fs`'s `selectPathwayForShell`
-  consults the loaded `Config` for both pathway selection and
-  parameter overrides on startup, hot-switch
-  (`Ctrl+Shift+1/2/3`), and alt-screen exit.
-
-### Error semantics
-
-The loader **never** crashes pty-speak. Every failure mode logs
-via `ILogger` (which routes to FileLogger; readable via
-`Ctrl+Shift+;`) and falls back to defaults. The maintainer is a
-screen-reader user; GUI dialogs are explicitly out of scope.
-
-| Condition | Log level | Effect |
-|---|---|---|
-| File does not exist | Information | Use all defaults |
-| Malformed TOML | Error (with parse detail) | Use all defaults |
-| `schema_version` missing | Warning | Treat as 1 |
-| `schema_version` newer than supported | Error | Use all defaults |
-| `schema_version` older | Warning | Best-effort parse |
-| Unknown `[shell.<key>]` | Warning | Skip that section |
-| Unknown pathway name (e.g. `"stram"`) | Warning | That shell falls to default |
-| Unknown parameter key | Warning | Drop the value |
-| Negative or zero parameter value | Warning ("clamped to default") | Use default for that field |
-
-A single `Information` line on startup summarises the resolved
-config (e.g. `"Config loaded: cmd→stream, claude→stream,
-powershell→stream; stream debounce=200ms"`) so post-hoc
-diagnosis via log capture is trivial.
-
-### Out of scope (deferred to later sub-stages)
-
-- Hot-reload — changes require a restart.
-- Runtime config write-back from a hotkey or palette
-  ("save current settings as my config"). Phase 2/3.
-- Kill-switch substrate (per spec A.6). Phase B input-bindings
-  owns this.
-- Per-content-type triggers (regex / colour / semantic-parser /
-  LLM dispatchers). Phase 2/3 territory; needs actual pathways
-  that consume the triggers.
-- ClaudeCodePathway / ReplPathway / FormPathway selection —
-  those pathways don't exist yet (Phase 2).
-- Schema additions for input-binding overrides
-  (`[[bindings]]`). Separate Phase B sub-stage; coexists
-  cleanly with the current schema (the loader silently
-  ignores those sections).
-- Config validator binary or CLI.
-
-## Substrate mode (Cycle 35a/35b)
-
-The Stream pathway can announce from one of two substrates:
-the **linear-text producer** (`LinearTextStream` —
-`docs/rfc/0001-linear-text-substrate.md`) which captures the
-byte stream emitted by the shell, OR the **screen-diff path**
-(PR #166's row-by-row suffix-diff over the Cell-grid
-snapshot) which infers content from the visual screen state.
-Cycle 35a shipped both paths side-by-side behind a TOML flag;
-Cycle 35b flipped the default to `auto` so most users get the
-linear path automatically.
-
-### Current state
-
-- Config file: `%LOCALAPPDATA%\PtySpeak\config.toml`.
-- Schema:
-
-  ```toml
-  [pathway.stream]
-  substrate_mode = "auto"       # auto / linear / screen-diff
-  ```
-
-- Behaviour:
-  - **`auto`** (Cycle 35b default) — linear substrate for
-    non-alt-screen frames (where the byte stream is the
-    canonical representation per
-    [`docs/CORE-ABSTRACTION-BOUNDARY.md`](CORE-ABSTRACTION-BOUNDARY.md)
-    §1.4); screen-diff for alt-screen TUIs (vim, less, top —
-    where the grid is canonical because the byte stream
-    doesn't capture the rendered screen state).
-  - **`linear`** — always read announce content from the
-    `LinearTextStream` producer's committed buffer. Useful
-    for forced testing or for users who prefer the byte-
-    stream behaviour even inside alt-screen apps. NOTE: vim
-    / less / top will not announce sensibly under this mode
-    (alt-screen TUIs have no linear byte representation).
-  - **`screen-diff`** — always use the legacy PR #166
-    suffix-diff. Use this as the regression escape hatch if
-    the linear path causes a problem.
-- Hot-reload: NO. Edit `config.toml`, save, restart pty-speak
-  (the `[pathway.stream]` section reads at startup only;
-  matches every other section except
-  `[session_model.persistence]`).
-- Validation: invalid string (e.g. `substrate_mode = "x"`)
-  or non-string (e.g. `substrate_mode = 123`) logs a Warning
-  and falls back to the default (`auto`).
-
-### Why this configurability ships now
-
-- The substrate-inversion arc (Cycles 30–35) replaced the
-  screen-grid model with the byte-stream model as the
-  canonical representation for stream-profile workloads
-  (cmd, PowerShell, Claude). The flag exists so users can
-  revert to the prior behaviour without a downgrade if the
-  new path causes a regression in their environment.
-- Cycle 35b's default flip happens AFTER manual NVDA
-  validation of an 8-row content matrix (cmd `dir`,
-  PowerShell `gci`, Claude tool-use, npm install spinner,
-  cmd tab-completion, etc.) — see
-  [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
-  for the matrix.
-- The flag is durable. Even after Cycle 39's cleanup
-  removes the screen-diff legacy code from `SessionModel`
-  and `StreamPathway` (per Section 13 of the strategic
-  plan), the `auto` / `linear` choice remains; what gets
-  removed is the `screen-diff` option (alt-screen frames
-  internally still use a screen-diff-like model but it
-  isn't user-selectable).
-
-### When to override the default
-
-- **Hit a Linear-mode regression**: set
-  `substrate_mode = "screen-diff"`. Restart pty-speak. File
-  an issue describing the regression so the fix can land
-  before the screen-diff escape hatch is removed.
-- **Want to force the linear path everywhere** (e.g. for
-  development or accessibility testing of the
-  `LinearTextStream` substrate against a TUI app where the
-  alt-screen detection is uncertain): set
-  `substrate_mode = "linear"`. Be aware that vim / less /
-  top will not announce sensibly under this mode.
-- **Default install**: leave `substrate_mode` unset (or set
-  to `"auto"` for explicitness). The `auto` resolution
-  handles the alt-screen / linear split correctly.
-
-### Implementation notes
-
-- Resolution: `Config.resolveStreamParameters` returns
-  `StreamPathway.Parameters` with `SubstrateMode` populated.
-  The composition root passes that to `StreamPathway.create`
-  for the announce path AND uses the same value to decide
-  `useLinear` for `SessionModel.applyAndCaptureWithSubstrate`
-  (which controls SessionTuple finalize semantics for
-  `Ctrl+Shift+Y` and the in-memory History queue).
-- SessionTuple finalize is hybrid: when `useLinear = true`
-  AND the linear stream observed OSC 133 markers
-  (`PromptStart` / `OutputStart` / `CommandFinished`) since
-  the last finalize, `CommandText` and `OutputText` flow
-  from the linear stream. Otherwise (no markers — vanilla
-  cmd, vanilla PowerShell — or `useLinear = false`),
-  `SessionModel.extractContent` does the legacy row-walk
-  against the screen snapshot. This preserves
-  `Ctrl+Shift+Y` behaviour for OSC-133-less shells until
-  the cleanup cycle removes `extractContent` per Section 13
-  of the strategic plan.
+For the pre-Cycle-45 details on what each retired key did, see
+the archived `docs/archive/pre-cycle-45/PROJECT-PLAN-2026-05-09.md`
+and the prior revision of this file
+(`docs/archive/pre-cycle-45/USER-SETTINGS-pre-cycle-45c.md`
+if a snapshot was captured; otherwise reconstruct from git
+history).
 
 ## SessionModel persistence (substrate shipped — Cycle 24a)
 
@@ -902,7 +736,7 @@ decision. The verbose-readback experience that results — NVDA
 re-reading the whole screen on every keystroke for typed
 input — is the **first foundational architecture decision**
 addressed by the
-[May-2026 plan](PROJECT-PLAN-2026-05-09.md)'s Output framework
+[May-2026 plan](PROJECT-PLAN-2026-05-12.md)'s Output framework
 cycle (Part 3), not a tuning problem inside the existing
 coalescer.
 
@@ -1119,624 +953,38 @@ expected use pattern.
   of the heartbeat cadence; only the periodic background log
   emit is affected.
 
-## Suffix-diff parameters (PR #166 follow-up)
+## Suffix-diff parameters (retired Cycle 45c)
+
+PR #166's sub-row suffix-diff at `StreamPathway` emit shipped
+2026-05-06 and accumulated a parameter atlas across Cycles 35–43
+(`BulkChangeThreshold`, `BackspacePolicy`, `ModeBarrierFlushPolicy`,
+`ColorDetection`, plus `[pathway.stream]` debounce / spinner-window /
+spinner-threshold / max-announce-chars knobs). The atlas catalogued
+each parameter for eventual user-tunability via `config.toml`.
+
+**All of these parameters were retired in Cycle 45c** (PRs #275 + #278,
+2026-05-12) along with the `StreamPathway` substrate they tuned.
+The post-Cycle-45c aural substrate is `ContentHistory` +
+`SpeechCursor`, which has its own (much smaller) parameter
+surface — currently:
+
+| Parameter | Default | Source |
+|---|---|---|
+| `ContentHistory.Parameters.IdleSpanSealMs` | `200` | `src/Terminal.Core/ContentHistory.fs` |
+| `ContentHistory.Parameters.MaxEntriesPerTuple` | `10_000` | same |
+
+Neither is user-tunable today. A future cycle will rebuild the
+atlas-style "configurability path" entries for these (and for
+any new parameters surfaced by Cycle 45g / semantic-labels /
+spinner refinements) once the substrate has bedded in.
+
+The pre-Cycle-45 suffix-diff atlas is preserved in
+[`docs/archive/pre-cycle-45/PROJECT-PLAN-2026-05-09.md`](archive/pre-cycle-45/PROJECT-PLAN-2026-05-09.md)
+and the relevant subsections of this file's predecessor revision
+(reconstruct from git history at `e51c23e^` if needed; the
+content was historically too detailed to copy forward to a slim
+post-Cycle-45c doc).
 
-PR #166 (sub-row suffix-diff at StreamPathway emit) shipped
-2026-05-06. Maintainer release-build validation that day
-surfaced five UX observations — none of which are bugs in the
-strict sense, but all of which are sensitive to: NVDA
-configuration (e.g. "speak typed characters" on/off determines
-whether pty-speak's per-keystroke announce is redundant),
-maintainer preference (e.g. backspace silent vs. deleted-char-
-announced), or voice synthesizer behaviour (e.g. interrupt-on-
-new-notification cadence varies by voice).
-
-This section captures each observation as a future parameter
-following the catalogue's standard "Current state / Why
-hardcoded now / What configurability would look like /
-Implementation notes" pattern. The maintainer's directive
-2026-05-06: don't quick-fix any of these — each one becomes a
-parameter; design the substrate before any individual
-behaviour gets locked in by an "expedient" implementation.
-
-### Pipeline-stage glossary
-
-The 12-stage pipeline glossary proposed in PR #166's
-StreamPathway plan (and informing the future
-[`PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md), item 19 in
-the strategic backlog). Used below to anchor each parameter
-to a specific stage.
-
-| # | Stage | Module | Role |
-|---|---|---|---|
-| 1 | Byte ingestion | `Terminal.Pty.ConPtyHost` | Bytes arrive from child shell's stdout |
-| 2 | Parser application | `Terminal.Parser.VtParser` + `Terminal.Core.Screen` | Bytes → SGR/CSI/text → cell-grid mutations |
-| 3 | Notification emission | `Terminal.Core.Screen` | RowsChanged, ModeChanged, Bell etc. |
-| 4 | Canonical-state synthesis | `Terminal.Core.CanonicalState` | Snapshot + sequence + row hashes |
-| 5 | Frame-dedup | `StreamPathway` (`LastFrameHash`) | Identical frames are no-ops |
-| 6 | Spinner suppression | `StreamPathway` (`isSpinnerSuppressed`) | Repeated rotating-character patterns suppressed |
-| 7 | Row-level diff | `CanonicalState.computeDiff` | Which rows changed + their concatenated text |
-| 8 | Sub-row suffix detection | `StreamPathway` (`computeRowSuffixDelta`, PR #166) | Per row, what's new beyond previous emit's text |
-| 8b | Bulk-change fallback | `StreamPathway` (heuristic, PR #166) | When too many rows changed at once, bypass suffix detection |
-| 9 | Announcement payload assembly | `StreamPathway` (`assembleSuffixPayload`, `capAnnounce`) | Combine per-row suffixes into single string; cap length |
-| 10 | Profile claim | `OutputDispatcher` | Profiles inspect events, emit ChannelDecisions |
-| 11 | Channel rendering | `OutputDispatcher` → channels | Each channel's `Send` receives event + render |
-| 12 | NVDA dispatch | `PtySpeak.Views.TerminalView.Announce` | UIA Notification fires; NVDA reads it |
-
-Auxiliary stages: **Mode-barrier handling**
-(`StreamPathway.onModeBarrier`, fired between stage 4 and 5
-on shell-switch / alt-screen transitions) and **Earcon
-synthesis** (`Terminal.Audio.EarconPlayer`, consumed at
-stage 11).
-
-### `stream.suffixDiff.bulkChangeThreshold` (currently 3) — ✅ shipping (PR #168)
-
-#### Current state
-
-`StreamPathway.Parameters.BulkChangeThreshold`
-(`src/Terminal.Core/StreamPathway.fs:142, 160`) defaults
-to `3` per the `defaultParameters` record. PR #168 lifted
-the constant from a top-level `let private` binding into
-the `Parameters` record + exposed it as TOML key
-`[pathway.stream] bulk_change_threshold` per
-`Config.fs:102-149`. When the row-level diff reports more
-than `BulkChangeThreshold` changed rows in a single frame,
-the suffix-diff stage bypasses per-row LCP and emits the
-full `ChangedText` (the pre-PR-#166 verbose path).
-
-#### Why hardcoded now
-
-3 is conservative: typing produces 1 changed row; Enter
-usually produces 1-2; small pastes 2-3 — they all stay on the
-suffix-diff path. Scrolls affect ~30 rows; screen clears all
-of them — both engage the fallback. The 3 was chosen during
-PR #166 design without dogfood evidence; the maintainer may
-prefer a different value once they have lived experience.
-
-#### What configurability would look like
-
-```toml
-[stream.suffix_diff]
-bulk_change_threshold = 3
-```
-
-Lower values make verbose-fallback engage sooner (more
-announces on small bursts, less risk on shell-side prompt
-redraws); higher values keep more cases on the suffix path
-(cheaper announcements but riskier under fish autosuggestions
-or Powerline-style async prompt updates).
-
-Implementation tier: **ready to implement** (existing TOML
-loader pattern). Single field on
-`StreamPathway.Parameters` + key in `StreamParameterOverrides`
-+ loader in `Config.resolveStreamParameters`. ~30 LOC + tests.
-
-#### Implementation notes
-
-- Add to `StreamPathway.Parameters` record alongside
-  `DebounceWindowMs` etc.
-- Schema validation: `1 ≤ x ≤ 30` (must fit within total
-  rows; below 1 makes no sense).
-- Default stays 3; document the trade-off in
-  `config.toml.sample`.
-- Tests: a small bulk-change PR could include a property
-  test — `assembleSuffixPayload` falls back to `ChangedText`
-  iff `diff.ChangedRows.Length > threshold`.
-
-### `stream.suffixDiff.backspacePolicy` (currently announce_deleted_character) — ✅ shipping (PR #168)
-
-#### Current state
-
-`StreamPathway.Parameters.BackspacePolicy`
-(`src/Terminal.Core/StreamPathway.fs:161`) defaults to
-`AnnounceDeletedCharacter` per the `defaultParameters`
-record. PR #168 shipped the parameter substrate + changed
-the default from `SuppressShrink` (formerly described as
-"silent") to `AnnounceDeletedCharacter`. Exposed as TOML
-key `[pathway.stream] backspace_policy` with values
-`"silent"` / `"announce_deleted_character"` /
-`"announce_deleted_word"` per `Config.fs:109,302`.
-
-#### Background
-
-The original PR-#166 "Default 1" choice (silent on row
-shrink) assumed NVDA's "speak typed characters" setting
-would handle backspace audibility. Maintainer release-
-build validation 2026-05-06 confirmed this was wrong:
-NVDA's keyboard echo speaks the *key pressed* (not the
-screen content change), so "Backspace" was silent under
-the original default. **UX issue #2 from 2026-05-06**.
-PR #168 corrected the default to
-`AnnounceDeletedCharacter`.
-
-#### What configurability would look like
-
-```toml
-[stream.suffix_diff]
-backspace_policy = "announce_deleted_character"
-```
-
-Values:
-
-- `"silent"` — current behaviour. Useful only if NVDA gains
-  a "speak deletions" setting in the future.
-- `"announce_deleted_character"` — the proposed new default.
-  Row shrink emits the character that disappeared (computed
-  by comparing the new row's tail to the cached previous-emit
-  text). User hears `i` after backspacing the `i` from
-  `echo hi`.
-- `"announce_deleted_word"` — coarser granularity for users
-  who use Ctrl+Backspace / equivalent. Implementation needs
-  word-boundary detection at the `previousText` tail.
-
-Implementation tier: **ready to implement**. Small enum +
-branch in `computeRowSuffixDelta`'s Shrink case. The deleted
-content is `previousText.Substring(longestCommonPrefixLength
-currentText previousText)` — already computed adjacently.
-
-#### Implementation notes
-
-- Add `BackspacePolicy = Silent | AnnounceDeletedCharacter |
-  AnnounceDeletedWord` discriminated union.
-- The `computeRowSuffixDelta` returns
-  `Suffix deletedSuffix` rather than `Silent` when policy
-  is `AnnounceDeletedCharacter`. Note this changes the
-  semantic of `Suffix` slightly: it can now mean "deleted
-  content was X" rather than "new content is X". Consider a
-  future shape `EditDelta = AppendSuffix of string |
-  DeletedSuffix of string | Silent` if telemetry / debug
-  logging needs the distinction.
-- Default ships as `AnnounceDeletedCharacter`. Default
-  `Silent` mode preserved as opt-in.
-- Tests: extend the `computeRowSuffixDelta` unit tests to
-  pin both default and silent-mode behaviour.
-
-#### Known v1.1 limitation: rapid backspace + retype is silenced (debounce-collapsing)
-
-**Status as of PR #169 (2026-05-06)**: this limitation is
-inherent to the LCP-based suffix-diff design when combined
-with the debounce window. Documented here so future PRs
-don't regress without authorisation.
-
-**The scenario**: user types `echo hi`, then quickly
-backspaces twice and types ` X` — final state is `echo X`.
-All within the 200ms debounce window. The leading-edge
-emit fires once per debounce window; the trailing-edge
-processes accumulated state.
-
-**Why backspace is silenced under `AnnounceDeletedCharacter`**:
-the diff at trailing-edge time compares `current` ("echo X",
-6 chars) against `previousText` ("echo hi", 7 chars). Since
-`current.Length < previousText.Length`, the function would
-enter the Shrink branch and emit the deleted segment. So
-single backspace (without retype) DOES work.
-
-But: **rapid backspace + retype** like the example above
-produces a final `current` length that may equal or exceed
-`previousText` length. In the example, "echo X" is only one
-char shorter — but with 2 backspaces + 2 retyped chars, the
-final lengths could be equal. When `current.Length >=
-previousText.Length`, the function falls through to the
-Append/Replace branch:
-
-- LCP("echo X", "echo hi") = 5 ("echo " — the trailing space
-  matches)
-- Suffix = "X"
-
-The deleted "hi" is **silenced** because the LCP-based diff
-doesn't surface it. The user hears "X" (the retyped content)
-but no audible signal that "hi" was deleted.
-
-**This is the v1.1 debounce-collapsing limitation**: any
-backspace event that gets followed within 200ms by enough
-retyping to bring `current.Length >= previousText.Length` is
-absorbed by the cumulative leading-edge / trailing-edge
-emit.
-
-**Workarounds**:
-
-1. **Pause after backspace before retyping** — if the user
-   pauses for more than 200ms after backspace, the trailing-
-   edge emits the Shrink case (deleted segment) before the
-   retyping arrives. The retyping then becomes its own
-   emit. Both events surface audibly.
-2. **`backspace_policy = "silent"`** for users who only ever
-   backspace + retype quickly — the silent mode is honest
-   about not announcing the operation, rather than silently
-   dropping the deletion's audible signal in favour of the
-   retyping content.
-
-**Real fix**: the **Phase 2 input framework's echo correlation**
-solves this structurally. With keystroke tracking,
-pty-speak can detect "the user pressed Backspace at time T"
-as an explicit event, independent of the screen mutation
-that follows. The deletion event surfaces audibly even when
-collapsed into the same debounce window as a retype. See
-the `stream.echoCorrelation.policy` entry below for the
-substrate.
-
-### `stream.echoCorrelation.policy` (not yet implemented)
-
-#### Current state
-
-Not implemented. Today, every screen mutation that produces a
-suffix is announced — including the per-keystroke echo of the
-user's own typing. **UX issue #1 from 2026-05-06**: when NVDA
-has "speak typed characters" enabled, the user hears each
-character twice (once from NVDA's keypress echo, once from
-pty-speak's screen-mutation echo). Fast typing masks this via
-NVDA's interrupt-on-new-notification behaviour, but slow
-typing produces audible doubles.
-
-The right substrate doesn't exist yet: pty-speak doesn't
-track outgoing keystrokes (`KeyEncoding` produces the bytes,
-sends them to PTY stdin, then forgets). To correlate "this
-screen mutation is an echo of a keystroke I just sent" we
-need a small in-memory ring of recent keystrokes that the
-StreamPathway can consult.
-
-#### Why hardcoded now
-
-Echo correlation is one of the headline features of the
-forthcoming **Phase 2 input framework cycle** (per the May-
-2026 plan, Part 4). Implementing it as a one-off without the
-input framework would lock in a narrow design (single-char
-correlation only, no cursor awareness, no per-shell echo
-policies); the framework cycle is the right venue.
-
-#### What configurability would look like
-
-```toml
-[stream.echo_correlation]
-policy = "track_keystrokes"
-keystroke_window_ms = 500
-```
-
-Values:
-
-- `"none"` — current behaviour. Recommended only when NVDA
-  keyboard echo is OFF.
-- `"suppress_single_char_match"` — stopgap variant: when the
-  suffix is exactly one character and matches the most-recent
-  keystroke, suppress. Simple to implement (no correlation
-  ring needed; just compare suffix length 1 + last byte).
-  Doesn't handle multi-char (paste, autocomplete prefix).
-- `"track_keystrokes"` — full correlation. Track the last
-  N keystrokes (within `keystroke_window_ms`); if the
-  cumulative new content matches a prefix of recent
-  keystrokes, suppress the emit. Handles
-  single-char + multi-char + shell-side echo modifications
-  (uppercase / lowercase / autocompletion).
-
-`keystroke_window_ms = 500` is the time horizon for "recent"
-keystrokes; longer windows catch more correlations but risk
-suppressing genuine shell-output that happens to match.
-
-Implementation tier: **Phase 2 input framework prerequisite**.
-
-#### Implementation notes
-
-- New module `Terminal.Core.KeystrokeTracker` (or live in
-  the input framework substrate when it ships) maintains a
-  ring buffer of `(byte[], DateTimeOffset)` pairs.
-- `KeyEncoding` (or its successor) calls
-  `KeystrokeTracker.record` on every encoded keystroke.
-- `StreamPathway.computeRowSuffixDelta` consumes the
-  tracker (passed via Parameters) when policy is
-  `TrackKeystrokes`. Suppress when match found.
-- Per-shell consideration: some shells modify echo (e.g.
-  passwords echo as `*`, fish autosuggestions paint grey
-  text the user didn't type). The correlation needs to
-  handle these edge cases — likely as separate per-pathway
-  policies once ReplPathway / shell-aware pathways ship.
-
-### `stream.cursorAnnouncement.enabled` (not yet implemented)
-
-#### Current state
-
-Not implemented. Cursor-only mutations (arrow keys, no row
-text change) produce no `RowsChanged` notification, so the
-current pathway emits nothing. **UX issue #3 from 2026-05-06**:
-arrow-key cursor movement is silent, so the user has no
-audible feedback when navigating within a typed command.
-
-The right substrate is **cursor-aware diff**: track cursor
-position; emit on cursor-only changes (typically "the
-character at the new cursor position" — matches NVDA's
-caret-tracking model in document content). PR #166
-deliberately deferred this to v2.
-
-#### Why hardcoded now
-
-Cursor-aware diff requires threading cursor position
-(`Screen.Cursor`) through the pathway. Stream pathway today
-operates on row text only — cursor is a separate mutable
-property of `Screen` that's not part of `CanonicalState`.
-The Phase 2 ReplPathway (which is the natural consumer of
-cursor awareness for prompt-buffer editing) is the venue.
-
-#### What configurability would look like
-
-```toml
-[stream.cursor_announcement]
-enabled = false  # default false for stream pathway
-mode = "character_at_cursor"
-```
-
-Values for `mode`:
-
-- `"character_at_cursor"` — announce the character now at
-  the cursor's column. Arrow-right past `e` announces `c`
-  (the new under-cursor char).
-- `"column_position"` — announce the new column number.
-  Useful for layout-sensitive editing.
-- `"word_at_cursor"` — announce the word containing the
-  cursor — closer to NVDA's caret-tracking model.
-
-Default `enabled = false` for StreamPathway because
-shell-style typing usually doesn't need cursor announcements
-(the shell echoes back the resulting state, which the user
-hears via the suffix-diff pipeline). When ReplPathway ships,
-its default would be `enabled = true` — REPL prompts ARE
-navigable documents.
-
-Implementation tier: **Phase 2 ReplPathway prerequisite**.
-
-#### Implementation notes
-
-- Cursor data lives on `Screen.Cursor` (mutable property,
-  not in `CanonicalState`). Propagating to pathways needs
-  either: (a) including cursor in `Canonical` record, or
-  (b) per-pathway resolver function (similar to PR #165's
-  `resolveSeq` pattern in the diagnostic battery).
-- `computeRowSuffixDelta` becomes cursor-aware: when cursor
-  position changed but row content didn't, decide based on
-  `mode` what to emit.
-- Per-pathway default rather than global default (Stream
-  vs Repl have different needs).
-
-### `notification.activityIds.inputEcho` and `notification.processing.inputEcho` (not yet implemented)
-
-#### Current state
-
-All `StreamChunk` events route through a single ActivityId:
-`pty-speak.output` (defined at
-`src/Terminal.Core/Types.fs:299`,
-`src/Terminal.Core/NvdaChannel.fs:semanticToActivityId`).
-NVDA processes this ActivityId with `NotificationProcessing.ImportantAll`
-— meaning new announcements interrupt the current speech
-mid-word.
-
-**UX issue #4 from 2026-05-06**: after running `dir`, the
-DIR output is queued through `pty-speak.output`. As the
-maintainer types, each keystroke fires a new
-`pty-speak.output` event with `ImportantAll` processing,
-interrupting NVDA mid-word. The result: stuttering speech as
-typing interrupts the DIR output's read-back.
-
-#### Why hardcoded now
-
-The current single-ActivityId routing was the simplest design
-in Stage 8a — uniform processing for all stream output.
-Splitting input echo into a separate ActivityId requires
-**classifying** each emit as input-echo vs not, which depends
-on the Phase 2 echo-correlation substrate.
-
-#### What configurability would look like
-
-```toml
-[notification.activity_ids]
-output = "pty-speak.output"
-input_echo = "pty-speak.input-echo"
-
-[notification.processing]
-output = "important_all"
-input_echo = "most_recent"
-```
-
-`NotificationProcessing` values map to UIA's enum:
-
-- `"important_all"` — process all without dropping; higher
-  priority; interrupts current speech.
-- `"all"` — process all without dropping; lower priority;
-  queues behind current.
-- `"most_recent"` — drop older same-activity announcements;
-  only the latest survives.
-- `"current_then_most_recent"` — keep current playing; then
-  drop old + queue most recent.
-
-For input-echo specifically, `"most_recent"` means: while
-NVDA is busy reading something else (e.g. DIR output), per-
-keystroke echoes get superseded by the cumulative latest
-character. Smoother cadence; loses fine-grained per-keystroke
-fidelity.
-
-Implementation tier: **Phase 2 input framework prerequisite**
-(needs the input-vs-output classifier).
-
-#### Implementation notes
-
-- StreamPathway emits classify each `OutputEvent` with a
-  routing hint (e.g. `RoutingHint.InputEcho` /
-  `RoutingHint.Output`) based on echo-correlation result.
-- `NvdaChannel.semanticToActivityId` becomes
-  `eventToActivityId` (consumes routing hint).
-- WPF-side `TerminalView.Announce` reads the per-ActivityId
-  `NotificationProcessing` from a settings record (currently
-  hardcoded to `ImportantAll`).
-- This work pairs naturally with echo correlation — both
-  ship in the same framework cycle PRs.
-
-### `modeBarrier.flushPolicy` (currently summary_only) — ✅ shipping (PR #168 + PR #169)
-
-#### Current state
-
-`StreamPathway.Parameters.ModeBarrierFlushPolicy`
-(`src/Terminal.Core/StreamPathway.fs:162`) defaults to
-`SummaryOnly` per the `defaultParameters` record. PR #168
-shipped the parameter substrate + changed the default
-from `Verbose` to `SummaryOnly`; PR #169 then preserved
-per-row baselines under `SummaryOnly` so the post-barrier
-first emit doesn't re-announce stale content. Exposed as
-TOML key `[pathway.stream] mode_barrier_flush_policy`
-with values `"verbose"` / `"summary_only"` /
-`"suppressed"` per `Config.fs:115,318`.
-
-`onModeBarrier` (StreamPathway.fs:843-866) honours the
-policy: under `SummaryOnly` and `Suppressed` the
-previous-shell-screen flush is suppressed, falling back
-to the "switching to X" announce + the new shell's
-startup output as the user's signal.
-
-Closes the original behaviour that surfaced as **UX
-issue #5 from 2026-05-06** (switching shells with
-Ctrl+Shift+1/2/3 reading the previous shell's
-~1200-character flush before the new shell's startup).
-Was item 23 + item 24 in the strategic backlog;
-substantially shipped via the policy default.
-
-#### Background
-
-PR #166's plan deliberately preserved the verbose flush
-at mode barriers because barriers are discontinuities —
-full context felt safer than per-row suffix-diff against
-a soon-to-be-stale baseline. Dogfood confirmed
-unpleasant; PR #168 + #169 corrected the default to
-`SummaryOnly`.
-
-#### What configurability would look like
-
-```toml
-[mode_barrier]
-flush_policy = "summary_only"
-shell_switch_announce_pre = "Switching to {shell}"
-shell_switch_announce_post = "Switched to {shell}"
-```
-
-Values for `flush_policy`:
-
-- `"verbose"` — current behaviour. Emit
-  `diff.ChangedText` for the previous shell's screen on
-  barrier.
-- `"summary_only"` — proposed default. Suppress the
-  previous-shell flush; rely on the "switching to X"
-  announce + the new shell's startup output.
-- `"suppressed"` — silent on barrier; the new shell's
-  startup output is the user's only signal that anything
-  changed.
-
-`shell_switch_announce_pre/post` are the announcement
-templates with `{shell}` substituting the new shell's
-display name. Today these are hardcoded in the
-`Program.fs` shell-switch handler.
-
-Implementation tier: **ready to implement**. Small branch
-in `onModeBarrier`. Templates live in a new
-`ModeBarrierParameters` record.
-
-#### Implementation notes
-
-- The proposed `"summary_only"` default subsumes both items
-  23 and 24 from the strategic backlog (stale-red-on-flush
-  + 1200-char-flush both go away).
-- The barrier handler still clears `LastEmittedRowText`
-  and resets the row-hash baseline (existing semantics).
-- Test: extend
-  `tests/Tests.Unit/StreamPathwayTests.fs:onModeBarrier`
-  fixture to pin the `summary_only` policy emits no
-  StreamChunk.
-
-### NVDA-collaboration matrix
-
-For each of the parameters above, the NVDA setting it
-interacts with and the recommended value at each pty-speak
-default. Used to design sensible defaults and to flag user-
-config combinations that produce surprising behaviour.
-
-| pty-speak parameter | NVDA setting | Interaction | Recommended pty-speak value |
-|---|---|---|---|
-| `stream.echoCorrelation.policy` | "Speak typed characters" (Preferences → Speech → Echo) | If NVDA echoes typed chars, pty-speak's per-keystroke emit is redundant. | `"track_keystrokes"` once shipped (smart suppression), `"none"` if NVDA echo is off |
-| `stream.suffixDiff.backspacePolicy` | "Speak typed characters" (does NOT cover backspace by default) | NVDA's typed-character echo speaks the key pressed, not screen content changes. Backspace produces no NVDA announcement. | `"announce_deleted_character"` regardless of NVDA setting |
-| `notification.processing.output` | NVDA's per-ActivityId rules + voice rate | Higher voice rates handle `"important_all"` interruptions; slower voices benefit from `"all"` (queued). | `"important_all"` for fast voices; `"all"` for slow voices |
-| `notification.processing.inputEcho` | "Speak typed characters" + voice rate | When NVDA echo is on, this layer is suppressed by echo correlation; this parameter mainly matters when correlation is off. | `"most_recent"` |
-| `modeBarrier.flushPolicy` | None directly | Independent of NVDA settings. | `"summary_only"` regardless |
-| `stream.cursorAnnouncement.enabled` | NVDA's caret-tracking model | NVDA tracks the caret in document content but not in terminal content. pty-speak fills the gap when this is on. | `false` for shell typing; `true` for REPL/editor pathways |
-| `stream.suffixDiff.bulkChangeThreshold` | None directly | Indirect via cumulative-payload pacing under `notification.processing`. | Default 3; tune higher for users who prefer suffix-diff over verbose-fallback on small bursts |
-
-**Detection of NVDA settings (future)**: pty-speak does not
-currently read NVDA's config file. A future enhancement could
-detect NVDA's "speak typed characters" setting on launch and
-adjust echo-correlation defaults automatically. NVDA's
-`%APPDATA%\nvda\nvda.ini` is INI-format and pure-read; no
-NVDA-side changes needed.
-
-### Pipeline-stage cross-reference
-
-For each pipeline stage, the parameters that affect it.
-Helps a reader find "all the knobs on stage X" in one place.
-
-| Stage | Parameters affecting this stage |
-|---|---|
-| 5 (Frame-dedup) | `stream.debounceWindowMs` (existing) |
-| 6 (Spinner suppression) | `stream.spinnerWindowMs`, `stream.spinnerThreshold` (existing) |
-| 7 (Row-level diff) | (none — pure) |
-| 8 (Sub-row suffix detection) | `stream.suffixDiff.backspacePolicy`, `stream.suffixDiff.attributeOnlyPolicy`, `stream.echoCorrelation.*`, `stream.cursorAnnouncement.*` |
-| 8b (Bulk-change fallback) | `stream.suffixDiff.bulkChangeThreshold` |
-| 9 (Announcement payload assembly) | `stream.maxAnnounceChars` (existing, with stopgap status) |
-| 10 (Profile claim) | `stream.colorDetection` (existing), `parserError.priority` (today's hard-coded `Background`) |
-| 11 (Channel rendering) | `notification.activityIds.*`, `earcon.palette.*`, `earcon.muted` |
-| 12 (NVDA dispatch) | `notification.processing.*` |
-| Mode-barrier handler | `modeBarrier.flushPolicy`, `modeBarrier.shellSwitchAnnounce*` |
-| Diagnostic battery | `diagnostic.heartbeatIntervalMs` (existing), `diagnostic.pollMs`, `diagnostic.quiescenceMs`, `diagnostic.timeoutMs` |
-
-### Implementation precedence
-
-Not every parameter ships at once. Tiers below sort by
-substrate readiness so the maintainer can pick where to spend
-engineering effort.
-
-#### Tier 1 — ready to implement (existing TOML loader pattern)
-
-Need only: new field on `Parameters` record + TOML key in
-`StreamParameterOverrides` + loader logic. No new substrate.
-~30-50 LOC per parameter + tests.
-
-| Parameter | Effort |
-|---|---|
-| `stream.suffixDiff.bulkChangeThreshold` | Trivial — already a `let private` constant |
-| `stream.suffixDiff.backspacePolicy` | Small — one extra branch in `computeRowSuffixDelta` |
-| `stream.suffixDiff.attributeOnlyPolicy` | Small — bundle with backspace policy PR |
-| `modeBarrier.flushPolicy` | Small — branch in `onModeBarrier` |
-| `modeBarrier.shellSwitchAnnounce*` (templates) | Small — bundle with mode-barrier PR |
-| `notification.processing.*` (per-ActivityId enum) | Medium — needs WPF-side wire-up + UIA `NotificationProcessing` enum mapping |
-| `earcon.palette.*` overrides | Small — extends EarconPalette load path |
-| `earcon.muted` | Already planned for Stage 9 (Ctrl+Shift+M) — make persistent |
-
-#### Tier 2 — Phase 2 input framework prerequisites
-
-Need new substrate (input-byte tracking, cursor-aware diff,
-input/output event taxonomy). Phase 2 is the venue.
-
-| Parameter | Substrate needed |
-|---|---|
-| `stream.echoCorrelation.policy` | Keystroke tracking from `KeyEncoding` to StreamPathway |
-| `stream.echoCorrelation.keystrokeWindowMs` | Same |
-| `stream.cursorAnnouncement.enabled` | Cursor-aware diff (cursor-position threading) |
-| `stream.cursorAnnouncement.mode` | Same |
-| `notification.activityIds.inputEcho` | Echo classification (depends on echo correlation) |
-| `notification.processing.inputEcho` | Same |
-
-#### Tier 3 — refinement / future
-
-Lower priority; implement when need surfaces.
-
-| Parameter | Reason |
-|---|---|
-| `parserError.priority` (currently set but unused) | Depends on Profile.Priority awareness landing in Phase 2 or beyond |
-| `diagnostic.*` | Diagnostic is a tool, not user-facing; tunable via code if needed |
-| Per-shell parameter overrides (e.g. different `bulkChangeThreshold` for cmd vs PowerShell vs claude) | Atlas-only design space; not implemented in v1 era |
-| TOML hot-reload (today loader runs once at composition; future could watch the file) | Nice-to-have |
-| Per-voice notification-processing profiles (reads voice name from NVDA, picks profile) | Speculation; depends on user demand |
 ## Process for adding a new setting
 
 When the project moves from "hardcoded" to "user-configurable"
@@ -1945,7 +1193,7 @@ Cycle 26c (`RunProcessCleanupScript`) is the worked example.
 
 To add a new menu (e.g. Window, Display, Preferences/Settings —
 all anticipated in
-[`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md)):
+[`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-12.md)):
 
 1. **`src/Views/MainWindow.xaml`** — add a new
    `<MenuItem Header="_NewMenu">...</MenuItem>` block inside the

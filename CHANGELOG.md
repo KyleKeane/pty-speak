@@ -15,6 +15,92 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 45c follow-up): post-cleanup docs + onboarding refresh
+
+Post-Cycle-45c audit + documentation sweep ensuring the repo's
+docs reflect the new (much simpler) ContentHistory + SpeechCursor
+paradigm. The maintainer flagged that `docs/SESSION-HANDOFF.md`
+had grown to ~2,200 lines of accumulated decision history,
+diluting its role as a new-session onboarding brief. This sweep
+rebalances:
+
+**Onboarding TLDR**:
+- `docs/SESSION-HANDOFF.md` rewritten as a slim ~100-line TLDR
+  (current state, where we left off, next-stage candidates,
+  sandbox gotchas, pointers out). The previous multi-thousand-line
+  version moved to
+  [`docs/archive/pre-cycle-45/SESSION-HANDOFF-pre-cycle-45c-historical.md`](docs/archive/pre-cycle-45/SESSION-HANDOFF-pre-cycle-45c-historical.md)
+  where it serves the decision-trail role this file used to
+  overload.
+- `docs/PROJECT-PLAN-2026-05-12.md` added as the new active
+  strategic plan (succeeds `2026-05-09` per Track E E5
+  dated-snapshot discipline). Captures post-Cycle-45c state +
+  candidate next cycles (45g `ShellPolicy` consolidation, 45d
+  review-cursor focus, semantic labels, spinner / red-tone
+  refinements, Coalescer rename, UIA caret). Predecessor moved
+  to
+  [`docs/archive/pre-cycle-45/PROJECT-PLAN-2026-05-09.md`](docs/archive/pre-cycle-45/PROJECT-PLAN-2026-05-09.md).
+
+**Cross-reference fixes**:
+- All live links to `PROJECT-PLAN-2026-05-09.md` retargeted to
+  the new `PROJECT-PLAN-2026-05-12.md` across `CLAUDE.md`,
+  `README.md`, `docs/CORE-ABSTRACTION-BOUNDARY.md`,
+  `docs/ACCESSIBILITY-INTERACTION-MODEL.md`,
+  `docs/USER-SETTINGS.md`, `docs/DOC-MAP.md`,
+  `docs/ACCESSIBILITY-TESTING.md`, `docs/ROADMAP.md`.
+  CHANGELOG historical refs retargeted to the archive path.
+- `CLAUDE.md` reading-order item 4 + "Current sequencing" section
+  refreshed to point at the new plan + describe the post-Cycle-45c
+  cycle state.
+- `docs/DOC-MAP.md` row for SESSION-HANDOFF updated to reflect
+  the new "TLDR brief" role.
+
+**Docs body pruning**:
+- `docs/USER-SETTINGS.md` — replaced ~210-line "Pathway / substrate
+  selection" + "Substrate mode" sections with a ~25-line
+  retirement note pointing at `ShellPolicy` (Cycle 45f) + the
+  archive for predecessor detail. Replaced ~618-line
+  "Suffix-diff parameters (PR #166 follow-up)" atlas section
+  with a ~25-line retirement note + the current ContentHistory
+  parameter surface (`IdleSpanSealMs`, `MaxEntriesPerTuple`).
+  Net: ~800 lines removed from USER-SETTINGS.md.
+- `docs/ACCESSIBILITY-TESTING.md` — Cycle 36 substrate-inversion-arc
+  matrix section gained a Cycle 45c retirement banner pointing
+  at rows 45c-1..45c-6 for current validation. Bundle-section
+  reference `--- LINEAR STREAM ---` corrected to
+  `--- CONTENT HISTORY ---` in the Cycle 43a Copy Latest Bundle
+  test.
+- `docs/ARCHITECTURE.md` — currency note rewritten to reflect
+  post-Cycle-45c state; "PathwayPump thread" row in the
+  threading table renamed to "Notification-consumer thread";
+  `Terminal.Core/StreamPathway.fs` file inventory entry replaced
+  with `ContentHistory.fs` + `SpeechCursor.fs` entries.
+- `docs/CORE-ABSTRACTION-BOUNDARY.md`, `docs/SESSION-MODEL.md`,
+  `docs/INTERACTION-MODEL.md`, `docs/CUSTOMIZATION-MODEL.md`,
+  `docs/PANE-MODEL.md`, `docs/CHANNEL-ARCHITECTURE.md` —
+  each gained a Cycle 45c retirement banner at the top
+  explaining which named pieces survive vs. retired.
+  Deep section-by-section rewrites are deferred to a future
+  doc-cleanup cycle per
+  [`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md)
+  § "Open follow-ups".
+
+**Code-comment cleanup**:
+- 6 highest-visibility stale comments updated:
+  `src/Terminal.App/Program.fs` (Cycle 17 actor-model docstring,
+  PumpInput.Tick docstring),
+  `src/Terminal.Core/SessionModel.fs` (Cycle 35b substrate-aware
+  block header),
+  `src/Terminal.Core/CanonicalState.fs`,
+  `src/Terminal.Core/EarconProfile.fs`,
+  `src/Terminal.Core/PassThroughProfile.fs`,
+  `tests/Tests.Unit/EarconProfileTests.fs`. Remaining inline
+  references to deleted modules in comments are now historical
+  in framing (DEAD-CODE-MARKER); they survive as git-blame
+  archaeology.
+
+User-visible behaviour: **none**. Pure docs + comments.
+
 ### Removed (Cycle 45c cleanup PR-3c): pathway-pipeline source modules + LinearTextStream substrate
 
 Final step in the Cycle 45c cleanup sequence. The pre-Cycle-45
@@ -2661,7 +2747,7 @@ Adding or removing a default accelerator on an existing command is
 now a one-field edit (`Some` ↔ `None`) rather than a DU-shape
 change. Adding a new top-level menu (Window, Display,
 Preferences/Settings — anticipated by the maintainer in
-[`docs/PROJECT-PLAN-2026-05-09.md`](docs/PROJECT-PLAN-2026-05-09.md))
+[`docs/PROJECT-PLAN-2026-05-09.md`](docs/archive/pre-cycle-45/PROJECT-PLAN-2026-05-09.md))
 is just a new `<MenuItem Header="_NewMenu">` block in XAML; no F#
 changes.
 
@@ -2713,7 +2799,7 @@ untouched. The keyboard pipeline is unaffected.
 ### Added (Cycle 26a): app menu skeleton + UIA plumbing
 
 First PR of Cycle 26 (the multi-PR app-menu mini-cycle planned in
-[`docs/PROJECT-PLAN-2026-05-09.md`](docs/PROJECT-PLAN-2026-05-09.md)).
+[`docs/PROJECT-PLAN-2026-05-09.md`](docs/archive/pre-cycle-45/PROJECT-PLAN-2026-05-09.md)).
 Goal of the cycle: surface every `AppCommand` (14 reserved hotkeys
 today) as a discoverable menu item with its keyboard shortcut shown
 via `MenuItem.InputGestureText`, plus add a new menu-only
@@ -2756,7 +2842,7 @@ routes correctly.
 ### Added (Cycle 25d): `PROJECT-PLAN-2026-05-09.md` dated successor + cross-reference sweep
 
 Spawns the dated successor strategic plan
-[`docs/PROJECT-PLAN-2026-05-09.md`](docs/PROJECT-PLAN-2026-05-09.md)
+[`docs/PROJECT-PLAN-2026-05-09.md`](docs/archive/pre-cycle-45/PROJECT-PLAN-2026-05-09.md)
 per the Track E E5 dated-snapshot discipline. The preceding
 `PROJECT-PLAN-2026-05-revision.md` (snapshot 2026-05-07)
 became three implementation cycles stale once Tier 1

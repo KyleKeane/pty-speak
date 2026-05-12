@@ -24,10 +24,10 @@ navigation anchor.
 | [`docs/INSTALL.md`](INSTALL.md) | End user wanting to install the latest preview | Before first run | Step-by-step download + install + update flow with the SmartScreen workaround for unsigned previews. References `scripts/install-latest-preview.ps1` for the scripted alternative and `docs/BUILD.md` for build-from-source. |
 | [`CLAUDE.md`](../CLAUDE.md) | Claude Code agents | Every session start (auto-loaded) | Claude-runtime-specific rules (sandbox quirks, MCP behaviour, ask-for-CI-logs, webhook auto-subscribe); indexes the canonical rules in `CONTRIBUTING.md`. |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Human contributors opening PRs | When opening a PR | Canonical home for: PR shape, branch naming, fixup-commit rhythm, F# / .NET 9 gotchas, accessibility non-negotiables, P/Invoke conventions. |
-| [`docs/SESSION-HANDOFF.md`](SESSION-HANDOFF.md) | Next Claude Code session | Session-to-session continuity | Mutable state: "Where we left off", in-flight branches, pre-digested implementation sketches for the next stage. |
+| [`docs/SESSION-HANDOFF.md`](SESSION-HANDOFF.md) | Next Claude Code session (or human picking up the work) | Session-to-session continuity | TLDR brief (~150 lines): current state, where we left off, next-stage candidates, sandbox gotchas, pointers out. Designed to stay short — historical handoff content moves to `docs/archive/` rather than accumulate here. |
 | [`spec/overview.md`](../spec/overview.md), [`spec/tech-plan.md`](../spec/tech-plan.md) | Architecture review | When changing design | Immutable spec: external research and stage-by-stage plan. ADR-style authorisation required for edits. |
 | [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md) | Architecture review (post-Stage-7 substrate) | When implementing sub-stages 8a-8f / 9a-9d, or when reasoning about event routing / output channels / profiles / the InputSource and OutputEvent schemas | Substrate spec for the post-Stage-7 framework cycles. Supersedes `spec/tech-plan.md` §8 / §9 in-place; reframes §10 as the first non-built-in framework consumer. Answers MAY-4.md's consolidated questions with v1 commitments (rationale + tradeoffs) on RawInput envelope, Intent layer, dispatcher, OutputEvent + Profile + Channel, threading + priority taxonomy, TOML schema. |
-| [`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md) | Strategic planning | When planning a cycle (current) | Snapshot 2026-05-09. Captures the post-Tier-2 + post-Cycle-25 state. Predecessor revisions (2026-05-03 + 2026-05-07) archived under `docs/archive/pre-cycle-45/` per Track E E5 dated-snapshot discipline. |
+| [`docs/PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md) | Strategic planning | When planning a cycle (current) | Snapshot 2026-05-12 (post-Cycle-45c). Captures the ContentHistory/SpeechCursor substrate consolidation + candidate next cycles (45g, 45d, semantic-labels, etc.). Predecessor revisions archived under `docs/archive/pre-cycle-45/` per Track E E5 dated-snapshot discipline. |
 | [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) | First-time code navigator | Code orientation | Module-by-module map of the codebase. |
 | [`docs/ROADMAP.md`](ROADMAP.md) | Quick "what's next" scan | High-level glance | Stage list + ship status. |
 | [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) | Maintainer at release / rollback | Release cut or rollback | Stable-baseline tags + queued tag pushes (sandbox can't push tags). |
@@ -54,7 +54,7 @@ navigation anchor.
 1. [`CLAUDE.md`](../CLAUDE.md) (auto-loaded; read it first)
 2. [`README.md`](../README.md) — what the project is + shipped stages
 3. [`docs/SESSION-HANDOFF.md`](SESSION-HANDOFF.md) — "Where we left off"
-4. [`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md) — current cycle plan (2026-05-09 successor)
+4. [`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-12.md) — current cycle plan (2026-05-09 successor)
 5. [`spec/tech-plan.md`](../spec/tech-plan.md) §N for the active stage
 6. [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md)
    when the active stage is in the framework cycles (sub-stages 8a-8f or 9a-9d) or Stage 10
@@ -89,7 +89,7 @@ navigation anchor.
 
 ### "I'm planning the next cycle"
 
-1. [`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md) — current
+1. [`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-12.md) — current
    strategic plan (2026-05-09 successor revision); predecessor
    revisions archived under
    [`docs/archive/pre-cycle-45/`](archive/pre-cycle-45/)

@@ -101,7 +101,8 @@ let ``AltScreenEntered Apply returns empty pair array`` () =
 [<Fact>]
 let ``ErrorLine Apply emits one pair with error-tone ChannelDecision`` () =
     // Phase A.2 — re-introduces 8d.2's red → 400Hz error-tone.
-    // StreamPathway emits an empty-payload ErrorLine
+    // The producer (pre-Cycle-45c: StreamPathway; post-Cycle-45c:
+    // ContentHistory + a profile) emits an empty-payload ErrorLine
     // OutputEvent alongside the StreamChunk when the frame is
     // red-dominant; EarconProfile claims it semantically.
     let profile = EarconProfile.create ()

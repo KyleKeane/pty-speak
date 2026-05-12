@@ -1,7 +1,24 @@
 # SessionModel substrate
 
+> **Cycle 45c update (2026-05-12)**: SessionModel is now shipped
+> (Tier 1 + Tier 2). This research-stage doc captures the
+> original design from 2026-05-06. The "pathway-by-pathway
+> integration" section (§8) describes `StreamPathway` /
+> `TuiPathway` / `ReplPathway` / `FormPathway` /
+> `ClaudeCodePathway` / `AiInterpretedPathway` integration
+> contracts — **the first two pathways named there were
+> deleted in Cycle 45c**. The actual SessionModel integration
+> today is direct: `SessionModel.applyAndCaptureWithContentHistory`
+> is called from `Program.fs` `handlePromptBoundary` against
+> ContentHistory. Future pathways (Phase 2) will add their own
+> SessionModel-awareness if needed. Treat §8 as forward-looking
+> design archaeology; rewrite is deferred to a future doc cycle.
+
 > **Snapshot**: 2026-05-06
-> **Status**: design / forward-looking — not yet implemented
+> **Status**: research-stage design from 2026-05-06; substrate
+> shipped in Cycle 11–22b (Tier 1) + 24a–24g (Tier 2).
+> Pathway-integration section below is historical (pathway
+> layer retired Cycle 45c).
 > **Authoring item**: backlog item 28 (research stage)
 > **Companion docs**:
 > - [`PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md) — canonical vocabulary for stage / pathway / event-type names; this doc uses that vocabulary
