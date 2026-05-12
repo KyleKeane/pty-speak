@@ -689,6 +689,90 @@ let ``same prompt text at SAME row suppresses re-emit (regression guard)`` () =
     Assert.True(r.IsNone)
 
 [<Fact>]
+let ``same (text, row) re-emits after the row went dirty in between (Cycle 45f-followup)`` () =
+    // Cycle 45f-followup — the dir-scroll bug.
+    //
+    // Pre-fix repro:
+    //   1. Screen-filling output (e.g. `dir`) pushes the
+    //      prompt to the bottom row N.
+    //   2. PromptStart fires at (rowIdx=N, text="C:\\>").
+    //   3. User types `echo hello` — row N becomes
+    //      "C:\\>echo hello", no longer matching the regex.
+    //   4. Enter → cmd outputs hello, scrolls by one row, the
+    //      new prompt redraws at row N with text "C:\\>" again.
+    //   5. Detector sees (rowIdx=N, text="C:\\>") = identical
+    //      to the last emission → dedup gate fires → no
+    //      PromptStart emitted → SessionModel never seals →
+    //      tuple-finalise announce never fires → silence.
+    //
+    // The dirty-flag fix: track when the previously-emitted
+    // row goes non-matching across ticks. When the next clean
+    // prompt match arrives on the same (text, rowIdx), emit
+    // anyway because we observed the row dirtied in between.
+    let promptOnly = snapshotOf 1 80 [ "C:\\>" ]
+    let dirtied = snapshotOf 1 80 [ "C:\\>echo hello" ]
+    let detector = HeuristicPromptDetector.create ()
+    // T=0: first detection, prompt seen for the first time.
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect
+            promptOnly noCursor "cmd" t0 detector
+    // T=100: stability reached, emit.
+    let r1, s2 =
+        HeuristicPromptDetector.tryDetect
+            promptOnly noCursor "cmd" (after 100) s1
+    Assert.True(r1.IsSome)
+    Assert.Equal(Some 0, r1.Value.MatchedRowIndex)
+    // T=200: user typed; row no longer matches. No emit (no
+    // stable match). But the detector should observe the row
+    // went dirty.
+    let r2, s3 =
+        HeuristicPromptDetector.tryDetect
+            dirtied noCursor "cmd" (after 200) s2
+    Assert.True(r2.IsNone)
+    // T=400: cmd's response settled; new prompt redrew on the
+    // same row with the same text. Stability needs to
+    // accumulate again from this tick.
+    let _, s4 =
+        HeuristicPromptDetector.tryDetect
+            promptOnly noCursor "cmd" (after 400) s3
+    // T=500: stability reached. The dirty bit accumulated
+    // across ticks means the gate emits even though
+    // (text, rowIdx) = (C:\\>, 0) matches the last emission.
+    let r3, _ =
+        HeuristicPromptDetector.tryDetect
+            promptOnly noCursor "cmd" (after 500) s4
+    Assert.True(
+        r3.IsSome,
+        "expected re-emit after the row went dirty between emissions")
+    Assert.Equal(Some 0, r3.Value.MatchedRowIndex)
+
+[<Fact>]
+let ``RowDirtyAfterEmit clears on the second tick when row stays clean (no spurious re-emit)`` () =
+    // Companion to the dir-scroll test above: confirm we
+    // haven't reintroduced the 20Hz-spam scenario. If the
+    // row STAYS at a clean prompt across many ticks (cursor
+    // blink, idle), the dirty flag stays false and the
+    // detector emits exactly once.
+    let snap = snapshotOf 1 80 [ "C:\\>" ]
+    let detector = HeuristicPromptDetector.create ()
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" t0 detector
+    let r1, s2 =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" (after 100) s1
+    Assert.True(r1.IsSome)
+    // Walk forward 1 second with no row dirtying. No re-emit
+    // expected at any tick.
+    let mutable state = s2
+    for tickMs in 150 .. 50 .. 1000 do
+        let r, next =
+            HeuristicPromptDetector.tryDetect
+                snap noCursor "cmd" (after tickMs) state
+        Assert.True(
+            r.IsNone,
+            sprintf "spurious re-emit at tick %dms" tickMs)
+        state <- next
+
+[<Fact>]
 let ``same prompt text at DIFFERENT row emits new PromptStart (Cycle 20a headline)`` () =
     // Frame 1: prompt at row 0. Detector emits.
     // Frame 2: same prompt text at row 5 (output filled rows
