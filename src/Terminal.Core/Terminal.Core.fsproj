@@ -14,12 +14,10 @@
     <Compile Include="UpdateMessages.fs" />
     <Compile Include="FileLogger.fs" />
     <Compile Include="Coalescer.fs" />
-    <Compile Include="LinearTextStream.fs" />
     <!--
-      Cycle 45 — ContentHistory is the new aural substrate. It
-      depends only on `Types.fs` (VtEvent), so it slots in
-      alongside LinearTextStream. Cycle 45c (PR-3a) moved it
-      above SessionModel.fs because SessionModel.fs now consumes
+      Cycle 45 — ContentHistory is the aural substrate. Depends
+      only on `Types.fs` (VtEvent). Cycle 45c PR-3a moved it
+      above SessionModel.fs because SessionModel.fs consumes
       `ContentHistory.tryLatestMarker` + `sliceText` for OSC 133
       text reconstruction.
     -->
@@ -42,10 +40,6 @@
     <Compile Include="SpeechCursor.fs" />
     <Compile Include="HeuristicPromptDetector.fs" />
     <Compile Include="SelectionDetector.fs" />
-    <Compile Include="DisplayPathway.fs" />
-    <Compile Include="StreamPathway.fs" />
-    <Compile Include="TuiPathway.fs" />
-    <Compile Include="PathwaySelector.fs" />
     <Compile Include="Config.fs" />
     <Compile Include="EarconChannel.fs" />
     <Compile Include="EarconProfile.fs" />

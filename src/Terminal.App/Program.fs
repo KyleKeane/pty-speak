@@ -88,7 +88,6 @@ module Program =
             (parser: Parser)
             (screen: Screen)
             (view: TerminalView)
-            (linearStream: LinearTextStream.T)
             (contentHistory: ContentHistory.T)
             (onSpeechCursorWake: unit -> unit)
             (notifications: System.Threading.Channels.ChannelWriter<PumpInput>)
@@ -109,36 +108,12 @@ module Program =
                             // shell).
                             onChunkRead chunk.Length
                             let events = Parser.feedArray parser chunk
-                            // Cycle 34b — feed the LinearTextStream
-                            // producer parallel-to-screen. Emitted
-                            // CommitNotifications are intentionally
-                            // discarded here (Cycle 35 wires the
-                            // Stream profile to subscribe). The
-                            // returned T is the same class reference
-                            // as `linearStream` (state mutates
-                            // in-place); discard.
-                            //
-                            // Cycle 45 Commit 2 — feed ContentHistory
-                            // (the new aural substrate) in parallel.
-                            // Thread-safe via the ContentHistory.Gate
-                            // lock. Returned entries accumulate
-                            // per-chunk; the caller-supplied
-                            // `onContentEntries` callback receives
-                            // the batch and is responsible for
-                            // marshalling to the dispatcher thread
-                            // for `SpeechCursor.onAppend`.
-                            let _, _ =
-                                LinearTextStream.append
-                                    linearStream
-                                    DateTime.UtcNow
-                                    chunk
-                                    events
-                            // Cycle 45 Commit 2 — feed
-                            // ContentHistory in parallel. `append-
-                            // FromEvent` is Gate-locked so the
-                            // reader-thread feed is safe alongside
-                            // pump-thread `appendMarker` calls
-                            // from the boundary handler.
+                            // Cycle 45c — feed ContentHistory (the
+                            // sole aural substrate post-PR-3c).
+                            // `appendFromEvent` is Gate-locked so
+                            // the reader-thread feed is safe
+                            // alongside pump-thread `appendMarker`
+                            // calls from the boundary handler.
                             let now = DateTime.UtcNow
                             let mutable contentDirty = false
                             for ev in events do
@@ -883,28 +858,16 @@ module Program =
         let cts = new CancellationTokenSource()
         let screen = Screen(rows = ScreenRows, cols = ScreenCols)
         let parser = Parser.create ()
-        // Cycle 34b — construct the LinearTextStream producer
-        // (Cycle 34a's `LinearTextStream.fs`). Runs parallel-
-        // to-screen with no consumers in 34b; Cycle 35 wires
-        // the Stream profile to subscribe to its emitted
-        // CommitNotifications. Held in a `mutable` cell for
-        // clarity; the underlying class reference is stable
-        // across `append` calls (T is mutable internally).
-        let mutable linearStream =
-            LinearTextStream.create LinearTextStream.defaultParameters
 
-        // Cycle 45 Commit 2 — ContentHistory + SpeechCursor are the
-        // new aural substrate (parallel to the screen-grid + UIA
-        // surface). ContentHistory holds the shell session's
-        // append-only typed log; SpeechCursor announces from it
-        // (AutoDrive) and lets the user navigate it (Manual).
-        // Scope is the shell session (NOT individual tuples) so
-        // the user can Speech-Cursor backwards through completed
-        // commands — `ContentHistory.reset` fires only when the
-        // shell hot-switches, which is a legitimate fresh-slate
-        // boundary. LinearTextStream is kept in parallel through
-        // Commit 2 so the existing pump path stays functional;
-        // Commit 3 deletes it after the NVDA validation gate.
+        // Cycle 45 — ContentHistory + SpeechCursor are the aural
+        // substrate (parallel to the screen-grid + UIA surface).
+        // ContentHistory holds the shell session's append-only
+        // typed log; SpeechCursor announces from it (AutoDrive)
+        // and lets the user navigate it (Manual). Scope is the
+        // shell session (NOT individual tuples) so the user can
+        // Speech-Cursor backwards through completed commands —
+        // `ContentHistory.reset` fires only when the shell
+        // hot-switches.
         let mutable contentHistory =
             ContentHistory.create ContentHistory.defaultParameters
         let mutable speechCursor =
@@ -2421,13 +2384,15 @@ module Program =
                 // mode/path are resolved at press-time and reflect
                 // any reload-on-shell-switch that happened since.
                 buildSessionLogSummary
-                // Cycle 34b — LinearTextStream resolver for the
-                // bundle's `--- LINEAR STREAM (last 64KB) ---`
-                // section. The producer's class reference is
-                // stable across the session (no shell-switch
-                // reconstruction yet), so the closure captures
-                // the same `linearStream` cell on every press.
-                (fun () -> linearStream)
+                // Cycle 45c — ContentHistory resolver for the
+                // bundle's `--- CONTENT HISTORY (last 64KB) ---`
+                // section. Replaces Cycle 34b's LinearTextStream
+                // resolver. The class reference is stable across
+                // the session (`reset` is called on shell-switch
+                // but the same cell is reused), so the closure
+                // captures the same `contentHistory` cell on
+                // every press.
+                (fun () -> contentHistory)
 
         // Cycle 22b — Ctrl+Shift+Y. Closure captures
         // `currentSession` from compose-local scope. Resolves
@@ -2593,13 +2558,11 @@ module Program =
             let sessionLogSummary = buildSessionLogSummary ()
             let fileLoggerPath =
                 loggerSink |> Option.map (fun s -> s.ActiveLogPath)
-            let tailBytes =
-                LinearTextStream.getLastBytes linearStream 64
             let tailText =
                 try
-                    System.Text.Encoding.UTF8.GetString(tailBytes)
+                    ContentHistory.tailText contentHistory (64 * 1024)
                     |> AnnounceSanitiser.sanitise
-                with _ -> "(UTF-8 decode failed)"
+                with _ -> "(ContentHistory tail unavailable)"
             Diagnostics.formatLightweightBundle
                 now
                 fileLoggerPath
@@ -3062,7 +3025,6 @@ module Program =
                     parser
                     screen
                     window.TerminalSurface
-                    linearStream
                     contentHistory
                     onSpeechCursorWake
                     pumpChannel.Writer

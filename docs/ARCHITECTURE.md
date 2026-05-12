@@ -58,10 +58,21 @@ Terminal.Core.CanonicalState       (Stage 4 canonical-state synthesis;
        │                            snapshot + row hashes + sequence)
        │ CanonicalState
        ▼
-Terminal.Core.StreamPathway        (Stages 5-9: frame-dedup, spinner
-       │                            suppression, row-level diff,
-       │                            sub-row suffix detection,
-       │                            payload assembly)
+Terminal.Core.ContentHistory       (Cycle 45 substrate — append-only
+       │                            typed-entry log per shell session;
+       │                            TextSpan / Newline / Overwrite /
+       │                            Marker / Spinner entries with
+       │                            monotonic Seq identity. Replaces
+       │                            the Cycle 5-9 StreamPathway
+       │                            screen-grid-diff pipeline.)
+       │ ContentHistory.Entry[]
+       ▼
+Terminal.Core.SpeechCursor         (Cycle 45 announce-and-navigate
+       │                            primitive over ContentHistory.
+       │                            AutoDrive emits new entries to
+       │                            NVDA; Manual mode lets the user
+       │                            navigate the shell-session
+       │                            history.)
        │ OutputEvent[]
        ▼
 Terminal.Core.OutputDispatcher     (Stage 10 profile claim;
@@ -109,14 +120,14 @@ the linked research-stage docs for design).
 
 | Project | Layer | Owns | Status |
 |---|---|---|---|
-| `Terminal.Core` | Domain + substrate | Pure types (`ColorSpec`, `SgrAttrs`, `Cell`, `Cursor`, `VtEvent`); `Screen`; `Coalescer`; `CanonicalState`; `StreamPathway`; `TuiPathway`; `DisplayPathway`; `PathwaySelector`; `OutputDispatcher`; `ProfileRegistry`; `PassThroughProfile`; `EarconProfile`; `NvdaChannel`; `EarconChannel`; `FileLoggerChannel`; `FileLogger`; `Config`; `OutputEventTypes` (incl. `SemanticCategory`, `Priority`, `ActivityIds`); `OutputEventBuilder`; `AnnounceSanitiser`; `KeyEncoding`; `HotkeyRegistry`; `Logger` | ✅ shipped (Stages 1-3 + 5 + 8a-8d + post-Stage-7 substrate cycle) |
+| `Terminal.Core` | Domain + substrate | Pure types (`ColorSpec`, `SgrAttrs`, `Cell`, `Cursor`, `VtEvent`); `Screen`; `Coalescer`; `CanonicalState`; `ContentHistory` (Cycle 45 aural substrate); `SpeechCursor`; `SessionModel`; `HeuristicPromptDetector`; `SelectionDetector`; `OutputDispatcher`; `ProfileRegistry`; `PassThroughProfile`; `EarconProfile`; `SelectionProfile`; `NvdaChannel`; `EarconChannel`; `FileLoggerChannel`; `FileLogger`; `Config`; `OutputEventTypes` (incl. `SemanticCategory`, `Priority`, `ActivityIds`); `OutputEventBuilder`; `AnnounceSanitiser`; `KeyEncoding`; `HotkeyRegistry`; `ShellPolicy`; `Logger` | ✅ shipped (Stages 1-3 + 5 + 8a-8d + post-Stage-7 substrate cycle + Cycle 45) |
 | `Terminal.Pty.Native` | Interop | `[<DllImport>]` signatures, `SafeHandle` subclasses, struct layouts | ✅ shipped (Stage 1) |
 | `Terminal.Pty` | Host | `CreatePseudoConsole` lifecycle, `ConPtyHost`, `readerLoop` helper, stdin `FileStream`, `Channel<byte[]>`-based reader; `ShellRegistry` + `EnvBlock` (env-scrub PO-5) | ✅ shipped (Stage 1 + Stage 7 PR-A/PR-B/PR-K env-scrub) |
 | `Terminal.Parser` | Stateful | Williams VT500 state machine (`StateMachine.fs`, `Parser.fs`); emits `VtEvent` | ✅ shipped (Stage 2) |
 | `Terminal.Audio` | Audio | NAudio-backed `EarconPlayer` + `EarconPalette` (bell-ping 800Hz, error-tone 400Hz, warning-tone 600Hz); WASAPI playback (`WasapiOut` per-play instance) | ✅ shipped (Stage 8d.1) |
 | `Terminal.Accessibility` | UIA | `TerminalAutomationPeer` (Document role + UIA Notifications API + `GetPattern` override returning Text pattern); `TerminalTextProvider` (`ITextProvider`); `TerminalTextRange` (`ITextRangeProvider` with Line / Word / Character / Document review-cursor navigation) | ✅ shipped (Stage 4) |
 | `Views` (C# WPF library) | UI | `MainWindow.xaml`, `App.cs : Application`, `TerminalView : FrameworkElement` (custom `OnRender` over `Screen`); paste handling, focus management, app-reserved hotkey filter | ✅ shipped (Stage 0 + 3b + 6) |
-| `Terminal.App` (F# EXE) | Composition | `[<EntryPoint>]`; `VelopackApp.Build().Run()`; full pipeline wiring (`ConPtyHost → Parser → Screen → CanonicalState → StreamPathway → OutputDispatcher → channels`); `Diagnostics.fs` Ctrl+Shift+D self-test battery; heartbeat; PathwayPump; hotkey dispatch | ✅ shipped (Stages 0 + 3b + 5 + 6 + 7 + post-Stage-7 substrate) |
+| `Terminal.App` (F# EXE) | Composition | `[<EntryPoint>]`; `VelopackApp.Build().Run()`; full pipeline wiring (`ConPtyHost → Parser → Screen → CanonicalState → ContentHistory → SpeechCursor → OutputDispatcher → channels`); `Diagnostics.fs` Ctrl+Shift+D self-test battery; heartbeat; hotkey dispatch | ✅ shipped (Stages 0 + 3b + 5 + 6 + 7 + Cycle 45) |
 | (Velopack `UpdateManager` lives in `Terminal.App`) | Distribution | `runUpdateFlow` + `setupAutoUpdateKeybinding` in `src/Terminal.App/Program.fs`; `Ctrl+Shift+U` triggers; Ed25519 manifest verification returns at v0.1.0+ per `docs/RELEASE-PROCESS.md` | ✅ shipped (Stage 11) — kept in `Terminal.App` (composition root) rather than a dedicated `Terminal.Update` project, per walking-skeleton discipline |
 
 ### Reserved (forward-looking; not in code today)
