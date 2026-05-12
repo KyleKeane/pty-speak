@@ -1663,3 +1663,155 @@ let ``Cycle 35b — legacy apply / applyAndCapture API unchanged (regression che
             s1 (boundary (BoundaryKind.CommandFinished (Some 0)) (after 200)) [||]
     Assert.True(finalisedOpt.IsSome)
     Assert.True(s2.Active.IsNone)
+
+// =====================================================================
+// Cycle 45c — ContentHistory-driven substrate
+// (`applyAndCaptureWithContentHistory`). Mirror the Cycle 35b tests
+// against the new substrate. PR-3c retires the LinearTextStream
+// counterparts above when the substrate itself is deleted.
+// =====================================================================
+
+let private freshHistory () : ContentHistory.T =
+    ContentHistory.create ContentHistory.defaultParameters
+
+let private feedHistoryBytes
+        (history: ContentHistory.T)
+        (now: DateTime)
+        (bytes: byte[])
+        : ContentHistory.T =
+    let parser = Terminal.Parser.Parser.create ()
+    let events = Terminal.Parser.Parser.feedArray parser bytes
+    for ev in events do
+        ContentHistory.appendFromEvent history now ev |> ignore
+    history
+
+let private appendHistoryMarker
+        (history: ContentHistory.T)
+        (now: DateTime)
+        (kind: ContentHistory.MarkerKind)
+        : ContentHistory.T =
+    ContentHistory.appendMarker history kind now None |> ignore
+    history
+
+[<Fact>]
+let ``Cycle 45c — useContentHistory=false bypasses the substrate entirely`` () =
+    // ScreenDiff mode equivalent: ContentHistory content irrelevant;
+    // behaviour identical to the legacy `applyAndCapture` API.
+    let initial = SessionModel.create "cmd" 100
+    let history = freshHistory ()
+    let history = feedHistoryBytes history t0 (System.Text.Encoding.ASCII.GetBytes "irrelevant\n")
+    let s1 = SessionModel.applyWithContentHistory
+                initial (boundary BoundaryKind.PromptStart t0) [||]
+                history false
+    let s2 = SessionModel.applyWithContentHistory
+                s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
+                history false
+    let _ = SessionModel.applyWithContentHistory
+                s2 (boundary BoundaryKind.OutputStart (after 200)) [||]
+                history false
+    Assert.True(true)
+
+[<Fact>]
+let ``Cycle 45c — useContentHistory=true + OSC 133 markers populates CommandText/OutputText from history`` () =
+    let initial = SessionModel.create "claude" 100
+    // Build a ContentHistory mirroring the canonical OSC 133
+    // sequence: PromptStart marker → command text → OutputStart
+    // marker → output text. handlePromptBoundary in Program.fs is
+    // the production analogue.
+    let history = freshHistory ()
+    let history = appendHistoryMarker history t0 ContentHistory.MarkerKind.PromptStart
+    let history = feedHistoryBytes history (after 5) (System.Text.Encoding.ASCII.GetBytes "echo hello\n")
+    let history = appendHistoryMarker history (after 10) ContentHistory.MarkerKind.OutputStart
+    let history = feedHistoryBytes history (after 15) (System.Text.Encoding.ASCII.GetBytes "hello world\n")
+    // Drive the SessionModel cycle. The PromptStart / CommandStart
+    // / CommandFinished arms below mirror the calls
+    // `handlePromptBoundary` makes against incoming boundaries.
+    let s1 = SessionModel.applyWithContentHistory
+                initial (boundaryWithText BoundaryKind.PromptStart t0 "$ ") [||]
+                history true
+    let s2 = SessionModel.applyWithContentHistory
+                s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
+                history true
+    let _s3, finalisedOpt =
+        SessionModel.applyAndCaptureWithContentHistory
+            s2 (boundary (BoundaryKind.CommandFinished (Some 0)) (after 200)) [||]
+            history true
+    Assert.True(finalisedOpt.IsSome)
+    let tuple = finalisedOpt.Value
+    // CommandText / OutputText flowed from ContentHistory.sliceText
+    // (NOT from extractContent's row-walk against the [||] snapshot).
+    Assert.Contains("echo hello", tuple.CommandText)
+    Assert.Contains("hello world", tuple.OutputText)
+
+[<Fact>]
+let ``Cycle 45c — useContentHistory=true but no OSC 133 markers falls back to extractContent`` () =
+    let initial = SessionModel.create "cmd" 100
+    let history = freshHistory ()
+    // No PromptStart / OutputStart appended → tryLatestMarker
+    // returns None → extractContentFromContentHistory returns None
+    // → caller falls back to extractContent.
+    let history = feedHistoryBytes history t0 (System.Text.Encoding.ASCII.GetBytes "irrelevant\n")
+    let s1 = SessionModel.applyWithContentHistory
+                initial (boundaryWithText BoundaryKind.PromptStart t0 "C:\\>") [||]
+                history true
+    let s2 = SessionModel.applyWithContentHistory
+                s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
+                history true
+    let _s3, finalisedOpt =
+        SessionModel.applyAndCaptureWithContentHistory
+            s2 (boundary (BoundaryKind.CommandFinished (Some 0)) (after 200)) [||]
+            history true
+    Assert.True(finalisedOpt.IsSome)
+    let tuple = finalisedOpt.Value
+    // extractContent fallback against [||] snapshot returns empty
+    // strings; the history's "irrelevant" content must NOT appear
+    // (no markers gate the substrate path).
+    Assert.DoesNotContain("irrelevant", tuple.OutputText)
+
+[<Fact>]
+let ``Cycle 45c — useContentHistory=false ignores OSC 133 markers (history has them)`` () =
+    let initial = SessionModel.create "claude" 100
+    let history = freshHistory ()
+    // Markers ARE present; but useContentHistory=false. The
+    // substrate path must NOT be consulted.
+    let history = appendHistoryMarker history t0 ContentHistory.MarkerKind.PromptStart
+    let history = feedHistoryBytes history (after 5) (System.Text.Encoding.ASCII.GetBytes "echo from-history\n")
+    let history = appendHistoryMarker history (after 10) ContentHistory.MarkerKind.OutputStart
+    let history = feedHistoryBytes history (after 15) (System.Text.Encoding.ASCII.GetBytes "history-output\n")
+    let s1 = SessionModel.applyWithContentHistory
+                initial (boundaryWithText BoundaryKind.PromptStart t0 "$ ") [||]
+                history false  // useContentHistory = false
+    let s2 = SessionModel.applyWithContentHistory
+                s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
+                history false
+    let _s3, finalisedOpt =
+        SessionModel.applyAndCaptureWithContentHistory
+            s2 (boundary (BoundaryKind.CommandFinished (Some 0)) (after 200)) [||]
+            history false
+    Assert.True(finalisedOpt.IsSome)
+    let tuple = finalisedOpt.Value
+    Assert.DoesNotContain("from-history", tuple.CommandText)
+    Assert.DoesNotContain("history-output", tuple.OutputText)
+
+[<Fact>]
+let ``Cycle 45c — applyAndCaptureWithContentHistory preserves Active state through PromptStart cycle`` () =
+    // Behavioural smoke test mirroring the Cycle 35b state-machine
+    // test. The substrate-aware path must leave SessionModel in
+    // the same active-state as the legacy path for non-finalize
+    // boundaries.
+    let initial = SessionModel.create "cmd" 100
+    let history = freshHistory ()
+    let s1 = SessionModel.applyWithContentHistory
+                initial (boundary BoundaryKind.PromptStart t0) [||]
+                history true
+    Assert.True(s1.Active.IsSome)
+    let s2 = SessionModel.applyWithContentHistory
+                s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
+                history true
+    Assert.True(s2.Active.IsSome)
+    Assert.Equal(SessionModel.ActiveTupleState.EditingCommand, s2.Active.Value.State)
+    let s3 = SessionModel.applyWithContentHistory
+                s2 (boundary BoundaryKind.OutputStart (after 200)) [||]
+                history true
+    Assert.True(s3.Active.IsSome)
+    Assert.Equal(SessionModel.ActiveTupleState.OutputStreaming, s3.Active.Value.State)

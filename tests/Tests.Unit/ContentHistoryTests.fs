@@ -395,3 +395,175 @@ let ``snapshot returns a fresh array independent of further appends`` () =
     let snap2 = ContentHistory.snapshot state
     Assert.Equal(2, snap1.Length)
     Assert.Equal(4, snap2.Length)
+
+// ---------------------------------------------------------------------
+// Cycle 45c — tryLatestMarker + sliceText helpers
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``tryLatestMarker on empty history returns None`` () =
+    let state = freshHistory ()
+    Assert.Equal(None,
+        ContentHistory.tryLatestMarker
+            state ContentHistory.MarkerKind.PromptStart)
+
+[<Fact>]
+let ``tryLatestMarker returns Some when the kind is present`` () =
+    let state = freshHistory ()
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.PromptStart t0 None
+    |> ignore
+    let result =
+        ContentHistory.tryLatestMarker
+            state ContentHistory.MarkerKind.PromptStart
+    Assert.True(result.IsSome)
+    Assert.Equal(ContentHistory.MarkerKind.PromptStart, result.Value.Kind)
+
+[<Fact>]
+let ``tryLatestMarker returns the most recent of repeated kinds`` () =
+    // Cycle 45e re-emits PromptStart after a dirty intermission.
+    // tryLatestMarker must return the LATEST so commandText reflects
+    // the user's currently-typed (post-intermission) command.
+    let state = freshHistory ()
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.PromptStart t0
+        (Some "first")
+    |> ignore
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.PromptStart (after 10)
+        (Some "second")
+    |> ignore
+    let result =
+        ContentHistory.tryLatestMarker
+            state ContentHistory.MarkerKind.PromptStart
+    Assert.True(result.IsSome)
+    Assert.Equal(Some "second", result.Value.Payload)
+
+[<Fact>]
+let ``tryLatestMarker ignores other kinds`` () =
+    let state = freshHistory ()
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.PromptStart t0 None
+    |> ignore
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.OutputStart (after 5) None
+    |> ignore
+    let pstart =
+        ContentHistory.tryLatestMarker
+            state ContentHistory.MarkerKind.PromptStart
+    let cfin =
+        ContentHistory.tryLatestMarker
+            state ContentHistory.MarkerKind.CommandFinished
+    Assert.True(pstart.IsSome)
+    Assert.Equal(None, cfin)
+
+[<Fact>]
+let ``sliceText between two markers concatenates TextSpan + Newline`` () =
+    // Layout: [PromptStart, "echo hello", Newline, OutputStart]
+    // Expected commandText slice = "echo hello\n"
+    let state = freshHistory ()
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.PromptStart t0 None
+    |> ignore
+    let _ =
+        feed state (after 5)
+            [ printRune 'e'; printRune 'c'; printRune 'h'
+              printRune 'o'; printRune ' '; printRune 'h'
+              printRune 'e'; printRune 'l'; printRune 'l'
+              printRune 'o'; lf ]
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.OutputStart (after 10) None
+    |> ignore
+    let pstart =
+        (ContentHistory.tryLatestMarker
+            state ContentHistory.MarkerKind.PromptStart).Value
+    let ostart =
+        (ContentHistory.tryLatestMarker
+            state ContentHistory.MarkerKind.OutputStart).Value
+    Assert.Equal(
+        "echo hello\n",
+        ContentHistory.sliceText state pstart.Seq ostart.Seq)
+
+[<Fact>]
+let ``sliceText with toSeqExclusive = MaxValue includes the tail`` () =
+    let state = freshHistory ()
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.OutputStart t0 None
+    |> ignore
+    let _ =
+        feed state (after 5)
+            [ printRune 'h'; printRune 'i'; lf ]
+    let ostart =
+        (ContentHistory.tryLatestMarker
+            state ContentHistory.MarkerKind.OutputStart).Value
+    Assert.Equal(
+        "hi\n",
+        ContentHistory.sliceText state ostart.Seq Int64.MaxValue)
+
+[<Fact>]
+let ``sliceText includes the unsealed active span when in-region`` () =
+    // At tuple-finalise time the CommandFinished marker hasn't
+    // been appended yet, so the trailing output text sits in the
+    // unsealed active span. sliceText must include it.
+    let state = freshHistory ()
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.OutputStart t0 None
+    |> ignore
+    let _ =
+        feed state (after 5)
+            [ printRune 'h'; printRune 'i' ]
+    // No newline + no marker → "hi" stays in the active span
+    let ostart =
+        (ContentHistory.tryLatestMarker
+            state ContentHistory.MarkerKind.OutputStart).Value
+    Assert.Equal(
+        "hi",
+        ContentHistory.sliceText state ostart.Seq Int64.MaxValue)
+
+[<Fact>]
+let ``sliceText returns empty string when the region is empty`` () =
+    let state = freshHistory ()
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.PromptStart t0 None
+    |> ignore
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.OutputStart (after 1) None
+    |> ignore
+    let pstart =
+        (ContentHistory.tryLatestMarker
+            state ContentHistory.MarkerKind.PromptStart).Value
+    let ostart =
+        (ContentHistory.tryLatestMarker
+            state ContentHistory.MarkerKind.OutputStart).Value
+    Assert.Equal(
+        "",
+        ContentHistory.sliceText state pstart.Seq ostart.Seq)
+
+[<Fact>]
+let ``sliceText excludes the marker entries themselves`` () =
+    // PromptStart.Seq = 0, "x" TextSpan after newline at Seq = 1+,
+    // OutputStart.Seq = N. Markers are boundary tokens — they
+    // contribute "" so even if the comparison were inclusive the
+    // visible behaviour is identical. This test pins the
+    // strict-comparison contract.
+    let state = freshHistory ()
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.PromptStart t0
+        (Some "prompt-text")
+    |> ignore
+    let _ = feed state (after 5) [ printRune 'x'; lf ]
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.OutputStart (after 10)
+        (Some "output-marker-text")
+    |> ignore
+    let pstart =
+        (ContentHistory.tryLatestMarker
+            state ContentHistory.MarkerKind.PromptStart).Value
+    let ostart =
+        (ContentHistory.tryLatestMarker
+            state ContentHistory.MarkerKind.OutputStart).Value
+    let result =
+        ContentHistory.sliceText state pstart.Seq ostart.Seq
+    Assert.Equal("x\n", result)
+    Assert.DoesNotContain("prompt-text", result)
+    Assert.DoesNotContain("output-marker-text", result)

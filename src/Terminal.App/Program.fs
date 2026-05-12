@@ -1578,25 +1578,28 @@ module Program =
             // becomes a no-op. Cycle 24d-1: `Always` mode routes
             // through `EnqueueSync` (blocking) via
             // `dispatchTupleToWriter`.
-            // Cycle 35b — substrate-aware finalize. Resolve
-            // SubstrateMode against the alt-screen state captured
-            // at boundary time (mirrors
-            // StreamPathway.resolveSubstrateMode). Linear path
-            // becomes authoritative when the LinearTextStream
-            // producer has observed OSC 133 markers since the
-            // last finalize; falls back to extractContent for
-            // OSC-133-less shells (vanilla cmd, vanilla
-            // PowerShell). See Section 13 of the strategic plan
-            // for the eventual-cleanup conditions.
-            let useLinear =
+            // Cycle 45c — ContentHistory-driven substrate-aware
+            // finalize. Replaces Cycle 35b's LinearTextStream
+            // path. The SubstrateMode dispatch shape is preserved
+            // verbatim — Linear / ScreenDiff / Auto still gate
+            // whether SessionModel uses the OSC 133 path
+            // (authoritative when shell emits markers) versus
+            // the `extractContent` row-walk fallback. The
+            // substrate behind the OSC 133 path is now
+            // ContentHistory + `tryLatestMarker` /  `sliceText`.
+            // PR-3b collapses the SubstrateMode enum once the
+            // pathway modules are deleted; for PR-3a the enum
+            // values stay referenced (StreamPathway.fs is still
+            // alive).
+            let useContentHistory =
                 match resolvedStreamParams.SubstrateMode with
                 | StreamPathway.Linear -> true
                 | StreamPathway.ScreenDiff -> false
                 | StreamPathway.Auto -> not screen.Modes.AltScreen
             let nextSession, finalisedOpt =
-                SessionModel.applyAndCaptureWithSubstrate
+                SessionModel.applyAndCaptureWithContentHistory
                     currentSession augmented snapshotForApply
-                    linearStream useLinear
+                    contentHistory useContentHistory
             currentSession <- nextSession
             match finalisedOpt with
             | Some tuple -> dispatchTupleToWriter tuple
