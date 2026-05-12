@@ -153,13 +153,33 @@ module HeuristicPromptDetector =
           /// command cycle (output filled rows below the
           /// previous prompt; new prompt rendered below the
           /// output).
-          LastEmittedPromptRowIndex: int option }
+          LastEmittedPromptRowIndex: int option
+          /// Cycle 45f-followup (2026-05-12) — dirty flag
+          /// that closes the `(text, rowIdx)`-equality
+          /// false-negative. Set to `true` on any frame where
+          /// the previously-emitted row no longer matches the
+          /// prompt regex (e.g., the user typed `echo hello`
+          /// on the prompt row — the row text is now
+          /// `"C:\>echo hello"`, not a clean prompt match).
+          /// Cleared on emission. Forces the gate to emit the
+          /// next stable match regardless of `(text, rowIdx)`
+          /// equality with the last emission.
+          ///
+          /// Without this flag, a command run on a full
+          /// screen (e.g., after `dir` filled the 30 rows)
+          /// produces a redrawn prompt at the SAME row with
+          /// the SAME text as the previous emission — the
+          /// dedup gate suppresses it and SessionModel never
+          /// seals the tuple. cmd users observed silence
+          /// after the first screen-filling output.
+          RowDirtyAfterEmit: bool }
 
     /// Empty initial state.
     let create () : T =
         { PerRowMatches = Map.empty
           LastEmittedPromptText = None
-          LastEmittedPromptRowIndex = None }
+          LastEmittedPromptRowIndex = None
+          RowDirtyAfterEmit = false }
 
     /// Clear all per-row state. Called on shell-switch
     /// (fresh detector for new shell) and on alt-screen
@@ -169,7 +189,8 @@ module HeuristicPromptDetector =
     let reset (state: T) : T =
         { PerRowMatches = Map.empty
           LastEmittedPromptText = None
-          LastEmittedPromptRowIndex = None }
+          LastEmittedPromptRowIndex = None
+          RowDirtyAfterEmit = false }
 
     let private logger = Logger.get "Terminal.Core.HeuristicPromptDetector"
 
@@ -255,6 +276,31 @@ module HeuristicPromptDetector =
                     if Map.containsKey rowIdx nextMatches then
                         nextMatches <- Map.remove rowIdx nextMatches
 
+            // Cycle 45f-followup — RowDirtyAfterEmit accumulation.
+            // Look at the row the detector LAST emitted on. If that
+            // row currently does NOT match the prompt regex, the
+            // user has typed something on the prompt row (e.g.
+            // `"C:\>echo hello"` doesn't match `^[A-Z]:\\.*>\s?$`)
+            // or cmd's output has scrolled the prompt off / overwritten
+            // it. Either way, the NEXT clean-prompt-match on the same
+            // (text, rowIdx) pair is a genuinely-new prompt event,
+            // not a no-op refresh. Persist the bit across ticks so
+            // a multi-tick command cycle (typed → Enter → cmd output
+            // → new prompt → stability accumulation) doesn't lose
+            // it.
+            let dirtyThisTick =
+                match state.LastEmittedPromptRowIndex with
+                | None -> false
+                | Some priorRow ->
+                    if priorRow < 0 || priorRow >= snapshot.Length then
+                        false
+                    else
+                        let priorRowText =
+                            CanonicalState.renderRow snapshot priorRow
+                        not (regex.IsMatch(priorRowText))
+            let rowDirtyAccumulated =
+                state.RowDirtyAfterEmit || dirtyThisTick
+
             // PASS 2 — pick highest-rowIdx among stable matches,
             // apply the row-index-aware emission gate.
             let mutable emitted : PromptBoundaryData option = None
@@ -271,7 +317,9 @@ module HeuristicPromptDetector =
                         bestText <- candidateText
                 // Tier 1.E2.A — row-index-aware emission gate.
                 // A NEW PromptStart fires when the (text, rowIdx)
-                // pair differs from the last emitted pair.
+                // pair differs from the last emitted pair OR the
+                // previously-emitted row was dirtied between
+                // emissions (Cycle 45f-followup).
                 // Catches:
                 //   * Different text: `cd` changed the prompt
                 //     path.
@@ -279,16 +327,26 @@ module HeuristicPromptDetector =
                 //     stable-prompt case where output pushed
                 //     the prompt to a new row after a command
                 //     cycle.
+                //   * Same text, same row, dirty intermission:
+                //     screen-filling output scrolled everything,
+                //     the new prompt redrew on the same row as
+                //     the prior emission, the user already
+                //     typed + ran a command in between (the row
+                //     went non-matching). This used to silently
+                //     dedupe and caused cmd to go silent after
+                //     `dir` or any screen-filling output.
                 // Suppresses:
-                //   * Same text, same row: cursor blink /
-                //     refresh / no real activity.
+                //   * Same text, same row, never dirty: cursor
+                //     blink / refresh / no real activity.
                 let isNewPrompt =
                     match
                         state.LastEmittedPromptText,
                         state.LastEmittedPromptRowIndex
                         with
                     | Some priorText, Some priorRow ->
-                        priorText <> bestText || priorRow <> bestRow
+                        priorText <> bestText
+                        || priorRow <> bestRow
+                        || rowDirtyAccumulated
                     | _ -> true   // first emit
                 if isNewPrompt then
                     emitted <-
@@ -328,8 +386,15 @@ module HeuristicPromptDetector =
                     "HeuristicPromptDetector emitted PromptStart for shell {Shell} (stability {Ms}ms; rowIdx={Row}).",
                     shellKey, stabilityMs, emittedRowIndex)
 
+            // Cycle 45f-followup — reset dirty on emit; otherwise
+            // carry the accumulated value forward.
+            let nextRowDirtyAfterEmit =
+                if emitted.IsSome then false
+                else rowDirtyAccumulated
+
             let nextState =
                 { PerRowMatches = nextMatches
                   LastEmittedPromptText = nextLastEmittedText
-                  LastEmittedPromptRowIndex = nextLastEmittedRowIndex }
+                  LastEmittedPromptRowIndex = nextLastEmittedRowIndex
+                  RowDirtyAfterEmit = nextRowDirtyAfterEmit }
             emitted, nextState

@@ -15,6 +15,43 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Fixed (Cycle 45f follow-up): silence after screen-filling output
+
+Maintainer NVDA dogfood on the Cycle 45f build surfaced a real
+regression: after running any command that scrolls the entire
+screen (`dir`, `tree`, anything large), the NEXT command's
+output goes unannounced. Sequence to reproduce:
+
+1. `echo hello` → narrates "hello" ✓
+2. `dir` → narrates the output (long) ✓
+3. `echo hello` again → input echoes visually, command runs,
+   "hello" prints on screen, but NVDA stays silent ✗
+
+Root cause: `HeuristicPromptDetector`'s `(text, rowIdx)` dedup
+gate. After a screen-filling output, the prompt lands at the
+last row (rowIdx = 29 on a 30-row screen). The detector emits
+`PromptStart(text="C:\>", rowIdx=29)`. When the next command
+runs, cmd outputs the result, scrolls the screen by one row,
+and redraws the prompt on the **same bottom row with the same
+text**. The dedup gate compares `(text, rowIdx)` to the last
+emission, sees equality, and suppresses the emission —
+SessionModel never seals the tuple, the tuple-finalise
+announce never fires.
+
+Fix: add a `RowDirtyAfterEmit: bool` flag to the detector
+state. Track whether the previously-emitted row went
+non-matching between emissions (i.e., the user typed something
+on the prompt row, making it dirty). When the next clean
+prompt match arrives, emit even if `(text, rowIdx)` matches
+the previous emission. The flag clears on each emission so the
+no-spurious-re-emit behaviour for idle cursor-blinks is
+preserved.
+
+Pre-existing detector tests (cursor-blink suppression,
+different-text emit, different-row emit, post-reset re-emit)
+all keep passing. Two new tests pin the regression and the
+companion "no spurious re-emit on stable idle prompt" case.
+
 ### Added (Cycle 45f): per-shell verbosity modes
 
 Two new menu items under `Display`:
