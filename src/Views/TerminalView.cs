@@ -705,35 +705,51 @@ public class TerminalView : FrameworkElement
     /// Cycle 45 follow-up — read-only helper that announces the
     /// screen-cell character at the navigation key's destination
     /// position. Called from <see cref="OnPreviewKeyDown"/> for
-    /// Backspace / Left / Right / Home before the keystroke is
-    /// encoded and forwarded to the PTY. The PTY-side processing
-    /// continues unaffected; this is purely an additional NVDA
-    /// signal to fill the gap left by our UIA peer not firing
-    /// caret-change events.
+    /// Backspace / Delete / Left / Right / Home before the
+    /// keystroke is encoded and forwarded to the PTY. The
+    /// PTY-side processing continues unaffected; this is purely
+    /// an additional NVDA signal to fill the gap left by our UIA
+    /// peer not firing caret-change events.
     /// </summary>
     /// <remarks>
-    /// Per-key mapping:
+    /// Per-key mapping (mirrors NVDA's text-editor conventions:
+    /// Backspace announces the char that just got deleted;
+    /// arrows / Delete announce the char that ends up to the
+    /// right of the cursor's new position):
     /// <list type="bullet">
-    ///   <item><description><see cref="Key.Back"/> — char that will be
-    ///   deleted (cell at <c>(Cursor.Row, Cursor.Col - 1)</c>). Skipped
-    ///   when cursor is already at column 0.</description></item>
-    ///   <item><description><see cref="Key.Left"/> — char the cursor
-    ///   will move onto (cell at <c>(Cursor.Row, Cursor.Col - 1)</c>).
-    ///   Skipped at column 0.</description></item>
-    ///   <item><description><see cref="Key.Right"/> — char the cursor
-    ///   will move PAST (current cell, <c>(Cursor.Row, Cursor.Col)</c>).
-    ///   Skipped at the last column.</description></item>
+    ///   <item><description><see cref="Key.Back"/> (Backspace) —
+    ///   char that will be deleted (cell at
+    ///   <c>(Cursor.Row, Cursor.Col - 1)</c>). Skipped when cursor
+    ///   is already at column 0.</description></item>
+    ///   <item><description><see cref="Key.Delete"/> — char that
+    ///   will shift left into the cursor position (cell at
+    ///   <c>(Cursor.Row, Cursor.Col + 1)</c>; read BEFORE the
+    ///   delete so we capture the char that's about to become the
+    ///   new "char-to-right-of-cursor"). Skipped when cursor is
+    ///   at the last column.</description></item>
+    ///   <item><description><see cref="Key.Left"/> — char now to
+    ///   the right of the cursor after the move (cell at
+    ///   <c>(Cursor.Row, Cursor.Col - 1)</c>). Skipped at column 0.</description></item>
+    ///   <item><description><see cref="Key.Right"/> — char now to
+    ///   the right of the cursor after the move (cell at
+    ///   <c>(Cursor.Row, Cursor.Col + 1)</c>). Skipped at the last
+    ///   column. (Earlier revision incorrectly read the cell
+    ///   being moved PAST; corrected to match NVDA's
+    ///   text-editor convention.)</description></item>
     ///   <item><description><see cref="Key.Home"/> — char at
     ///   <c>(Cursor.Row, 0)</c>.</description></item>
     /// </list>
-    /// Up / Down / End / PgUp / PgDn / Delete are intentionally NOT
-    /// handled here. Up/Down in cmd recall history (the screen
-    /// rewrites after cmd responds; SpeechCursor picks that up
-    /// via the normal append path). End requires scanning for the
-    /// last non-blank cell which has unclear semantics for cmd's
-    /// prompt-line edit buffer. Delete's behaviour varies by shell.
-    /// All five can be added in a follow-up once their specific
-    /// announcement semantics are nailed down.
+    /// Up / Down / End / PgUp / PgDn are intentionally NOT handled
+    /// here. Up/Down in cmd recall history — the screen rewrites
+    /// after cmd responds (without a trailing newline), so the
+    /// announce needs to fire after cmd's output settles. That
+    /// requires wiring `ContentHistory.tick` into the pump's
+    /// `handleTick`, which interacts with the verbosity-mode
+    /// design (when does typed-echo announce, when does
+    /// cmd-driven content announce). Deferred to a separate cycle
+    /// that addresses both concerns together. End requires
+    /// scanning for the last non-blank cell which has unclear
+    /// semantics for cmd's prompt-line edit buffer.
     /// </remarks>
     private void AnnounceNavigationEcho(Key key)
     {
@@ -747,8 +763,9 @@ public class TerminalView : FrameworkElement
         int? targetCol = key switch
         {
             Key.Back => col > 0 ? col - 1 : (int?)null,
+            Key.Delete => col < _screen.Cols - 1 ? col + 1 : (int?)null,
             Key.Left => col > 0 ? col - 1 : (int?)null,
-            Key.Right => col < _screen.Cols - 1 ? col : (int?)null,
+            Key.Right => col < _screen.Cols - 1 ? col + 1 : (int?)null,
             Key.Home => 0,
             _ => null,
         };
