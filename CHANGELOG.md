@@ -15,6 +15,37 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 45c follow-up): diagnostic battery + ContentHistory observability
+
+The `Ctrl+Shift+D` self-test battery's per-shell tests still
+asserted on `SemanticCategory.StreamChunk` / `ErrorLine` /
+`WarningLine` — events that the deleted `StreamPathway` produced
+pre-Cycle-45c. Post-Cycle-45c the announce path runs through
+ContentHistory + SessionModel tuple-finalise, so those tests
+reported **FAIL** even on a healthy build. Replaced the
+PowerShell colour-detection cases (T1–T5) with a single
+`T1.Plain` case asserting that a `ReadyForInput` chime fires
+(tuple sealed). Added a `T2.SecondPlain` case to cmd as a
+regression pin for the silent-after-second-echo bug fixed by
+PR #280.
+
+Added the **`Stats:` header** to the `--- CONTENT HISTORY ---`
+section of every diagnostic bundle (full + lightweight). The
+header surfaces total entry count, latest assigned Seq, and
+per-kind marker tallies (`PromptStart`, `CommandStart`,
+`OutputStart`, `CommandFinished`, `BellRang`, `SelectionShown`,
+`AltScreenEnter`). The silent-third-echo bug hid behind an
+inline tail that *looked* populated; the stats header would
+have shown `OutputStart=0` immediately.
+
+Added a `Debug`-level **extraction-path log line** in
+`SessionModel.finalizeAndEnqueue`. Each tuple seal records
+`Path=content-history | row-walk-after-content-history-miss |
+row-walk-only` plus `CmdLen / OutLen / OldRow / NewRow`. A
+paste of `--- FILELOGGER ACTIVE LOG ---` now answers "which
+extraction path produced the empty CommandText?" without the
+maintainer needing a follow-up dogfood round to reproduce.
+
 ### Fixed (Cycle 45c fixup): NVDA silent after second command following scrolled output
 
 Maintainer reproducer 2026-05-12: run `echo hi` → `dir` → `echo hi`.

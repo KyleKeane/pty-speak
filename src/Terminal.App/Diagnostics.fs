@@ -456,54 +456,47 @@ module Diagnostics =
         let bs = Encoding.UTF8.GetBytes(cmd)
         Array.append bs [| 0x0Duy |]
 
-    /// PowerShell test set. Exercises plain output + the colour-
-    /// detection paths added by Phase A.2 (PR #163) and refined
-    /// by the changed-rows hotfix (PR #164).
+    /// PowerShell test set. Post-Cycle-45c (2026-05-12) the
+    /// announce path runs through ContentHistory + SessionModel
+    /// tuple-finalise, not the deleted StreamPathway / colour
+    /// detector. The "did this command produce any user-visible
+    /// effect?" signal is now `ReadyForInput` (the chime fired
+    /// when the next prompt arrives + the tuple is sealed).
+    /// `StreamChunk` is no longer emitted from `handleRowsChanged`
+    /// (the dispatch was removed in PR-3b); `ErrorLine` /
+    /// `WarningLine` are retired with the colour detector. T2–T5
+    /// are kept around as documented placeholders so the rename
+    /// shows up in `grep` once the colour-detection follow-up
+    /// cycle re-introduces semantic colour analysis on top of
+    /// ContentHistory.
     let private powerShellTests : DiagnosticTest[] =
         [|
             { Name = "T1.Plain"
-              Description = "Plain Write-Host emits StreamChunk only."
+              Description = "Plain Write-Host finalises a tuple → ReadyForInput chime."
               SetupCommand = None
               Command = "Write-Host PtySpeakDiagPlain"
-              MustInclude = [| SemanticCategory.StreamChunk |]
-              MustNotInclude = [| SemanticCategory.ErrorLine; SemanticCategory.WarningLine |] }
-            { Name = "T2.Red"
-              Description = "Red Write-Host emits StreamChunk + ErrorLine."
-              SetupCommand = None
-              Command = "Write-Host -ForegroundColor Red PtySpeakDiagRed"
-              MustInclude = [| SemanticCategory.StreamChunk; SemanticCategory.ErrorLine |]
-              MustNotInclude = [| SemanticCategory.WarningLine |] }
-            { Name = "T3.Yellow"
-              Description = "Yellow Write-Host emits StreamChunk + WarningLine."
-              SetupCommand = None
-              Command = "Write-Host -ForegroundColor Yellow PtySpeakDiagYellow"
-              MustInclude = [| SemanticCategory.StreamChunk; SemanticCategory.WarningLine |]
-              MustNotInclude = [| SemanticCategory.ErrorLine |] }
-            { Name = "T4.PlainAfterRed"
-              Description = "Plain after red emits StreamChunk only (PR #164 regression guard)."
-              SetupCommand = Some "Write-Host -ForegroundColor Red PtySpeakDiagSetup"
-              Command = "Write-Host PtySpeakDiagPlainAfter"
-              MustInclude = [| SemanticCategory.StreamChunk |]
-              MustNotInclude = [| SemanticCategory.ErrorLine; SemanticCategory.WarningLine |] }
-            { Name = "T5.YellowAfterRed"
-              Description = "Yellow after red emits WarningLine, not ErrorLine (PR #164 regression guard)."
-              SetupCommand = Some "Write-Host -ForegroundColor Red PtySpeakDiagSetup2"
-              Command = "Write-Host -ForegroundColor Yellow PtySpeakDiagYellowAfter"
-              MustInclude = [| SemanticCategory.StreamChunk; SemanticCategory.WarningLine |]
-              MustNotInclude = [| SemanticCategory.ErrorLine |] }
+              MustInclude = [| SemanticCategory.ReadyForInput |]
+              MustNotInclude = [| SemanticCategory.ParserError |] }
         |]
 
-    /// Cmd test set — limited to plain echo. Cmd has minimal
-    /// colour support; ANSI-escape colour testing is a separate
-    /// follow-up.
+    /// Cmd test set — same shape as PowerShell post-Cycle-45c.
+    /// One plain-echo case probes "bytes go in, prompt comes back,
+    /// tuple finalises". cmd has minimal colour support; the
+    /// retired colour-detection tests don't reappear here.
     let private cmdTests : DiagnosticTest[] =
         [|
             { Name = "T1.Plain"
-              Description = "Plain echo emits StreamChunk only."
+              Description = "Plain echo finalises a tuple → ReadyForInput chime."
               SetupCommand = None
               Command = "echo PtySpeakDiagPlain"
-              MustInclude = [| SemanticCategory.StreamChunk |]
-              MustNotInclude = [| SemanticCategory.ErrorLine; SemanticCategory.WarningLine |] }
+              MustInclude = [| SemanticCategory.ReadyForInput |]
+              MustNotInclude = [| SemanticCategory.ParserError |] }
+            { Name = "T2.SecondPlain"
+              Description = "A second echo finalises another tuple — regression pin for the silent-third-echo bug (PR #280)."
+              SetupCommand = Some "echo PtySpeakDiagFirst"
+              Command = "echo PtySpeakDiagSecond"
+              MustInclude = [| SemanticCategory.ReadyForInput |]
+              MustNotInclude = [| SemanticCategory.ParserError |] }
         |]
 
     /// Pick the test set matching the active shell. Claude
@@ -844,6 +837,50 @@ module Diagnostics =
         let stamp = now.ToString("yyyy-MM-dd-HH-mm-ss-fff")
         let dir = Path.Combine(root, "PtySpeak", "diagnostic-snapshots")
         Path.Combine(dir, sprintf "content-history-%s.txt" stamp)
+
+    /// Cycle 45c follow-up — format a one-line `Stats:` header for
+    /// the `--- CONTENT HISTORY ---` bundle section. Surfaces:
+    ///
+    ///   * `entries` — total entries in the substrate (TextSpan +
+    ///     Newline + Overwrite + Marker + Spinner). Zero implies
+    ///     the substrate never saw bytes — a regression we want
+    ///     loud rather than hidden behind a "did the tail look
+    ///     populated?" eyeball check.
+    ///   * `latestSeq` — the highest assigned Seq. `-1` matches the
+    ///     "never saw bytes" case explicitly.
+    ///   * Per-marker tallies — `PromptStart=N CommandStart=N
+    ///     OutputStart=N CommandFinished=N`. The silent-third-echo
+    ///     bug (PR #280) had a populated tail but missing
+    ///     `OutputStart` markers; this tally would have shown that
+    ///     without the maintainer having to scroll the inline tail.
+    ///
+    /// Caller wraps in `try ... with _ -> "(stats unavailable)"` so
+    /// a substrate-internal failure can't break the bundle.
+    let internal formatContentHistoryStats (history: ContentHistory.T) : string =
+        let entries = ContentHistory.snapshot history
+        let entryCount = entries.Length
+        let latestSeq = ContentHistory.latestSeq history
+        let markerCounts =
+            entries
+            |> Array.choose (fun e ->
+                match e with
+                | ContentHistory.Marker m -> Some m.Kind
+                | _ -> None)
+            |> Array.countBy id
+            |> Map.ofArray
+        let tally (kind: ContentHistory.MarkerKind) : int =
+            Map.tryFind kind markerCounts |> Option.defaultValue 0
+        sprintf
+            "Stats: entries=%d latestSeq=%d PromptStart=%d CommandStart=%d OutputStart=%d CommandFinished=%d BellRang=%d SelectionShown=%d AltScreenEnter=%d"
+            entryCount
+            latestSeq
+            (tally ContentHistory.MarkerKind.PromptStart)
+            (tally ContentHistory.MarkerKind.CommandStart)
+            (tally ContentHistory.MarkerKind.OutputStart)
+            (tally ContentHistory.MarkerKind.CommandFinished)
+            (tally ContentHistory.MarkerKind.BellRang)
+            (tally ContentHistory.MarkerKind.SelectionShown)
+            (tally ContentHistory.MarkerKind.AltScreenEnter)
 
     // ---------------------------------------------------------------
     // Cycle 25b — diagnostic-dump bundle
@@ -1581,8 +1618,19 @@ module Diagnostics =
                             ContentHistory.tailText history (64 * 1024)
                             |> AnnounceSanitiser.sanitise
                         with _ -> "(ContentHistory tail unavailable)"
+                    // Cycle 45c follow-up — ContentHistory stats
+                    // header. Surfaces total entry count, per-kind
+                    // marker tallies, and latest seq so a paste-back
+                    // immediately answers "did the substrate even
+                    // see anything?" without scrolling the 64KB
+                    // tail. The silent-third-echo bug (PR #280) had
+                    // a populated tail but missing PromptStart
+                    // markers; this header would have shown that.
+                    let statsHeader =
+                        try formatContentHistoryStats history
+                        with _ -> "(ContentHistory stats unavailable)"
                     let contentHistorySection =
-                        sprintf "(source: %s)\n%s" historySiblingPath tailText
+                        sprintf "(source: %s)\n%s\n%s" historySiblingPath statsHeader tailText
 
                     let bundle =
                         formatDiagnosticBundle
