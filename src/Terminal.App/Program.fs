@@ -1331,60 +1331,25 @@ module Program =
             | ShellRegistry.Cmd -> "cmd"
             | ShellRegistry.PowerShell -> "powershell"
             | ShellRegistry.Claude -> "claude"
-        let selectPathwayForShell
-                (shellId: ShellRegistry.ShellId)
-                : DisplayPathway.T =
-            let shellKey = shellIdToConfigKey shellId
-            let pathwayId = Config.resolveShellPathway config shellKey
-            let streamParams = Config.resolveStreamParameters config
-            match pathwayId with
-            // Cycle 35a — pass `linearStream` (Cycle 34a/b
-            // producer cell) to StreamPathway so its
-            // SubstrateMode = Linear / Auto dispatch can read
-            // the producer's committed buffer via
-            // `LinearTextStream.suffixSince`.
-            | "stream" -> StreamPathway.create streamParams linearStream
-            | "tui" -> TuiPathway.create ()
-            | unknown ->
-                log.LogWarning(
-                    "Config: unknown pathway '{Pathway}' for shell {Shell}; falling back to stream.",
-                    unknown, shellKey)
-                StreamPathway.create streamParams linearStream
+        // Cycle 45c PR-3b — `selectPathwayForShell` deleted along
+        // with the pathway layer. Per-shell behaviour now flows
+        // through `ShellPolicy` (verbosity / prompt-path /
+        // selection-detector toggles); the pathway-type concept
+        // (`stream` / `tui`) is no longer represented because
+        // ContentHistory is the universal substrate.
+        //
+        // The startup-time `activePathway` mutable + the
+        // shell-switch reassignment block in `switchToShell`
+        // (`activePathway.Reset () / activePathway <- ...`) are
+        // also gone — there's no pathway state to reset.
 
-        // Initial pathway — StreamPathway with the resolved
-        // parameters from `config` (or defaults if no config
-        // is present). The mutable is reassigned by
-        // `switchToShell` below when the user hot-switches
-        // and by the startup-shell alignment block once
-        // `chosenShell` resolves; for the brief window
-        // between this initialisation and the alignment
-        // swap, no ScreenNotifications can arrive (the
-        // ConPty isn't spawned yet) so the StreamPathway
-        // placeholder is safe regardless of `config`'s
-        // shell-pathway override.
-        let mutable activePathway : DisplayPathway.T =
-            // Cycle 35a — startup pathway also takes the
-            // linearStream; same instance flows to all
-            // subsequent shell-switch pathway recreations.
-            StreamPathway.create (Config.resolveStreamParameters config) linearStream
-
-        // Phase B (subset) — alt-screen → TuiPathway auto-detect
-        // bookkeeping. The PathwayPump's `handleModeChanged`
-        // consults `PathwaySelector.decideAltScreenAction` on
-        // every `ModeChanged`; when an alt-screen toggle requires
-        // a pathway swap, the pump needs to know which shell to
-        // resolve the "default" back to (i.e., on alt-screen
-        // exit, swap back to the active shell's default
-        // streaming pathway, not always to cmd's). Tracked as a
-        // `ShellId` rather than the full `Shell` record because
-        // `selectPathwayForShell` only needs the id; this avoids
-        // a forward reference to `chosenShell` (which is resolved
-        // later in `compose`). Defaults to `Cmd` so a swap that
-        // somehow fires before `chosenShell` resolves still
-        // produces a valid pathway. Updated in two places:
-        //   - startup-shell alignment (after `chosenShell`
-        //     resolves)
-        //   - `switchToShell`'s `Ok newHost` branch
+        // Cycle 45c PR-3b — `currentShellId` retained. The
+        // pathway-swap bookkeeping that used to be the primary
+        // consumer (`selectPathwayForShell currentShellId` in
+        // the SwapToShellDefault arm) is gone, but the mutable
+        // still drives `shellIdToConfigKey` lookups for ShellPolicy
+        // / profile resolution in `handlePromptBoundary` +
+        // `switchToShell`.
         let mutable currentShellId : ShellRegistry.ShellId =
             ShellRegistry.Cmd
 
@@ -1495,13 +1460,10 @@ module Program =
         //     each flushed event, then build the barrier
         //     OutputEvent via OutputEventBuilder and dispatch.
         //
-        // The pathway's `LastEmittedRowHashes` baseline + debounce
-        // accumulator + spinner-history all live inside the
-        // pathway closure; the pump just hands canonical state
-        // in and dispatches the OutputEvents that come out.
-        let dispatchPathwayEvents (events: OutputEvent[]) : unit =
-            for ev in events do
-                OutputDispatcher.dispatch ev
+        // Cycle 45c PR-3b — `dispatchPathwayEvents` deleted along
+        // with the pathway-emit call sites. Direct
+        // `OutputDispatcher.dispatch` is still used elsewhere
+        // (boundary barriers, earcons, ready-for-input).
 
         // Per-case handlers extracted from the match block. F# 9
         // under TreatWarningsAsErrors=true can be brittle about
@@ -1522,12 +1484,12 @@ module Program =
         // dispatch heuristic-detected boundaries (Tier 1.D) via
         // this helper. F# `let` bindings are sequential.
         //
-        // Cycle 35b — resolve the SubstrateMode once outside
-        // the per-boundary closure so the resolution doesn't
-        // run on every prompt event. `Config.tryLoad` happens
-        // at startup; no hot-reload, so resolved params are
-        // stable for the session.
-        let resolvedStreamParams = Config.resolveStreamParameters config
+        // Cycle 45c PR-3b — `resolvedStreamParams` removed.
+        // The Cycle 35b SubstrateMode dispatch collapsed to
+        // `useContentHistory = true` (always-on ContentHistory
+        // substrate). PR-3c deletes
+        // `Config.resolveStreamParameters` and the
+        // `StreamPathway` enum.
         let handlePromptBoundary
                 (boundary: PromptBoundaryData)
                 (snapshot: Cell[][])
@@ -1578,28 +1540,18 @@ module Program =
             // becomes a no-op. Cycle 24d-1: `Always` mode routes
             // through `EnqueueSync` (blocking) via
             // `dispatchTupleToWriter`.
-            // Cycle 45c — ContentHistory-driven substrate-aware
-            // finalize. Replaces Cycle 35b's LinearTextStream
-            // path. The SubstrateMode dispatch shape is preserved
-            // verbatim — Linear / ScreenDiff / Auto still gate
-            // whether SessionModel uses the OSC 133 path
-            // (authoritative when shell emits markers) versus
-            // the `extractContent` row-walk fallback. The
-            // substrate behind the OSC 133 path is now
-            // ContentHistory + `tryLatestMarker` /  `sliceText`.
-            // PR-3b collapses the SubstrateMode enum once the
-            // pathway modules are deleted; for PR-3a the enum
-            // values stay referenced (StreamPathway.fs is still
-            // alive).
-            let useContentHistory =
-                match resolvedStreamParams.SubstrateMode with
-                | StreamPathway.Linear -> true
-                | StreamPathway.ScreenDiff -> false
-                | StreamPathway.Auto -> not screen.Modes.AltScreen
+            // Cycle 45c PR-3b — SubstrateMode dispatch collapsed.
+            // ContentHistory is the universal substrate; the
+            // boolean is always `true`. The fallback to
+            // `extractContent`'s row-walk happens organically
+            // inside `extractContentFromContentHistory` when no
+            // OSC 133 markers are present (the marker-less shell
+            // case). SessionModel.IsAltScreenActive separately
+            // gates boundary processing during alt-screen.
             let nextSession, finalisedOpt =
                 SessionModel.applyAndCaptureWithContentHistory
                     currentSession augmented snapshotForApply
-                    contentHistory useContentHistory
+                    contentHistory true
             currentSession <- nextSession
             match finalisedOpt with
             | Some tuple -> dispatchTupleToWriter tuple
@@ -1722,13 +1674,14 @@ module Program =
                         ""
                 OutputDispatcher.dispatch readyEvent
 
-            let emitted = activePathway.OnPromptBoundary augmented
+            // Cycle 45c PR-3b — activePathway.OnPromptBoundary call
+            // deleted. The pathway emitted OutputEvents whose
+            // Payloads were empty post-Cycle-45 (ContentHistory +
+            // SpeechCursor took over the announce side); the
+            // dispatch was logged but produced no NVDA effect.
             pumpLog.LogDebug(
-                "PathwayPump PromptBoundary {Kind} → {Pathway}.OnPromptBoundary → {Count} events.",
-                augmented.Kind,
-                activePathway.Id,
-                emitted.Length)
-            dispatchPathwayEvents emitted
+                "PathwayPump PromptBoundary {Kind} → ContentHistory append (no pathway emit).",
+                augmented.Kind)
 
         // SessionModel Tier 1.D-cleanup (Cycle 19) — shared
         // detector invocation. Was duplicated across
@@ -1836,101 +1789,47 @@ module Program =
             runDetector snapshot cursorPos (DateTime.UtcNow)
             // Cycle 35a — pass alt-screen state for SubstrateMode=Auto
             // dispatch in StreamPathway.processCanonicalState.
+            // Cycle 45c PR-3b — activePathway.Consume call deleted.
+            // CanonicalState construction is retained because
+            // future framework cycles (Phase 2 ReplPathway /
+            // ClaudeCodePathway) will reintroduce a Consume-shaped
+            // pathway primitive against a different substrate.
             let canonical =
                 CanonicalState.create snapshot cursorPos seq screen.Modes.AltScreen
-            let emitted = activePathway.Consume canonical
+            ignore canonical
             pumpLog.LogDebug(
-                "PathwayPump RowsChanged → {Pathway}.Consume → {Count} events.",
-                activePathway.Id,
-                emitted.Length)
-            dispatchPathwayEvents emitted
-        // Phase B (subset) — alt-screen swap helper. Mirrors
-        // `switchToShell`'s pathway-swap sequence (flush via
-        // `OnModeBarrier`, `Reset` outgoing, reassign, seed
-        // `SetBaseline` against the current screen) so the
-        // mid-session pathway-swap state semantics match the
-        // hot-switch path. Idempotent under no-op decisions
-        // (`PathwaySelector.Keep` short-circuits to the existing
-        // mode-barrier flush).
-        let swapPathwayForAltScreen (next: DisplayPathway.T) : unit =
-            try activePathway.Reset () with _ -> ()
-            activePathway <- next
-            try
-                let seq, cursorPos, snapshot =
-                    screen.SnapshotRows(0, screen.Rows)
-                let canonical =
-                    CanonicalState.create
-                        snapshot cursorPos seq screen.Modes.AltScreen
-                activePathway.SetBaseline canonical
-            with _ -> ()
-            pumpLog.LogInformation(
-                "PathwayPump auto-swapped pathway. NewPathway={Pathway}",
-                activePathway.Id)
-
+                "PathwayPump RowsChanged → ContentHistory append (no pathway emit).")
+        // Cycle 45c PR-3b — `swapPathwayForAltScreen` deleted.
+        // Alt-screen entry/exit no longer swaps pathway
+        // implementations; the SessionModel state-machine call
+        // (`enterAltScreen` / `exitAltScreen`) was the only
+        // user-facing semantic of the swap and that's now invoked
+        // directly in `handleModeChanged`.
         let handleModeChanged (notification: ScreenNotification) : unit =
-            let now = DateTimeOffset.UtcNow
-            // Step 1 — flush the OUTGOING pathway's pending
-            // state via OnModeBarrier so any pre-mode-change
-            // diff lands at NVDA before the pathway swap.
-            let flushed = activePathway.OnModeBarrier now
-            pumpLog.LogDebug(
-                "PathwayPump ModeChanged → {Pathway}.OnModeBarrier → {Count} flushed events.",
-                activePathway.Id,
-                flushed.Length)
-            dispatchPathwayEvents flushed
-            // Step 2 — consult PathwaySelector to decide whether
-            // an alt-screen toggle warrants a pathway swap. Most
-            // ModeChanged events return Keep (no swap) and the
-            // existing barrier-OutputEvent dispatch finishes
-            // the flow. Alt-screen toggles between the user's
-            // streaming shell and a TUI app (vim / less / top)
-            // swap pathways here so the user gets streaming
-            // diffs in cmd / powershell / claude and review-
-            // cursor-only navigation in vim / less.
-            match PathwaySelector.decideAltScreenAction
-                    activePathway.Id notification with
-            | PathwaySelector.Keep ->
-                ()
-            | PathwaySelector.SwapToTui ->
-                // SessionModel Tier 1.D — Q3 wiring
-                // closure. Mark the session as alt-screen-
-                // active so subsequent boundaries are
-                // ignored by `SessionModel.apply`. Reset
-                // the heuristic detector so stale per-row
-                // matches don't produce phantom boundaries
-                // on alt-screen exit.
+            ignore notification
+            // Cycle 45c PR-3b — alt-screen transitions toggle
+            // SessionModel + reset the prompt + selection
+            // detectors. The pathway swap logic that used to wrap
+            // these calls (PathwaySelector.decideAltScreenAction
+            // + swapPathwayForAltScreen) is gone — ContentHistory
+            // is the sole substrate post-PR-3b. SessionModel's
+            // alt-screen flag continues to govern boundary
+            // suppression during TUI apps.
+            if screen.Modes.AltScreen then
                 currentSession <-
                     SessionModel.enterAltScreen currentSession
-                promptDetector <-
-                    HeuristicPromptDetector.reset promptDetector
-                // Cycle 29b — also reset the selection detector
-                // on alt-screen entry. Selection prompts can't
-                // appear inside alt-screen TUIs (vim / less /
-                // top); a stale candidate would emit a phantom
-                // SelectionDismissed on alt-screen exit if not
-                // reset.
-                selectionDetector <-
-                    SelectionDetector.reset selectionDetector
-                swapPathwayForAltScreen (TuiPathway.create ())
-            | PathwaySelector.SwapToShellDefault ->
-                // SessionModel Tier 1.D — Q3 wiring
-                // closure. Clear the alt-screen flag so
-                // subsequent boundaries advance the state
-                // machine again. Reset the detector for a
-                // fresh stability window post-exit.
+            else
                 currentSession <-
                     SessionModel.exitAltScreen currentSession
-                promptDetector <-
-                    HeuristicPromptDetector.reset promptDetector
-                // Cycle 29b — companion reset on alt-screen exit.
-                selectionDetector <-
-                    SelectionDetector.reset selectionDetector
-                swapPathwayForAltScreen (selectPathwayForShell currentShellId)
-            // Step 3 — dispatch the barrier OutputEvent so the
+            promptDetector <-
+                HeuristicPromptDetector.reset promptDetector
+            selectionDetector <-
+                SelectionDetector.reset selectionDetector
+            // Barrier OutputEvent dispatch retained so the
             // FileLogger captures the mode transition in the
-            // audit trail and NvdaChannel routes via
-            // ActivityIds.mode (empty Payload skips the actual
-            // announce per NvdaChannel's contract).
+            // audit trail (NvdaChannel routes via ActivityIds.mode;
+            // empty Payload skips the actual announce per
+            // NvdaChannel's contract).
             let barrier =
                 OutputEventBuilder.fromScreenNotification notification
             OutputDispatcher.dispatch barrier
@@ -1969,9 +1868,9 @@ module Program =
             // the idle-gap hole; the inline body has been
             // factored out for parity with `handleRowsChanged`.
             runDetector snapshot cursorPos now.UtcDateTime
-            let emitted = activePathway.Tick now
-            if emitted.Length > 0 then
-                dispatchPathwayEvents emitted
+            // Cycle 45c PR-3b — activePathway.Tick call deleted.
+            // ContentHistory has its own `tick` (idle-window seal)
+            // which is invoked by SpeechCursor's announce path.
             OutputDispatcher.dispatchTick now
 
         let _ =
@@ -2235,20 +2134,10 @@ module Program =
             chosenShell.DisplayName,
             commandLine)
 
-        // Phase A — align the active pathway with the resolved
-        // startup shell. v1 maps cmd / powershell / claude all
-        // to StreamPathway, so this swap is a no-op today (the
-        // mutable was already initialised to StreamPathway).
-        // Phase 2 will map Claude to a ClaudeCodePathway; this
-        // swap ensures the right pathway is active when the
-        // PathwayPump processes the first ScreenNotification.
-        try activePathway.Reset () with _ -> ()
-        activePathway <- selectPathwayForShell chosenShell.Id
-        // Phase B (subset) — sync the alt-screen-detect
-        // bookkeeping with the resolved startup shell so the
-        // PathwayPump's `SwapToShellDefault` (alt-screen exit)
-        // resolves to the correct pathway for the running
-        // shell.
+        // Cycle 45c PR-3b — pathway alignment removed (no pathway
+        // layer post-PR-3b). `currentShellId` still gets synced
+        // so ShellPolicy / profile resolution sees the right
+        // shell on the first boundary.
         currentShellId <- chosenShell.Id
 
         // Cycle 45f — apply the startup shell's verbosity policy
@@ -2504,10 +2393,15 @@ module Program =
                 // surfaces substrate state per Tier 1.F's
                 // observability deliverable.
                 (fun () ->
+                    // Cycle 45c PR-3b — activePathway.Id replaced
+                    // with a constant since the pathway layer is
+                    // gone. PR-3c renames the
+                    // captureSessionModel parameter (it's now
+                    // historically named).
                     Diagnostics.captureSessionModel
                         currentSession
                         promptDetector
-                        activePathway.Id)
+                        "content-history")
                 // Cycle 25b — snapshot-bundle path resolver. The
                 // diagnostic battery now includes the FileLogger
                 // active log slice in its dump-and-clipboard
@@ -3499,60 +3393,19 @@ module Program =
                                         // Cycle 39 revert.
                                         OutputDispatcher.ProfileRegistry.setActiveProfileSet
                                             (resolveProfilesForShell shell.Id)
-                                        // Phase A — swap the active
-                                        // pathway for the new shell.
-                                        // `Reset` clears any pending
-                                        // diff + last-emitted row
-                                        // hash baseline on the
-                                        // outgoing pathway so its
-                                        // state can't leak into the
-                                        // new shell's session;
-                                        // `selectPathwayForShell`
-                                        // picks the right pathway
-                                        // shape for the new shell
-                                        // (today all three
-                                        // built-in shells map to
-                                        // StreamPathway, but Phase 2
-                                        // will swap Claude to a
-                                        // ClaudeCodePathway and the
-                                        // hot-switch path will
-                                        // start to differentiate).
-                                        try activePathway.Reset () with _ -> ()
-                                        activePathway <-
-                                            selectPathwayForShell shell.Id
-                                        // Phase A.1 — seed the new
-                                        // pathway's diff baseline
-                                        // with the screen's current
-                                        // snapshot so the next
-                                        // Consume emits only the
-                                        // new shell's paint, not the
-                                        // residual content the old
-                                        // shell left on the screen.
-                                        // The screen buffer is NOT
-                                        // cleared on shell-switch
-                                        // (separate framework-cycle
-                                        // concern, see the comment
-                                        // block above), so without
-                                        // this seed the user hears
-                                        // the previous shell's
-                                        // content re-announced when
-                                        // the new shell's first
-                                        // RowsChanged arrives. Must
-                                        // happen BEFORE wirePostSpawn
-                                        // starts the reader loop so
-                                        // there's no race with the
-                                        // new shell's first paint.
-                                        try
-                                            let seq, cursorPos, snapshot =
-                                                screen.SnapshotRows(0, screen.Rows)
-                                            let canonical =
-                                                CanonicalState.create
-                                                    snapshot
-                                                    cursorPos
-                                                    seq
-                                                    screen.Modes.AltScreen
-                                            activePathway.SetBaseline canonical
-                                        with _ -> ()
+                                        // Cycle 45c PR-3b — pathway
+                                        // Reset + reassignment +
+                                        // SetBaseline removed. The
+                                        // ContentHistory reset
+                                        // earlier in `switchToShell`
+                                        // already cleared the
+                                        // substrate; no pathway
+                                        // state to clear. Phase 2
+                                        // ClaudeCodePathway will
+                                        // reintroduce a substrate-
+                                        // swap mechanism if needed,
+                                        // but its shape is
+                                        // ContentHistory-aware.
                                         wirePostSpawn newHost
                                         window.TerminalSurface.Announce(
                                             sprintf "Switched to %s." shell.DisplayName,
