@@ -26,7 +26,7 @@ thread boundaries are.
 > below describes shipped modules, not the original draft. See
 > [`docs/ROADMAP.md`](ROADMAP.md) and
 > [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) for the per-stage
-> status; [`docs/PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md)
+> status; [`docs/PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md)
 > for the canonical 12-stage pipeline vocabulary; the audit-track
 > docs (`docs/AUDIT-CODE-CONSISTENCY.md` etc.) for cross-doc
 > alignment.
@@ -243,7 +243,7 @@ contributing:
 
 Substrate research-stage docs to read alongside the code:
 
-- [`docs/PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md) — the
+- [`docs/PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md) — the
   12-stage pipeline glossary (operational vocabulary).
 - [`docs/INTERACTION-MODEL.md`](INTERACTION-MODEL.md) — the
   Shell Interaction Manager + three-component model.
@@ -261,22 +261,22 @@ Substrate research-stage docs to read alongside the code:
 - Original stage plan: [`spec/tech-plan.md`](../spec/tech-plan.md)
 - Post-Stage-7 substrate spec: [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md)
 - Roadmap: [`ROADMAP.md`](ROADMAP.md)
-- Strategic plan (snapshot 2026-05-03): [`PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md)
+- Strategic plan (snapshot 2026-05-03): [`PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05-09.md)
 
 ### Substrate research-stage docs
-- Pipeline vocabulary: [`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md)
+- Pipeline vocabulary: [`PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md)
 - History substrate: [`SESSION-MODEL.md`](SESSION-MODEL.md)
 - Architectural framing: [`INTERACTION-MODEL.md`](INTERACTION-MODEL.md)
 - UI composition: [`PANE-MODEL.md`](PANE-MODEL.md)
 - User-customization: [`CUSTOMIZATION-MODEL.md`](CUSTOMIZATION-MODEL.md)
 
 ### Audit-track docs
-- Code consistency: [`AUDIT-CODE-CONSISTENCY.md`](AUDIT-CODE-CONSISTENCY.md)
-- Test inventory: [`AUDIT-TEST-INVENTORY.md`](AUDIT-TEST-INVENTORY.md)
-- Spec alignment: [`AUDIT-SPEC-ALIGNMENT.md`](AUDIT-SPEC-ALIGNMENT.md)
-- Atlas alignment: [`AUDIT-ATLAS-ALIGNMENT.md`](AUDIT-ATLAS-ALIGNMENT.md)
-- Doc currency: [`AUDIT-DOC-CURRENCY.md`](AUDIT-DOC-CURRENCY.md)
-- Backlog validation: [`AUDIT-BACKLOG-VALIDATION.md`](AUDIT-BACKLOG-VALIDATION.md)
+- Code consistency: [`AUDIT-CODE-CONSISTENCY.md`](archive/pre-cycle-45/AUDIT-CODE-CONSISTENCY.md)
+- Test inventory: [`AUDIT-TEST-INVENTORY.md`](archive/pre-cycle-45/AUDIT-TEST-INVENTORY.md)
+- Spec alignment: [`AUDIT-SPEC-ALIGNMENT.md`](archive/pre-cycle-45/AUDIT-SPEC-ALIGNMENT.md)
+- Atlas alignment: [`AUDIT-ATLAS-ALIGNMENT.md`](archive/pre-cycle-45/AUDIT-ATLAS-ALIGNMENT.md)
+- Doc currency: [`AUDIT-DOC-CURRENCY.md`](archive/pre-cycle-45/AUDIT-DOC-CURRENCY.md)
+- Backlog validation: [`AUDIT-BACKLOG-VALIDATION.md`](archive/pre-cycle-45/AUDIT-BACKLOG-VALIDATION.md)
 
 ### Operational / release
 - Build: [`BUILD.md`](BUILD.md)

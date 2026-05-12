@@ -4,12 +4,12 @@
 > **Status**: design / forward-looking — research-stage sketch; specifies what the substrate must NOT preclude; no current implementation
 > **Authoring item**: backlog item 31 (research stage)
 > **Companion docs**:
-> - [`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md) — operational vocabulary; the 12 stages this principle attaches to
+> - [`PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md) — operational vocabulary; the 12 stages this principle attaches to
 > - [`SESSION-MODEL.md`](SESSION-MODEL.md) — substrate that gains per-tuple trace metadata under this principle
 > - [`INTERACTION-MODEL.md`](INTERACTION-MODEL.md) — architectural framing; SIM responsibility extends to introspection
 > - [`PANE-MODEL.md`](PANE-MODEL.md) — UI composition; introduces "Pipeline Inspector" pane (or extends an existing reserved pane) under this principle
 > - [`USER-SETTINGS.md`](USER-SETTINGS.md) — parameter atlas; override-rule TOML schema lands here when substrate ships
-> - [`AUDIT-CODE-CONSISTENCY.md`](AUDIT-CODE-CONSISTENCY.md), [`AUDIT-TEST-INVENTORY.md`](AUDIT-TEST-INVENTORY.md), [`AUDIT-SPEC-ALIGNMENT.md`](AUDIT-SPEC-ALIGNMENT.md), [`AUDIT-ATLAS-ALIGNMENT.md`](AUDIT-ATLAS-ALIGNMENT.md), [`AUDIT-DOC-CURRENCY.md`](AUDIT-DOC-CURRENCY.md), [`AUDIT-BACKLOG-VALIDATION.md`](AUDIT-BACKLOG-VALIDATION.md) — audit baselines
+> - [`AUDIT-CODE-CONSISTENCY.md`](archive/pre-cycle-45/AUDIT-CODE-CONSISTENCY.md), [`AUDIT-TEST-INVENTORY.md`](archive/pre-cycle-45/AUDIT-TEST-INVENTORY.md), [`AUDIT-SPEC-ALIGNMENT.md`](archive/pre-cycle-45/AUDIT-SPEC-ALIGNMENT.md), [`AUDIT-ATLAS-ALIGNMENT.md`](archive/pre-cycle-45/AUDIT-ATLAS-ALIGNMENT.md), [`AUDIT-DOC-CURRENCY.md`](archive/pre-cycle-45/AUDIT-DOC-CURRENCY.md), [`AUDIT-BACKLOG-VALIDATION.md`](archive/pre-cycle-45/AUDIT-BACKLOG-VALIDATION.md) — audit baselines
 > - [`CHANNEL-ARCHITECTURE.md`](CHANNEL-ARCHITECTURE.md) — channel-based-communication principle. Channels are the seams the user inspects + customises; the Customization principle's per-stage swapping maps to per-consumer swapping behind a channel.
 
 ## What this document is
@@ -130,7 +130,7 @@ workflows ship.
 ## The customization principle
 
 Pty-speak's pipeline (12 stages per
-[PIPELINE-NARRATIVE](PIPELINE-NARRATIVE.md), plus
+[PIPELINE-NARRATIVE](archive/pre-cycle-45/PIPELINE-NARRATIVE.md), plus
 auxiliary concerns) is a sequence of named operations.
 Each operation transforms input data into output data:
 parser bytes into cell mutations, screen state into
@@ -987,17 +987,17 @@ emerges. Avoids upfront over-engineering.
 ## Companion-doc cross-reference index
 
 Quick reference:
-- [`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md) — the 12 stages this principle attaches to.
+- [`PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md) — the 12 stages this principle attaches to.
 - [`SESSION-MODEL.md`](SESSION-MODEL.md) — per-tuple metadata extension; raw-output storage enables re-render.
 - [`INTERACTION-MODEL.md`](INTERACTION-MODEL.md) — SIM responsibility extension.
 - [`PANE-MODEL.md`](PANE-MODEL.md) — Pipeline Inspector pane catalog entry.
 - [`USER-SETTINGS.md`](USER-SETTINGS.md) — TOML override-rule schema; alternatives parameter docs.
-- [`AUDIT-CODE-CONSISTENCY.md`](AUDIT-CODE-CONSISTENCY.md) — naming-consistency baseline.
-- [`AUDIT-TEST-INVENTORY.md`](AUDIT-TEST-INVENTORY.md) — future test cluster recommendations.
-- [`AUDIT-SPEC-ALIGNMENT.md`](AUDIT-SPEC-ALIGNMENT.md) — spec-extension recommendation.
-- [`AUDIT-ATLAS-ALIGNMENT.md`](AUDIT-ATLAS-ALIGNMENT.md) — atlas extension on rule schema.
-- [`AUDIT-DOC-CURRENCY.md`](AUDIT-DOC-CURRENCY.md) — doc-currency baseline.
-- [`AUDIT-BACKLOG-VALIDATION.md`](AUDIT-BACKLOG-VALIDATION.md) — item 31 = this doc.
+- [`AUDIT-CODE-CONSISTENCY.md`](archive/pre-cycle-45/AUDIT-CODE-CONSISTENCY.md) — naming-consistency baseline.
+- [`AUDIT-TEST-INVENTORY.md`](archive/pre-cycle-45/AUDIT-TEST-INVENTORY.md) — future test cluster recommendations.
+- [`AUDIT-SPEC-ALIGNMENT.md`](archive/pre-cycle-45/AUDIT-SPEC-ALIGNMENT.md) — spec-extension recommendation.
+- [`AUDIT-ATLAS-ALIGNMENT.md`](archive/pre-cycle-45/AUDIT-ATLAS-ALIGNMENT.md) — atlas extension on rule schema.
+- [`AUDIT-DOC-CURRENCY.md`](archive/pre-cycle-45/AUDIT-DOC-CURRENCY.md) — doc-currency baseline.
+- [`AUDIT-BACKLOG-VALIDATION.md`](archive/pre-cycle-45/AUDIT-BACKLOG-VALIDATION.md) — item 31 = this doc.
 - [`CONTRIBUTING.md`](../CONTRIBUTING.md) — branching + PR conventions.
 
 ## Change log

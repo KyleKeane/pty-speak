@@ -15,6 +15,37 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Changed (Cycle 45c cleanup PR-1): docs archived to `docs/archive/pre-cycle-45/`
+
+The narrative layer that described the pre-Cycle-45 substrate
+pipeline (replaced by `ContentHistory` + `SpeechCursor` in
+PRs #263–#270) moved to `docs/archive/pre-cycle-45/`:
+
+- Predecessor strategic plans: `PROJECT-PLAN-2026-05.md`
+  (2026-05-03), `PROJECT-PLAN-2026-05-revision.md` (2026-05-07).
+  Current plan `PROJECT-PLAN-2026-05-09.md` stays live.
+- Six May-2026 audit deliverables (`AUDIT-CODE-CONSISTENCY`,
+  `AUDIT-TEST-INVENTORY`, `AUDIT-SPEC-ALIGNMENT`,
+  `AUDIT-ATLAS-ALIGNMENT`, `AUDIT-DOC-CURRENCY`,
+  `AUDIT-BACKLOG-VALIDATION`).
+- `PIPELINE-NARRATIVE.md` (12-stage byte-to-announce vocabulary;
+  superseded by `spec/event-and-output-framework.md`).
+- `STAGE-7-ISSUES.md` (Stage 7 gap inventory).
+- `HISTORICAL-CONTEXT-2026-05.md`.
+- `docs/rfc/0001-linear-text-substrate.md` (formalised the
+  LinearTextStream substrate that's being removed by the
+  follow-up code-prune cycle).
+- All three `docs/research/` seeds (`MAY-4.md`,
+  `Output-paradigms.md`, `emission-paradigms.md`).
+
+ADR 0001 (`docs/adr/0001-substrate-channel-dichotomy.md`) and
+the entire `spec/` directory stay live as architectural substrate.
+
+Outgoing cross-references in surviving docs retargeted to the
+new archive paths or to live successors (current PROJECT-PLAN,
+spec). `docs/CORE-ABSTRACTION-BOUNDARY.md` §7 gained a Cycle 45
+update note explaining the substrate shift.
+
 ### Added (Cycle 45f follow-up): diagnostic build provenance + detector trace
 
 Diagnostic bundles now emit a `Build:` line in the header

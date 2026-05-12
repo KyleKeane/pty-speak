@@ -141,9 +141,8 @@ docs/                    Living developer documentation
   CHECKPOINTS.md         Stable-baseline tags per shipped stage
   CONPTY-NOTES.md        Observed Windows ConPTY platform quirks
   SESSION-HANDOFF.md     Bridge between Claude Code coding sessions
-  PROJECT-PLAN-2026-05.md  Strategic plan supersedes Stages 7-10 sequencing
-  HISTORICAL-CONTEXT-2026-05.md  Supplementary backup reference (NOT a primary handoff source)
-  STAGE-7-ISSUES.md      Stub for Stage 7 NVDA-validation gap inventory (Part 2)
+  PROJECT-PLAN-2026-05-09.md  Current strategic plan (predecessor revisions in archive/pre-cycle-45/)
+  archive/pre-cycle-45/  Decision-history archive of the pre-Cycle-45 substrate-pipeline docs (audits, RFC 0001, pipeline narrative, stage-gap inventory, research seeds, historical context)
 .github/
   workflows/             CI and release automation
   ISSUE_TEMPLATE/        Bug, feature, accessibility-issue templates
@@ -167,7 +166,7 @@ shortcuts for the four most common audiences.
 **If you're Claude Code starting a session:**
 - [`CLAUDE.md`](CLAUDE.md) — Claude-runtime-only rules (auto-loaded; sandbox quirks, MCP behaviour, ask-for-CI-logs, no-GUI-walks rule, diagnostic recipes)
 - [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md) — "Where we left off"
-- [`docs/PROJECT-PLAN-2026-05.md`](docs/PROJECT-PLAN-2026-05.md) — strategic plan
+- [`docs/PROJECT-PLAN-2026-05-09.md`](docs/PROJECT-PLAN-2026-05-09.md) — strategic plan
 - [`spec/tech-plan.md`](spec/tech-plan.md) — stage-by-stage spec
 
 **If you're the maintainer cutting a release:**
@@ -185,8 +184,7 @@ shortcuts for the four most common audiences.
 - [`docs/CONPTY-NOTES.md`](docs/CONPTY-NOTES.md) — Win32 ConPTY quirks
 - [`docs/USER-SETTINGS.md`](docs/USER-SETTINGS.md) — current and planned settings
 - [`docs/UPDATE-FAILURES.md`](docs/UPDATE-FAILURES.md) — Stage 11 update-failure NVDA reference
-- [`docs/research/MAY-4.md`](docs/research/MAY-4.md) — prior-art seed for the Output / Input framework cycles (universal event routing + output framework + navigable streaming response queue + linguistic-design rubric)
-- [`docs/HISTORICAL-CONTEXT-2026-05.md`](docs/HISTORICAL-CONTEXT-2026-05.md) — May-2026 cleanup cycle archaeology (supplementary reference, not primary handoff)
+- [`docs/archive/pre-cycle-45/`](docs/archive/pre-cycle-45/) — decision-history archive of the pre-Cycle-45 substrate-pipeline docs (audits, RFC 0001, pipeline narrative, research seeds, May-2026 historical context)
 - [`scripts/install-latest-preview.ps1`](scripts/install-latest-preview.ps1) — install latest preview (PowerShell helper); see [`scripts/README.md`](scripts/README.md)
 
 ## System requirements

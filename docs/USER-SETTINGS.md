@@ -223,7 +223,7 @@ designing for.
 
 **No audio shipped yet** — Stage 9 (earcons via NAudio) is
 **subsumed** into Part 3 Stage G of the
-[May-2026 plan](PROJECT-PLAN-2026-05.md): earcons land as a
+[May-2026 plan](PROJECT-PLAN-2026-05-09.md): earcons land as a
 presentation sink the Output framework drives, with
 colour-to-earcon mapping as a profile-tunable strategy. The
 current state is "all the candidate settings are
@@ -902,7 +902,7 @@ decision. The verbose-readback experience that results — NVDA
 re-reading the whole screen on every keystroke for typed
 input — is the **first foundational architecture decision**
 addressed by the
-[May-2026 plan](PROJECT-PLAN-2026-05.md)'s Output framework
+[May-2026 plan](PROJECT-PLAN-2026-05-09.md)'s Output framework
 cycle (Part 3), not a tuning problem inside the existing
 coalescer.
 
@@ -1143,7 +1143,7 @@ behaviour gets locked in by an "expedient" implementation.
 
 The 12-stage pipeline glossary proposed in PR #166's
 StreamPathway plan (and informing the future
-[`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md), item 19 in
+[`PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md), item 19 in
 the strategic backlog). Used below to anchor each parameter
 to a specific stage.
 
