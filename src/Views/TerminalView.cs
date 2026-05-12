@@ -766,6 +766,13 @@ public class TerminalView : FrameworkElement
             Key.Delete => col < _screen.Cols - 1 ? col + 1 : (int?)null,
             Key.Left => col > 0 ? col - 1 : (int?)null,
             Key.Right => col < _screen.Cols - 1 ? col + 1 : (int?)null,
+            // Cycle 45 backlog (docs/USER-SETTINGS.md
+            // "Navigation-key announce shape"): future user
+            // setting could announce the entire current line
+            // (or just the typed input portion without the
+            // prompt-path prefix) on Home, instead of the char
+            // at column 0. Hook the configurable behaviour here
+            // by branching on the user-selected mode.
             Key.Home => 0,
             _ => null,
         };

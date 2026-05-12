@@ -390,6 +390,30 @@ type internal TerminalAutomationPeer
     override _.GetPattern(patternInterface: PatternInterface) : obj | null =
         match patternInterface with
         | PatternInterface.Text ->
+            // Cycle 45 backlog (docs/USER-SETTINGS.md "NVDA Read
+            // Current Line follows the cmd cursor"): the
+            // ITextProvider currently exposes the screen grid as
+            // a single Document range usable for the review
+            // cursor, but does NOT track a system-caret position.
+            // NVDA's "Read Current Line" (default NVDA+Up Arrow)
+            // and its keyboard-echo path both want a caret —
+            // without one they fall back to "wherever the review
+            // cursor last sat", which drifts away from the cmd
+            // input cursor's actual row.
+            //
+            // Proper fix: implement
+            // `ITextRangeProvider.GetCaretRange` (or equivalent)
+            // backed by `Screen.Cursor.Row` / `Screen.Cursor.Col`,
+            // and fire `AutomationEvents.TextSelectionChangedEvent`
+            // when those values change (Screen already exposes
+            // `SequenceNumber` and `ModeChanged`; a parallel
+            // CursorChanged event would feed this peer). That
+            // unifies multiple Cycle 45-era issues — nav-echo
+            // (#265 / #266 wouldn't be needed; NVDA's native
+            // keyboard echo would Just Work), read-current-line,
+            // and review-cursor-vs-input-cursor coherence. Out of
+            // scope for Cycle 45; scope as its own cycle when
+            // bandwidth allows.
             let result : obj | null = textProvider
             result
         | _ -> base.GetPattern(patternInterface)

@@ -326,6 +326,20 @@ module HotkeyRegistry =
             Modifiers = None
             Description = "Extract the version + environment header (version, OS, .NET, PID) to the clipboard (Cycle 43a; Snapshot)" }
           // Cycle 45 Commit 2 — SpeechCursor navigation. Menu-only.
+          //
+          // Cycle 45 backlog (docs/USER-SETTINGS.md "Speech-cursor
+          // keyboard accelerators"): the maintainer flagged
+          // `Ctrl+Up` / `Ctrl+Down` as natural gestures for
+          // Previous / Next, and `Ctrl+Shift+Up/Down` for
+          // chunk-level jumps (depends on semantic-label work).
+          // Switching from menu-only to gesture-bearing is just
+          // a `Key = None` → `Some (Letter / arrow)` edit + the
+          // matching TerminalView.AppReservedHotkeys mirror row
+          // (the Cycle 26b parity test pins both surfaces).
+          // Verify no NVDA collision before binding —
+          // `Ctrl+Up/Down` should be free in screen-reader mode
+          // (NVDA's default review-cursor commands are
+          // `NVDA+Up/Down`).
           { Command = SpeechCursorNext
             Key = None
             Modifiers = None
