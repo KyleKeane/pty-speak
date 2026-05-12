@@ -732,29 +732,26 @@ module SessionModel =
                     linearOverride
 
     // -----------------------------------------------------------------
-    // Cycle 35b — Substrate-aware public surface.
+    // Cycle 45c — ContentHistory-driven substrate-aware public
+    // surface. (Cycle 35b's `applyAndCaptureWithSubstrate` /
+    // `applyWithSubstrate` + `extractContentFromLinearStream`
+    // were deleted in Cycle 45c PR-3c alongside the LinearTextStream
+    // substrate they peeked. The replacements below take a
+    // `ContentHistory.T` + `useContentHistory: bool`.)
     // -----------------------------------------------------------------
     //
-    // `applyAndCaptureWithSubstrate` and `applyWithSubstrate` are
-    // the runtime entry points used by the composition root once
-    // Cycle 35b's default flip lands. They peek the
-    // LinearTextStream substrate to construct an authoritative
+    // `applyAndCaptureWithContentHistory` is the runtime entry point
+    // used by the composition root's `handlePromptBoundary`. It
+    // queries the ContentHistory substrate for the latest PromptStart
+    // + OutputStart markers and slices the bracketed text via
+    // `ContentHistory.sliceText` to produce an authoritative
     // `(commandText, outputText)` override; falling back to the
-    // legacy `extractContent` row-walk when the substrate has no
-    // OSC 133 markers (vanilla cmd / vanilla PowerShell).
+    // legacy `extractContent` row-walk when no OSC 133 markers are
+    // present (vanilla cmd / vanilla PowerShell).
     //
     // The legacy `apply` / `applyAndCapture` surface is preserved
-    // with original signatures for the 81+ existing test callers
-    // and for any external consumer that doesn't have a
-    // LinearTextStream in scope.
-    //
-    // TODO(Cycle 39): once the preconditions in Section 13 of
-    // `we-do-not-need-fluffy-simon.md` are met (broad OSC 133
-    // coverage, OR an OSC-133-injecting shim ships, AND ≥4 weeks
-    // of dogfood), collapse the two surfaces back into a single
-    // `apply` / `applyAndCapture` whose signature includes the
-    // substrate parameters. At that point `extractContent` and
-    // the `linearOverride` fallback both go away.
+    // with original signatures for the 80+ existing test callers
+    // and for consumers that don't have a ContentHistory in scope.
 
     /// Cycle 35b — peek the linear stream's per-tuple OSC 133
     /// Cycle 45c — ContentHistory text extraction at tuple-seal

@@ -7,8 +7,10 @@ namespace Terminal.Core
 ///
 /// **Why a separate profile.** Stage 8b's StreamProfile fused
 /// two concerns: the coalescing / dedup / debounce algorithm
-/// (now lives in StreamPathway) AND the channel fan-out (which
-/// targets NvdaChannel + FileLoggerChannel for every event the
+/// (pre-Cycle-45c lived in StreamPathway; post-Cycle-45c the
+/// equivalent semantics live in ContentHistory's idle-window
+/// + Overwrite/Spinner entry handling) AND the channel fan-out
+/// (which targets NvdaChannel + FileLoggerChannel for every event the
 /// dispatcher routes). Phase A splits these — the pathway owns
 /// the algorithm, this profile owns the routing. The split
 /// matches the spec's Layer 3 / Layer 4 boundary: pathways

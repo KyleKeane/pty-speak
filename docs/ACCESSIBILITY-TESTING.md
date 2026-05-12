@@ -396,7 +396,7 @@ pattern at the right element.
 ### Stage 7 — Claude Code roundtrip
 
 Stage 7 ships across four sequenced PRs (per
-[`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05-09.md) Part 2):
+[`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05-12.md) Part 2):
 PR-A (env-scrub PO-5; #131), PR-B (shell registry +
 `PTYSPEAK_SHELL`; #132), PR-C (hot-switch hotkeys
 `Ctrl+Shift+1`/`Ctrl+Shift+2`; #134), and PR-D (this matrix
@@ -936,7 +936,19 @@ short-circuit the detector entirely.
   `Ctrl+Shift+E` (open config.toml).
 
 <!-- DOGFOOD -->
-### Cycle 36 — Substrate-inversion arc matrix backfill
+### Cycle 36 — Substrate-inversion arc matrix backfill (historical; retired Cycle 45c)
+
+> **Cycle 45c update (2026-05-12)**: this section validated the
+> `LinearTextStream` substrate that Cycle 45c deleted. The
+> `[pathway.stream] substrate_mode`, `applyAndCaptureWithSubstrate`,
+> and `--- LINEAR STREAM ---` references in the procedures + grep
+> recipes below no longer exist. The matrix is preserved for
+> archaeology; **for current validation, use rows 45c-1 through
+> 45c-6 in the "Cycle 45c — Pathway-pipeline cleanup" section
+> further down**, which exercise the same dogfood outcomes
+> (cmd narration, long-output chunking, alt-screen TUIs,
+> Claude streaming, OSC 133 boundary detection) against the
+> live ContentHistory substrate.
 
 Cycles 33-35c shipped the substrate-inversion arc: the canonical
 representation of "what the shell produced" pivoted from a
@@ -1171,7 +1183,7 @@ paste-fallback, and announces "<extractor> copied to clipboard:
 
 | Test | Steps | Expected |
 |---|---|---|
-| Top-level item: Copy Latest Bundle | Press Alt, arrow to Diagnostics → Copy Latest Bundle to Clipboard, press Enter. Wait for the NVDA announce. Paste clipboard into any text editor. | NVDA announces "CopyLatestBundle copied to clipboard: <N> kilobytes. Extract file at <path>." within ~1 second (lightweight bundle skips the diagnostic battery so it's much faster than Ctrl+Shift+D's ~10s). Pasted text starts with `pty-speak diagnostic snapshot (Cycle 43a lightweight)` and contains all five sections (`--- FILELOGGER ACTIVE LOG ---`, `--- CONFIG.TOML ---`, `--- SESSION LOG ---`, `--- LINEAR STREAM ---`, `--- ENVIRONMENT ---`). |
+| Top-level item: Copy Latest Bundle | Press Alt, arrow to Diagnostics → Copy Latest Bundle to Clipboard, press Enter. Wait for the NVDA announce. Paste clipboard into any text editor. | NVDA announces "CopyLatestBundle copied to clipboard: <N> kilobytes. Extract file at <path>." within ~1 second (lightweight bundle skips the diagnostic battery so it's much faster than Ctrl+Shift+D's ~10s). Pasted text starts with `pty-speak diagnostic snapshot (Cycle 43a lightweight)` and contains all five sections (`--- FILELOGGER ACTIVE LOG ---`, `--- CONFIG.TOML ---`, `--- SESSION LOG ---`, `--- CONTENT HISTORY ---`, `--- ENVIRONMENT ---`). |
 | Top-level item: Grep Diagnostics dialog | Press Alt, arrow to Diagnostics → Grep Diagnostics..., press Enter. NVDA reads the dialog title. Tab through controls — pattern textbox, case-sensitive checkbox, regex checkbox, context-lines textbox, OK button, Cancel button. | Dialog opens centred on the main window. Initial focus is on the pattern textbox (NVDA reads "Search pattern, edit"). Tabbing reads each label: "Case sensitive, checkbox, not checked"; "Treat pattern as regex, checkbox, not checked"; "Lines of context around each match, edit, 5"; "OK, button"; "Cancel, button". |
 | Grep dialog default-OK round trip | Type `Heartbeat` in the pattern textbox, press Enter (default OK). | Dialog closes. NVDA announces "grep-Heartbeat copied to clipboard: <N> bytes. Extract file at <path>." Pasted clipboard begins with `pty-speak grep — pattern: Heartbeat (regex=false, case=false, context=5)` and contains one `--- Match N of M (line L) ---` block per matched line. |
 | Grep dialog Cancel / Escape | Open the dialog, press Escape. | Dialog closes silently. No NVDA announce. No clipboard write. |

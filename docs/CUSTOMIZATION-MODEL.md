@@ -1,5 +1,16 @@
 # Customization Model
 
+> **Cycle 45c update (2026-05-12)**: this doc repeatedly cites
+> the 12-stage pipeline catalogued in `PIPELINE-NARRATIVE.md`
+> (now archived to `docs/archive/pre-cycle-45/`). The 5-point
+> principle (named/addressable; swappable; inspectable; user-
+> authorable; context-keyed) and the two illustrative use cases
+> are substrate-agnostic and survive Cycle 45c. The specific
+> "stage" examples should be read against the live
+> [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md)
+> + [`CORE-ABSTRACTION-BOUNDARY.md`](CORE-ABSTRACTION-BOUNDARY.md);
+> the pipeline-stage names below are pre-Cycle-45 vocabulary.
+
 > **Snapshot**: 2026-05-07
 > **Status**: design / forward-looking — research-stage sketch; specifies what the substrate must NOT preclude; no current implementation
 > **Authoring item**: backlog item 31 (research stage)

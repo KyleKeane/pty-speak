@@ -1,5 +1,16 @@
 # Interaction Model
 
+> **Cycle 45c update (2026-05-12)**: this research-stage doc
+> repeatedly cites `StreamPathway` / `TuiPathway`, "suffix-diff",
+> and "color-detection at StreamPathway emit" as live mechanisms.
+> Those modules and behaviours were retired in Cycle 45c (PRs
+> #274–#278). The architectural framing (Shell Interaction
+> Manager, three-component model, structured-computational-document
+> framing, interactive-element taxonomy) survives unchanged
+> — only the substrate implementation flipped (ContentHistory +
+> SpeechCursor). Treat the pathway-specific references below as
+> historical; deep rewrite is deferred to a future doc cycle.
+
 > **Snapshot**: 2026-05-07
 > **Status**: design / forward-looking — names a conceptual abstraction and a target architecture; some named pieces ship today, most are reserved for future work
 > **Authoring item**: backlog item 29 (research stage)

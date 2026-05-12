@@ -39,7 +39,9 @@ module Program =
     /// SessionModel Tier 1.D-fix (Cycle 17) — channel-driven
     /// actor model. The notification consumer task becomes the
     /// SOLE owner of composition-root mutable state
-    /// (`currentSession`, `promptDetector`, `activePathway`).
+    /// (`currentSession`, `promptDetector`, `selectionDetector`,
+    /// `contentHistory`, `speechCursor`). Cycle 45c retired the
+    /// `activePathway` mutable that used to live in this list.
     /// Producers (parser reader thread, screen-event subscribers,
     /// tick-pump) enqueue `PumpInput` values into a single
     /// `BoundedChannel<PumpInput>`; the consumer reads serially.
@@ -60,9 +62,9 @@ module Program =
         | Notification of ScreenNotification
         /// A 50ms tick produced by the existing PathwayTickPump
         /// (now simplified to a pure channel producer). Drives
-        /// the heuristic detector + `activePathway.Tick` +
-        /// `OutputDispatcher.dispatchTick` from the consumer
-        /// thread.
+        /// the heuristic detector + `OutputDispatcher.dispatchTick`
+        /// from the consumer thread. (Pre-Cycle-45c also drove
+        /// `activePathway.Tick`; that call was deleted in PR-3b.)
         | Tick of DateTimeOffset
 
     /// Wire a freshly-spawned ConPtyHost into the screen + view. Spawns

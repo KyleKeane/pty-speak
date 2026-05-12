@@ -42,7 +42,7 @@
 > - [`PANE-MODEL.md`](PANE-MODEL.md) — workspace + multi-pane
 >   framework; consumes §6's three-sub-pane decomposition + three
 >   reserved peer panes.
-> - [`PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md) —
+> - [`PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-12.md) —
 >   Section 1 (architectural assertion) is the source text this
 >   doc lifts verbatim.
 
@@ -583,7 +583,7 @@ a boundary violation; reviewers block.
   [`CANONICAL-DISPLAY-CATALOG.md`](CANONICAL-DISPLAY-CATALOG.md)
   (Cycle 33).
 - **Not an implementation plan.** Cycle-by-cycle rollout lives
-  in [`PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md).
+  in [`PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-12.md).
 - **Not a research deliverable.** The two Claude-research
   handoffs originally drafted (canonical-display taxonomy
   survey + streaming partial-emit prior-art survey) are
@@ -597,7 +597,7 @@ a boundary violation; reviewers block.
 ### Documentation
 
 - **ADR**: [`adr/0001-substrate-channel-dichotomy.md`](adr/0001-substrate-channel-dichotomy.md)
-- **Strategic plan**: [`PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md)
+- **Strategic plan**: [`PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-12.md)
 - **Substrate RFC** (Cycle 33 — pivot gate; archived):
   [`archive/pre-cycle-45/0001-linear-text-substrate.md`](archive/pre-cycle-45/0001-linear-text-substrate.md).
   Formalised the `LinearTextStream` producer + streaming-

@@ -6,30 +6,28 @@ prior-art survey, and tradeoff analysis live in
 map: how data flows, which module owns which concern, and where the
 thread boundaries are.
 
-> **Currency note** (snapshot 2026-05-07; Tier 1 cycle range
-> appended 2026-05-09). Stages 0-7 + 11 are shipped on `main`;
-> the post-Stage-7 substrate cycle (PRs #146-#184) shipped
-> Stage 8a-8d.2 + display-pathway substrate (Phase A + A.1 +
-> A.2) + Tier 1 parameters + suffix-diff + shell-switch flush
-> fix + the audit phase (Tracks A-F) + five research-stage
-> docs (PIPELINE-NARRATIVE, SESSION-MODEL, INTERACTION-MODEL,
-> PANE-MODEL, CUSTOMIZATION-MODEL). The Tier 1 SessionModel
-> implementation cycle (PRs #185-#199) shipped substrate
-> end-to-end: skeleton + OSC 133 producer + state machine +
-> heuristic fallback + alt-screen wiring + PromptText/
-> CommandText/OutputText capture + diagnostic battery
-> extension + Ctrl+Shift+Y clipboard hotkey + a sixth
-> research-stage doc (CHANNEL-ARCHITECTURE). Some modules
-> originally drafted as separate projects
-> (`Terminal.Semantics`, `Terminal.EventBus`) landed inside
-> `Terminal.Core` per walking-skeleton discipline — the table
-> below describes shipped modules, not the original draft. See
-> [`docs/ROADMAP.md`](ROADMAP.md) and
-> [`docs/CHECKPOINTS.md`](CHECKPOINTS.md) for the per-stage
-> status; [`docs/PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md)
-> for the canonical 12-stage pipeline vocabulary; the audit-track
-> docs (`docs/AUDIT-CODE-CONSISTENCY.md` etc.) for cross-doc
-> alignment.
+> **Currency note** (snapshot 2026-05-12; refreshed post-Cycle-45c).
+> The pre-Cycle-45 12-stage screen-grid-diff pipeline (StreamPathway
+> / LinearTextStream / DisplayPathway / TuiPathway / PathwaySelector)
+> was retired by Cycle 45c (PRs #274–#278). The aural substrate is
+> now `ContentHistory` + `SpeechCursor`. The data-flow ASCII below
+> reflects this. Sections further down that still reference the
+> retired pipeline (PathwayPump threading, individual pathway-specific
+> file inventory) are **historical**; a future doc-cleanup cycle
+> will rewrite them — see
+> [`docs/PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md)
+> § "Open follow-ups" for the deferred deep rewrite.
+>
+> Pre-Cycle-45 stage definitions remain accessible in the
+> archived
+> [`PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md)
+> and the May-2026 audit tracks
+> ([`AUDIT-CODE-CONSISTENCY.md`](archive/pre-cycle-45/AUDIT-CODE-CONSISTENCY.md)
+> et al.), all under `docs/archive/pre-cycle-45/`. The substrate
+> spec is [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md);
+> the substrate/channel architectural framing is
+> [`docs/CORE-ABSTRACTION-BOUNDARY.md`](CORE-ABSTRACTION-BOUNDARY.md)
+> + [`docs/adr/0001-substrate-channel-dichotomy.md`](adr/0001-substrate-channel-dichotomy.md).
 
 ## High-level data flow
 
@@ -163,7 +161,7 @@ hangs (ConPTY) or silent no-ops (UIA).
 | ConPTY read thread | `Terminal.Pty.ConPtyHost`'s dedicated reader (composed in `Terminal.App.Program.startReaderLoop`): synchronous `ReadFile` from `outputReadSide` into a bounded `Channel<byte array>`. Synchronous I/O only — ConPTY forbids `OVERLAPPED`. |
 | ConPTY write thread | `ConPtyHost.WriteBytes` — drains keystroke bytes from `KeyEncoding` into `WriteFile` on `inputWriteSide` (Stage 6). |
 | Parser / Screen mutation thread | Single thread that owns the screen buffer + parser state; reads byte chunks from the read-thread channel; runs `Parser` → `Screen.Apply`; emits `ScreenNotification` events under gate-lock. |
-| PathwayPump thread | Drains `ScreenNotification` events; calls `CanonicalState.create` → active `DisplayPathway.Consume` → `OutputDispatcher.dispatch`. Per-shell pathway swap on Ctrl+Shift+1/2/3 hot-switch + alt-screen auto-detect (PR #161). |
+| Notification-consumer thread (Cycle 17 actor model) | Drains `ScreenNotification` + `Tick` events from `pumpChannel`. Single owner of composition-root mutable state (`currentSession`, `promptDetector`, `selectionDetector`, `contentHistory`, `speechCursor`). Calls `CanonicalState.create` for snapshot context, runs the heuristic detectors, appends OSC 133 markers to `ContentHistory`, dispatches to profiles via `OutputDispatcher.dispatch`. Cycle 45c retired the per-shell pathway-swap path (alt-screen now just toggles `SessionModel.enterAltScreen` / `exitAltScreen`). Historically called "PathwayPump"; the name lingers in some log lines + comments. |
 | FileLogger writer thread | `FileLoggerChannel` enqueues to a bounded channel; the writer dequeues + writes through (`AutoFlush = true` + `FileShare.ReadWrite`); crash-safe per-line semantics. |
 | Earcon thread (NAudio) | NAudio's own playback thread (per-play `WasapiOut` instance per PR #158); receives earcon-id requests via `EarconChannel`. |
 | WPF Dispatcher (UI) | Renders the `TerminalView` from immutable cell snapshots; **all** UIA `RaiseNotificationEvent` and `RaiseAutomationEvent` calls. Marshals from PathwayPump via `Dispatcher.InvokeAsync`. |
@@ -238,11 +236,16 @@ contributing:
   BS/HT/LF/CR, CSI cursor moves and erases, SGR (basic-16 +
   256-cube + Truecolor), DECSC/DECRC, alt-screen 1049 back-
   buffer, and the OSC 52 SECURITY-CRITICAL silent drop.
-- `Terminal.Core/StreamPathway.fs` — the streaming-output
-  pathway: frame dedup, spinner suppression, sub-row suffix-
-  diff (`computeRowSuffixDelta`), bulk-change fallback, mode-
-  barrier flush policy, colour detection. The substantive
-  emit logic for "what NVDA reads when".
+- `Terminal.Core/ContentHistory.fs` — the post-Cycle-45 aural
+  substrate: append-only typed-entry log per shell session.
+  Entries (`TextSpan`, `Newline`, `Overwrite`, `Marker`, `Spinner`)
+  carry a monotonic `Seq`. Query helpers: `tryLatestMarker`,
+  `sliceText`, `tailText`. Replaced the Cycle 5-9 StreamPathway
+  / LinearTextStream pipeline (PRs #263–#270 + #274–#278).
+- `Terminal.Core/SpeechCursor.fs` — announce-and-navigate
+  primitive over `ContentHistory`. AutoDrive emits new entries to
+  NVDA; Manual mode (`Ctrl+Shift+Up/Down` / Home / End) lets the
+  user navigate the session history.
 - `Terminal.Core/OutputDispatcher.fs` — Profile/Channel routing
   + event-tap mechanism (`installEventTap` per PR #165, the
   diagnostic battery's introspection seam).
@@ -272,7 +275,7 @@ Substrate research-stage docs to read alongside the code:
 - Original stage plan: [`spec/tech-plan.md`](../spec/tech-plan.md)
 - Post-Stage-7 substrate spec: [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md)
 - Roadmap: [`ROADMAP.md`](ROADMAP.md)
-- Strategic plan (snapshot 2026-05-03): [`PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05-09.md)
+- Strategic plan (snapshot 2026-05-12): [`PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md). Predecessor revisions archived under [`archive/pre-cycle-45/`](archive/pre-cycle-45/).
 
 ### Substrate research-stage docs
 - Pipeline vocabulary: [`PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md)

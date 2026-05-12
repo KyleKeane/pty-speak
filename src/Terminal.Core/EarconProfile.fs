@@ -71,8 +71,9 @@ module EarconProfile =
                     |]
                 | SemanticCategory.ErrorLine ->
                     // Phase A.2 — re-introduces 8d.2's red →
-                    // 400Hz error-tone earcon. StreamPathway
-                    // emits an empty-payload `ErrorLine`
+                    // 400Hz error-tone earcon. (Pre-Cycle-45c
+                    // StreamPathway emitted the empty-payload
+                    // `ErrorLine`; post-Cycle-45c the equivalent
                     // OutputEvent alongside the StreamChunk
                     // when the frame is red-dominant.
                     // NvdaChannel skips the empty payload

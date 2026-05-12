@@ -20,15 +20,17 @@ before deviating.
    diagnostic recipes).
 2. **[`README.md`](README.md)** — what the project is, status,
    shipped stages.
-3. **[`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)** — the
-   bridge between sessions; "where we left off", in-flight branches,
-   pre-digested implementation sketches for the next stage.
-4. **[`docs/PROJECT-PLAN-2026-05-09.md`](docs/PROJECT-PLAN-2026-05-09.md)**
-   — current strategic plan (2026-05-09 successor revision).
+3. **[`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)** — short
+   brief (~150 lines): current state, where we left off, next-stage
+   candidates, operational gotchas. Designed to be the TLDR a new
+   session reads first; deeper history lives in the archive.
+4. **[`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md)**
+   — current strategic plan (2026-05-12; post-Cycle-45c).
    Predecessor revisions archived under
    [`docs/archive/pre-cycle-45/`](docs/archive/pre-cycle-45/)
    per Track E E5 dated-snapshot discipline
-   ([`PROJECT-PLAN-2026-05-revision.md`](docs/archive/pre-cycle-45/PROJECT-PLAN-2026-05-revision.md),
+   ([`PROJECT-PLAN-2026-05-09.md`](docs/archive/pre-cycle-45/PROJECT-PLAN-2026-05-09.md),
+   [`PROJECT-PLAN-2026-05-revision.md`](docs/archive/pre-cycle-45/PROJECT-PLAN-2026-05-revision.md),
    [`PROJECT-PLAN-2026-05.md`](docs/archive/pre-cycle-45/PROJECT-PLAN-2026-05.md)).
 5. **[`docs/CORE-ABSTRACTION-BOUNDARY.md`](docs/CORE-ABSTRACTION-BOUNDARY.md)**
    — architectural framing that locks the substrate / channel
@@ -584,24 +586,26 @@ PowerShell window via `ProcessStartInfo`.
 ## Current sequencing (May 2026)
 
 Canonical:
-[`docs/PROJECT-PLAN-2026-05-09.md`](docs/PROJECT-PLAN-2026-05-09.md) +
-[`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md) "Where we left
-off". This index just tells you which cycle is active.
+[`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md) +
+[`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md). The plan
+catalogues candidate next cycles + sequencing rationale; the
+handoff names the current state in ~150 lines. This index just
+points at the cycle headline.
 
-- **Stage 7** = validation gate. Shipped 2026-05-03 across 11
-  sequenced PRs (A through K + the doc-purpose PR-L). Closed the
-  Claude Code roundtrip + env-scrub PO-5; gap inventory archived
-  at
-  [`docs/archive/pre-cycle-45/STAGE-7-ISSUES.md`](docs/archive/pre-cycle-45/STAGE-7-ISSUES.md).
-- **Output framework cycle** (Part 3, subsumes original Stages 8+9)
-  — superseded by Cycle 45's ContentHistory + SpeechCursor pipeline
-  (PRs #263–#270, merged 2026-05-12). The substrate-inversion
-  framework cycle's design inputs are archived alongside Stage 7
-  issues; the shipped substrate is described informally in
-  CORE-ABSTRACTION-BOUNDARY.md §7.
-- **Input framework cycle** (Part 4) — pending.
-- **Stage 10** — review mode + quick-nav, first non-built-in
-  consumer of the framework taxonomy.
+- **Cycle 45** (PRs #263–#270, 2026-05-12) shipped the
+  `ContentHistory` + `SpeechCursor` aural substrate.
+- **Cycle 45c** (PRs #274–#278, 2026-05-12) deleted the
+  pre-Cycle-45 pathway pipeline (`StreamPathway` /
+  `LinearTextStream` / `DisplayPathway` / `TuiPathway` /
+  `PathwaySelector`). ~5,000+ LOC removed.
+- **NVDA matrix walk 45c-1 → 45c-6** is the immediate validation
+  gate (see
+  [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)).
+- **Next-cycle candidates** (none block each other; pick by
+  priority): 45g `ShellPolicy` consolidation, 45d review-cursor
+  focus, semantic-labels foundation, spinner/red-tone refinements,
+  Coalescer rename, UIA caret. Sequencing in
+  [`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md).
 
 ## When in doubt
 

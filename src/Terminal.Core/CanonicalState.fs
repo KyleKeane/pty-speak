@@ -56,8 +56,10 @@ module CanonicalState =
     /// trim trailing blank cells, walk cells to char string,
     /// sanitise via `AnnounceSanitiser`. Identical to the
     /// per-row block inside `renderChangedRows`; extracted so
-    /// callers (including StreamPathway's suffix-diff path)
-    /// can ask for one row at a time.
+    /// callers can ask for one row at a time. (Originally
+    /// extracted for StreamPathway's suffix-diff path; that
+    /// pathway was retired Cycle 45c, but the helper still
+    /// serves CanonicalState's own row-walk.)
     ///
     /// Returns `""` for out-of-range row indices — the caller
     /// is responsible for guarding against negative or beyond-
