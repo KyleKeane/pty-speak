@@ -35,9 +35,6 @@
     <Compile Include="HeuristicPromptDetectorTests.fs" />
     <Compile Include="SelectionDetectorTests.fs" />
     <Compile Include="Osc133Tests.fs" />
-    <Compile Include="StreamPathwayTests.fs" />
-    <Compile Include="TuiPathwayTests.fs" />
-    <Compile Include="PathwaySelectorTests.fs" />
     <Compile Include="ConfigTests.fs" />
     <Compile Include="OutputEventTests.fs" />
     <Compile Include="NvdaChannelTests.fs" />
@@ -56,7 +53,6 @@
     <Compile Include="HotkeyRegistryTests.fs" />
     <Compile Include="AppReservedHotkeysMirrorTests.fs" />
     <Compile Include="MultiStateRegistryTests.fs" />
-    <Compile Include="LinearTextStreamTests.fs" />
     <Compile Include="CanonicalCorpusTests.fs" />
     <Compile Include="ManualTestsHtmlTests.fs" />
     <!--

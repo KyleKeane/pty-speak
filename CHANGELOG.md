@@ -15,6 +15,39 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Removed (Cycle 45c cleanup PR-2): pathway-pipeline test files + `[pathway.stream]` TOML parsing
+
+Test-side prune of the pathway pipeline Cycle 45 replaced. Deleted
+four dedicated test files (~2,750 LOC):
+- `tests/Tests.Unit/StreamPathwayTests.fs`
+- `tests/Tests.Unit/LinearTextStreamTests.fs`
+- `tests/Tests.Unit/TuiPathwayTests.fs`
+- `tests/Tests.Unit/PathwaySelectorTests.fs`
+
+Removed the corresponding `<Compile Include>` entries from
+`tests/Tests.Unit/Tests.Unit.fsproj`.
+
+Stripped the `[pathway.stream]` TOML parser from
+`src/Terminal.Core/Config.fs` (the `knownStreamKeys` set, the
+~100-line `parseStreamOverrides` function, and the loader branch
+that invoked it). `config.toml` files that still carry a
+`[pathway.stream]` section parse silently — the section is ignored
+and the loader uses `defaultConfig.StreamOverrides`.
+`Config.resolveStreamParameters` still exists and continues to
+return `StreamPathway.defaultParameters` (it reads from the now
+always-default `StreamOverrides` field). It will be deleted with
+the `StreamPathway` type itself in PR-3.
+
+Removed ~22 cases from `tests/Tests.Unit/ConfigTests.fs` that
+exercised `[pathway.stream]` TOML parsing (Per-pathway parameter
+override, color_detection, PR #168 Tier 1 backspace_policy /
+mode_barrier_flush_policy / bulk_change_threshold, Cycle 35a
+substrate_mode, plus the round-trip and negative/zero edge cases).
+The "defaultConfig has X" smoke tests (debounce, color, bulk,
+backspace, mode-barrier defaults) stay — they pass against the
+stub and will be removed alongside the `StreamPathway` type in
+PR-3.
+
 ### Changed (Cycle 45c cleanup PR-1): docs archived to `docs/archive/pre-cycle-45/`
 
 The narrative layer that described the pre-Cycle-45 substrate
