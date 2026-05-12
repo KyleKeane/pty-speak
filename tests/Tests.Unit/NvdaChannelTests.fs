@@ -17,11 +17,12 @@ open Terminal.Core
 /// **8a does NOT consult `Priority`.** The behaviour-identical
 /// contract preserves Stage 7's
 /// `TerminalView.Announce(msg, activityId)` 2-arg overload
-/// (`src/Views/TerminalView.cs:292-298`), which picks
-/// `ImportantAll` for `pty-speak.output` and `MostRecent` for
-/// everything else. Tests that pin Priority → Processing
-/// arrive when a future stage migrates the channel to the
-/// 3-arg overload + reads Priority from the event.
+/// (`src/Views/TerminalView.cs`). Post-Cycle-45c-followup every
+/// activity-id resolves to `MostRecent` processing so a newer
+/// announce displaces the queued read of a long tuple-final
+/// output. Tests that pin Priority → Processing arrive when a
+/// future stage migrates the channel to the 3-arg overload +
+/// reads Priority from the event.
 ///
 /// The channel implementation lives at
 /// `src/Terminal.Core/NvdaChannel.fs`. The marshal callback
