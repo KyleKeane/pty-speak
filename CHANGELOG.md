@@ -15,38 +15,30 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
-### Changed (Cycle 45c follow-up): every keystroke flushes pending NVDA output speech
+### Reverted (Cycle 45c follow-up): keystroke flush of pending NVDA output speech
 
-`MostRecent` (shipped 2026-05-12 in PR #282) clears NVDA's
-pending speech queue, but only when **we** call `Announce`
-again. The pipeline only fires `Announce` on tuple-finalise,
-hotkey announces, diagnostics, and SpeechCursor navigation —
-plain typing into the prompt and Alt-opening a menu don't.
-Result: after `dir` produced a ~3 KB output announce, NVDA
-read it to completion (~2 minutes) even when the user pressed
-Alt or started typing the next command, because nothing else
-displaced it.
+PR #284 added a `MostRecent` notification on every keystroke,
+intended to clear NVDA's pending speech queue when the user
+typed or pressed Alt during a long output read. PR #285 changed
+the payload from `""` to `" "` after NVDA was found to drop
+empty `displayString` events before reaching its
+`cancelSpeech()` path.
 
-`OnPreviewKeyDown` now fires a single-space `MostRecent`
-notification on every key that isn't a bare modifier — `Shift`
-(NVDA pause), `Ctrl`, `Win`, `NumLock`, `Scroll`, `Insert` (NVDA
-modifier), `CapsLock`, and the numpad-NoLock cluster are
-deliberately skipped so screen-reader gestures keep working.
-Alt is **not** skipped — pressing Alt to open the menu now
-interrupts a long output read as the user expects. Function
-keys are not skipped either; the call is cheap and consistent
-with the rule "any user-initiated activity resets the speech
-state".
+Both versions were wrong. Empty-payload version was silently
+filtered by NVDA and did nothing. Single-space version made
+NVDA verbalise every keystroke as **"blank"** without
+interrupting the in-progress long read — the worst of both
+worlds.
 
-The payload is a single space, NOT the empty string. PR #284
-shipped this with `string.Empty` and the maintainer reported
-"this did not fix it" — NVDA's UIA notification handler
-short-circuits on falsy `displayString` (no
-`speech.cancelSpeech()`, no queue clear, no interrupt). A lone
-space character has no phoneme so SAPI renders it as silence,
-but the notification still reaches NVDA's cancel-pending path
-and interrupts the currently-playing audio at the SAPI driver
-level.
+Reverting the keystroke flush entirely. The underlying problem
+— a single ~19 KB output notification on a busy `dir` taking
+~5–10 minutes to read with no interruption path short of
+restart — is **architectural**: the UIA `RaiseNotificationEvent`
+primitive isn't designed for streaming long content, and
+trying to interrupt it post-hoc with another notification fights
+NVDA's design. A real fix lives at the announce-side (cap
+length / summary + review-cursor / replace notification model
+with a UIA TextEdit caret), not in the keyboard handler.
 
 ### Changed (Cycle 45c follow-up): silence idle FileLogger spam in `HeuristicPromptDetector`
 
