@@ -15,6 +15,40 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Proposed (Cycle 46 PR-A): ADR 0002 — UIA TextEdit caret as the output channel
+
+Drafts [`docs/adr/0002-uia-textedit-caret-output.md`](docs/adr/0002-uia-textedit-caret-output.md)
+naming **Cycle 46** as the umbrella for replacing the UIA
+`RaiseNotificationEvent` model for command output with a UIA
+TextEdit caret on a sibling automation peer (or on
+`TerminalView` itself — see ADR Open Question §2). The ADR
+records the failure sequence (PR #282 `MostRecent` default →
+PR #284 empty-string flush → PR #285 single-space flush →
+PR #286 revert), names the architectural mismatch
+(notification is a status-message channel, not a streaming-
+content channel), and outlines a four-PR staged plan:
+
+- **PR-A** (this PR): ADR + CHANGELOG entry.
+- **PR-B**: Add `TerminalOutputAutomationPeer` implementing
+  `ITextProvider` + minimum `ITextRangeProvider` subset, with
+  unit tests against `ContentHistory` fixtures. Not yet
+  wired.
+- **PR-C**: Wire output to the caret; tuple-final emit
+  moves the caret + raises `TextSelectionChangedEvent`
+  instead of (or in addition to — see Open Question §4)
+  the existing `Announce` call. NVDA matrix gate.
+- **PR-D**: Polish — typing-interrupts-speech via NVDA's
+  native setting, `SpeechCursor` integration / future, dead-
+  code trim.
+
+Five Open Questions need maintainer resolution before PR-B
+ships (minimum `ITextRangeProvider` subset, focus model,
+`SpeechCursor` future, replace-vs-augment, `ContentHistory`
+change-notification mechanism).
+
+Docs-only; merges under the docs-only fast lane after the
+link checker passes.
+
 ### Reverted (Cycle 45c follow-up): keystroke flush of pending NVDA output speech
 
 PR #284 added a `MostRecent` notification on every keystroke,
