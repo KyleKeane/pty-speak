@@ -2239,3 +2239,168 @@ brings pty-speak closer to "indistinguishable from a normal
 text input control" from NVDA's perspective. Worth scoping
 properly before tackling.
 
+### Unified event stream — keypresses + timestamps + modifiers
+
+Captured 2026-05-12 from a maintainer clarifying question:
+ensure the project doesn't drift away from an extensible,
+modular event substrate. The system should route every kind
+of event through one canonical stream so future handlers can
+fan out per event-type (notifications pipeline / keypress
+pipeline / earcon pipeline / spatial-audio pipeline / etc.)
+without each producer inventing its own dispatch surface.
+
+**Current state**:
+
+- `OutputEvent` (`src/Terminal.Core/OutputEventTypes.fs:246`)
+  is the canonical event type. Fields today:
+  `Semantic / Priority / Verbosity / Source / SpatialHint /
+  RegionHint / StructuralContext / Payload / Version /
+  Extensions`. `Source` carries `Producer / Shell /
+  CorrelationId`; `Extensions: Map<string, obj>` is the
+  forward-compat slot.
+- `OutputDispatcher` fans every event through an active
+  profile set; each profile decides which channel renders.
+  This is the pluggable routing — it works today.
+- `FileLoggerChannel.fs:83` formats each event as a structured
+  log line keyed on `Semantic / Priority / Producer / Shell /
+  PayloadLen / Payload`. Serilog adds a timestamp prefix
+  (`[HH:mm:ss.fff INF]`) to the line; the timestamp is NOT a
+  structured field on `OutputEvent` itself.
+
+**Gaps to close**:
+
+1. **Keypresses are not in the stream.** `TerminalView.OnPreviewKeyDown`
+   handles keys and forwards them straight to the PTY (and
+   emits a one-off `Announce(...)` for the Cycle 45 nav-echo).
+   No audit trail of "user pressed Backspace at T=...".
+   Adding a `SemanticCategory.KeyPress` arm and emitting via
+   `OutputDispatcher` would close the loop — every key the
+   user pressed becomes a structured event with the same
+   logging + routing shape as everything else.
+2. **No explicit timestamp field.** Pure consumers (an event
+   sink that isn't FileLogger) can't read a Unix timestamp
+   today. Adding `Timestamp: DateTimeOffset` to `OutputEvent`
+   is a small additive change; producers set it at construction
+   time, FileLoggerChannel's format gets a `Ts={Ts:O}` field
+   alongside the existing structured fields.
+3. **No modifiers field.** A keypress event needs to carry
+   Shift / Ctrl / Alt state. Add `Modifiers: KeyModifiers
+   option` (or similar — a flags enum) to `OutputEvent`, or
+   route it via `Extensions` with a well-known key. The
+   `Extensions` route is the safer-additive option since
+   non-key events never set it.
+4. **`Source` taxonomy is free-text.** `Source.Producer` is
+   any string. Maintainer's desired taxonomy: `window /
+   process / shell / runtime`. Refactor `SourceIdentity`
+   to carry a `Kind: SourceKind` DU (`Window | Process | Shell
+   | Runtime | Other of string`) plus the existing `Producer`
+   string for the within-kind identifier.
+
+**Why bother**: the user explicitly named the goal of making
+"highly deterministic functionality optimized for a
+screen-reader user" extensible. Future features — record &
+replay, scriptable input, third-party plugins reacting to
+events, low-vision-pair visual rendering — all assume there's
+ONE event stream they can subscribe to. The closer the actual
+stream is to that abstraction, the cheaper each future feature
+becomes.
+
+**Sequence sketch** (each commit independent + CI-gated):
+
+1. Add `Timestamp` field to `OutputEvent`; producers populate
+   `DateTimeOffset.UtcNow`; FileLoggerChannel renders
+   `Ts={Ts:O}`. Pure refactor, no behaviour change.
+2. Add `SemanticCategory.KeyPress`; emit one event per
+   `OnPreviewKeyDown` (modifiers via `Extensions`). FileLogger
+   captures each automatically; a future "input pipeline"
+   profile can subscribe.
+3. Refactor `SourceIdentity` to carry a `SourceKind` DU.
+   Producers thread the right kind through. Tests + the diag
+   bundle's `--- FILELOGGER ACTIVE LOG ---` section format
+   pick up the new field without source-level changes.
+
+Insertion points:
+
+- `src/Terminal.Core/OutputEventTypes.fs` (schema)
+- `src/Terminal.Core/FileLoggerChannel.fs` (rendering)
+- `src/Views/TerminalView.cs` `OnPreviewKeyDown` (key producer)
+- `src/Terminal.App/OutputDispatcher.fs` (no change; consumers
+  pick up the new fields via the existing fan-out)
+
+### Per-shell policy table — keep cmd-specific logic at one site
+
+Captured 2026-05-12 from the same clarifying question: keep
+cmd-specific handling separated from general handling so we
+can branch any special-case logic as far down the chain as
+possible when richer CLIs (Claude Code CLI, eventually WSL /
+Python REPL / etc.) land.
+
+**Current state**: shell-keyed branching IS localized to a
+handful of sites. Concentration is decent today:
+
+- `src/Terminal.Core/HeuristicPromptDetector.fs:184` —
+  `match shellKey with | "cmd" -> ...` selects per-shell regex
+  + stability threshold
+- `src/Terminal.Core/SelectionDetector.fs` short-circuits when
+  `shellKey ≠ "claude"` (`Program.fs:1678`-region comment)
+- `src/Terminal.Core/Config.fs` `ShellOverrides: Map<string,
+  ShellOverride>` keyed by shell-id string
+- `src/Terminal.Pty/ShellRegistry.fs` is the enum of supported
+  shells
+
+**Drift risk**: Cycle 45's tuple-seal-announce (PR #268)
+unconditionally announces `SessionTuple.OutputText` on each
+tuple boundary. That's the right shape for cmd / PowerShell
+(short commands that always seal on Enter) but wrong for
+Claude (streaming dialogue, no tuple boundary per response).
+Cycle 45f (verbosity modes) will add per-shell streaming
+policy — and unless we factor first, will introduce ANOTHER
+`match shellKey` site somewhere new. Repeated, that becomes
+the spaghetti the maintainer wants to avoid.
+
+**Proposed shape**: a single `ShellPolicy` record per shell,
+collected in a `ShellPolicyTable: Map<ShellKey, ShellPolicy>`,
+referenced by every dispatch site instead of re-matching the
+shell key inline.
+
+```fsharp
+type ShellPolicy =
+    { PromptRegex: Regex option
+      PromptStabilityMs: int
+      SelectionDetectorEnabled: bool
+      StreamingAnnounceMode: StreamingMode
+        // TupleFinalOnly | LineByLine | Hybrid
+      EditEcho: EditEchoMode
+        // SuppressUntilSeal | EveryKey | NavOnly
+      AltScreenBehavior: AltScreenMode
+        // SuppressUntilExit | StreamThrough }
+```
+
+New shells = add a row to the table. Code sites = look up
+`ShellPolicyTable.[currentShellKey]` and read fields, no
+matching. Future Claude Code CLI = its own row with
+`StreamingAnnounceMode = LineByLine`, `EditEcho = NavOnly`,
+etc.
+
+**Migration sequence**:
+
+1. Introduce `ShellPolicy` type + a `defaultCmdPolicy` /
+   `defaultPowerShellPolicy` / `defaultClaudePolicy` set;
+   wire one consumer (`HeuristicPromptDetector`) to read from
+   the table. Existing inline match becomes a fallback for the
+   table-miss case. Pure refactor.
+2. Migrate `SelectionDetector`'s shell gate to the same table.
+3. Migrate Cycle 45f's verbosity-mode logic to the table from
+   day one (so the new code is the right shape, not a fresh
+   inline match site).
+
+Insertion points:
+
+- `src/Terminal.Core/` — new module `ShellPolicy.fs` carrying
+  the type + the default table
+- `src/Terminal.Core/HeuristicPromptDetector.fs:184` —
+  consumer #1
+- `src/Terminal.Core/SelectionDetector.fs` — consumer #2
+- `src/Terminal.Core/Config.fs` — `ShellOverrides` becomes
+  user-supplied overrides ON TOP of the default policy table
+
