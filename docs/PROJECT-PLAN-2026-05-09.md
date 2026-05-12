@@ -1,12 +1,12 @@
 # Project plan — 2026-05-09 (successor revision)
 
 > **Snapshot**: 2026-05-09
-> **Status**: successor to [`PROJECT-PLAN-2026-05-revision.md`](PROJECT-PLAN-2026-05-revision.md) (the 2026-05-07 revision); supersedes its "Next stage" pointer; companion successor under the original plan's "Future revisions should land as new dated plans" discipline (Track E E5 resolution: Option B continued)
+> **Status**: successor to [`PROJECT-PLAN-2026-05-revision.md`](archive/pre-cycle-45/PROJECT-PLAN-2026-05-revision.md) (the 2026-05-07 revision); supersedes its "Next stage" pointer; companion successor under the original plan's "Future revisions should land as new dated plans" discipline (Track E E5 resolution: Option B continued)
 > **Companion docs**:
-> - [`PROJECT-PLAN-2026-05-revision.md`](PROJECT-PLAN-2026-05-revision.md) — preceding 2026-05-07 revision; preserved verbatim per dated-snapshot discipline for decision-history continuity
-> - [`PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md) — original 2026-05-03 plan; preserved verbatim
-> - [`AUDIT-BACKLOG-VALIDATION.md`](AUDIT-BACKLOG-VALIDATION.md) — Track F audit; canonical "ready-to-pick-up" list
-> - [`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md), [`SESSION-MODEL.md`](SESSION-MODEL.md), [`INTERACTION-MODEL.md`](INTERACTION-MODEL.md), [`PANE-MODEL.md`](PANE-MODEL.md), [`CUSTOMIZATION-MODEL.md`](CUSTOMIZATION-MODEL.md), [`CHANNEL-ARCHITECTURE.md`](CHANNEL-ARCHITECTURE.md) — substrate research-stage docs (6)
+> - [`PROJECT-PLAN-2026-05-revision.md`](archive/pre-cycle-45/PROJECT-PLAN-2026-05-revision.md) — preceding 2026-05-07 revision; preserved verbatim per dated-snapshot discipline for decision-history continuity
+> - [`PROJECT-PLAN-2026-05.md`](archive/pre-cycle-45/PROJECT-PLAN-2026-05.md) — original 2026-05-03 plan; preserved verbatim
+> - [`AUDIT-BACKLOG-VALIDATION.md`](archive/pre-cycle-45/AUDIT-BACKLOG-VALIDATION.md) — Track F audit; canonical "ready-to-pick-up" list
+> - [`PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md), [`SESSION-MODEL.md`](SESSION-MODEL.md), [`INTERACTION-MODEL.md`](INTERACTION-MODEL.md), [`PANE-MODEL.md`](PANE-MODEL.md), [`CUSTOMIZATION-MODEL.md`](CUSTOMIZATION-MODEL.md), [`CHANNEL-ARCHITECTURE.md`](CHANNEL-ARCHITECTURE.md) — substrate research-stage docs (6)
 
 ## What this document is
 
@@ -409,7 +409,7 @@ window; tracked through the strategic backlog and `SESSION-HANDOFF`:
 ## Where to read more
 
 For the **canonical post-audit ready-to-pick-up list**:
-[`AUDIT-BACKLOG-VALIDATION.md`](AUDIT-BACKLOG-VALIDATION.md)
+[`AUDIT-BACKLOG-VALIDATION.md`](archive/pre-cycle-45/AUDIT-BACKLOG-VALIDATION.md)
 § "Ready-to-pick-up list".
 
 For **substrate-research vocabulary** (12-stage pipeline,

@@ -4,7 +4,7 @@
 > **Status**: design / forward-looking — not yet implemented
 > **Authoring item**: backlog item 28 (research stage)
 > **Companion docs**:
-> - [`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md) — canonical vocabulary for stage / pathway / event-type names; this doc uses that vocabulary
+> - [`PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md) — canonical vocabulary for stage / pathway / event-type names; this doc uses that vocabulary
 > - [`USER-SETTINGS.md`](USER-SETTINGS.md) — parameter atlas; parameters specific to SessionModel land here
 > - [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md) — canonical spec; this doc proposes substrate changes the spec will need to absorb
 > - [`spec/overview.md`](../spec/overview.md) — references OSC 133 as recommended authoritative source; this doc operationalises that recommendation
@@ -578,7 +578,7 @@ sequences from real shells are well-ordered.
 ## Pipeline integration
 
 This section maps SessionModel into the 12-stage pipeline
-from [`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md). New
+from [`PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md). New
 notification types, new pathway protocol method, new
 substrate component.
 
@@ -667,7 +667,7 @@ updated model.
 This stage is unchanged in shape but the canonical record
 gains a `CursorPosition: (int * int)` field. The cursor
 lives on `Screen.Cursor` today (per
-[`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md)
+[`PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md)
 "Substrate inventory"); CanonicalState gains a snapshot
 of it. Required for:
 
@@ -1793,7 +1793,7 @@ This document explicitly does NOT cover:
 
 This doc references / is referenced by:
 
-- [`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md) —
+- [`PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md) —
   uses the 12-stage glossary; SessionModel insertion
   point is between Stages 3 and 4 (called "Stage 3.5"
   here for now; future re-numbering possible).

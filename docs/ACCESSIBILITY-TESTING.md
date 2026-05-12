@@ -396,7 +396,7 @@ pattern at the right element.
 ### Stage 7 — Claude Code roundtrip
 
 Stage 7 ships across four sequenced PRs (per
-[`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md) Part 2):
+[`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05-09.md) Part 2):
 PR-A (env-scrub PO-5; #131), PR-B (shell registry +
 `PTYSPEAK_SHELL`; #132), PR-C (hot-switch hotkeys
 `Ctrl+Shift+1`/`Ctrl+Shift+2`; #134), and PR-D (this matrix
@@ -404,7 +404,7 @@ expansion + `docs/STAGE-7-ISSUES.md` seeding). The matrix below
 exercises the full surface end-to-end. Per
 [`docs/SESSION-HANDOFF.md`](SESSION-HANDOFF.md) "Stage 7
 implementation sketch (next)" §5, **gaps surfaced during this
-matrix go into [`docs/STAGE-7-ISSUES.md`](STAGE-7-ISSUES.md)
+matrix go into [`docs/STAGE-7-ISSUES.md`](archive/pre-cycle-45/STAGE-7-ISSUES.md)
 with framework-taxonomy category tags — Stage 7's job is to
 surface, not solve.**
 
@@ -942,7 +942,7 @@ Cycles 33-35c shipped the substrate-inversion arc: the canonical
 representation of "what the shell produced" pivoted from a
 screen-row diff (`Screen.Snapshot` + per-row hashing) to a linear
 byte-stream substrate (`LinearTextStream` producer; RFC
-[`docs/rfc/0001-linear-text-substrate.md`](rfc/0001-linear-text-substrate.md)).
+[`docs/rfc/0001-linear-text-substrate.md`](archive/pre-cycle-45/0001-linear-text-substrate.md)).
 Cycle 36 codifies the validation matrix the maintainer ran on
 2026-05-10 against Cycle 35a's parallel-path-behind-flag PR so
 future contributors have a reproducible recipe + a Cycle 39
@@ -990,7 +990,7 @@ otherwise. Hot-switch via `Ctrl+Shift+1` (cmd) / `Ctrl+Shift+2`
 showing zero `Suppressed (spinner)` log lines on non-alt-screen
 frames is the precondition for safely removing the screen-diff
 legacy code (per Section 13 of the strategic plan +
-[`docs/STAGE-7-ISSUES.md`](STAGE-7-ISSUES.md) substrate-cleanup
+[`docs/STAGE-7-ISSUES.md`](archive/pre-cycle-45/STAGE-7-ISSUES.md) substrate-cleanup
 section). Two+ rows regressing without a clean fix → revert
 default to `screen-diff` via TOML; substrate-mode stays opt-in.
 

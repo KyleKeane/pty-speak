@@ -3,7 +3,7 @@
 **Status:** Cycle 33 working catalog
 **Drafted:** 2026-05-09
 **Snapshot:** 2026-05-09
-**Companion to:** [`docs/rfc/0001-linear-text-substrate.md`](rfc/0001-linear-text-substrate.md)
+**Companion to:** [`docs/rfc/0001-linear-text-substrate.md`](archive/pre-cycle-45/0001-linear-text-substrate.md)
 **Authority:** [`docs/CORE-ABSTRACTION-BOUNDARY.md`](CORE-ABSTRACTION-BOUNDARY.md) §5
 
 ## Front matter
@@ -14,8 +14,8 @@ The three-exemplar scope is deliberate. Per the maintainer's 2026-05-09 directiv
 
 ### Sources surveyed
 
-- [`docs/research/Output-paradigms.md`](research/Output-paradigms.md) — primary source (849 LOC). Six Tier-1 primitives surveyed in depth; this catalog lifts three with attribution.
-- [`docs/research/emission-paradigms.md`](research/emission-paradigms.md) — secondary source (174 LOC). Cited for live-region detection + cadence parameters that affect each exemplar's update cadence.
+- [`docs/research/Output-paradigms.md`](archive/pre-cycle-45/research/Output-paradigms.md) — primary source (849 LOC). Six Tier-1 primitives surveyed in depth; this catalog lifts three with attribution.
+- [`docs/research/emission-paradigms.md`](archive/pre-cycle-45/research/emission-paradigms.md) — secondary source (174 LOC). Cited for live-region detection + cadence parameters that affect each exemplar's update cadence.
 - [`docs/CORE-ABSTRACTION-BOUNDARY.md`](CORE-ABSTRACTION-BOUNDARY.md) §5 — authoritative for the three-exemplar framing; this catalog provides the full per-primitive treatment.
 - [`docs/PANE-MODEL.md`](PANE-MODEL.md) — pane catalog; the CommandOutputTuple wrapper for raw-text in the history sub-pane (per [PR #236](https://github.com/KyleKeane/pty-speak/pull/236) doc tweak) is referenced from §1.6 here.
 
@@ -390,11 +390,11 @@ The three-exemplar scope is **deliberately non-extensible without maintainer aut
 
 ## Cross-references
 
-- [`docs/rfc/0001-linear-text-substrate.md`](rfc/0001-linear-text-substrate.md) — companion RFC; the substrate that feeds this catalog's primitives.
+- [`docs/rfc/0001-linear-text-substrate.md`](archive/pre-cycle-45/0001-linear-text-substrate.md) — companion RFC; the substrate that feeds this catalog's primitives.
 - [`docs/CORE-ABSTRACTION-BOUNDARY.md`](CORE-ABSTRACTION-BOUNDARY.md) §5 — three-exemplar framing authority.
 - [`docs/PANE-MODEL.md`](PANE-MODEL.md) — pane catalog; CommandOutputTuple wrapper for raw-text in history sub-pane.
-- [`docs/research/Output-paradigms.md`](research/Output-paradigms.md) — primary source for exemplar UIA / ARIA / NVDA contracts.
-- [`docs/research/emission-paradigms.md`](research/emission-paradigms.md) — secondary source for cadence parameters affecting update cadence.
+- [`docs/research/Output-paradigms.md`](archive/pre-cycle-45/research/Output-paradigms.md) — primary source for exemplar UIA / ARIA / NVDA contracts.
+- [`docs/research/emission-paradigms.md`](archive/pre-cycle-45/research/emission-paradigms.md) — secondary source for cadence parameters affecting update cadence.
 - [`docs/USER-SETTINGS.md`](USER-SETTINGS.md) — Cycle 32a `[profile.selection]` thresholds for Exemplar 2's detector.
-- [`docs/STAGE-7-ISSUES.md`](STAGE-7-ISSUES.md) — Stage 7 + 8 issue tracker; closed `[output-selection]` row (Cycle 32a) and open Stage 8e-B (UIA listbox peer for Exemplar 2).
+- [`docs/STAGE-7-ISSUES.md`](archive/pre-cycle-45/STAGE-7-ISSUES.md) — Stage 7 + 8 issue tracker; closed `[output-selection]` row (Cycle 32a) and open Stage 8e-B (UIA listbox peer for Exemplar 2).
 - [`CONTRIBUTING.md`](../CONTRIBUTING.md) — earcon frequency constraint (<180 Hz or >1.5 kHz) authoritative over research's wider Brewster guidance.

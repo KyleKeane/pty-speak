@@ -6,7 +6,7 @@
 > **Companion docs**:
 > - [`CORE-ABSTRACTION-BOUNDARY.md`](CORE-ABSTRACTION-BOUNDARY.md) — substrate / channel boundary. Defines the three-sub-pane decomposition of the shell pane (§6) and the three reserved peer panes (notification queue, contextual keyword info, input assistant) added in 2026-05-09 redirect. Canonical source for both refinements; this doc lifts the framing into the workspace catalog.
 > - [`INTERACTION-MODEL.md`](INTERACTION-MODEL.md) — architectural framing (Shell Interaction Manager + three-component model). The shell pane is owned by the SIM; this doc extends into multi-pane composition.
-> - [`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md) — operational mechanics (12-stage byte-to-announcement flow). Each pane runs its own pipeline.
+> - [`PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md) — operational mechanics (12-stage byte-to-announcement flow). Each pane runs its own pipeline.
 > - [`SESSION-MODEL.md`](SESSION-MODEL.md) — history substrate. The cherry-picked I/O pairs pane consumes SessionModel queries.
 > - [`ACCESSIBILITY-INTERACTION-MODEL.md`](ACCESSIBILITY-INTERACTION-MODEL.md) — caret / focus / UIA tension at the screen-reader-interface layer. Multi-pane multiplies that tension.
 > - [`USER-SETTINGS.md`](USER-SETTINGS.md) — parameter atlas. Pane-state TOML schema + pane-switch hotkeys land here.
@@ -40,12 +40,12 @@ pane types). Each piece is tagged so readers can distinguish
 
 Through PRs #170-#173, pty-speak's research-stage docs grew
 to cover four lenses on the substrate: operational
-mechanics ([PIPELINE-NARRATIVE](PIPELINE-NARRATIVE.md)),
+mechanics ([PIPELINE-NARRATIVE](archive/pre-cycle-45/PIPELINE-NARRATIVE.md)),
 history substrate ([SESSION-MODEL](SESSION-MODEL.md)),
 architectural framing
 ([INTERACTION-MODEL](INTERACTION-MODEL.md)), and audit drift
 inventory
-([AUDIT-CODE-CONSISTENCY](AUDIT-CODE-CONSISTENCY.md)).
+([AUDIT-CODE-CONSISTENCY](archive/pre-cycle-45/AUDIT-CODE-CONSISTENCY.md)).
 
 **None address UI composition.** Today's pty-speak treats
 the shell view as the entire application: `MainWindow.xaml`
@@ -553,7 +553,7 @@ The three sub-panes:
 3. **History sub-pane** — sealed past `SessionTuple`s exposed
    as **CommandOutputTuple** canonical-display primitives (the
    unit of history navigation per
-   [`research/Output-paradigms.md` §1.6](research/Output-paradigms.md)).
+   [`research/Output-paradigms.md` §1.6](archive/pre-cycle-45/research/Output-paradigms.md)).
    Each tuple wraps the submitted command, the output stream,
    and the exit code as a single semantically-navigable region.
    Concrete quick-nav contract:
@@ -1192,7 +1192,7 @@ Cross-references:
 | Pane Coordinator | [INTERACTION-MODEL §4](INTERACTION-MODEL.md) — analogous role to Shell Interaction Manager, one architectural level up |
 | Shell pane (today's) | [INTERACTION-MODEL §5](INTERACTION-MODEL.md) — internal three-component model |
 | Cherry-picked I/O pane content | [SESSION-MODEL.md §4-§6](SESSION-MODEL.md) — SessionTuple shape + query API |
-| Per-pane pipeline | [PIPELINE-NARRATIVE.md §2](PIPELINE-NARRATIVE.md) — each pane runs its own variant of the 12-stage pipeline |
+| Per-pane pipeline | [PIPELINE-NARRATIVE.md §2](archive/pre-cycle-45/PIPELINE-NARRATIVE.md) — each pane runs its own variant of the 12-stage pipeline |
 | Pane accessibility | [ACCESSIBILITY-INTERACTION-MODEL.md](ACCESSIBILITY-INTERACTION-MODEL.md) — caret / UIA / NVDA review-cursor tension that compounds across panes |
 | Pane-state TOML schema | [USER-SETTINGS.md](USER-SETTINGS.md) — parameter atlas; multi-pane parameters land here when designed |
 | Spec authority | [spec/event-and-output-framework.md](../spec/event-and-output-framework.md) — canonical spec; multi-pane will need ADR-style authorisation when implementation begins |

@@ -8,10 +8,14 @@
 > **ADR**: [`adr/0001-substrate-channel-dichotomy.md`](adr/0001-substrate-channel-dichotomy.md)
 > records the dichotomy as a non-negotiable design constraint.
 > **Companion docs**:
-> - [`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md) — operational
->   mechanics of today's 12-stage pipeline; this doc names which
->   of those stages live below the boundary (substrate) vs. above
->   (channels).
+> - **Operational pipeline mechanics**: the 12-stage byte-to-announce
+>   pipeline this doc partitioned into substrate vs channels was
+>   replaced by the `ContentHistory` + `SpeechCursor` pipeline in
+>   Cycle 45 (PRs #263–#270, 2026-05-12). The original
+>   `PIPELINE-NARRATIVE.md` vocabulary is archived at
+>   [`archive/pre-cycle-45/PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md);
+>   the canonical operational reference is now
+>   [`../spec/event-and-output-framework.md`](../spec/event-and-output-framework.md).
 > - [`CHANNEL-ARCHITECTURE.md`](CHANNEL-ARCHITECTURE.md) — channel-
 >   based-communication principle; this doc renames the boundary
 >   side as "substrate" and clarifies the inversion required to
@@ -46,9 +50,10 @@ channel code may not depend on substrate-internal modules.
 This doc is the canonical statement of what the boundary is, why
 it exists, what each side may do, and how the two sides
 communicate. It supersedes prior framings in
-[`CHANNEL-ARCHITECTURE.md`](CHANNEL-ARCHITECTURE.md) and
-[`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md) where those
-framings are silent on the boundary.
+[`CHANNEL-ARCHITECTURE.md`](CHANNEL-ARCHITECTURE.md) and the
+archived
+[`archive/pre-cycle-45/PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md)
+where those framings are silent on the boundary.
 
 ## Why this exists
 
@@ -411,8 +416,10 @@ substrate slice:
 
 3. **History sub-pane** — sealed past `SessionTuple`s exposed
    as **CommandOutputTuple** canonical-display primitives
-   (the unit of history navigation per
-   [`docs/research/Output-paradigms.md` §1.6](research/Output-paradigms.md)).
+   (the unit of history navigation; per the archived
+   [`archive/pre-cycle-45/research/Output-paradigms.md` §1.6](archive/pre-cycle-45/research/Output-paradigms.md)
+   research seed, lifted into
+   [`CANONICAL-DISPLAY-CATALOG.md`](CANONICAL-DISPLAY-CATALOG.md)).
    Each tuple wraps the submitted command, the output stream,
    and the exit code as a single semantically-navigable region.
    Concrete quick-nav contract:
@@ -484,21 +491,25 @@ same substrate.
 
 ## §7 — Streaming-incomplete protocol
 
-The linear-text substrate is **incomplete at every tick**. A
-byte that arrived 5ms ago might be the start of a longer
-sequence whose final shape is still in flight. The protocol
-that lets profiles emit usefully against an incomplete stream
-is specified in full in
-[`docs/rfc/0001-linear-text-substrate.md`](rfc/0001-linear-text-substrate.md)
-§5 (the seam-hierarchy commit model + cadence parameters +
-ranked live-region detection + sealed/unsealed extension).
-This section's framing is preserved as a one-paragraph
-summary; the RFC supersedes for normative spec.
+> **Cycle 45 update (2026-05-12)**: the `LinearTextStream`
+> substrate this section originally pointed at was replaced by
+> `ContentHistory` + `SpeechCursor` in Cycle 45 (PRs #263–#270).
+> RFC 0001, which formalised the LinearTextStream emission
+> protocol, is archived at
+> [`archive/pre-cycle-45/0001-linear-text-substrate.md`](archive/pre-cycle-45/0001-linear-text-substrate.md).
+> The seam-hierarchy framing below remains informally useful as a
+> mental model; the live emission policy lives in
+> `src/Terminal.Core/ContentHistory.fs` + `SpeechCursor.fs`.
+
+The substrate is **incomplete at every tick**. A byte that
+arrived 5ms ago might be the start of a longer sequence whose
+final shape is still in flight. The historical streaming-emission
+protocol that informed today's design:
 
 - **Seam hierarchy.** Five-priority commit triggers (semantic
-  prompt seam > newline > idle quantum > max-bytes > max-time)
-  per RFC §5.1; lifted from
-  [`docs/research/emission-paradigms.md`](research/emission-paradigms.md)
+  prompt seam > newline > idle quantum > max-bytes > max-time);
+  lifted from the archived
+  [`archive/pre-cycle-45/research/emission-paradigms.md`](archive/pre-cycle-45/research/emission-paradigms.md)
   §3.A. Each stronger seam pre-empts weaker ones.
 - **Prompt boundary as finalize.** `HeuristicPromptDetector`
   fire = `LinearTextStream.finalizeHighWaterMark` (post-Cycle
@@ -574,26 +585,28 @@ a boundary violation; reviewers block.
 
 - **ADR**: [`adr/0001-substrate-channel-dichotomy.md`](adr/0001-substrate-channel-dichotomy.md)
 - **Strategic plan**: [`PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md)
-- **Substrate RFC** (Cycle 33 — pivot gate):
-  [`rfc/0001-linear-text-substrate.md`](rfc/0001-linear-text-substrate.md).
-  Specifies the `LinearTextStream` producer + streaming-
-  incomplete emission protocol + drain-checkpoint-swap;
-  supersedes §7 informal protocol for normative spec.
+- **Substrate RFC** (Cycle 33 — pivot gate; archived):
+  [`archive/pre-cycle-45/0001-linear-text-substrate.md`](archive/pre-cycle-45/0001-linear-text-substrate.md).
+  Formalised the `LinearTextStream` producer + streaming-
+  incomplete emission protocol; substrate replaced by
+  `ContentHistory` + `SpeechCursor` in Cycle 45 (PRs #263–#270).
 - **Canonical-display catalog** (Cycle 33 — pivot gate):
   [`CANONICAL-DISPLAY-CATALOG.md`](CANONICAL-DISPLAY-CATALOG.md).
   Full per-primitive UIA / ARIA / NVDA / JAWS / Narrator /
   channel-routing specs for the three exemplars + named
-  extension points; companion to the substrate RFC.
+  extension points.
 - **Channel principle (older framing)**:
   [`CHANNEL-ARCHITECTURE.md`](CHANNEL-ARCHITECTURE.md)
-- **Pipeline mechanics**: [`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md)
+- **Pipeline mechanics (archived)**:
+  [`archive/pre-cycle-45/PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md)
+  — superseded by [`../spec/event-and-output-framework.md`](../spec/event-and-output-framework.md).
 - **Interaction model**: [`INTERACTION-MODEL.md`](INTERACTION-MODEL.md)
 - **Session history**: [`SESSION-MODEL.md`](SESSION-MODEL.md)
 - **Pane catalog + sub-pane decomposition**:
   [`PANE-MODEL.md`](PANE-MODEL.md)
-- **Research sources** (now in-repo as authoritative):
-  [`research/emission-paradigms.md`](research/emission-paradigms.md),
-  [`research/Output-paradigms.md`](research/Output-paradigms.md).
+- **Research sources (archived)**:
+  [`archive/pre-cycle-45/research/emission-paradigms.md`](archive/pre-cycle-45/research/emission-paradigms.md),
+  [`archive/pre-cycle-45/research/Output-paradigms.md`](archive/pre-cycle-45/research/Output-paradigms.md).
   Primary sources for the Cycle 33 RFC + catalog lifts.
 - **Spec authority**: [`spec/tech-plan.md`](../spec/tech-plan.md)
 

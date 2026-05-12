@@ -1092,7 +1092,7 @@ the explicit subjects of the May-2026 strategic plan:
 
 - **Output presentation strategies** are addressed by the
   Output-handling framework cycle (Part 3 of
-  [`PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md)). The
+  [`PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05-09.md)). The
   current `renderRows`-on-every-emit behaviour is one strategy
   ("emit the whole rendered screen") trying to serve every
   paradigm; the framework introduces Stream / REPL / TUI /

@@ -4,7 +4,7 @@
 > **Status**: design / forward-looking — names a conceptual abstraction and a target architecture; some named pieces ship today, most are reserved for future work
 > **Authoring item**: backlog item 29 (research stage)
 > **Companion docs**:
-> - [`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md) — operational vocabulary: 12-stage byte-to-announcement flow, event taxonomy, substrate inventory. This doc references it for stage / pathway / event-type names.
+> - **Operational vocabulary** (archived): the original 12-stage pipeline narrative is at [`archive/pre-cycle-45/PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md); superseded by [`../spec/event-and-output-framework.md`](../spec/event-and-output-framework.md) and the Cycle 45 ContentHistory pipeline.
 > - [`SESSION-MODEL.md`](SESSION-MODEL.md) — substrate design for structured (prompt, command, output, exit-code) history. This doc places SessionModel inside the higher-level architectural framing.
 > - [`USER-SETTINGS.md`](USER-SETTINGS.md) — parameter atlas. Knobs cited in this doc cross-reference there.
 > - [`ACCESSIBILITY-INTERACTION-MODEL.md`](ACCESSIBILITY-INTERACTION-MODEL.md) — the screen-reader-interaction layer (caret tension, modal dialogs, NVDA round-trips). Sister doc; INTERACTION-MODEL is one layer above (architectural framing); A-I-M is one layer below (per-screen-reader behaviour).

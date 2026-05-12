@@ -24,11 +24,12 @@ before deviating.
    bridge between sessions; "where we left off", in-flight branches,
    pre-digested implementation sketches for the next stage.
 4. **[`docs/PROJECT-PLAN-2026-05-09.md`](docs/PROJECT-PLAN-2026-05-09.md)**
-   — current strategic plan (2026-05-09 successor revision);
-   supersedes `PROJECT-PLAN-2026-05-revision.md` (the 2026-05-07
-   revision, preserved verbatim) and the original
-   `PROJECT-PLAN-2026-05.md` per Track E E5 dated-snapshot
-   discipline.
+   — current strategic plan (2026-05-09 successor revision).
+   Predecessor revisions archived under
+   [`docs/archive/pre-cycle-45/`](docs/archive/pre-cycle-45/)
+   per Track E E5 dated-snapshot discipline
+   ([`PROJECT-PLAN-2026-05-revision.md`](docs/archive/pre-cycle-45/PROJECT-PLAN-2026-05-revision.md),
+   [`PROJECT-PLAN-2026-05.md`](docs/archive/pre-cycle-45/PROJECT-PLAN-2026-05.md)).
 5. **[`docs/CORE-ABSTRACTION-BOUNDARY.md`](docs/CORE-ABSTRACTION-BOUNDARY.md)**
    — architectural framing that locks the substrate / channel
    dichotomy; recorded as
@@ -40,15 +41,16 @@ before deviating.
    reserved peer panes (notification queue, contextual keyword
    info, input assistant). Read before working on substrate or
    channel code.
-6. **[`docs/rfc/0001-linear-text-substrate.md`](docs/rfc/0001-linear-text-substrate.md)**
-   — Cycle 33 pivot-gate RFC. Specifies the `LinearTextStream`
-   producer, the streaming-incomplete emission protocol (seam
-   hierarchy + cadence parameters + ranked live-region detection
-   + sealed/unsealed events), and the drain-checkpoint-swap
-   protocol for Stream ↔ TUI substrate transitions. Supersedes
-   CORE-ABSTRACTION-BOUNDARY.md §7's informal protocol for
-   normative spec. Read before working on Cycle 34+ substrate-
-   inversion implementation.
+6. **RFC 0001 (archived)** — Cycle 33 pivot-gate RFC, formalised
+   the `LinearTextStream` substrate + streaming-emission protocol.
+   The substrate it specified was replaced by `ContentHistory` +
+   `SpeechCursor` in Cycle 45 (PRs #263–#270, 2026-05-12); the RFC
+   is now archived at
+   [`docs/archive/pre-cycle-45/0001-linear-text-substrate.md`](docs/archive/pre-cycle-45/0001-linear-text-substrate.md)
+   alongside the code it described. Read only for historical
+   context — the live substrate lives in `src/Terminal.Core/`
+   (`ContentHistory.fs`, `SpeechCursor.fs`) and is described
+   informally in CORE-ABSTRACTION-BOUNDARY.md §7.
 7. **[`docs/CANONICAL-DISPLAY-CATALOG.md`](docs/CANONICAL-DISPLAY-CATALOG.md)**
    — Cycle 33 pivot-gate companion. Full per-primitive UIA /
    ARIA / NVDA / JAWS / Narrator / interaction-contract /
@@ -346,7 +348,7 @@ round-trips but can silently be stripped by other tooling.
 
 Most rules in this section are pointers into the canonical doc.
 Material that is NOT canonical here continues to be authoritative
-in CONTRIBUTING.md / spec/tech-plan.md / docs/PROJECT-PLAN-2026-05.md
+in CONTRIBUTING.md / spec/tech-plan.md / docs/PROJECT-PLAN-2026-05-09.md
 per docs/DOC-MAP.md.
 
 ### Accessibility outcomes are the acceptance criteria
@@ -582,18 +584,22 @@ PowerShell window via `ProcessStartInfo`.
 ## Current sequencing (May 2026)
 
 Canonical:
-[`docs/PROJECT-PLAN-2026-05.md`](docs/PROJECT-PLAN-2026-05.md) +
+[`docs/PROJECT-PLAN-2026-05-09.md`](docs/PROJECT-PLAN-2026-05-09.md) +
 [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md) "Where we left
 off". This index just tells you which cycle is active.
 
 - **Stage 7** = validation gate. Shipped 2026-05-03 across 11
-  sequenced PRs (A through K + the doc-purpose PR-L). Closes the
-  Claude Code roundtrip + env-scrub PO-5; surfaces gaps for the
-  framework cycles via [`docs/STAGE-7-ISSUES.md`](docs/STAGE-7-ISSUES.md).
+  sequenced PRs (A through K + the doc-purpose PR-L). Closed the
+  Claude Code roundtrip + env-scrub PO-5; gap inventory archived
+  at
+  [`docs/archive/pre-cycle-45/STAGE-7-ISSUES.md`](docs/archive/pre-cycle-45/STAGE-7-ISSUES.md).
 - **Output framework cycle** (Part 3, subsumes original Stages 8+9)
-  — research → RFC → eight sub-stages, each with NVDA validation.
-  Reads STAGE-7-ISSUES.md as design input.
-- **Input framework cycle** (Part 4) — same shape.
+  — superseded by Cycle 45's ContentHistory + SpeechCursor pipeline
+  (PRs #263–#270, merged 2026-05-12). The substrate-inversion
+  framework cycle's design inputs are archived alongside Stage 7
+  issues; the shipped substrate is described informally in
+  CORE-ABSTRACTION-BOUNDARY.md §7.
+- **Input framework cycle** (Part 4) — pending.
 - **Stage 10** — review mode + quick-nav, first non-built-in
   consumer of the framework taxonomy.
 

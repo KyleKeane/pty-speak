@@ -10,10 +10,9 @@ CHANGELOG discipline, documentation policy, F# / WPF gotchas) live in
 
 A new session should read this **first**, then
 [`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md) (the
-current strategic plan; 2026-05-09 successor to
-`PROJECT-PLAN-2026-05-revision.md` and the original
-`PROJECT-PLAN-2026-05.md`, both preserved verbatim per
-Track E E5 dated-snapshot discipline),
+current strategic plan; predecessor revisions archived under
+[`docs/archive/pre-cycle-45/`](archive/pre-cycle-45/) per Track E E5
+dated-snapshot discipline),
 [`CONTRIBUTING.md`](../CONTRIBUTING.md),
 [`spec/tech-plan.md`](../spec/tech-plan.md),
 [`docs/CHECKPOINTS.md`](CHECKPOINTS.md), and
@@ -560,7 +559,7 @@ two foundational architecture decisions that remain unsolved
 (output-handling profiles and input-interpretation profiles)
 AND four original `spec/tech-plan.md` Stages still unshipped
 (Stages 7, 8, 9, 10). The result is
-[`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md), which
+[`docs/PROJECT-PLAN-2026-05.md`](archive/pre-cycle-45/PROJECT-PLAN-2026-05.md), which
 sequences the work as: **Part 1** Cleanup → **Part 2** Stage 7
 (validation gate) → **Part 3** Output framework cycle (subsumes
 Stages 8 + 9) → **Part 4** Input framework cycle → **Part 5**
@@ -1128,7 +1127,7 @@ disconnects mid-session.
    the items below are the action handles a future maintainer
    needs to actually close them. The 2026-05-03 strategic
    review (canonical:
-   [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md))
+   [`docs/PROJECT-PLAN-2026-05.md`](archive/pre-cycle-45/PROJECT-PLAN-2026-05.md))
    sequences PO-5 as the security half of Part 2 (Stage 7
    Claude Code roundtrip + env-scrub PO-5 — the validation
    gate before the framework cycles).
@@ -1358,7 +1357,7 @@ all validation happens in CI on `windows-latest`. Implications:
 ## Stage 7 implementation sketch (next)
 
 > **Status:** Stage 7 is **next** per
-> [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md) Part 2 —
+> [`docs/PROJECT-PLAN-2026-05.md`](archive/pre-cycle-45/PROJECT-PLAN-2026-05.md) Part 2 —
 > sequenced as the **validation gate** before the Output / Input
 > framework cycles begin. `spec/tech-plan.md` §7 has the canonical
 > specification (launch resolution, environment baseline, expected
@@ -1537,7 +1536,7 @@ design input for the framework cycles.
 
 ### What this stage deliberately does NOT do
 
-(Per [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md)
+(Per [`docs/PROJECT-PLAN-2026-05.md`](archive/pre-cycle-45/PROJECT-PLAN-2026-05.md)
 Part 2 "Out of scope":)
 
 - **Fixing the gaps surfaced during NVDA validation.** Those
@@ -2119,11 +2118,10 @@ Guard against scope creep:
    everything below.
 2. **This file** (SESSION-HANDOFF.md).
 3. **[`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-09.md)** —
-   the current strategic plan (snapshot 2026-05-09);
-   supersedes `PROJECT-PLAN-2026-05-revision.md` (the
-   2026-05-07 revision, preserved verbatim) and the original
-   `PROJECT-PLAN-2026-05.md` per Track E E5 dated-snapshot
-   discipline. Captures the post-Tier-2 + post-Cycle-25 state:
+   the current strategic plan (snapshot 2026-05-09); predecessor
+   revisions archived under
+   [`docs/archive/pre-cycle-45/`](archive/pre-cycle-45/) per
+   Track E E5 dated-snapshot discipline. Captures the post-Tier-2 + post-Cycle-25 state:
    Tier 1 SessionModel substrate (Cycles 11-22b, PRs #185-#199),
    Tier 2 persistence (Cycles 24a-24g, PRs #203-#212+#219), and
    operational ergonomics + diagnostic-dump bundle (Cycle 25,
@@ -2184,7 +2182,7 @@ snippet". Small focused PRs with detailed test plans are
 appreciated; sprawling PRs with multiple moving parts are not.
 
 The May-2026 cleanup cycle (PRs #118 → #128, all merged) closed
-out Part 1 of [`docs/PROJECT-PLAN-2026-05.md`](PROJECT-PLAN-2026-05.md)
+out Part 1 of [`docs/PROJECT-PLAN-2026-05.md`](archive/pre-cycle-45/PROJECT-PLAN-2026-05.md)
 and produced the handoff infrastructure that makes this file
 useful as a starting point: the canonical plan doc itself, the
 Stage 7 implementation sketch, the spec stage-numbering hygiene

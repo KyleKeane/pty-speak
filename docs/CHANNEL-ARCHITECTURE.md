@@ -7,7 +7,7 @@
 >   Cycle 17 (PR #192).
 > **Authoring item**: backlog item 32 (research stage)
 > **Companion docs**:
-> - [`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md) — operational vocabulary; the 12 stages where channels appear at thread boundaries.
+> - [`PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md) — operational vocabulary; the 12 stages where channels appear at thread boundaries.
 > - [`INTERACTION-MODEL.md`](INTERACTION-MODEL.md) — architectural framing (Shell Interaction Manager + three-component model). The SIM owns shell-program conversation; channels are the inter-thread plumbing it relies on.
 > - [`SESSION-MODEL.md`](SESSION-MODEL.md) — history substrate. SessionModel mutations happen on the channel-fed consumer thread; future Tier 2 persistence will use a dedicated flush-to-disk channel.
 > - [`PANE-MODEL.md`](PANE-MODEL.md) — multi-pane workspace framework. The reserved Pipeline Inspector pane will visualise the channel boundaries this doc inventories.
@@ -551,7 +551,7 @@ incrementally.
 
 ## Cross-references
 
-- [`PIPELINE-NARRATIVE.md`](PIPELINE-NARRATIVE.md) — the
+- [`PIPELINE-NARRATIVE.md`](archive/pre-cycle-45/PIPELINE-NARRATIVE.md) — the
   12-stage operational vocabulary. Each stage's inter-thread
   boundary appears in this doc's channel inventory.
 - [`INTERACTION-MODEL.md`](INTERACTION-MODEL.md) — the
