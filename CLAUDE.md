@@ -537,6 +537,17 @@ Currently shipped (orientation reference; spec section 6 is canonical):
   whatever the user has configured). Announces "Opening last
   output." on success; "No prior output." when
   `SessionModel.History` is empty.
+- `Ctrl+Shift+A` — re-narrate the last command's `OutputText`
+  via NVDA, capped at the same `OutputAnnounceCapChars` (800)
+  the auto-narrate uses (Cycle 46 post-audit, 2026-05-13). For
+  the user who missed the auto-Announce (was speaking, typing,
+  switched window). Spoken counterpart to `Ctrl+Shift+O`'s
+  text-editor surface. Uses the same `ActivityIds.output`
+  activity ID, so NVDA's `MostRecent` processing supersedes
+  any other in-flight `pty-speak.output` notification.
+  Announces "No prior output." when `SessionModel.History`
+  is empty; "Last command produced no output." when the
+  latest tuple's `OutputText` is whitespace-only.
 
 Multi-state menu items (Cycle 27 paradigm; menu-only, no
 keyboard accelerator):

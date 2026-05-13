@@ -2758,6 +2758,56 @@ module Program =
                         sprintf "Could not save output: %s" safe,
                         ActivityIds.error)
 
+        // Cycle 46 post-audit (2026-05-13) — re-narrate the
+        // latest finalised tuple's `OutputText`, capped at the
+        // same `OutputAnnounceCapChars` the auto-narrate uses.
+        // For the user who missed the auto-Announce (was
+        // speaking, typing, switched window, etc.). Goes
+        // through the same `TerminalView.Announce` channel +
+        // `ActivityIds.output` activity ID, so it supersedes
+        // any other in-flight `pty-speak.output` notification
+        // via NVDA's `MostRecent` processing — the cap keeps
+        // the utterance bounded to ~30–60s either way.
+        //
+        // `Ctrl+Shift+O` is the companion when the user wants
+        // the FULL output (writes to a file + opens the default
+        // text editor); this hotkey is the spoken counterpart.
+        let runAnnounceLastOutput () : unit =
+            let log =
+                Logger.get "Terminal.App.Program.runAnnounceLastOutput"
+            log.LogInformation(
+                "Ctrl+Shift+A pressed — re-narrating last output.")
+            let snapshot = currentSession
+            match snapshot.History |> Seq.tryLast with
+            | None ->
+                log.LogInformation(
+                    "No prior output to re-narrate (History is empty).")
+                window.TerminalSurface.Announce(
+                    "No prior output.",
+                    ActivityIds.diagnostic)
+            | Some tuple when System.String.IsNullOrWhiteSpace tuple.OutputText ->
+                log.LogInformation(
+                    "Latest tuple has empty OutputText.")
+                window.TerminalSurface.Announce(
+                    "Last command produced no output.",
+                    ActivityIds.diagnostic)
+            | Some tuple ->
+                let toSay =
+                    if tuple.OutputText.Length <= OutputAnnounceCapChars then
+                        tuple.OutputText
+                    else
+                        tuple.OutputText.Substring(
+                            tuple.OutputText.Length - OutputAnnounceCapChars)
+                if toSay.Length < tuple.OutputText.Length then
+                    log.LogInformation(
+                        "Re-narrate truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
+                        tuple.OutputText.Length,
+                        toSay.Length,
+                        OutputAnnounceCapChars)
+                window.TerminalSurface.Announce(
+                    toSay,
+                    ActivityIds.output)
+
         // session-log file path. Reads `sessionLogWriter` (post
         // -Cycle-24c) + `persistenceConfig.Mode` (post-Cycle-24a)
         // from compose-local state. The closure is defined here
@@ -3105,6 +3155,7 @@ module Program =
         bind HotkeyRegistry.CopyHistoryToClipboard runCopyHistoryToClipboard
         bind HotkeyRegistry.AnnounceSessionLogPath runAnnounceSessionLogPath
         bind HotkeyRegistry.OpenLastOutput runOpenLastOutput
+        bind HotkeyRegistry.AnnounceLastOutput runAnnounceLastOutput
         // Cycle 43a — diagnostic chunk extractors + grep dialog.
         // All menu-only (no keyboard accelerator); `bindHotkey`
         // skips the KeyBinding installation but still registers

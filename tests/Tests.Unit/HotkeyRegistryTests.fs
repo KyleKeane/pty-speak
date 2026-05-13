@@ -84,6 +84,9 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               // Cycle 46 post-audit — open last command output
               // in default text editor (Ctrl+Shift+O).
               HotkeyRegistry.OpenLastOutput
+              // Cycle 46 post-audit — re-narrate last command
+              // output capped at 800 chars (Ctrl+Shift+A).
+              HotkeyRegistry.AnnounceLastOutput
               // Cycle 26c — first menu-only command. Surfaced
               // via Diagnostics → Test Process Cleanup; no
               // keyboard accelerator.

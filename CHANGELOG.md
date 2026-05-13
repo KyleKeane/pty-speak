@@ -62,6 +62,25 @@ runs to completion) can cancel mid-utterance.
   item `MenuItem_OpenLastOutput` under "Data" in
   `MainWindow.xaml`. The reflective menu-binding loop
   (`Program.fs` ~line 3877) picks it up automatically.
+- **`Ctrl+Shift+A` — re-narrate last command output**
+  (mnemonic: *A*nnounce). Spoken counterpart to
+  `Ctrl+Shift+O` for the user who missed the auto-narrate
+  (was speaking, typing, switched window). Re-speaks the
+  most recent tuple's `OutputText` via the same
+  `TerminalView.Announce` channel + `ActivityIds.output`
+  activity ID, capped at the same `OutputAnnounceCapChars`
+  (800) the auto-narrate uses. NVDA's `MostRecent`
+  processing means re-pressing supersedes the prior
+  in-flight `pty-speak.output` notification, so the user can
+  use it as a "say it again" / "say it louder" lever.
+  Announces "No prior output." when `History` is empty;
+  "Last command produced no output." when the latest
+  tuple's `OutputText` is whitespace-only.
+- **Hotkey wiring (`Ctrl+Shift+A`)**: new
+  `HotkeyRegistry.AnnounceLastOutput` AppCommand
+  (Letter 'A' + ctrlShift); registered in
+  `AppReservedHotkeys`; menu item
+  `MenuItem_AnnounceLastOutput` under "Data".
 - **CLAUDE.md** §"Currently shipped" hotkey list gains a
   `Ctrl+Shift+O` entry alongside the existing `Ctrl+Shift+S` /
   `Ctrl+Shift+Y` companions.

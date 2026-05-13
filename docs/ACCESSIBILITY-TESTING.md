@@ -1252,6 +1252,9 @@ to a post-Cycle-46 fixup PR rather than tagging a release.
 | **46-11** | cmd + `dir` of a moderately-large directory (the install dir works; produces ~19 KB of output). Listen for the audible read after the command completes. | NVDA reads the last ~800 chars of output and stops cleanly. Pre-cap behaviour was a single 5–10 minute SAPI utterance that NVDA could not interrupt; post-cap the utterance is bounded to ~30–60 seconds. Subsequent commands' announces are no longer queued behind the giant read. |
 | **46-12** | After 46-11, press `Ctrl+Shift+O`. | A new text editor window opens (whichever app handles `.txt` files) with the full `OutputText` of the most recent tuple. NVDA announces "Opening last output." then transitions focus to the editor. The file lives under `%LOCALAPPDATA%\PtySpeak\extracts\last-output-<timestamp>.txt`. |
 | **46-13** | Restart pty-speak (so `History` is empty), focus the terminal, press `Ctrl+Shift+O` before running any command. | NVDA announces "No prior output." No editor opens. No file is written. |
+| **46-14** | After 46-11, press `Ctrl+Shift+A`. | NVDA re-narrates the last ~800 chars of the most recent output via `ActivityIds.output`. Useful when the auto-narrate was missed (user was speaking, typing, switched window). Same cap as the auto-narrate. |
+| **46-15** | Fresh app (no commands run), press `Ctrl+Shift+A`. | NVDA announces "No prior output." No re-narration. |
+| **46-16** | Run `echo` with no argument (cmd shell will print a single empty-line response), then press `Ctrl+Shift+A`. | NVDA announces "Last command produced no output." (the latest tuple's `OutputText` is whitespace-only; covered by the `IsNullOrWhiteSpace` guard). |
 
 **Diagnostic decoder.** If 46-1 fails (focus still announces
 "document"): `TerminalAutomationPeer.GetAutomationControlTypeCore`

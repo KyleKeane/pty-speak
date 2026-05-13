@@ -635,6 +635,16 @@ public class TerminalView : FrameworkElement
             // check: no default NVDA binding for Ctrl+Shift+O.
             (Key.O, ModifierKeys.Control | ModifierKeys.Shift, "Open last command output in default editor"),
 
+            // Cycle 46 post-audit (2026-05-13) — re-narrate the
+            // last command output (capped at the same 800 chars
+            // the auto-narrate uses). Mnemonic: A for
+            // *A*nnounce. Companion to Ctrl+Shift+O — Ctrl+Shift+O
+            // opens the full output in a text editor;
+            // Ctrl+Shift+A re-speaks the bounded chunk through
+            // NVDA. NVDA collision check: no default NVDA
+            // binding for Ctrl+Shift+A.
+            (Key.A, ModifierKeys.Control | ModifierKeys.Shift, "Re-narrate last command output (capped)"),
+
             // Future entries (NOT yet bound; commented for
             // forward-planning):
             //   (Key.R, ModifierKeys.Alt | ModifierKeys.Shift,

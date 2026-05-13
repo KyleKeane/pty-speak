@@ -105,6 +105,14 @@ module HotkeyRegistry =
         // %LOCALAPPDATA%\PtySpeak\extracts\ and shell-executes
         // it (registered .txt handler).
         | OpenLastOutput
+        // Cycle 46 post-audit (2026-05-13) — re-narrate the
+        // latest tuple's OutputText (capped at the same 800
+        // chars the boundary handler's auto-narrate uses). For
+        // the user who missed the auto-Announce (was speaking,
+        // typing, switched window). Companion to OpenLastOutput
+        // when the user wants spoken rather than text-editor
+        // surface.
+        | AnnounceLastOutput
         // Cycle 26c — first menu-only command. Interactive
         // process-cleanup test (`scripts/test-process-cleanup.ps1`)
         // surfaced via Diagnostics → Test Process Cleanup. No
@@ -182,6 +190,7 @@ module HotkeyRegistry =
         | CopyHistoryToClipboard -> "CopyHistoryToClipboard"
         | AnnounceSessionLogPath -> "AnnounceSessionLogPath"
         | OpenLastOutput -> "OpenLastOutput"
+        | AnnounceLastOutput -> "AnnounceLastOutput"
         | RunProcessCleanupScript -> "RunProcessCleanupScript"
         | CloseWindow -> "CloseWindow"
         | ExitApp -> "ExitApp"
@@ -286,6 +295,13 @@ module HotkeyRegistry =
             Key = Some (Letter 'O')
             Modifiers = Some ctrlShift
             Description = "Open last command output in default text editor (Cycle 46 post-audit)" }
+          // Cycle 46 post-audit (2026-05-13) — re-narrate the
+          // latest tuple's OutputText (capped at the same
+          // 800 chars as the auto-narrate).
+          { Command = AnnounceLastOutput
+            Key = Some (Letter 'A')
+            Modifiers = Some ctrlShift
+            Description = "Re-narrate last command output (capped at 800 chars; Cycle 46 post-audit)" }
           // Cycle 26c — menu-only; no default keyboard accelerator.
           // Surfaced as Diagnostics → Test Process Cleanup.
           { Command = RunProcessCleanupScript
@@ -450,6 +466,7 @@ module HotkeyRegistry =
           CopyHistoryToClipboard
           AnnounceSessionLogPath
           OpenLastOutput
+          AnnounceLastOutput
           RunProcessCleanupScript
           CloseWindow
           ExitApp
