@@ -60,6 +60,14 @@ module HotkeyRegistry =
         /// `;` / `:` key (`OemSemicolon` in WPF). Used by
         /// `Ctrl+Shift+;` log-copy hotkey.
         | Semicolon
+        /// Arrow / navigation keys. Cycle 48 post-PR-F binds
+        /// `Ctrl+Shift+Up/Down/End` to SpeechCursor Previous /
+        /// Next / JumpToLatest. NVDA collision check: default
+        /// NVDA review-cursor gestures use the Numpad cluster,
+        /// not Ctrl+Shift+arrow.
+        | Up
+        | Down
+        | End
 
     /// Identity of every app-reserved hotkey command. New
     /// hotkeys append a case here and add a corresponding
@@ -496,16 +504,16 @@ module HotkeyRegistry =
           // (NVDA's default review-cursor commands are
           // `NVDA+Up/Down`).
           { Command = SpeechCursorNext
-            Key = Some Key.Down
-            Modifiers = Some (ModifierKeys.Control ||| ModifierKeys.Shift)
+            Key = Some Down
+            Modifiers = Some ctrlShift
             Description = "Speech Cursor: move to the next entry" }
           { Command = SpeechCursorPrevious
-            Key = Some Key.Up
-            Modifiers = Some (ModifierKeys.Control ||| ModifierKeys.Shift)
+            Key = Some Up
+            Modifiers = Some ctrlShift
             Description = "Speech Cursor: move to the previous entry" }
           { Command = SpeechCursorJumpToLatest
-            Key = Some Key.End
-            Modifiers = Some (ModifierKeys.Control ||| ModifierKeys.Shift)
+            Key = Some End
+            Modifiers = Some ctrlShift
             Description = "Speech Cursor: jump to the latest entry" }
           { Command = SpeechCursorToggleMode
             Key = None
@@ -565,6 +573,9 @@ module HotkeyRegistry =
                 | Letter c -> string (System.Char.ToUpperInvariant c)
                 | Digit n -> string n
                 | Semicolon -> ";"
+                | Up -> "Up"
+                | Down -> "Down"
+                | End -> "End"
             Some (System.String.Join("+", modParts @ [ keyText ]))
         | _ -> None
 

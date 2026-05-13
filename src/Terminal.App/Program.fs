@@ -367,6 +367,9 @@ module Program =
         | HotkeyRegistry.Digit 7 -> Key.D7
         | HotkeyRegistry.Digit 8 -> Key.D8
         | HotkeyRegistry.Digit 9 -> Key.D9
+        | HotkeyRegistry.Up -> Key.Up
+        | HotkeyRegistry.Down -> Key.Down
+        | HotkeyRegistry.End -> Key.End
         | HotkeyRegistry.Digit n ->
             failwithf
                 "HotkeyRegistry.Digit %d out of supported range 1-9 \
