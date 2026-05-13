@@ -610,12 +610,23 @@ let ``tailTextWithMarkers renders each MarkerKind with the documented label`` ()
           ContentHistory.MarkerKind.CommandFinished, "output ends"
           ContentHistory.MarkerKind.BellRang, "bell"
           ContentHistory.MarkerKind.SelectionShown, "selection prompt"
-          ContentHistory.MarkerKind.AltScreenEnter, "entered alt-screen" ]
+          ContentHistory.MarkerKind.SelectionDismissed, "selection dismissed"
+          ContentHistory.MarkerKind.AltScreenEnter, "entered alt-screen"
+          ContentHistory.MarkerKind.AltScreenExit, "left alt-screen" ]
     for (kind, expectedLabel) in expectations do
         let state = freshHistory ()
         ContentHistory.appendMarker state kind t0 None |> ignore
         let result = ContentHistory.tailTextWithMarkers state 4096
         Assert.Contains(sprintf "--- %s ---" expectedLabel, result)
+
+[<Fact>]
+let ``tailTextWithMarkers renders Custom marker with the tag payload`` () =
+    let state = freshHistory ()
+    ContentHistory.appendMarker
+        state (ContentHistory.MarkerKind.Custom "tool-call") t0 None
+    |> ignore
+    let result = ContentHistory.tailTextWithMarkers state 4096
+    Assert.Contains("--- custom: tool-call ---", result)
 
 [<Fact>]
 let ``tailTextWithMarkers preserves text content alongside marker lines`` () =

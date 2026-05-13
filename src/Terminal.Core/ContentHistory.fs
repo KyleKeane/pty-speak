@@ -281,7 +281,10 @@ module ContentHistory =
             | MarkerKind.CommandFinished -> "output ends"
             | MarkerKind.BellRang -> "bell"
             | MarkerKind.SelectionShown -> "selection prompt"
+            | MarkerKind.SelectionDismissed -> "selection dismissed"
             | MarkerKind.AltScreenEnter -> "entered alt-screen"
+            | MarkerKind.AltScreenExit -> "left alt-screen"
+            | MarkerKind.Custom tag -> sprintf "custom: %s" tag
         // Leading + trailing newlines guarantee the marker
         // stands on its own line regardless of whether the
         // prior / following content ends with `\n`. Multiple
