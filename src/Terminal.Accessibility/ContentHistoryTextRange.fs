@@ -30,6 +30,24 @@ module internal ContentHistoryMaterialiser =
     [<Literal>]
     let TailCapBytes = 262144
 
+    /// Cycle 47 follow-up (2026-05-13) post-preview.114 —
+    /// typing-window duration. If the maintainer has typed a
+    /// key within this window before NVDA polls
+    /// `ITextProvider.DocumentRange`, the materialiser
+    /// excludes the active (unsealed) TextSpan from the
+    /// returned tail. After the window elapses with no
+    /// keystrokes, the next poll includes the active span
+    /// again. 350 ms is comfortably above WPF's typical
+    /// dispatcher latency for a single keypress + cmd echo
+    /// round-trip (observed ~30–80 ms on the maintainer's
+    /// machine) and below human-perceptible "I stopped
+    /// typing" pause (~500 ms). Tunable if dogfood surfaces
+    /// either under-suppression (NVDA still reads mid-word) or
+    /// over-suppression (review cursor lags noticeably behind
+    /// the keystroke).
+    [<Literal>]
+    let TypingWindowMs = 350.0
+
     /// Materialise the current `ContentHistory` tail to a
     /// single string. Returns the empty string if `history`
     /// is null (the early-startup case before
@@ -45,13 +63,36 @@ module internal ContentHistoryMaterialiser =
     /// can walk between commands via prompt-to-prompt
     /// navigation rather than scanning prose for boundaries.
     ///
+    /// Cycle 47 follow-up (2026-05-13) post-preview.114 —
+    /// `lastKeystrokeAtUtc` gates active-span inclusion.
+    /// `DateTime.MinValue` means "no typing-window suppression"
+    /// (caller doesn't care or hasn't wired the keystroke
+    /// source yet). Any value within the last `TypingWindowMs`
+    /// flips the tail to the sealed-only variant so NVDA's
+    /// `ITextProvider` polling sees a stable view across
+    /// successive captures.
+    ///
     /// The diagnostic-bundle path still uses `tailText`
     /// (markers-stripped) so paste-back triage stays
     /// readable — the marker lines would be noise there.
-    let materialise (history: ContentHistory.T | null) : string =
+    let materialise
+            (history: ContentHistory.T | null)
+            (lastKeystrokeAtUtc: DateTime)
+            : string =
         match history with
         | null -> ""
-        | h -> ContentHistory.tailTextWithMarkers h TailCapBytes
+        | h ->
+            let now = DateTime.UtcNow
+            let elapsed = (now - lastKeystrokeAtUtc).TotalMilliseconds
+            let typingActive =
+                lastKeystrokeAtUtc <> DateTime.MinValue
+                && elapsed >= 0.0
+                && elapsed < TypingWindowMs
+            if typingActive then
+                ContentHistory.tailTextWithMarkersSealedOnly
+                    h TailCapBytes
+            else
+                ContentHistory.tailTextWithMarkers h TailCapBytes
 
 /// UIA `ITextRangeProvider` over a materialised
 /// `ContentHistory` tail. Endpoints are character offsets
@@ -490,7 +531,18 @@ type internal ContentHistoryTextRange
 /// `SetContentHistory`, mirroring the existing `SetScreen` /
 /// `SetDisplayBuffer` injection pattern.
 type internal ContentHistoryTextProvider
-    (historySource: Func<ContentHistory.T | null>) =
+    (historySource: Func<ContentHistory.T | null>,
+     lastKeystrokeAtUtcSource: Func<DateTime>) =
+
+    /// Convenience constructor for callers that don't wire a
+    /// keystroke source (tests, future renderers). Falls back
+    /// to `DateTime.MinValue`, which disables typing-window
+    /// suppression — every `DocumentRange` call materialises
+    /// the full tail including the active span.
+    new (historySource: Func<ContentHistory.T | null>) =
+        ContentHistoryTextProvider(
+            historySource,
+            Func<DateTime>(fun () -> DateTime.MinValue))
 
     /// Build a range covering the entire current materialised
     /// tail. Returns an empty range when `historySource`
@@ -498,7 +550,9 @@ type internal ContentHistoryTextProvider
     /// `TerminalView.SetContentHistory` has been called).
     member private _.CaptureFullRange() : ITextRangeProvider =
         let history = historySource.Invoke()
-        let text = ContentHistoryMaterialiser.materialise history
+        let lastKeystroke = lastKeystrokeAtUtcSource.Invoke()
+        let text =
+            ContentHistoryMaterialiser.materialise history lastKeystroke
         ContentHistoryTextRange(text, 0, text.Length)
         :> ITextRangeProvider
 

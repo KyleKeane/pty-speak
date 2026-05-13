@@ -67,6 +67,34 @@ run on every release.
 - A second audio output device available (USB headset is fine) so that
   earcons and TTS can be routed separately.
 
+### NVDA settings recommendation
+
+NVDA's keyboard hook controls char- and word-level typing speech
+independently of pty-speak. The recommended settings for
+`pty-speak` use under NVDA Settings → Keyboard:
+
+- **Speak typed characters**: user preference. If `Off` is desired
+  for pty-speak but `On` (e.g. "Edit controls") in other apps, the
+  setting is global; there's no per-app override without a custom
+  NVDA add-on.
+- **Speak typed words**: `Off`. Words assemble from typed chars
+  via NVDA's keyboard hook, independent of any UIA event pty-speak
+  raises. Leaving it `On` produces a word announce on each space /
+  punctuation as the user types — typically undesirable inside a
+  shell where command tokens vary line-by-line.
+- **Speech interruption for typed character**: `On`. Pairs with
+  the ControlType=Edit + UIA caret-event surface (Cycle 46 PR-C)
+  so typing always interrupts in-flight speech, even with the two
+  settings above turned off.
+
+Cycle 47 follow-up post-preview.114 also added an app-side
+typing-window gate on the UIA Text-pattern materialiser
+(`ContentHistoryMaterialiser.materialise` → `tailTextWithMarkersSealedOnly`
+when keystrokes are fresh) so NVDA's `ITextProvider` polling
+doesn't surface mid-keystroke active-span deltas as inserted text.
+The gate runs independent of the user's NVDA settings — see
+matrix row Cycle 47-21.
+
 ## Test data
 
 > **Status (Stage 3b on `main`):** the `tests/fixtures/` directory and
@@ -1328,6 +1356,8 @@ you mid-keystroke).
 | **47-18** | **Diagnostic bundle preserves newlines**: run `echo hi` once. Press `Ctrl+Shift+D`. Paste the bundle into any monospace text view. Locate the `--- CONTENT HISTORY (last 64KB) ---` section. | The content shows the cmd banner on multiple lines, `echo hi` on its own line, `hi` on its own line, and the next prompt's path on its own line — not the pre-fix squashed `"echo hihiC:\\Users\\..."` single-line blob. The newlines ContentHistory's CRLF events recorded are preserved by `sanitiseForBundle`. |
 | **47-19** | **Marker labels in begin/end form**: run two commands (e.g. `echo first` then `echo second`). Press `NVDA + Numpad7` to move the review cursor to the top of the document; press Down-Arrow line-by-line through the buffer. | Marker lines read as `"--- begin prompt ---"`, `"--- end prompt ---"`, `"--- begin output ---"`, `"--- end output ---"` (the four-marker model) rather than the previous singleton `"--- prompt ---"` / `"--- input begins ---"` etc. Cmd only emits `PromptStart` directly — see 47-20 for `--- end output ---` synthesis between cmd commands. |
 | **47-20** | **Synthesised `--- end output ---` between cmd commands**: run two commands (e.g. `echo first` then `echo second`). Press `NVDA + Numpad7`, then Down-Arrow through the buffer between `first`'s output and `second`'s prompt. | The review cursor surfaces `--- end output ---` between `first`'s output bytes and `second`'s prompt (specifically: it appears AFTER `second`'s prompt-path TextSpan in the rendered tail because the active span seals at marker-insertion time and the new prompt's path arrived just before — heuristic placement). Without the synthesis, the cmd shell would only show `--- begin prompt ---` markers and no "end" boundary. Shells with OSC 133 (claude) get all four markers naturally. |
+| **47-21** | **Typing-window suppression silences mid-keystroke word announces**: with NVDA's `Speak typed characters` set per preference but `Speak typed words` `Off`, type `echo hi` at the cmd prompt slowly enough to hear NVDA's per-keystroke read. | NVDA announces each typed character (from its keyboard hook) but does NOT additionally announce the accreting prefix as if it were inserted text (`"e"`, `"ec"`, `"ech"`, `"echo"`, ...). The UIA Text-pattern view stays stable across NVDA's `ITextProvider` polls while a keystroke is within the 350 ms typing window. After ~½ second of no typing, press `NVDA + Numpad7` and Down-Arrow: the review cursor navigates the just-typed text (it re-enters the materialised view once the window elapses). |
+| **47-22** | **Announce-trail audit via Debug log**: enable Debug logging (`View → Logging Level → Debug`), then run `echo hi`. Press `Ctrl+Shift+D` and paste the bundle. Grep the `--- FILELOGGER ACTIVE LOG ---` section for `MsgHead=`. | Each `RaiseNotificationEvent firing` line at INFO now has a paired Debug entry containing the first 60 chars of the announce text (`MsgHead="hi"` for the tuple-final auto-narrate, marker labels for menu announces, etc.). Gives forensics access to "what did NVDA hear?" without needing live audio capture. |
 
 **Diagnostic decoder.** If a test's prompt isn't audible
 before user input (47-3 / 47-4 / 47-5 / 47-6 / 47-7 fail):

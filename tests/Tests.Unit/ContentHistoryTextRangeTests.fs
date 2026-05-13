@@ -72,27 +72,27 @@ let private innerRange (r: ITextRangeProvider) : ContentHistoryTextRange =
 
 [<Fact>]
 let ``materialise returns empty string when history is null`` () =
-    let result = ContentHistoryMaterialiser.materialise null
+    let result = ContentHistoryMaterialiser.materialise null DateTime.MinValue
     Assert.Equal("", result)
 
 [<Fact>]
 let ``materialise returns empty string for fresh history`` () =
     let state = freshHistory ()
-    let result = ContentHistoryMaterialiser.materialise state
+    let result = ContentHistoryMaterialiser.materialise state DateTime.MinValue
     Assert.Equal("", result)
 
 [<Fact>]
 let ``materialise returns active span text after Print events`` () =
     let state = freshHistory ()
     feedText state "abc"
-    let result = ContentHistoryMaterialiser.materialise state
+    let result = ContentHistoryMaterialiser.materialise state DateTime.MinValue
     Assert.Equal("abc", result)
 
 [<Fact>]
 let ``materialise reconstructs across newlines`` () =
     let state = freshHistory ()
     feedText state "line1\nline2\nline3"
-    let result = ContentHistoryMaterialiser.materialise state
+    let result = ContentHistoryMaterialiser.materialise state DateTime.MinValue
     Assert.Equal("line1\nline2\nline3", result)
 
 [<Fact>]
@@ -114,11 +114,54 @@ let ``materialise renders Marker entries as navigable boundary lines`` () =
     ContentHistory.appendMarker
         state ContentHistory.MarkerKind.CommandFinished t0 None
     |> ignore
-    let result = ContentHistoryMaterialiser.materialise state
+    let result = ContentHistoryMaterialiser.materialise state DateTime.MinValue
     Assert.Contains("--- begin output ---", result)
     Assert.Contains("--- end output ---", result)
     Assert.Contains("echo hi", result)
     Assert.Contains("hi", result)
+
+// ---------------------------------------------------------------------
+// Typing-window suppression (Cycle 47 follow-up post-preview.114)
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``materialise excludes active span when keystroke is fresh`` () =
+    // Maintainer is mid-typing. The unsealed `abc` should NOT
+    // appear in the materialised view so NVDA's polling sees a
+    // stable tail across successive captures.
+    let state = freshHistory ()
+    feedText state "settled\n"
+    feedText state "abc"
+    // Wallclock NOW is "still typing".
+    let lastKey = DateTime.UtcNow
+    let result = ContentHistoryMaterialiser.materialise state lastKey
+    Assert.Contains("settled", result)
+    Assert.DoesNotContain("abc", result)
+
+[<Fact>]
+let ``materialise includes active span when keystroke is stale`` () =
+    // Last keystroke was longer ago than the typing window.
+    // The active span re-enters the view so the review cursor
+    // can navigate to it.
+    let state = freshHistory ()
+    feedText state "settled\n"
+    feedText state "abc"
+    let lastKey = DateTime.UtcNow.AddSeconds(-5.0)
+    let result = ContentHistoryMaterialiser.materialise state lastKey
+    Assert.Contains("settled", result)
+    Assert.Contains("abc", result)
+
+[<Fact>]
+let ``materialise includes active span when keystroke is MinValue`` () =
+    // Default / unset / opt-out path: caller passes
+    // DateTime.MinValue to signal "no typing-window
+    // suppression". The active span is always included.
+    let state = freshHistory ()
+    feedText state "settled\n"
+    feedText state "abc"
+    let result = ContentHistoryMaterialiser.materialise state DateTime.MinValue
+    Assert.Contains("settled", result)
+    Assert.Contains("abc", result)
 
 // ---------------------------------------------------------------------
 // Clone / Compare / CompareEndpoints

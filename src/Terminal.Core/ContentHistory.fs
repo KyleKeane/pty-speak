@@ -319,12 +319,28 @@ module ContentHistory =
     /// marker rendering without diverging on the byte-cap +
     /// tail-walk machinery.
     let private tailTextInternal
-            (state: T) (maxBytes: int) (includeMarkers: bool) : string =
+            (state: T)
+            (maxBytes: int)
+            (includeMarkers: bool)
+            (includeActiveSpan: bool)
+            : string =
         lock state.Gate (fun () ->
             let frames = ResizeArray<string>()
             let mutable bytes = 0
             // Active span first (it's the most recent content).
-            if state.ActiveSpanText.Length > 0 then
+            // Cycle 47 follow-up (2026-05-13) post-preview.114 —
+            // `includeActiveSpan` gates whether the unsealed
+            // active TextSpan participates in the rendered tail.
+            // The UIA Text-pattern materialiser sets this to
+            // `false` during the user's typing window so NVDA's
+            // periodic `ITextProvider` polling doesn't see the
+            // mid-keystroke deltas + announce them as inserted
+            // text (the preview.114 "words being read aloud while
+            // I type" failure mode). Substrate consumers
+            // (diagnostic bundle, SpeechCursor manual nav) keep
+            // `true` so paste-back triage + review-cursor
+            // navigation still surface the in-progress span.
+            if includeActiveSpan && state.ActiveSpanText.Length > 0 then
                 let text = state.ActiveSpanText.ToString()
                 frames.Add(text)
                 bytes <- bytes + System.Text.Encoding.UTF8.GetByteCount(text)
@@ -367,8 +383,11 @@ module ContentHistory =
     /// N KB) ---` section without forcing the caller to allocate
     /// the full reconstruction first. Markers are stripped; for
     /// the markers-rendered variant see `tailTextWithMarkers`.
+    /// Includes the active (unsealed) span — paste-back triage
+    /// expects to see whatever the user just typed / cmd just
+    /// printed mid-stream.
     let tailText (state: T) (maxBytes: int) : string =
-        tailTextInternal state maxBytes false
+        tailTextInternal state maxBytes false true
 
     /// Cycle 47 follow-up (2026-05-13) — variant of `tailText`
     /// that renders `Marker` entries as labelled boundary lines
@@ -379,7 +398,24 @@ module ContentHistory =
     /// keeps using `tailText` (no marker noise) so paste-back
     /// triage stays readable.
     let tailTextWithMarkers (state: T) (maxBytes: int) : string =
-        tailTextInternal state maxBytes true
+        tailTextInternal state maxBytes true true
+
+    /// Cycle 47 follow-up (2026-05-13) post-preview.114 —
+    /// markers-rendered tail variant that EXCLUDES the active
+    /// (unsealed) TextSpan. Used by the UIA Text-pattern
+    /// materialiser during the user's typing window so NVDA's
+    /// `ITextProvider` polling sees stable content across
+    /// successive captures even as cmd echoes each typed
+    /// character back into the active span. Without this gate,
+    /// the maintainer's preview.114 dogfood surfaced NVDA
+    /// reading aloud each accreting prefix
+    /// (`"e"`, `"ec"`, `"ech"`, `"echo"`, ...) as if it were
+    /// inserted text — distinct from NVDA's keyboard-hook
+    /// `Speak typed characters` behaviour and therefore not
+    /// silenceable via the user's NVDA settings.
+    let tailTextWithMarkersSealedOnly
+            (state: T) (maxBytes: int) : string =
+        tailTextInternal state maxBytes true false
 
     /// Cycle 45c — reconstruct the user-visible text payload for
     /// entries whose Seq is strictly between `fromSeqExclusive`
