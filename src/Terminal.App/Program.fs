@@ -897,6 +897,25 @@ module Program =
         let mutable speechCursor =
             SpeechCursor.create SpeechCursor.defaultParameters
 
+        // Cycle 47 follow-up (2026-05-13) — idle-flush watermark.
+        // Declared at compose-top alongside `contentHistory` so
+        // both the boundary handler (further down in compose) and
+        // the idle-flush `DispatcherTimer` (further down still)
+        // can close over it. Tracks the highest ContentHistory
+        // `seq` whose content has already been narrated via
+        // Announce; both paths slice from this watermark, cap at
+        // `OutputAnnounceCapChars`, fire Announce, advance the
+        // watermark. The unified watermark means tuple-finalise
+        // doesn't re-announce content idle-flush already covered,
+        // and idle-flush fills the intra-script gaps
+        // (`set /p` pauses, `pause` builtin, slow output between
+        // sections) that PromptStart-driven tuple-finalise would
+        // otherwise leave silent. Initial value -1L matches
+        // `ContentHistory.latestSeq` on a fresh empty history;
+        // resets to -1L on shell hot-switch (see
+        // `ContentHistory.reset` call site in `switchToShell`).
+        let mutable lastAnnouncedSeq : int64 = -1L
+
         // Cycle 45 Commit 2 — SpeechCursor announce callback +
         // "wake up" trigger. Defined here (very early in compose)
         // so the prompt-boundary handler and the selection-
@@ -2378,27 +2397,6 @@ module Program =
         // possible) but the heartbeat is a diagnostic; one
         // weird-looking entry occasionally is acceptable.
         let mutable lastReadUtc = DateTimeOffset.UtcNow
-
-        // Cycle 47 follow-up (2026-05-13) — idle-flush watermark.
-        // Tracks the highest ContentHistory `seq` whose content
-        // has already been narrated via Announce. The boundary
-        // handler (tuple finalise) and the idle-flush
-        // `DispatcherTimer` both:
-        //   1. Slice from `lastAnnouncedSeq` to current
-        //      `latestSeq` (via `ContentHistory.sliceText`),
-        //   2. Cap at `OutputAnnounceCapChars` (800),
-        //   3. Fire `Announce(text, ActivityIds.output)`,
-        //   4. Advance `lastAnnouncedSeq` to the new latest.
-        //
-        // The unified watermark means tuple-finalise doesn't
-        // re-announce content that idle-flush already covered;
-        // idle-flush fills the intra-script gaps (`set /p`
-        // pauses, `pause` builtin, slow output between
-        // sections) that PromptStart-driven tuple-finalise
-        // would otherwise leave silent. Initial value -1L
-        // matches `ContentHistory.latestSeq` on a fresh empty
-        // history.
-        let mutable lastAnnouncedSeq : int64 = -1L
 
         // Stage 7-followup PR-F — incident-marker handler. Single
         // press writes a clear "=== INCIDENT MARKER {timestamp} ==="
