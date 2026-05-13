@@ -587,10 +587,12 @@ PowerShell window via `ProcessStartInfo`.
 
 Canonical:
 [`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md) +
-[`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md). The plan
-catalogues candidate next cycles + sequencing rationale; the
-handoff names the current state in ~150 lines. This index just
-points at the cycle headline.
+[`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md) +
+[`docs/CYCLE-46-NEXT-STEPS.md`](docs/CYCLE-46-NEXT-STEPS.md).
+The plan catalogues candidate next cycles + sequencing
+rationale; the handoff names the current state in ~150 lines;
+the next-steps doc names file-level PR-C / PR-D edits. This
+index just points at the cycle headline.
 
 - **Cycle 45** (PRs #263–#270, 2026-05-12) shipped the
   `ContentHistory` + `SpeechCursor` aural substrate.
@@ -598,14 +600,36 @@ points at the cycle headline.
   pre-Cycle-45 pathway pipeline (`StreamPathway` /
   `LinearTextStream` / `DisplayPathway` / `TuiPathway` /
   `PathwaySelector`). ~5,000+ LOC removed.
-- **NVDA matrix walk 45c-1 → 45c-6** is the immediate validation
-  gate (see
+- **Cycle 46 PR-A** (PR #287, 2026-05-12) drafted
+  [ADR 0002](docs/adr/0002-uia-textedit-caret-output.md):
+  command output moves from UIA `RaiseNotificationEvent` to a
+  UIA TextEdit caret on `TerminalView`. ADR accepted
+  2026-05-13 with all five Open Questions resolved.
+- **Cycle 46 PR-B** (PR #288, 2026-05-13) swapped the UIA
+  `ITextProvider` from screen grid to `ContentHistory.tailText`
+  (256 KB cap) and flipped `TerminalAutomationPeer.GetAutomationControlTypeCore`
+  from `Document` to `Edit`. The legacy screen-grid types
+  (`TerminalTextProvider` / `TerminalTextRange` / `SnapshotText`)
+  stay in source for deletion in PR-D.
+- **NVDA matrix walk Cycle 46-PRB-1** is the immediate
+  validation gate (see
   [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)).
-- **Next-cycle candidates** (none block each other; pick by
-  priority): 45g `ShellPolicy` consolidation, 45d review-cursor
-  focus, semantic-labels foundation, spinner/red-tone refinements,
-  Coalescer rename, UIA caret. Sequencing in
-  [`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md).
+  Confirm "edit" focus announce + `Insert+Down` reads the
+  ContentHistory tail before starting PR-C.
+- **Cycle 46 PR-C** (next) — wire `SessionModel` to raise
+  `TextSelectionChangedEvent` on tuple finalise; drop the
+  `Announce(text, ActivityIds.output, MostRecent)` call at
+  `Program.fs:1627–1630`. File-level scoping + risk register
+  in
+  [`docs/CYCLE-46-NEXT-STEPS.md`](docs/CYCLE-46-NEXT-STEPS.md) §2.
+- **Cycle 46 PR-D** (after PR-C) — `SpeechCursor` delegation
+  + delete the legacy screen-grid types (~600 LOC). Scoping in
+  [`docs/CYCLE-46-NEXT-STEPS.md`](docs/CYCLE-46-NEXT-STEPS.md) §3.
+- **Parallel-track candidates** (independent of Cycle 46; pick
+  by priority): 45g `ShellPolicy` consolidation, 45d review-
+  cursor focus, semantic-labels foundation, spinner/red-tone
+  refinements, Coalescer rename, UIA semantic caret. Sequencing
+  in [`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md).
 
 ## When in doubt
 

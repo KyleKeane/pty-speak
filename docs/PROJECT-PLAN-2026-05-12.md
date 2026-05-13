@@ -15,7 +15,7 @@
 
 ## 1. What changed
 
-Two cycles since the predecessor plan:
+Two-and-a-half cycles since the predecessor plan:
 
 **Cycle 45 (PRs #263–#270)** introduced the
 `ContentHistory` + `SpeechCursor` substrate. Live announce path
@@ -29,10 +29,24 @@ block, ~22 test cases, the `--- LINEAR STREAM ---` diagnostic
 section (renamed to `--- CONTENT HISTORY ---`), and the entire
 substrate-mode dispatch.
 
+**Cycle 46 PR-A + PR-B (PRs #287, #288)** — added
+[ADR 0002](adr/0002-uia-textedit-caret-output.md) and shipped
+the substrate-swap of the UIA Text pattern. The screen-grid
+`TerminalTextProvider` is no longer on the live UIA path
+(still in source, scheduled for deletion in PR-D); a new
+`ContentHistoryTextProvider` backed by
+`ContentHistory.tailText` (256 KB cap) is. The peer's
+`AutomationControlType` flipped from `Document` to `Edit`.
+Open Questions §1–§5 resolved in the ADR Status notes
+(2026-05-13). PR-C + PR-D scoped in
+[`CYCLE-46-NEXT-STEPS.md`](CYCLE-46-NEXT-STEPS.md).
+
 The architectural assertion from the prior plan — substrate vs.
 channel boundary, recorded as
 [ADR 0001](adr/0001-substrate-channel-dichotomy.md) — survives
-unchanged. **Only the substrate implementation flipped.**
+unchanged. **Only the substrate implementation flipped** (Cycle
+45) and **the channel for terminal output is in the middle of
+changing** (Cycle 46 from `RaiseNotificationEvent` → UIA caret).
 
 ## 2. Live substrate today
 
@@ -73,27 +87,48 @@ Key primitives:
 
 ## 3. Immediate validation gate
 
-**NVDA matrix walk rows 45c-1 through 45c-6** in
-[`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md):
+**NVDA matrix Cycle 46-PRB-1** — the substrate-swap is on
+the live UIA path as of PR #288 merge. Required walk before
+starting PR-C:
 
-1. **45c-1** — cmd + `echo hi` mid-edit (regression pin from PR #268)
-2. **45c-2** — cmd + `dir` long output through NVDA chunking
-3. **45c-3** — cmd + alt-screen TUI (`vim`, `more <largefile>`)
-4. **45c-4** — Claude shell + long streaming response
-5. **45c-5** — `Ctrl+Shift+D` bundle contains
-   `--- CONTENT HISTORY ---` section
-6. **45c-6** — OSC 133 boundary detection via
-   `ContentHistory.sliceText`
+- Focus the terminal surface → NVDA announces "edit" (was
+  "document" pre-PR-B).
+- `Insert+Down` (read all) → NVDA reads the `ContentHistory`
+  tail (last 256 KB), not the 30×120 screen-grid snapshot.
+- `Up/Down` arrow navigation → moves line-by-line through the
+  materialised tail.
+- `Ctrl+End` / `Ctrl+Home` → jumps to end / start of the tail.
+- Existing `Announce`-based paths (Ctrl+Shift+D snapshot,
+  Ctrl+Shift+S session-log, Ctrl+Shift+H health) → still fire
+  as today (PR-C drops only `ActivityIds.output`).
 
-User-visible behaviour should be unchanged in the happy path —
-Cycle 45 dogfood confirmed the pathway calls weren't on the
-announce path. The matrix exists to catch any regression.
+Definition in
+[`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md).
+
+**Carried over from Cycle 45c** (assumed rolled forward into
+46-PRB-1 unless the matrix file says otherwise): rows 45c-1
+through 45c-6 covering cmd `echo hi` mid-edit, cmd `dir` long
+output, alt-screen TUI, Claude streaming, `Ctrl+Shift+D`
+bundle section, OSC 133 boundaries. The substrate change
+shouldn't have altered any of these (they exercise the
+substrate's content semantics, not the UIA channel), but
+confirm in passing.
 
 ## 4. Candidate next cycles
 
 None of these block each other. Pick by maintainer priority.
+Cycle 46 PR-C / PR-D are the primary track (the substrate
+swap has shipped; the channel swap completes the user-visible
+payoff).
 
-### Short-term (post-validation)
+### Primary track
+
+| Cycle | Scope | LOC | Depends on | Detail |
+|---|---|---|---|---|
+| **46 PR-C** | Wire `SessionModel` tuple-finalise to `RaiseAutomationEvent(TextSelectionChanged)`; drop `Announce(ActivityIds.output)` for terminal I/O | ~50 net | PR-B (merged) | [CYCLE-46-NEXT-STEPS.md §2](CYCLE-46-NEXT-STEPS.md#2-pr-c--wire-output-to-the-caret) |
+| **46 PR-D** | `SpeechCursor` callbacks delegate to caret helper; delete legacy `TerminalTextProvider`/`TerminalTextRange`/`SnapshotText` | ~600 LOC dropped, ~50 added | PR-C | [CYCLE-46-NEXT-STEPS.md §3](CYCLE-46-NEXT-STEPS.md#3-pr-d--speechcursor-delegation--cleanup) |
+
+### Short-term (independent of Cycle 46)
 
 | Cycle | Scope | LOC | Depends on |
 |---|---|---|---|
@@ -159,3 +194,4 @@ segmentation + spatial audio. `pty-speak-replay` CLI
 | Date | Cycle | What |
 |---|---|---|
 | 2026-05-12 | Cycle 45c (post-merge) | This plan supersedes `PROJECT-PLAN-2026-05-09.md`. Captures post-Cycle-45c state: ContentHistory/SpeechCursor is sole substrate; old pathway pipeline deleted via PRs #274–#278. NVDA matrix walk 45c-1 → 45c-6 is the validation gate. Roadmap reset around the new substrate. |
+| 2026-05-13 | Cycle 46 PR-A + PR-B (post-merge) | Added §"Cycle 46" to §1 + roadmap. ADR 0002 drafted (PR #287, 2026-05-12) and accepted (2026-05-13 with all five Open Questions resolved). PR #288 swapped the UIA `ITextProvider` from screen grid to `ContentHistory`, flipped `ControlType` Document→Edit. PR-C / PR-D scoped in [`CYCLE-46-NEXT-STEPS.md`](CYCLE-46-NEXT-STEPS.md). Validation gate renamed from 45c-1→6 to 46-PRB-1 (subsumes the carry-over). The roadmap kept the 45g / 45d / semantic-labels / spinner / Coalescer cycles as a parallel track. |
