@@ -698,25 +698,19 @@ points at the cycle headline.
   `RaiseNotificationEvent` to a UIA TextEdit caret on
   `TerminalView`. See
   [ADR 0002](docs/adr/0002-uia-textedit-caret-output.md).
-  - PR-A (#287) — ADR drafted.
-  - PR-B (#288) — UIA `ITextProvider` substrate-swapped from
-    screen grid to `ContentHistory.tailText` (256 KB cap);
-    `TerminalAutomationPeer.GetAutomationControlTypeCore`
-    flipped from `Document` to `Edit`.
-  - PR-C (#290) — `TerminalAutomationPeer.RaiseCaretMovedToTail()`
-    raises `AutomationEvents.TextPatternOnTextSelectionChanged`;
-    replaces the tuple-finalise `Announce(text, ActivityIds.output, MostRecent)`
-    call in `Program.fs`'s boundary handler.
-  - PR-D (#291) — `speechCursorAnnounce` delegates to the
-    same caret helper; legacy screen-grid types
-    (`TerminalTextProvider` / `TerminalTextRange` /
-    `SnapshotText`) + `WordBoundaryTests.fs` deleted
-    (~680 LOC).
-- **NVDA matrix walk Cycle 46-1** is the immediate
-  validation gate (see
-  [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
-  "Cycle 46" section). Confirms typing-interrupts-speech +
-  Alt-interrupts-speech + caret-pacing on long output.
+- **Cycle 47 dogfood batch** (PRs #295–#303, 2026-05-13,
+  post-preview.114) layered the
+  preview-driven adjustments: sealed-only typing-window UIA
+  view (#300), tuple-final prefix-trim against last-announced
+  text (#301), `ReadyForInput` earcon on idle-flush so
+  `set/p` produces an audible cue (#302), top-level mnemonic
+  conflict fixes (#303), `sanitiseForBundle` preserving
+  newlines + `begin/end prompt/output` marker labels +
+  synthesised `CommandFinished` for cmd (#299).
+- **NVDA matrix walk Cycle 47-18 through 47-25** is the
+  immediate validation gate for the
+  post-preview.114 dogfood batch (see
+  [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)).
 - **Next-cycle candidates** (none block each other; pick by
   priority): 45g `ShellPolicy` consolidation, 45d review-
   cursor focus, semantic-labels foundation, spinner/red-tone
