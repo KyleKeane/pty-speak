@@ -29,24 +29,32 @@ block, ~22 test cases, the `--- LINEAR STREAM ---` diagnostic
 section (renamed to `--- CONTENT HISTORY ---`), and the entire
 substrate-mode dispatch.
 
-**Cycle 46 PR-A + PR-B (PRs #287, #288)** — added
-[ADR 0002](adr/0002-uia-textedit-caret-output.md) and shipped
-the substrate-swap of the UIA Text pattern. The screen-grid
-`TerminalTextProvider` is no longer on the live UIA path
-(still in source, scheduled for deletion in PR-D); a new
-`ContentHistoryTextProvider` backed by
-`ContentHistory.tailText` (256 KB cap) is. The peer's
-`AutomationControlType` flipped from `Document` to `Edit`.
-Open Questions §1–§5 resolved in the ADR Status notes
-(2026-05-13). PR-C + PR-D scoped in
-[`CYCLE-46-NEXT-STEPS.md`](CYCLE-46-NEXT-STEPS.md).
+**Cycle 46 (PRs #287, #288, #289, #290, #291; 2026-05-12 →
+2026-05-13)** — full four-PR sequence shipped:
+
+- #287 PR-A drafted [ADR 0002](adr/0002-uia-textedit-caret-output.md).
+- #288 PR-B substrate-swapped the UIA Text pattern from the
+  screen grid to `ContentHistory.tailText` (256 KB cap) +
+  flipped `AutomationControlType` from `Document` to `Edit`.
+- #289 (handoff) shipped the next-steps + plan updates.
+- #290 PR-C added
+  `TerminalAutomationPeer.RaiseCaretMovedToTail()` and rewired
+  the boundary handler to fire it on tuple finalise (replaces
+  the `Announce(text, ActivityIds.output, MostRecent)` call).
+- #291 PR-D rewired `speechCursorAnnounce` to delegate to the
+  same caret helper, and deleted the legacy screen-grid types
+  (`TerminalTextProvider` / `TerminalTextRange` / `SnapshotText`)
+  + the `WordBoundaryTests` they backed. Net ~-800 LOC.
+
+The Open Questions §1–§5 are resolved in the ADR Status
+notes (2026-05-13).
 
 The architectural assertion from the prior plan — substrate vs.
 channel boundary, recorded as
 [ADR 0001](adr/0001-substrate-channel-dichotomy.md) — survives
-unchanged. **Only the substrate implementation flipped** (Cycle
-45) and **the channel for terminal output is in the middle of
-changing** (Cycle 46 from `RaiseNotificationEvent` → UIA caret).
+unchanged. **The substrate implementation flipped** in Cycle 45
+(grid → ContentHistory) and **the channel for terminal output
+flipped** in Cycle 46 (`RaiseNotificationEvent` → UIA caret).
 
 ## 2. Live substrate today
 
@@ -87,23 +95,27 @@ Key primitives:
 
 ## 3. Immediate validation gate
 
-**NVDA matrix Cycle 46-PRB-1** — the substrate-swap is on
-the live UIA path as of PR #288 merge. Required walk before
-starting PR-C:
+**NVDA matrix Cycle 46-1** in
+[`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md) —
+all four Cycle 46 PRs are on the live UIA path as of
+2026-05-13 (`9bfdd48`). Required walk before tagging the
+next release:
 
 - Focus the terminal surface → NVDA announces "edit" (was
-  "document" pre-PR-B).
+  "document" pre-Cycle-46).
 - `Insert+Down` (read all) → NVDA reads the `ContentHistory`
-  tail (last 256 KB), not the 30×120 screen-grid snapshot.
+  tail (last 256 KB).
 - `Up/Down` arrow navigation → moves line-by-line through the
   materialised tail.
 - `Ctrl+End` / `Ctrl+Home` → jumps to end / start of the tail.
-- Existing `Announce`-based paths (Ctrl+Shift+D snapshot,
-  Ctrl+Shift+S session-log, Ctrl+Shift+H health) → still fire
-  as today (PR-C drops only `ActivityIds.output`).
-
-Definition in
-[`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md).
+- **Typing into the prompt interrupts an in-progress read**
+  (NVDA's "Speech interrupt for typed character" — the
+  original Cycle 46 motivating issue).
+- **`Alt` to open the menu interrupts** an in-progress read.
+- Non-output notification paths (`Ctrl+Shift+D` snapshot,
+  `Ctrl+Shift+S` session-log, `Ctrl+Shift+H` health,
+  manual `Ctrl+Shift+Up/Down/End` review-cursor) still fire
+  as `Announce`-based notifications.
 
 **Carried over from Cycle 45c** (assumed rolled forward into
 46-PRB-1 unless the matrix file says otherwise): rows 45c-1
@@ -117,18 +129,11 @@ confirm in passing.
 ## 4. Candidate next cycles
 
 None of these block each other. Pick by maintainer priority.
-Cycle 46 PR-C / PR-D are the primary track (the substrate
-swap has shipped; the channel swap completes the user-visible
-payoff).
+Cycle 46 (the channel swap from `RaiseNotificationEvent` to
+the UIA caret) is **complete** as of 2026-05-13 — the
+remaining items below are independent.
 
-### Primary track
-
-| Cycle | Scope | LOC | Depends on | Detail |
-|---|---|---|---|---|
-| **46 PR-C** | Wire `SessionModel` tuple-finalise to `RaiseAutomationEvent(TextSelectionChanged)`; drop `Announce(ActivityIds.output)` for terminal I/O | ~50 net | PR-B (merged) | [CYCLE-46-NEXT-STEPS.md §2](CYCLE-46-NEXT-STEPS.md#2-pr-c--wire-output-to-the-caret) |
-| **46 PR-D** | `SpeechCursor` callbacks delegate to caret helper; delete legacy `TerminalTextProvider`/`TerminalTextRange`/`SnapshotText` | ~600 LOC dropped, ~50 added | PR-C | [CYCLE-46-NEXT-STEPS.md §3](CYCLE-46-NEXT-STEPS.md#3-pr-d--speechcursor-delegation--cleanup) |
-
-### Short-term (independent of Cycle 46)
+### Short-term
 
 | Cycle | Scope | LOC | Depends on |
 |---|---|---|---|
@@ -195,3 +200,4 @@ segmentation + spatial audio. `pty-speak-replay` CLI
 |---|---|---|
 | 2026-05-12 | Cycle 45c (post-merge) | This plan supersedes `PROJECT-PLAN-2026-05-09.md`. Captures post-Cycle-45c state: ContentHistory/SpeechCursor is sole substrate; old pathway pipeline deleted via PRs #274–#278. NVDA matrix walk 45c-1 → 45c-6 is the validation gate. Roadmap reset around the new substrate. |
 | 2026-05-13 | Cycle 46 PR-A + PR-B (post-merge) | Added §"Cycle 46" to §1 + roadmap. ADR 0002 drafted (PR #287, 2026-05-12) and accepted (2026-05-13 with all five Open Questions resolved). PR #288 swapped the UIA `ITextProvider` from screen grid to `ContentHistory`, flipped `ControlType` Document→Edit. PR-C / PR-D scoped in [`CYCLE-46-NEXT-STEPS.md`](CYCLE-46-NEXT-STEPS.md). Validation gate renamed from 45c-1→6 to 46-PRB-1 (subsumes the carry-over). The roadmap kept the 45g / 45d / semantic-labels / spinner / Coalescer cycles as a parallel track. |
+| 2026-05-13 | Cycle 46 PR-C + PR-D (post-merge) | PRs #290 + #291 closed Cycle 46. PR-C added `RaiseCaretMovedToTail` and replaced the tuple-finalise `Announce` call. PR-D rewired `speechCursorAnnounce` to delegate to the same helper and deleted the legacy screen-grid `TerminalTextProvider` / `TerminalTextRange` / `SnapshotText` (~680 LOC) + `WordBoundaryTests.fs`. The §1 summary collapsed PR-A through PR-D into one Cycle-46 entry. The §4 "Primary track" subsection was removed (Cycle 46 done; nothing else is in primary track). Validation gate consolidated to NVDA matrix Cycle 46-1 in `ACCESSIBILITY-TESTING.md`. |

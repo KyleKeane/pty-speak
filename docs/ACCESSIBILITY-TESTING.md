@@ -1223,6 +1223,56 @@ unchanged; this matrix confirms.
 | **45c-5** | `Ctrl+Shift+D` diagnostic bundle | Bundle contains `--- CONTENT HISTORY (last 64KB) ---` section (renamed from `--- LINEAR STREAM ---`). Sibling `content-history-<ts>.txt` file is created under `%LOCALAPPDATA%\PtySpeak\diagnostic-snapshots\`. |
 | **45c-6** | OSC 133-emitting tool (`pwsh` with PSReadLine, or `cmd` with the `set prompt=` OSC 133 prefix) | Tuple boundaries detected correctly; SessionTuple `CommandText` / `OutputText` are populated via `ContentHistory.sliceText` (regression pin for the OSC 133 migration from PR-3a). Verify by pressing `Ctrl+Shift+Y` after a command finishes — the clipboard payload should contain the command text + output, not row-walk fragments. |
 
+### Cycle 46 — UIA TextEdit caret as the output channel (PRs #287–#291)
+
+ADR 0002 flipped the **channel** for terminal output from
+UIA `RaiseNotificationEvent` to a UIA TextEdit caret on
+`TerminalView`. The four shipped PRs are described in the
+ADR; this matrix row-set is the user-visible validation
+gate. Run on the post-PR-D `main` build (commit `9bfdd48`
+or later); a fresh preview from the release pipeline is the
+easiest fixture. The original motivating issue ("I can't
+interrupt a long `dir` read by typing or pressing Alt"
+from the PR #282 → #286 failure trail) is the centerpiece
+of rows **46-1** and **46-2**; if either row fails, escalate
+to a post-Cycle-46 fixup PR rather than tagging a release.
+
+| Row | Test | Pass criterion |
+|---|---|---|
+| **46-1** | Focus the terminal surface (Alt+Tab into pty-speak; NVDA already running). | NVDA announces "Terminal — edit" (or equivalent for the user's NVDA verbosity). Pre-PR-B this announced "Terminal — document". |
+| **46-2** | cmd + `dir` long output. **Before NVDA finishes reading, type any letter into the prompt.** | NVDA stops mid-sentence the moment the typed character emits (NVDA's "Speech interrupt for typed character" setting, default on). This is the original Cycle 46 pain point being fixed. |
+| **46-3** | cmd + `dir` long output. **Before NVDA finishes reading, press `Alt` to open the menu.** | NVDA stops the read and announces "View menu" (or the focused menu's UIA name). The interrupt is via the menu's UIA focus-change event, not via a notification dance. |
+| **46-4** | cmd + `dir`. Press `Insert+Down` (NVDA read-all). | NVDA reads through the ContentHistory tail (last 256 KB) end-to-end with native NVDA pacing. Pre-PR-B "read all" read the screen grid (30×120 cells of mostly U+0020), which sounded like silence punctuated by content; post-Cycle-46 the read is contiguous content. |
+| **46-5** | After cmd `dir`, press `Up Arrow` repeatedly. | NVDA walks back line-by-line through the ContentHistory tail. `Ctrl+End` jumps to the end; `Ctrl+Home` jumps to the start. |
+| **46-6** | Press `Ctrl+Shift+Up` (the SpeechCursor manual review hotkey). | NVDA announces the entry the cursor moved to (using `ActivityIds.diagnostic`). When at the boundary, NVDA announces "Already at the first entry" / "Already at the latest entry". This row pins that PR-D's delegation didn't break the manual review surface (PR-D only delegates the auto-drive path; manual hotkeys stay on the notification channel). |
+| **46-7** | PowerShell + `Get-Process`. | Same as 46-2 / 46-4 but with PowerShell's longer prompt + paginated output. Confirms the caret pacing works regardless of shell. |
+| **46-8** | Claude REPL + a streaming response. | Mid-stream chunks flow through `ContentHistory.appendFromEvent`; the caret-move event fires per tuple finalisation. Streaming should feel like NVDA is reading along with the model, not a delayed block-read at the end. |
+| **46-9** | Non-output notifications: press `Ctrl+Shift+H` (health check), `Ctrl+Shift+S` (session-log path), `Ctrl+Shift+D` (diagnostic snapshot). | Each still produces a notification-style announce. ADR §"Decision" clause 5 keeps notifications for non-terminal-content events; the caret-only path is for terminal command I/O. |
+| **46-10** | Trigger an error (e.g. a malformed escape sequence; `printf '\033[?garbage'` in cmd). | `ActivityIds.error` notification fires as today. Error path was not touched by Cycle 46. |
+
+**Diagnostic decoder.** If 46-1 fails (focus still announces
+"document"): `TerminalAutomationPeer.GetAutomationControlTypeCore`
+regressed — re-check
+`src/Terminal.Accessibility/TerminalAutomationPeer.fs`. If
+46-2 fails (no typing interrupt during read): NVDA's "Speech
+interrupt for typed character" setting may be off in the
+user's NVDA profile — confirm in NVDA's Keyboard settings
+panel before assuming a code regression. If 46-4 returns 0
+chars: `_contentHistory` likely null at peer-query time —
+check that `Program.fs`'s `SetContentHistory` runs in
+compose() before the window becomes visible (was at
+Program.fs ~line 925 at PR-B merge). If 46-2 typing
+interrupts NVDA but speech doesn't resume on the next chunk:
+`RaiseCaretMovedToTail` may need to fire
+`AutomationEvents.TextPatternOnTextChanged` in addition to
+`TextPatternOnTextSelectionChanged` (the helper is in
+`TerminalAutomationPeer.fs`; extend behind the one call
+site). If 46-6 fails: the
+`runSpeechCursorNext/Previous/JumpToLatest` handlers in
+`Program.fs` may have accidentally been routed through the
+caret helper — those should stay on `window.TerminalSurface.Announce`
+per the PR-D scope refinement.
+
 ## Recording results
 
 For each release tag:

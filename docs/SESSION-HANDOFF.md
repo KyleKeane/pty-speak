@@ -13,65 +13,74 @@ and serves the decision-trail role this file used to overload.
 
 ## Current state (2026-05-13)
 
-**Cycle 46 PR-A + PR-B merged.** PR #287 (ADR 0002) landed
-2026-05-12; PR #288 (substrate-swap + ControlType flip) landed
-2026-05-13. The UIA Text pattern is now backed by
-`ContentHistory.tailText` (256 KB cap) instead of the screen
-grid; `TerminalAutomationPeer.AutomationControlType` returns
-`Edit` instead of `Document`. NVDA's native text-edit reading
-path (read-all, line nav) now operates against the substrate
-tail.
+**Cycle 46 fully shipped.** Four-PR sequence merged:
 
-**No call-site change for output yet.**
-`TerminalView.Announce` keeps firing `RaiseNotificationEvent`
-on `ActivityIds.output`; PR-C drops that call and replaces it
-with a `TextSelectionChangedEvent` raise. See
-[`CYCLE-46-NEXT-STEPS.md`](CYCLE-46-NEXT-STEPS.md) for the
-file-level PR-C / PR-D scoping.
+| PR  | Commit    | Scope                                                                |
+|-----|-----------|----------------------------------------------------------------------|
+| #287 (PR-A)  | (cycle gate) | ADR 0002 drafted.                                       |
+| #288 (PR-B)  | `f27d5e2` | UIA Text pattern substrate-swapped (screen grid → `ContentHistory.tailText`, 256 KB cap); `AutomationControlType` flipped `Document` → `Edit`. |
+| #289 (handoff) | `7241ce7` | Cycle 46 next-steps + project-plan docs.                  |
+| #290 (PR-C)  | `a5dd320` | `TerminalAutomationPeer.RaiseCaretMovedToTail()` raises `TextPatternOnTextSelectionChanged`; replaces the tuple-finalise `Announce(text, ActivityIds.output, MostRecent)` call. |
+| #291 (PR-D)  | `9bfdd48` | `speechCursorAnnounce` delegates to the same caret helper. Legacy screen-grid `TerminalTextProvider` / `TerminalTextRange` / `SnapshotText` deleted (~680 LOC). `WordBoundaryTests.fs` deleted; coverage in `ContentHistoryTextRangeTests`. |
 
-**Validation gate in flight.** **NVDA matrix Cycle 46-PRB-1**
-in [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
+The architectural mismatch named in [ADR 0002](adr/0002-uia-textedit-caret-output.md)
+— "terminal output went through `RaiseNotificationEvent` (a
+status-message channel) instead of UIA's text-edit caret (the
+designed-for-streaming channel)" — is resolved at both the
+substrate (PR-B) and channel (PR-C / PR-D) levels, with one
+post-PR-D revision: terminal output now fires **both**
+`Announce` and the caret-move event (ADR §4 Option ★★
+Augment, not Option ★ Replace; see ADR Status notes for the
+NVDA-didn't-read-on-bare-caret-event finding). The
+typing-interrupts-speech win comes from PR-B's
+`ControlType=Edit` flip (NVDA's native setting handles it
+independently of how speech was initiated), so the audit
+revision didn't undo the user-visible payoff of the cycle.
+
+**Validation gate pending.** **NVDA matrix Cycle 46-1** in
+[`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
 covers cmd `dir`, PowerShell `Get-Process`, and Claude REPL
-turn. Confirm "edit" focus announce + `Insert+Down` reads
-ContentHistory tail before starting PR-C.
+turn. The user-visible payoff:
 
-**Cycle 45c-1 → 45c-6** matrix rows (the previous validation
-gate) — assumed walked or rolled forward into 46-PRB-1; check
-the matrix file for the live status.
+- Focus → NVDA announces "edit" (was "document").
+- `Insert+Down` → NVDA reads `ContentHistory` tail.
+- **Typing into the prompt interrupts an in-progress read**
+  via NVDA's "Speech interrupt for typed character" setting —
+  the original motivating pain point from the PR #282 → #286
+  failure trail.
+- **`Alt` interrupts the read** by reaching the menu through
+  WPF's normal route.
+
+**Cycle 45c-1 → 45c-6** matrix rows — assumed walked or
+rolled forward into 46-1; check the matrix file for the
+live status.
 
 ## Where we left off
 
-`main` at `f27d5e2` (Cycle 46 PR-B squash-merge).
+`main` past Cycle 46 PR-D (`9bfdd48`).
 Working tree clean; no in-flight branches; no pending fixups.
 
-`docs/adr/0002-uia-textedit-caret-output.md` is in **Accepted**
-state with §1–§5 resolutions baked into the Decision section
-and recorded inline in the Status notes.
+[`docs/adr/0002-uia-textedit-caret-output.md`](adr/0002-uia-textedit-caret-output.md)
+is in **Accepted** state with all four PRs merged.
+[`docs/CYCLE-46-NEXT-STEPS.md`](CYCLE-46-NEXT-STEPS.md) is
+historical — every edit it described has shipped — and is
+flagged as such at the top of the file.
 
-If the NVDA matrix walk surfaces regressions, they land here
-as PR-B-followup fixups rather than progressing to PR-C.
+If the NVDA matrix walk surfaces regressions, they land as
+post-Cycle-46 fixup PRs (most likely candidate per the ADR
+risk register: NVDA not reacting to
+`TextPatternOnTextSelectionChanged` on a read-only Edit; in
+that case swap to `AutomationEvents.TextPatternOnTextChanged`
+or fire both inside `RaiseCaretMovedToTail`).
 
 ## Next stage
 
-**Primary track: complete Cycle 46.**
-See [`docs/CYCLE-46-NEXT-STEPS.md`](CYCLE-46-NEXT-STEPS.md) for
-file-level edits, threading concerns, test plans, and the NVDA
-matrix gate definitions. Summary:
+**Cycle 46 done.** The four-PR sequence (PR-A through PR-D) is
+in main; only the NVDA matrix walk + release-build smoke pass
+remain before the cycle closes.
 
-- **PR-C** — `SessionModel` raises `TextSelectionChangedEvent`
-  on tuple finalise; drops the `Announce(text,
-  ActivityIds.output, MostRecent)` call site at
-  `Program.fs:1627–1630`. Adds a `RaiseCaretMovedToTail`
-  helper to `TerminalAutomationPeer`. NVDA matrix gate
-  Cycle 46-PRC-1.
-- **PR-D** — `SpeechCursor` callbacks delegate to the caret
-  helper (channel-side wiring; substrate-side `SpeechCursor`
-  unchanged). Removes the legacy screen-grid
-  `TerminalTextProvider` / `TerminalTextRange` / `SnapshotText`
-  (~600 LOC). NVDA matrix gate Cycle 46-PRD-1.
-
-**Parallel track: pre-Cycle-46 candidates from the project
-plan.** None block each other:
+**Next-cycle candidates** (none block each other; pick by
+priority):
 
 - **Cycle 45g** — `ShellPolicy` consolidation (~200 LOC pure
   refactor).
@@ -82,10 +91,15 @@ plan.** None block each other:
 - **Spinner / red-tone fixes** — Rewrite Cycle 29b storm
   fixes against ContentHistory.
 - **Coalescer rename** — Standalone refactor (~25 sites).
+- **`ActivityIds.output` retirement** — kept in source after
+  Cycle 46 PR-D; still used by `SpeechCursor.renderEntry`
+  (manual `Ctrl+Shift+Up/Down/End` review-cursor path, which
+  stays on notifications per ADR §4) + `NvdaChannel.semanticToActivityId`.
+  If both consumers move off it in a future cycle, the
+  constant becomes truly unreferenced and can be deleted.
 
 See [`docs/PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md)
-for sequencing rationale + risks; PR-C / PR-D depend on no
-other cycle and unblock the §"Cycle 46 done" milestone.
+for sequencing rationale + risks.
 
 ## Operational gotchas
 
@@ -122,8 +136,8 @@ Things a new session needs that aren't in
 | If you need… | Open |
 |---|---|
 | Cycle-by-cycle trail | [`CHANGELOG.md`](../CHANGELOG.md) `[Unreleased]` |
-| Cycle 46 PR-C / PR-D file-level plan | [`docs/CYCLE-46-NEXT-STEPS.md`](CYCLE-46-NEXT-STEPS.md) |
-| Cycle 46 ADR (decision + Open Question resolutions) | [`docs/adr/0002-uia-textedit-caret-output.md`](adr/0002-uia-textedit-caret-output.md) |
+| Cycle 46 ADR (decision + Open Question resolutions + per-PR Status notes) | [`docs/adr/0002-uia-textedit-caret-output.md`](adr/0002-uia-textedit-caret-output.md) |
+| Cycle 46 PR-C / PR-D scoping doc (historical, now superseded by the shipped code) | [`docs/CYCLE-46-NEXT-STEPS.md`](CYCLE-46-NEXT-STEPS.md) |
 | Active strategic plan + roadmap | [`docs/PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md) |
 | Pre-Cycle-45 decision history | [`docs/archive/pre-cycle-45/`](archive/pre-cycle-45/) (README inside) |
 | Substrate / architecture | [`docs/CORE-ABSTRACTION-BOUNDARY.md`](CORE-ABSTRACTION-BOUNDARY.md) + [`docs/adr/0001-substrate-channel-dichotomy.md`](adr/0001-substrate-channel-dichotomy.md) |

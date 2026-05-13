@@ -1,7 +1,7 @@
 # ADR 0002 — Command output is delivered via a UIA TextEdit caret, not a UIA Notification
 
-- **Status**: Accepted (2026-05-13)
-- **Date**: 2026-05-12 (Proposed); 2026-05-13 (Accepted)
+- **Status**: Accepted / Implemented (2026-05-13)
+- **Date**: 2026-05-12 (Proposed); 2026-05-13 (Accepted); 2026-05-13 (Implemented across PRs #287, #288, #290, #291)
 - **Deciders**: maintainer (KyleKeane)
 - **Authoring item**: Cycle 46 PR-A, in response to the
   failed-keystroke-flush sequence (PRs #282 → #284 → #285 →
@@ -111,23 +111,20 @@ Concretely (resolutions on Open Questions §1–§5 baked in):
    `Document` to `Edit` so NVDA treats `TerminalView` as a
    text-edit surface (resolves Open Question §2 Option B).
 
-2. **The peer's `ITextProvider` is rebacked from the screen
-   grid to `ContentHistory`.** The current implementation
-   (`TerminalTextProvider` over `Func<Screen | null>`,
-   `TerminalAutomationPeer.fs:1051`) materialises rows from
-   `Screen.SnapshotRows`. The new implementation
+2. **The peer's `ITextProvider` is backed by `ContentHistory`.**
+   The implementation
    (`ContentHistoryTextProvider` over
-   `Func<ContentHistory.T | null>`) materialises the tail of
-   `ContentHistory` via `ContentHistory.tailText` capped at
-   256 KB and exposes a single linear string range. The
-   screen-grid `TerminalTextProvider` / `TerminalTextRange`
-   types stay in source for now (cleanup deferred to PR-D —
-   see "Staged implementation plan").
+   `Func<ContentHistory.T | null>`,
+   `src/Terminal.Accessibility/ContentHistoryTextRange.fs`)
+   materialises the tail of `ContentHistory` via
+   `ContentHistory.tailText` capped at 256 KB and exposes it
+   as a single linear string range. (Pre-Cycle-46 the
+   peer's `ITextProvider` was a screen-grid
+   `TerminalTextProvider`; PR-D deleted that type along with
+   its `TerminalTextRange` companion.)
 
-3. **The new `ContentHistoryTextRange` implements the full
-   `ITextRangeProvider` interface.** Every method that the
-   existing `TerminalTextRange` implements is implemented in
-   the new range type — `Clone`, `Compare`,
+3. **`ContentHistoryTextRange` implements the full
+   `ITextRangeProvider` interface** — `Clone`, `Compare`,
    `CompareEndpoints`, `ExpandToEnclosingUnit`,
    `FindAttribute`, `FindText`, `GetAttributeValue`,
    `GetBoundingRectangles`, `GetChildren`, `GetEnclosingElement`,
@@ -155,20 +152,23 @@ Concretely (resolutions on Open Questions §1–§5 baked in):
    Option ◇◇). PR-C will land the wiring; PR-B does not yet
    raise the event.
 
-5. **Output notifications are replaced entirely for terminal
-   command I/O.** PR-C drops the
-   `Announce(text, ActivityIds.output, MostRecent)` call once
-   the caret-move path is wired (resolves Open Question §4
-   Option ★). `ActivityIds.output` itself may end up unused
-   after PR-C; if so, it's removed in PR-D. **Notification
-   announces stay for non-terminal-content events** — menu
-   activations, errors, diagnostic battery progress
-   (`ActivityIds.diagnostic`), hotkey announces (`Ctrl+Shift+H`
-   health-check, `Ctrl+Shift+S` session-log path),
-   `ActivityIds.newRelease`, parser errors
-   (`ActivityIds.error`). All of those remain <1 KB status
-   messages — the use case `RaiseNotificationEvent` was
-   designed for.
+5. **Output notifications stay alongside the caret-move
+   event (Option ★★ Augment).** ~~PR-C drops the
+   `Announce(text, ActivityIds.output, MostRecent)` call~~ —
+   the initial Option ★ Replace resolution was revised
+   2026-05-13 after PR-D testing showed NVDA doesn't react
+   to a bare caret-move event when
+   `ITextProvider.GetSelection()` is empty. Both `Announce`
+   and `RaiseCaretMovedToTail` now fire on terminal output:
+   `Announce` is what NVDA reads; the caret-move event is a
+   defensive signal; the `ControlType=Edit` flip from clause
+   1 is the load-bearing change for typing-interrupts-speech.
+   `ActivityIds.output` stays in source. **Other notification
+   announces stay unchanged** — menu activations, errors,
+   diagnostic battery progress (`ActivityIds.diagnostic`),
+   hotkey announces (`Ctrl+Shift+H` health-check,
+   `Ctrl+Shift+S` session-log path), `ActivityIds.newRelease`,
+   parser errors (`ActivityIds.error`).
 
 6. **`SpeechCursor` (Ctrl+Shift+Up/Down/End) is preserved as
    a keyboard surface; its implementation delegates to the
@@ -249,6 +249,13 @@ Concretely (resolutions on Open Questions §1–§5 baked in):
   other UIA-touching PR; not new.
 
 ## Staged implementation plan
+
+> **Historical (2026-05-13).** All four PRs in this plan
+> shipped on 2026-05-12 → 2026-05-13. The §"Status notes"
+> section below records the actual ship outcome and any
+> deltas from this plan. The plan is kept verbatim because
+> the diff between "planned" and "shipped" is a useful
+> retrospective artifact.
 
 ### PR-A — This document.
 
@@ -475,15 +482,30 @@ PowerShell / Claude (the matrix shells); ★★ might make sense
 later if we see a screen reader (JAWS, Narrator) that
 doesn't track the caret well.
 
-**Resolution 2026-05-13**: **Option ★ — replace entirely for
-terminal command I/O**. Notification announces stay for
-non-terminal-content events: menus, errors, diagnostic
-battery progress, hotkey announces, new-release prompts,
-parser errors. Terminal command input + output goes through
-the caret. JAWS / Narrator fallback can be revisited if a
-matrix walk against either of them shows the caret path
-doesn't track; until evidence appears, the simpler one-path
-model is preferred.
+**Resolution 2026-05-13**: ~~Option ★ — replace entirely
+for terminal command I/O~~. **Revised 2026-05-13** (after
+PR-D shipped + maintainer preview-build testing): **Option
+★★ — augment**. Maintainer test reported "no spoken output
+after command; menus + other speech still work." Root cause:
+NVDA doesn't read on a bare
+`TextPatternOnTextSelectionChanged` raise when
+`ITextProvider.GetSelection()` returns empty. Both
+`Announce` and the caret-move event now fire for terminal
+output:
+
+- `Announce` is what NVDA actually reads.
+- The caret-move event remains as a defensive signal for
+  review-cursor / future client integrations.
+- The `ControlType=Edit` flip from PR-B is the
+  load-bearing change for "typing-interrupts-speech" — NVDA's
+  native setting fires on key press in an Edit regardless of
+  how speech was initiated, so the Cycle 46 win persists.
+
+The "long-term fix" mentioned earlier in §4 (implement
+`GetSelection()` to point at the tail when the caret-move
+event fires, then drop `Announce` again) is left for a
+future cycle. See ADR Status notes (2026-05-13 post-PR-D
+audit entry) for the full reasoning.
 
 ### §5. Does `Terminal.Core.ContentHistory` need a change-notification event?
 
@@ -624,9 +646,64 @@ new".
     routing map). Deletion would require touching those
     consumers; deferred as a future cleanup if/when it
     becomes truly unreferenced.
-- **Supersession**: this ADR may be revised if NVDA matrix
-  validation of PR-B (Cycle 46-PRB-1), PR-C (Cycle
-  46-PRC-1), or PR-D (Cycle 46-PRD-1) surfaces NVDA
-  behaviour the resolutions didn't anticipate (most likely
-  candidate: NVDA's text-edit reading path requiring focus
-  when the caret isn't where the user expects).
+- **2026-05-13** (post-PR-D audit): **§4 resolution
+  revised from Option ★ Replace to Option ★★ Augment.**
+  Maintainer testing of the post-PR-D preview build
+  reported: "I'm no longer hearing any spoken output after
+  command. I can still hear menus and other speech." The
+  failure mode is the one flagged in CYCLE-46-NEXT-STEPS.md
+  §2's risk register: NVDA does not react to a bare
+  `AutomationEvents.TextPatternOnTextSelectionChanged`
+  raised by `RaiseCaretMovedToTail` when
+  `ITextProvider.GetSelection()` returns an empty array.
+  NVDA queries `GetSelection`, gets nothing back, reads
+  nothing. Menus + diagnostic announces continued to work
+  because they're on the separate `RaiseNotificationEvent`
+  channel which PR-D had stopped using for terminal output.
+
+  The post-merge audit PR restores the
+  `Announce(text, ActivityIds.output)` calls in
+  `Program.fs`'s `speechCursorAnnounce` callback + the
+  boundary handler. Both `Announce` and
+  `RaiseCaretMovedToTail` now fire on every output event:
+
+  - `Announce` is what NVDA reads (the channel it already
+    consumes correctly).
+  - `RaiseCaretMovedToTail` stays as a defensive caret-
+    move signal; NVDA may consume it for review-cursor
+    positioning or in a future config, and the cost is one
+    extra UIA event per output.
+  - The `ControlType=Edit` flip from PR-B stays in place
+    and is the load-bearing change for
+    "typing-interrupts-speech": NVDA's "Speech interrupt
+    for typed character" setting fires on any key press in
+    an Edit control regardless of how the in-flight speech
+    was initiated.
+
+  Net behaviour after the audit:
+
+  - Spoken output is back (via `Announce`).
+  - Typing interrupts speech (via Edit-control + NVDA's
+    native setting). This is the Cycle 46 win, preserved.
+  - Long output is still one big `Announce` under
+    `TupleFinalOnly`; `MostRecent` processing means a
+    follow-up announce supersedes the queue. With the Edit
+    control in place the user can now interrupt by typing,
+    which the pre-Cycle-46 setup couldn't deliver.
+
+  The cleaner long-term fix (still possible) is to
+  implement `ITextProvider.GetSelection()` to return a
+  range at the tail when the caret-move event fires; NVDA
+  would then read the new selection without needing the
+  separate `Announce`. That requires choosing between
+  "selection = just the new content" (delta-shaped) or
+  "selection = everything from prior caret to new tail"
+  (range-shaped) and validating against NVDA's actual
+  behaviour — scope as its own cycle when a future
+  contributor takes it on.
+
+- **Supersession**: this ADR may be revised if further NVDA
+  matrix validation surfaces NVDA behaviour the resolutions
+  didn't anticipate. The most likely future revision is
+  implementing `GetSelection()` to drop the redundant
+  `Announce` (see the post-PR-D audit entry above).

@@ -1,5 +1,50 @@
-# Cycle 46 — Next steps (PR-C + PR-D)
+# Cycle 46 — Next steps (PR-C + PR-D) — *HISTORICAL*
 
+> **This doc is historical.** Every PR it scoped is merged:
+> PR-C (#290, `a5dd320`) and PR-D (#291, `9bfdd48`) landed on
+> 2026-05-13. The file is kept in source for archaeology — the
+> exact pre-shipping scoping is a useful artifact when reading
+> the PR diffs — but it is **not actionable** any more.
+>
+> For the live state, see:
+>
+> - [`docs/SESSION-HANDOFF.md`](SESSION-HANDOFF.md) — current
+>   state in ~150 lines.
+> - [`docs/PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md)
+>   — strategic plan, Cycle 46 closure entry.
+> - [`docs/adr/0002-uia-textedit-caret-output.md`](adr/0002-uia-textedit-caret-output.md)
+>   — full decision record with §1–§5 resolutions + per-PR
+>   Status notes.
+>
+> Things this doc says that are now untrue:
+>
+> - "PR-C — wire output to the caret. Scope below." → PR-C is
+>   in main. The `RaiseCaretMovedToTail` helper exists on
+>   `TerminalAutomationPeer`; the boundary handler in
+>   `Program.fs` calls it.
+> - "PR-D — `SpeechCursor` delegation + screen-grid cleanup."
+>   → PR-D is in main. `speechCursorAnnounce` delegates to
+>   the caret helper. The legacy screen-grid types are gone.
+> - "Add `InternalsVisibleTo("Terminal.App")`" → done.
+> - "256 KB hardcoded" → in `ContentHistoryMaterialiser.TailCapBytes`.
+> - File `tests/Tests.Unit/WordBoundaryTests.fs` → deleted in
+>   PR-D; the word-boundary contract is now pinned by
+>   `tests/Tests.Unit/ContentHistoryTextRangeTests.fs`.
+>
+> A scope refinement worth noting that wasn't in this doc:
+> PR-D kept the manual review-cursor hotkeys
+> (`Ctrl+Shift+Up/Down/End` → `runSpeechCursorNext` /
+> `Previous` / `JumpToLatest`) on the notification path
+> because their announces are UI-navigation feedback
+> ("Already at the first entry") which is
+> non-terminal-content per ADR §"Decision" clause 5. The
+> delegation only applies to auto-drive
+> `SpeechCursor.onAppend` narration.
+>
+> ---
+>
+> Original front-matter (preserved verbatim below):
+>
 > **Snapshot**: 2026-05-13 (post-PR-B merge).
 > **Audience**: the next session — human or Claude. Self-contained;
 > nothing in this doc requires reading prior chat history.
