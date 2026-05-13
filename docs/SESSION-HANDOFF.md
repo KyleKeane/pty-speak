@@ -13,47 +13,56 @@ and serves the decision-trail role this file used to overload.
 
 ## Current state (2026-05-13)
 
-**Cycle 46 + 47 fully shipped.** Cycle 46 (PRs #287–#291) flipped
-the UIA Text-pattern surface from `Document` +
-`RaiseNotificationEvent` to `Edit` + caret-event; Cycle 47
-(PRs #295–#303, mostly post-preview review fix-ups) layered on
-the dogfood-driven adjustments. Most recent batch (this
-session, post-preview.114):
+**Cycle 48 fully shipped.** Six-PR sequence (PR-A → PR-F)
+implementing the `ShellInteraction` semantic state machine per
+[ADR 0003](adr/0003-shell-interaction-state-machine.md):
 
 | PR   | Commit    | Scope                                                              |
 |------|-----------|--------------------------------------------------------------------|
-| #299 | `8f9b30a` | `sanitiseForBundle` preserves `\n` `\r` `\t` in diagnostic bundle; marker labels relabelled to `begin/end prompt/output`; `CommandFinished` synthesised on PromptStart-while-AwaitingCommandStart. |
-| #300 | `ddd7b8a` | Typing-window UIA suppression — `materialise` excludes the active span when last keystroke < 350 ms ago. Announce content logged at Debug (`MsgHead=`). NVDA settings recommendation in ACCESSIBILITY-TESTING.md. |
-| #301 | `d6fa5d0` | Tuple-final prefix-trim against `lastAnnouncedText` so `set/p` doesn't replay the idle-flush prompt. |
-| #302 | `f3524be` | `ReadyForInput` earcon dispatched on idle-flush so `set/p` / `pause` produce the audible "you can type now" click. |
-| #303 | `b0d3230` | Top-level mnemonic conflicts fixed: `_Display` vs `_Data` (renamed to `D_ata`); Diagnostics `_CMD Interaction Tests` renamed to `C_MD Interaction Tests` to clear the conflict with `Test Process _Cleanup`. |
+| #306 (PR-A)  | `f0fbbe8` | ADR 0003 drafted + §9 open questions resolved in-chat. |
+| #307 (PR-B)  | `3c2a372` | `ShellInteraction` state machine (`Composing` / `Executing`), wired in observe-only mode (logs transitions but doesn't change announce routing). |
+| #308 (PR-C)  | `5d34369` | `ContentHistory.Entry.Source : EntrySource` substrate-schema change. Bundle's `Stats:` line extends with per-source counts. |
+| #309 (PR-D)  | `96b6e56` | `UserInputBuffer` byte-stream wiring via `writePtyBytes` wrapper. `EnterPressed` transition carries the captured command text. |
+| #310 (PR-E)  | `459a0b2` | Sub-prompt announce via state machine (`SubPromptIdle` transition fires `Announce` + earcon). SpeechCursor filters `UserInputEcho` entries in both AutoDrive AND Manual. Idle-flush announce body retired. |
+| (this PR, PR-F) | (closure audit) | Docs sweep: ADR status, SESSION-HANDOFF, CLAUDE.md sequencing, PROJECT-PLAN change log. |
 
-The architectural mismatch named in [ADR 0002](adr/0002-uia-textedit-caret-output.md)
-is resolved at both the substrate and channel levels. The
-post-Cycle-46 dogfood revisions narrowed the announce surface
-(typing-window gate, prefix-trim) and broadened the audible
-cue surface (mid-eval earcon) without backing out the
-substrate / channel split.
+Cycle 46 + 47 history retained in the CHANGELOG + the
+ADR-0002 / ADR-0003 records.
 
-**Validation gate pending.** **NVDA matrix Cycle 47-1 through
-47-25** in
+The architectural mismatch named in
+[ADR 0003](adr/0003-shell-interaction-state-machine.md) —
+"pty-speak models the byte stream; it should model the
+interaction" — is resolved by the two-state machine on top
+of ContentHistory / Screen / SessionModel. Idle-flush
+chatter goes away by construction; sub-prompt detection
+fires only on the explicit "idle + last-byte-not-LF" signal;
+SpeechCursor never replays user-typed echo.
+
+**Validation gate pending.** **NVDA matrix Cycle 48-B1 →
+48-E8** in
 [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
-covers the cycle's full set. The recent additions (47-18
-through 47-25) are the post-preview.114 batch.
+covers the cycle. Maintainer dogfood against preview.118
+(the build cut after this PR-F merges) is the gating signal.
 
 ## Where we left off
 
-`main` past Cycle 47 PR #303 (`b0d3230`).
-Working tree clean; no in-flight branches; no pending fixups.
+`main` past Cycle 48 PR-E (`459a0b2`), with this PR-F closure
+audit landing on top. Working tree clean; no in-flight
+branches; no pending fixups.
 
-[`docs/adr/0002-uia-textedit-caret-output.md`](adr/0002-uia-textedit-caret-output.md)
-is in **Accepted** state with all four PRs merged.
+[`docs/adr/0003-shell-interaction-state-machine.md`](adr/0003-shell-interaction-state-machine.md)
+is in **Accepted / Implemented** state with all six PRs
+merged. The Cycle 47 dead code preserved as defence-in-depth
+in PR-E (the `tupleFinaliseAnnounce` prefix-trim path) stays
+in source for one preview cycle; if PR-E's audible behaviour
+holds in preview.118 dogfood, a follow-up PR can delete the
+dead branches.
 
 ## Next stage
 
-**Cycle 47 dogfood batch done.** Five PRs (#299–#303) merged
-this session. Next live gate: maintainer preview.115 NVDA matrix
-walk against rows 47-18 through 47-25.
+**Cycle 48 done.** The six-PR sequence (PR-A → PR-F) is in
+main. Next live gate: maintainer preview.118 dogfood. Audible
+listening criteria per matrix rows 48-E1 → 48-E8.
 
 **Next-cycle candidates** (none block each other; pick by
 priority):
