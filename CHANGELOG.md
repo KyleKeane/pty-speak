@@ -15,6 +15,65 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 47 follow-up (2026-05-13): semantic-boundary markers in the materialised tail
+
+Issue 4 from the maintainer's post-Cycle-47 walk: the NVDA
+review cursor on `TerminalView` had no clear command-to-command
+segmentation — navigation jumped between output blocks without
+landing on the prompts / input lines between them. The
+maintainer asked for "lines of text in that document that
+aren't drawn on the screen visually" demarcating canonical
+input / output boundaries.
+
+**Fix**: new public `ContentHistory.tailTextWithMarkers`
+function (parallel to `tailText`) that renders `Marker`
+entries as labelled boundary lines instead of skipping them.
+`ContentHistoryMaterialiser.materialise` (UIA Text-pattern
+view) calls the markers-aware variant; the diagnostic-bundle
+path still uses plain `tailText` so paste-back triage stays
+readable.
+
+Marker labels:
+- `PromptStart` → `--- prompt ---`
+- `CommandStart` → `--- input begins ---`
+- `OutputStart` → `--- output begins ---`
+- `CommandFinished` → `--- output ends ---`
+- `BellRang` → `--- bell ---`
+- `SelectionShown` → `--- selection prompt ---`
+- `AltScreenEnter` → `--- entered alt-screen ---`
+
+Each marker is bracketed by `\n` so NVDA's `Move(Line, ±1)`
+lands on it as a standalone line. The screen rendering path
+(`Screen.SnapshotRows` → WPF `OnRender`) doesn't touch
+`ContentHistory.tailText*` so the boundary lines are
+invisible visually — they exist only in the UIA Text-pattern
+view that NVDA's review cursor walks.
+
+For cmd (no OSC 133): `PromptStart` is the only marker
+`HeuristicPromptDetector` emits, so the review cursor will
+land on `--- prompt ---` between each command. For shells
+with OSC 133 (or when CommandStart / OutputStart / etc. are
+emitted explicitly), all four "input / output" boundaries
+appear.
+
+Tests:
+- `ContentHistoryTests`: new section covering `tailText` (no
+  markers, regression pin), `tailTextWithMarkers`
+  (PromptStart / every MarkerKind / content interleave order
+  / agreement-when-no-markers).
+- `ContentHistoryTextRangeTests`: new test asserting
+  `ContentHistoryMaterialiser.materialise` includes the
+  marker labels in its output (the channel-side analogue of
+  the substrate-side test).
+
+Matrix row Cycle 47-13 in
+[`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
+covers the new behaviour: walk a test script, position the
+NVDA review cursor at the start of the document, press
+Down-Arrow line-by-line, verify that `--- prompt ---` (and
+any other markers the active shell emits) read as
+standalone lines.
+
 ### Cycle 47 follow-up (2026-05-13): idle-flush + menu fixes + Esc-clear
 
 Three connected fixes the maintainer surfaced after walking the

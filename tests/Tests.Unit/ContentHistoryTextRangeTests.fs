@@ -95,6 +95,31 @@ let ``materialise reconstructs across newlines`` () =
     let result = ContentHistoryMaterialiser.materialise state
     Assert.Equal("line1\nline2\nline3", result)
 
+[<Fact>]
+let ``materialise renders Marker entries as navigable boundary lines`` () =
+    // Cycle 47 follow-up: the UIA Text-pattern view inserts
+    // semantic-boundary markers as separate lines so NVDA's
+    // review cursor can navigate between commands. This test
+    // is the channel-side analogue of the substrate-side
+    // ContentHistoryTests `tailTextWithMarkers renders ...`
+    // tests; pinning it here ensures the materialiser is
+    // calling the markers-aware tail and not silently
+    // regressing to plain tailText.
+    let state = freshHistory ()
+    feedText state "echo hi\n"
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.OutputStart t0 None
+    |> ignore
+    feedText state "hi\n"
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.CommandFinished t0 None
+    |> ignore
+    let result = ContentHistoryMaterialiser.materialise state
+    Assert.Contains("--- output begins ---", result)
+    Assert.Contains("--- output ends ---", result)
+    Assert.Contains("echo hi", result)
+    Assert.Contains("hi", result)
+
 // ---------------------------------------------------------------------
 // Clone / Compare / CompareEndpoints
 // ---------------------------------------------------------------------
