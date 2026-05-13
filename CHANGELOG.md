@@ -15,6 +15,44 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 48 PR-C (2026-05-13): `ContentHistory.Entry.Source : EntrySource`
+
+Implements ADR 0003 §9.5 — every `ContentHistory.Entry` now
+carries a `Source : EntrySource` tag. `EntrySource` is a DU
+with six values: `UserInputEcho`, `CmdOutput`, `CmdSubPrompt`,
+`ShellPrompt`, `BoundaryMarker`, `Unknown`. (`BoundaryMarker`
+rather than `Marker` because the latter would shadow
+`ContentHistory.Entry.Marker` at qualified-access under the
+`[<RequireQualifiedAccess>]` attribute.)
+
+The tag is set at append time. `ContentHistory.setSourceResolver`
+takes a `unit -> EntrySource` delegate; the composition root
+wires it to `ShellInteraction.entrySourceFor shellInteraction.Current`,
+mapping `Composing` → `UserInputEcho` and `Executing` →
+`CmdOutput`. Marker entries always get
+`EntrySource.BoundaryMarker` regardless of the resolver. Pre-
+state-machine entries (or exceptions in the resolver) get
+`Unknown`.
+
+Also moves the `EntrySource` DU itself out of
+`ShellInteraction.fs` (where PR-B drafted it) to
+`ContentHistory.fs` so the substrate can carry the field
+directly. ShellInteraction re-exports a type alias for
+backwards-compat with any future caller still reaching via
+`ShellInteraction.EntrySource`.
+
+The diagnostic bundle's `Stats:` line in
+`--- CONTENT HISTORY ---` extends with per-source counts
+(`| Sources: UserInputEcho=N CmdOutput=N CmdSubPrompt=N
+ShellPrompt=N Marker=N Unknown=N`) so paste-back triage can
+answer "did the substrate classify each byte correctly?"
+without scrolling the 64 KB tail.
+
+PR-D adds the keyboard-handler-driven `UserInputBuffer`. PR-E
+switches announce routing onto the state-machine transitions
+and adds the SpeechCursor filter for `UserInputEcho` entries.
+PR-F is the closure audit.
+
 ### Cycle 48 PR-B (2026-05-13): ShellInteraction state machine — observe-only
 
 Implements `Terminal.Core.ShellInteraction` per ADR 0003: a

@@ -27,22 +27,12 @@ open System.Text.RegularExpressions
 /// for the full design.
 module ShellInteraction =
 
-    /// Per §9.5 (resolved 2026-05-13) — provenance tag added to
-    /// every `ContentHistory.Entry` in PR-C. Defined here so
-    /// the state machine can name the values it produces; PR-C
-    /// adds the field to the substrate.
-    type EntrySource =
-        | UserInputEcho
-        | CmdOutput
-        | CmdSubPrompt
-        | ShellPrompt
-        | Marker
-        /// Pre-state-machine fallback. Entries appended before
-        /// `ShellInteraction` is wired (or while in an
-        /// `Unknown`-classified path) get this value. Diagnostic
-        /// bundles flag `Unknown` entries so a future audit can
-        /// reduce their incidence.
-        | Unknown
+    /// Cycle 48 PR-C (ADR 0003 §9.5) — `EntrySource` lives on
+    /// `ContentHistory.EntrySource`. PR-B defined a copy here;
+    /// PR-C moved it upstream so `ContentHistory.Entry` can
+    /// carry the field directly. Re-exported here for callers
+    /// that still reach via `ShellInteraction.EntrySource`.
+    type EntrySource = ContentHistory.EntrySource
 
     /// Composing — pty-speak is waiting for user input. cmd's
     /// output during this state is treated as *echo* of the
@@ -78,6 +68,18 @@ module ShellInteraction =
     type InteractionState =
         | Composing of ComposingData
         | Executing of ExecutingData
+
+    /// Map an `InteractionState` to the `EntrySource` that
+    /// non-marker entries appended during that state should
+    /// carry. Used by the composition root's
+    /// `setSourceResolver` delegate. Marker entries always get
+    /// `EntrySource.BoundaryMarker` regardless of state.
+    let entrySourceFor (state : InteractionState) : ContentHistory.EntrySource =
+        match state with
+        | Composing _ ->
+            ContentHistory.EntrySource.UserInputEcho
+        | Executing _ ->
+            ContentHistory.EntrySource.CmdOutput
 
     /// External signal types. Each transition is named after
     /// the event that drove it, not the state it goes to.

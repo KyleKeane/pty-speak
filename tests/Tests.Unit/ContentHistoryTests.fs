@@ -762,3 +762,74 @@ let ``tailText and tailTextWithMarkers agree when no markers exist`` () =
     Assert.Equal(
         ContentHistory.tailText state 4096,
         ContentHistory.tailTextWithMarkers state 4096)
+
+// ---------------------------------------------------------------------
+// Cycle 48 PR-C — Source tag (EntrySource per ADR 0003 §9.5)
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``Default Source is Unknown when no resolver is set`` () =
+    // Without setSourceResolver, all entries get Unknown.
+    let state = freshHistory ()
+    feed state t0 [ printRune 'h'; printRune 'i'; lf ] |> ignore
+    let entries = ContentHistory.snapshot state
+    for e in entries do
+        Assert.Equal(
+            ContentHistory.EntrySource.Unknown,
+            ContentHistory.entrySource e)
+
+[<Fact>]
+let ``Marker entries always carry EntrySource.BoundaryMarker`` () =
+    let state = freshHistory ()
+    // Set a non-default resolver — Marker should still be Marker.
+    ContentHistory.setSourceResolver state (fun () ->
+        ContentHistory.EntrySource.CmdOutput)
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.PromptStart t0 None
+    |> ignore
+    let entries = ContentHistory.snapshot state
+    let marker =
+        entries
+        |> Array.find (fun e ->
+            match e with
+            | ContentHistory.Marker _ -> true
+            | _ -> false)
+    Assert.Equal(
+        ContentHistory.EntrySource.BoundaryMarker,
+        ContentHistory.entrySource marker)
+
+[<Fact>]
+let ``Source resolver applies to non-marker entries`` () =
+    let state = freshHistory ()
+    let mutable currentSource = ContentHistory.EntrySource.UserInputEcho
+    ContentHistory.setSourceResolver state (fun () -> currentSource)
+    // Append in UserInputEcho mode (typing).
+    feed state t0 [ printRune 'e'; printRune 'c'; printRune 'h'; printRune 'o'; lf ]
+    |> ignore
+    // Switch to CmdOutput (executing) and append more.
+    currentSource <- ContentHistory.EntrySource.CmdOutput
+    feed state t0 [ printRune 'h'; printRune 'i'; lf ] |> ignore
+    let entries = ContentHistory.snapshot state
+    // Should have 4 entries: TextSpan + Newline + TextSpan + Newline.
+    let textSpanSources =
+        entries
+        |> Array.choose (fun e ->
+            match e with
+            | ContentHistory.TextSpan d -> Some d.Source
+            | _ -> None)
+    Assert.Equal(2, textSpanSources.Length)
+    Assert.Equal(ContentHistory.EntrySource.UserInputEcho, textSpanSources.[0])
+    Assert.Equal(ContentHistory.EntrySource.CmdOutput, textSpanSources.[1])
+
+[<Fact>]
+let ``Resolver exception falls back to Unknown`` () =
+    let state = freshHistory ()
+    ContentHistory.setSourceResolver state (fun () ->
+        failwith "resolver crash")
+    feed state t0 [ printRune 'x'; lf ] |> ignore
+    let entries = ContentHistory.snapshot state
+    for e in entries do
+        Assert.Equal(
+            ContentHistory.EntrySource.Unknown,
+            ContentHistory.entrySource e)
+
