@@ -3702,6 +3702,34 @@ module Program =
                                 window.TerminalSurface.Announce(
                                     toSay, ActivityIds.output)
                                 lastAnnouncedText <- toSay
+                                // Cycle 47 follow-up (2026-05-13)
+                                // post-preview.114 — mid-evaluation
+                                // input earcon. When idle-flush
+                                // announces non-empty text mid-
+                                // tuple, the cmd shell has printed
+                                // a prompt-like line and paused
+                                // (the classic `set/p`, `pause`,
+                                // interactive-script case where
+                                // no shell-prompt boundary fires).
+                                // Re-use the existing
+                                // `ReadyForInput` semantic so the
+                                // EarconChannel plays the same
+                                // 3000Hz × 15ms click the tuple-
+                                // final path uses — semantically
+                                // equivalent ("you can type now")
+                                // and avoids needing a new palette
+                                // entry. The earcon plays on a
+                                // separate WASAPI stream so it
+                                // doesn't interrupt NVDA reading
+                                // the just-announced prompt text.
+                                // Honours View → Earcons → Muted.
+                                let inputCueEvent =
+                                    OutputEvent.create
+                                        SemanticCategory.ReadyForInput
+                                        Priority.Background
+                                        "idle-flush"
+                                        ""
+                                OutputDispatcher.dispatch inputCueEvent
                             lastAnnouncedSeq <- latest
                 | None -> ()
             with ex ->

@@ -15,6 +15,29 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 47 follow-up (2026-05-13, post-preview.114): mid-evaluation input earcon on idle-flush
+
+**Symptom**: cmd's `set /p var=Enter your text:`, `pause`, and
+similar interactive prompts print a single line and then block
+waiting for input. No PromptStart boundary fires (the heuristic
+detector matches shell-style prompt rows, not arbitrary
+mid-command questions), so the tuple-final
+`SemanticCategory.ReadyForInput` earcon never plays. The user
+hears the announce text (via idle-flush) but gets no audible
+"you can type now" cue to distinguish "shell is paused asking
+me something" from "command is still running".
+
+**Fix**: when idle-flush fires an announce (cmd printed something
++ paused for ≥ 350 ms), dispatch a `ReadyForInput` OutputEvent
+alongside the announce. The existing EarconProfile mapping
+plays the same 3000Hz × 15ms click the tuple-final path uses —
+semantically equivalent ("you can type now") + no new palette
+entry needed. Plays on a separate WASAPI stream so it doesn't
+interrupt NVDA's narration of the just-announced prompt text.
+Honours View → Earcons → Muted.
+
+Matrix row Cycle 47-24 covers the `set/p` audible cue.
+
 ### Cycle 47 follow-up (2026-05-13, post-preview.114): tuple-final prefix-trim against last-announced text
 
 **Symptom (test-02 dogfood)**: with the test corpus's `set /p var=Enter your text:` step, the maintainer heard:
