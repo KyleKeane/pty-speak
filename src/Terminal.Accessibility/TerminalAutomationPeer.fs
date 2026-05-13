@@ -23,11 +23,11 @@ open Terminal.Core
 [<assembly: System.Runtime.CompilerServices.InternalsVisibleTo("PtySpeak.Tests.Unit")>]
 // Cycle 46 PR-C — Terminal.App needs to call
 // `TerminalAutomationPeer.RaiseCaretMovedToTail` on tuple
-// finalise (replaces the previous
-// `Announce(text, ActivityIds.output)` notification path). The
-// peer type stays `internal`; the assembly attribute opens the
-// surface to the composition root without widening the public
-// API.
+// finalise (alongside the `Announce` call — see the helper's
+// doc-comment + ADR 0002 §"Status notes" for the Option ★★
+// Augment resolution). The peer type stays `internal`; the
+// assembly attribute opens the surface to the composition
+// root without widening the public API.
 [<assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Terminal.App")>]
 do ()
 
@@ -313,20 +313,22 @@ type internal TerminalAutomationPeer
     /// the list peer as the sole child while active).
     let mutable currentListPeer : TerminalListAutomationPeer option = None
 
-    // Cycle 46 PR-B — ControlType flips from `Document` to
-    // `Edit` so NVDA treats TerminalView as a text-edit
-    // surface. Combined with the substrate swap of the
-    // ITextProvider (screen grid → ContentHistory; see
-    // `src/Terminal.Accessibility/ContentHistoryTextRange.fs`
-    // + `src/Views/TerminalView.cs:144`), NVDA's native
-    // text-edit reading path (Insert+Down read-all, Up/Down
-    // line nav, Ctrl+End jump-to-end) now operates against
-    // the ContentHistory tail. User-visible effect on focus:
-    // NVDA announces "edit" instead of "document". Wiring of
-    // caret-move on output (raising
-    // `TextSelectionChangedEvent`) happens in PR-C; PR-B
-    // just exposes the new text surface. See
-    // `docs/adr/0002-uia-textedit-caret-output.md`.
+    // Cycle 46 PR-B — ControlType is `Edit` (was `Document`
+    // pre-Cycle-46) so NVDA treats TerminalView as a
+    // text-edit surface. Combined with the substrate swap of
+    // the ITextProvider (screen grid → ContentHistory; see
+    // `ContentHistoryTextRange.fs`), NVDA's native text-edit
+    // reading path (Insert+Down read-all, Up/Down line nav,
+    // Ctrl+End jump-to-end) operates against the
+    // ContentHistory tail.
+    //
+    // This flip is the load-bearing change for the Cycle 46
+    // typing-interrupts-speech win: NVDA's "Speech interrupt
+    // for typed character" setting fires on any key press
+    // inside an Edit, regardless of how the in-flight speech
+    // was initiated. See ADR 0002 + the
+    // `RaiseCaretMovedToTail` doc-comment below for the
+    // channel-side caret-event signal that complements this.
     override _.GetAutomationControlTypeCore() = AutomationControlType.Edit
     override _.GetClassNameCore() = "TerminalView"
     override _.GetNameCore() = "Terminal"
@@ -389,13 +391,11 @@ type internal TerminalAutomationPeer
             ()
 
     /// Cycle 46 PR-C — channel-side caret advance. Called from
-    /// `Program.fs`'s boundary handler on tuple finalise
-    /// (replaces the previous
-    /// `Announce(text, ActivityIds.output, MostRecent)`
-    /// notification). Raises
+    /// `Program.fs`'s boundary handler on tuple finalise (and
+    /// from `speechCursorAnnounce` per PR-D) alongside the
+    /// `TerminalView.Announce` call. Raises
     /// `AutomationEvents.TextPatternOnTextSelectionChanged` on
-    /// this peer so NVDA's native "read from caret" path picks
-    /// up the new `ContentHistory` tail.
+    /// this peer.
     ///
     /// The WPF enum name is verbose but precise: the
     /// `TextPatternOn*` prefix marks it as belonging to the
@@ -404,12 +404,18 @@ type internal TerminalAutomationPeer
     /// WPF prefixes the enum name to keep it distinct from
     /// `LegacyIAccessibleSelectionChanged` etc.).
     ///
-    /// Why no offset / text argument: UIA's event signature is
-    /// fire-and-forget. The listening client (NVDA) queries the
-    /// provider for the new state. Our
-    /// `ContentHistoryTextProvider` re-materialises on each
-    /// `DocumentRange` call, so NVDA always sees the latest
-    /// tail without us threading content through the event.
+    /// Why the event is currently defensive rather than
+    /// load-bearing: post-PR-D maintainer testing surfaced
+    /// that NVDA does not react to a bare
+    /// `TextPatternOnTextSelectionChanged` raise when
+    /// `ITextProvider.GetSelection()` returns empty (which
+    /// ours does — no selection model). The
+    /// `Announce(text, activityId)` call is what NVDA
+    /// actually reads; this event is kept as a defensive
+    /// signal for review-cursor positioning and possible
+    /// future use, and is paired with the channel-side
+    /// `Announce` at every caller. See ADR 0002 §"Status
+    /// notes" (2026-05-13 post-PR-D audit entry).
     ///
     /// Must be called on the WPF dispatcher thread (per the
     /// `AutomationPeer.RaiseAutomationEvent` contract). The
@@ -417,8 +423,7 @@ type internal TerminalAutomationPeer
     /// inside `window.Dispatcher.InvokeAsync` so the dispatch
     /// requirement is satisfied at the call site.
     ///
-    /// See `docs/adr/0002-uia-textedit-caret-output.md` and
-    /// `docs/CYCLE-46-NEXT-STEPS.md` §2.
+    /// See `docs/adr/0002-uia-textedit-caret-output.md`.
     member this.RaiseCaretMovedToTail() =
         this.RaiseAutomationEvent(
             AutomationEvents.TextPatternOnTextSelectionChanged)
@@ -447,15 +452,13 @@ type internal TerminalAutomationPeer
     override _.GetPattern(patternInterface: PatternInterface) : obj | null =
         match patternInterface with
         | PatternInterface.Text ->
-            // Cycle 46 PR-B routed `textProvider` to the
-            // ContentHistory-backed `ContentHistoryTextProvider`
-            // (see `ContentHistoryTextRange.fs`). PR-C added
-            // `RaiseCaretMovedToTail` to advance NVDA's caret on
-            // tuple finalise; PR-D rewired
-            // `speechCursorAnnounce` to use the same helper so
-            // auto-drive narration goes through the caret path
-            // too. The legacy screen-grid `TerminalTextProvider`
-            // and `TerminalTextRange` deleted in PR-D.
+            // `textProvider` is `ContentHistoryTextProvider`
+            // (see `ContentHistoryTextRange.fs`). Cycle 46
+            // PR-B substrate-swapped this from the previous
+            // screen-grid implementation; PR-D deleted the
+            // legacy types. `RaiseCaretMovedToTail` (below) is
+            // the channel-side counterpart that signals NVDA
+            // when the tail has new content.
             let result : obj | null = textProvider
             result
         | _ -> base.GetPattern(patternInterface)

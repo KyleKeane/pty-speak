@@ -79,10 +79,16 @@ rule in CONTRIBUTING.md).
 
 ### Current state
 
-`TerminalTextRange.IsWordSeparator` (in
-`src/Terminal.Accessibility/TerminalAutomationPeer.fs`) treats
+`ContentHistoryTextRange.IsWordSep` (in
+`src/Terminal.Accessibility/ContentHistoryTextRange.fs`) treats
 **only space (U+0020) and tab (U+0009)** as word separators.
-Punctuation and symbols stay inside words. Shipped in PR #68.
+Newline (`\n`) is a separator too but is handled at line
+boundaries, not as part of `IsWordSep`'s scalar test (it
+appears in `IsWordOrNewline` which the word-boundary scanners
+use). Punctuation and symbols stay inside words. Originally
+shipped in PR #68 on the pre-Cycle-46 `TerminalTextRange`;
+Cycle 46 PR-B reimplemented the same semantics on the new
+substrate; PR-D deleted the screen-grid types.
 
 Concrete consequences:
 
@@ -135,12 +141,17 @@ Three plausible levels of configurability, increasing in cost:
 
 ### Implementation notes
 
-- `IsWordSeparator(cell: Cell): bool` is currently a static
-  method. Making it a member (or a function-typed property)
-  on `TerminalTextRange` lets it vary per-instance.
-- The `TerminalTextProvider` constructor would take an
-  additional `wordSeparator: Cell -> bool` parameter, which
-  the WPF view holds and can swap when the hotkey fires.
+- `IsWordSep(c: char): bool` is currently a static method on
+  `ContentHistoryTextRange`. Making it a member (or a
+  function-typed property) on the type lets it vary per-
+  instance. (Cycle 46 PR-D collapsed the pre-PR-B
+  cell-based `TerminalTextRange.IsWordSeparator(Cell)` into
+  the char-based form; the contract is identical for ASCII
+  but the new signature drops the `Cell` dependency.)
+- The `ContentHistoryTextProvider` constructor would take
+  an additional `wordSeparator: char -> bool` parameter,
+  which the WPF view holds and can swap when the hotkey
+  fires.
 - NVDA needs to be informed of the change: raise a
   Notification with `displayString = "Word boundaries: vim
   mode"`. The existing `TerminalView.Announce` from PR #63
@@ -148,10 +159,12 @@ Three plausible levels of configurability, increasing in cost:
 - Persistence: requires the Phase 2 TOML substrate. Until
   then, "preset cycle on hotkey" works in-session but doesn't
   survive restart.
-- Tests: F#-side unit tests can construct `TerminalTextRange`
-  with synthetic `Cell[][]` content and verify each preset's
-  word boundaries against expected positions. No FlaUI
-  needed.
+- Tests: F#-side unit tests can construct `ContentHistoryTextRange`
+  with synthetic strings (the post-Cycle-46 substrate is
+  string-shaped, not `Cell[][]`-shaped) and verify each
+  preset's word boundaries against expected offsets.
+  `tests/Tests.Unit/ContentHistoryTextRangeTests.fs` is the
+  current pinning surface. No FlaUI needed.
 
 ## Visual settings
 

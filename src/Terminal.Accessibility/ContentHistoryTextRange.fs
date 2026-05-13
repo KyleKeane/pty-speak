@@ -8,12 +8,14 @@ open Terminal.Core
 
 /// Cycle 46 PR-B — UIA Text-pattern providers backed by
 /// `Terminal.Core.ContentHistory` rather than the screen grid.
-/// Replaces (eventually deprecates — cleanup deferred to PR-D)
-/// the screen-grid `TerminalTextProvider` + `TerminalTextRange`
-/// in `TerminalAutomationPeer.fs`. See
-/// `docs/adr/0002-uia-textedit-caret-output.md` for the full
-/// rationale; the short version is "screen-grid TextProvider
-/// is the wrong substrate for linear streaming output".
+/// The pre-Cycle-46 screen-grid `TerminalTextProvider` +
+/// `TerminalTextRange` were deleted in PR-D; the types here
+/// are the live UIA Text-pattern surface.
+///
+/// See `docs/adr/0002-uia-textedit-caret-output.md` for the
+/// full rationale; the short version is "screen-grid
+/// TextProvider is the wrong substrate for linear streaming
+/// output".
 ///
 /// Threading: the providers are accessed from the UIA RPC
 /// thread. `ContentHistory.tailText` takes the substrate's
@@ -45,9 +47,7 @@ module internal ContentHistoryMaterialiser =
 /// because UIA's `ITextRangeProvider` surface mutates ranges
 /// in place — `ExpandToEnclosingUnit`, `Move`,
 /// `MoveEndpointByUnit`, `MoveEndpointByRange`, and `Select`
-/// are all `void` and required to alter the receiver. Same
-/// pattern the existing screen-grid `TerminalTextRange`
-/// uses.
+/// are all `void` and required to alter the receiver.
 type internal ContentHistoryTextRange
     (materialised: string,
      initialStartOffset: int,
@@ -71,9 +71,10 @@ type internal ContentHistoryTextRange
         elif offset > length then length
         else offset
 
-    /// Whitespace test for word-boundary detection. Matches
-    /// `TerminalTextRange.IsWordSeparator` semantics: space
-    /// and tab are separators; punctuation is NOT a separator
+    /// Whitespace test for word-boundary detection. Carries
+    /// forward the pre-Cycle-46 `TerminalTextRange.IsWordSeparator`
+    /// semantics: space and tab are separators; punctuation is
+    /// NOT a separator
     /// so paths and shell prompts (`C:\Users\test>`) read as
     /// single words. `\n` is handled separately at line
     /// boundaries (it terminates a word) so it isn't included
@@ -233,8 +234,8 @@ type internal ContentHistoryTextRange
     /// Walk one endpoint by `count` characters. int64 widening
     /// guards against hostile / accidental `int.MinValue`
     /// underflowing past the `max 0` clamp — same defensive
-    /// pattern the existing `TerminalTextRange.Move(Character)`
-    /// uses.
+    /// pattern the pre-Cycle-46 `TerminalTextRange.Move(Character)`
+    /// used (carried forward).
     static member private WalkChars
             (text: string) (cur: int) (count: int) : int * int =
         let length = text.Length
@@ -311,9 +312,9 @@ type internal ContentHistoryTextRange
                 // Line / Paragraph / Page / Format → enclose
                 // the line at Start. `Paragraph` / `Page` /
                 // `Format` have no useful definition over raw
-                // terminal output; the existing
-                // `TerminalTextRange` degrades them to `Line`
-                // and we match that.
+                // terminal output; the pre-Cycle-46
+                // `TerminalTextRange` degraded them to `Line`
+                // and we carry that convention forward.
                 let s = ContentHistoryTextRange.LineStartOf materialised startOffset
                 let e = ContentHistoryTextRange.LineEndOf materialised s
                 startOffset <- s
@@ -326,7 +327,8 @@ type internal ContentHistoryTextRange
             Unchecked.defaultof<ITextRangeProvider>
 
         member _.GetAttributeValue(_: int) =
-            // Match `TerminalTextRange.GetAttributeValue`:
+            // Carry forward the pre-Cycle-46
+            // `TerminalTextRange.GetAttributeValue` semantics:
             // return the NotSupported sentinel for every
             // attribute. NVDA's text-edit reading path doesn't
             // require any specific attribute on PR-B; if a
@@ -498,10 +500,10 @@ type internal ContentHistoryTextProvider
             Array.empty<ITextRangeProvider>
 
         member _.GetVisibleRanges() =
-            // PR-B treats the materialised tail as fully
-            // visible — there's no separate scroll viewport.
-            // Matches the screen-grid `TerminalTextProvider`,
-            // which also returns empty here.
+            // We treat the materialised tail as fully visible
+            // — there's no separate scroll viewport. (The
+            // pre-Cycle-46 screen-grid `TerminalTextProvider`
+            // also returned empty here.)
             Array.empty<ITextRangeProvider>
 
         member _.RangeFromChild(_: IRawElementProviderSimple) =

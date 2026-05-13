@@ -372,6 +372,77 @@ bundle stages or merge ahead of validation. The 11-PR Stage 7
 sequence (PR-A through PR-K) is the discipline scaled down — each
 PR independently CI-gated and NVDA-validated where applicable.
 
+### Cycle closure audit
+
+**After the final PR of a multi-PR cycle merges, before
+opening a new cycle, ship a "cycle closure audit" PR.** Plan
+for it from the first PR of the cycle — every multi-PR cycle
+plan should explicitly list "closure audit" as the final
+item, alongside the NVDA matrix walk. The audit sweeps for
+drift between the now-shipped state and the docs / supporting
+artifacts so the next session reads a coherent repo, not a
+mid-cycle snapshot.
+
+Without it, transitional language ("PR-C is next", "stays in
+source for deletion in PR-D", "validation gate is N-PRA-1")
+accumulates as confusing history. Cycle 46 retro
+(`docs/CYCLE-46-NEXT-STEPS.md`) is the cautionary tale: PR-D
+shipped, but until the closure audit, four docs still said
+"PR-D is next" and a fifth still said "the legacy types
+stay in source for deletion in PR-D." Future sessions would
+have had to reverse-engineer the truth.
+
+The audit covers, at minimum:
+
+- **`docs/SESSION-HANDOFF.md`** — "Current state" reflects
+  completion; "Next stage" drops the cycle-internal PRs.
+- **`docs/PROJECT-PLAN-YYYY-MM-DD.md`** — shipped items
+  removed from "Primary track"; validation-gate section
+  consolidates per-PR gates to a single cycle-level gate;
+  §"Change log" gains a closure entry.
+- **`CLAUDE.md` §"Current sequencing"** — per-PR breakdown
+  collapses to a single cycle-level line (or short PR-A→D
+  bullet block under one cycle heading).
+- **The cycle's in-flight scoping doc** (if one exists, e.g.
+  `CYCLE-46-NEXT-STEPS.md`) — mark historical with a banner
+  at the top + a "things this doc says that are now untrue"
+  list. Don't delete; the delta between the planning and
+  the shipped diff is itself a useful artifact.
+- **ADRs** — flip "Accepted" → "Accepted / Implemented" (or
+  add per-PR Status-notes entries) so the ADR records the
+  ship outcome.
+- **`docs/ACCESSIBILITY-TESTING.md`** — gains a Cycle N
+  matrix section; per-PR gates (e.g. Cycle 46-PRB-1,
+  Cycle 46-PRC-1) consolidate to a single Cycle 46-1 row
+  (or row-set) once the cycle ships as a whole.
+- **`docs/ARCHITECTURE.md` / `docs/DOC-MAP.md` /
+  `README.md`** — module map / doc routing / feature-list
+  entries reflect the new surface, not the old one.
+- **Code comments** — `grep -rn '<DeletedTypeName>' src/
+  tests/` catches lingering type references. Comments that
+  say "X stays in source until PR-D" should now say "PR-D
+  deleted X" (or be dropped entirely if they no longer add
+  value).
+- **`CHANGELOG.md`** — optional closure note if the cycle
+  was substantive enough that the `[Unreleased]` section
+  reads as a single coherent ship; usually the per-PR
+  entries are enough.
+
+Search patterns that catch most drift:
+
+```
+grep -rn '<DeletedTypeName>' src/ tests/ docs/
+grep -rn 'next)\|after PR\|stays in source\|deletion in PR-' docs/
+grep -rn '<CycleN>-PR' docs/ tests/
+```
+
+The audit PR is typically docs-only (eligible for the
+fast-merge lane via the markdown link checker) unless code
+comments need editing. Squash-merge as usual; the closure
+PR's commit on `main` is a useful "Cycle N done" bookmark
+and the natural snapshot point for the maintainer's
+release-build smoke test.
+
 ### Spec immutability
 
 [`spec/`](spec/) is the design substrate. Don't edit it without
@@ -587,12 +658,10 @@ PowerShell window via `ProcessStartInfo`.
 
 Canonical:
 [`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md) +
-[`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md) +
-[`docs/CYCLE-46-NEXT-STEPS.md`](docs/CYCLE-46-NEXT-STEPS.md).
-The plan catalogues candidate next cycles + sequencing
-rationale; the handoff names the current state in ~150 lines;
-the next-steps doc names file-level PR-C / PR-D edits. This
-index just points at the cycle headline.
+[`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md). The plan
+catalogues candidate next cycles + sequencing rationale; the
+handoff names the current state in ~150 lines. This index just
+points at the cycle headline.
 
 - **Cycle 45** (PRs #263–#270, 2026-05-12) shipped the
   `ContentHistory` + `SpeechCursor` aural substrate.
@@ -600,33 +669,32 @@ index just points at the cycle headline.
   pre-Cycle-45 pathway pipeline (`StreamPathway` /
   `LinearTextStream` / `DisplayPathway` / `TuiPathway` /
   `PathwaySelector`). ~5,000+ LOC removed.
-- **Cycle 46 PR-A** (PR #287, 2026-05-12) drafted
-  [ADR 0002](docs/adr/0002-uia-textedit-caret-output.md):
-  command output moves from UIA `RaiseNotificationEvent` to a
-  UIA TextEdit caret on `TerminalView`. ADR accepted
-  2026-05-13 with all five Open Questions resolved.
-- **Cycle 46 PR-B** (PR #288, 2026-05-13) swapped the UIA
-  `ITextProvider` from screen grid to `ContentHistory.tailText`
-  (256 KB cap) and flipped `TerminalAutomationPeer.GetAutomationControlTypeCore`
-  from `Document` to `Edit`. The legacy screen-grid types
-  (`TerminalTextProvider` / `TerminalTextRange` / `SnapshotText`)
-  stay in source for deletion in PR-D.
-- **NVDA matrix walk Cycle 46-PRB-1** is the immediate
+- **Cycle 46** (PRs #287–#291, 2026-05-12 → 2026-05-13)
+  flipped the **channel** for terminal output from UIA
+  `RaiseNotificationEvent` to a UIA TextEdit caret on
+  `TerminalView`. See
+  [ADR 0002](docs/adr/0002-uia-textedit-caret-output.md).
+  - PR-A (#287) — ADR drafted.
+  - PR-B (#288) — UIA `ITextProvider` substrate-swapped from
+    screen grid to `ContentHistory.tailText` (256 KB cap);
+    `TerminalAutomationPeer.GetAutomationControlTypeCore`
+    flipped from `Document` to `Edit`.
+  - PR-C (#290) — `TerminalAutomationPeer.RaiseCaretMovedToTail()`
+    raises `AutomationEvents.TextPatternOnTextSelectionChanged`;
+    replaces the tuple-finalise `Announce(text, ActivityIds.output, MostRecent)`
+    call in `Program.fs`'s boundary handler.
+  - PR-D (#291) — `speechCursorAnnounce` delegates to the
+    same caret helper; legacy screen-grid types
+    (`TerminalTextProvider` / `TerminalTextRange` /
+    `SnapshotText`) + `WordBoundaryTests.fs` deleted
+    (~680 LOC).
+- **NVDA matrix walk Cycle 46-1** is the immediate
   validation gate (see
-  [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)).
-  Confirm "edit" focus announce + `Insert+Down` reads the
-  ContentHistory tail before starting PR-C.
-- **Cycle 46 PR-C** (next) — wire `SessionModel` to raise
-  `TextSelectionChangedEvent` on tuple finalise; drop the
-  `Announce(text, ActivityIds.output, MostRecent)` call at
-  `Program.fs:1627–1630`. File-level scoping + risk register
-  in
-  [`docs/CYCLE-46-NEXT-STEPS.md`](docs/CYCLE-46-NEXT-STEPS.md) §2.
-- **Cycle 46 PR-D** (after PR-C) — `SpeechCursor` delegation
-  + delete the legacy screen-grid types (~600 LOC). Scoping in
-  [`docs/CYCLE-46-NEXT-STEPS.md`](docs/CYCLE-46-NEXT-STEPS.md) §3.
-- **Parallel-track candidates** (independent of Cycle 46; pick
-  by priority): 45g `ShellPolicy` consolidation, 45d review-
+  [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
+  "Cycle 46" section). Confirms typing-interrupts-speech +
+  Alt-interrupts-speech + caret-pacing on long output.
+- **Next-cycle candidates** (none block each other; pick by
+  priority): 45g `ShellPolicy` consolidation, 45d review-
   cursor focus, semantic-labels foundation, spinner/red-tone
   refinements, Coalescer rename, UIA semantic caret. Sequencing
   in [`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md).

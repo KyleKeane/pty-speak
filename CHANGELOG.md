@@ -15,6 +15,102 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 46 closure audit + Option ★★ pivot (no-spoken-output fix)
+
+Post-PR-D audit PR sweeping for drift between the now-
+shipped Cycle 46 state and the supporting docs, **plus** a
+fix for the no-spoken-output regression maintainer testing
+surfaced on the post-PR-D preview build.
+
+**Code fix (the regression resolution).** Maintainer report:
+"I'm no longer hearing any spoken output after command. I
+can still hear menus and other speech." Root cause: NVDA
+doesn't react to a bare
+`AutomationEvents.TextPatternOnTextSelectionChanged` raised
+by `RaiseCaretMovedToTail` when
+`ITextProvider.GetSelection()` returns an empty array.
+NVDA queries `GetSelection`, gets nothing, reads nothing.
+This was the failure mode flagged in
+[`docs/CYCLE-46-NEXT-STEPS.md`](docs/CYCLE-46-NEXT-STEPS.md)
+§2's risk register.
+
+Pivoted ADR §4 resolution from **Option ★ Replace** to
+**Option ★★ Augment**:
+
+- `speechCursorAnnounce` callback in
+  [`src/Terminal.App/Program.fs`](src/Terminal.App/Program.fs)
+  now calls `window.TerminalSurface.Announce(text, activityId)`
+  **and** `raiseCaretMovedToTail ()`.
+- The boundary handler's `tupleFinaliseAnnounce` branch
+  similarly fires `Announce` alongside the caret-move event.
+- `Announce` is what NVDA actually reads; the caret-move
+  event stays as a defensive signal; the `ControlType=Edit`
+  flip from PR-B is the load-bearing change for
+  typing-interrupts-speech (NVDA's "Speech interrupt for
+  typed character" setting fires on any key press in an
+  Edit regardless of how the speech was initiated).
+- Cycle 46's user-visible payoff is preserved: spoken
+  output is back, AND typing interrupts speech, AND the
+  architectural cleanup (legacy screen-grid types deleted,
+  new ContentHistory-backed substrate, ControlType=Edit)
+  stays in place.
+
+The "long-term fix" — implement `GetSelection()` to point
+at the tail on caret-move so we can drop the redundant
+`Announce` again — is deferred to a future cycle. Recorded
+in the ADR Status notes (2026-05-13 post-PR-D audit entry).
+
+**Doc audit (the closure sweep).** Aligns the repo with the
+post-Cycle-46 reality:
+
+- **[`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)** —
+  "Current state" flips from "PR-A + PR-B merged; PR-C / PR-D
+  pending" to "Cycle 46 fully shipped"; per-PR table; pivot
+  note for the Option ★★ revision.
+- **[`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md)**
+  — §1 "What changed" collapses PR-A → PR-D into one Cycle 46
+  entry; §3 validation gate consolidates from 46-PRB-1 to
+  46-1; §4 "Primary track" removed (Cycle 46 done); §7
+  change log appended.
+- **[`CLAUDE.md`](CLAUDE.md) §"Current sequencing"** —
+  per-PR breakdown collapsed under a single Cycle 46 heading;
+  drop CYCLE-46-NEXT-STEPS.md from the canonical-docs list
+  (now historical).
+- **[`docs/CYCLE-46-NEXT-STEPS.md`](docs/CYCLE-46-NEXT-STEPS.md)**
+  — banner at the top marks it historical with a "things this
+  doc says that are now untrue" list. Kept verbatim as a
+  retrospective artifact.
+- **[`docs/adr/0002-uia-textedit-caret-output.md`](docs/adr/0002-uia-textedit-caret-output.md)**
+  — Status flipped from "Accepted" to "Accepted / Implemented";
+  Decision §4 + §"Open Questions" §4 record the Option ★ →
+  ★★ pivot; "Staged implementation plan" gets a historical
+  banner; per-PR Status notes for PR-C, PR-D, and the post-
+  PR-D audit appended.
+- **[`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)**
+  — gains a Cycle 46 matrix section (rows 46-1 through 46-10
+  covering focus-announce, typing-interrupt, Alt-interrupt,
+  read-all, line-nav, manual SpeechCursor, PowerShell, Claude,
+  non-output notifications, errors) + a diagnostic decoder
+  for likely failure modes.
+- **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** — module
+  map row for `Terminal.Accessibility` rewritten: drops the
+  deleted `TerminalTextProvider` / `TerminalTextRange`;
+  names the new `ContentHistoryTextProvider` /
+  `ContentHistoryTextRange` + `RaiseCaretMovedToTail`;
+  marks `ControlType=Edit`.
+- **[`docs/USER-SETTINGS.md`](docs/USER-SETTINGS.md)** —
+  word-boundary section updated to reference
+  `ContentHistoryTextRange.IsWordSep` (post-Cycle-46) instead
+  of the deleted `TerminalTextRange.IsWordSeparator`. Sample
+  signatures + test-construction notes updated accordingly.
+
+**CLAUDE.md addition (per maintainer ask).** Added a new
+§"Cycle closure audit" subsection to CLAUDE.md "Project
+conventions" so every future multi-PR cycle plans for the
+closure-audit step from PR-A. Includes a checklist of doc
+surfaces to sweep + `grep` patterns that catch the most
+common drift.
+
 ### SpeechCursor delegates to caret + screen-grid cleanup (Cycle 46 PR-D)
 
 Implements PR-D of the four-PR Cycle 46 sequence per

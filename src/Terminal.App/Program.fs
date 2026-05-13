@@ -911,17 +911,50 @@ module Program =
                 // unreachable in practice.
                 ()
 
-        // Cycle 46 PR-D — delegation: instead of firing an
-        // independent `Announce(text, activityId)` notification,
-        // raise the caret-move event so NVDA reads via the
-        // ContentHistory tail with user-tunable pacing. The
-        // `text` and `activityId` arguments are unused —
-        // preserved in the signature so `SpeechCursor.onAppend`
-        // / `speakCurrent` / `speakSince` still satisfy their
-        // callback shape. NVDA queries `DocumentRange` to get
-        // current content, so we don't have to thread the text
-        // through.
-        let speechCursorAnnounce ((_text: string), (_activityId: string)) =
+        // Cycle 46 PR-D + post-PR-D audit (2026-05-13) — emit
+        // BOTH the announce AND the caret-move event.
+        //
+        // The PR-D plan was "delegate to caret only; drop
+        // Announce" (ADR §4 Option ★ Replace). Maintainer
+        // testing on the preview build surfaced the failure
+        // mode flagged in CYCLE-46-NEXT-STEPS.md §2's risk
+        // register: NVDA doesn't react to bare
+        // `TextPatternOnTextSelectionChanged` on a read-only
+        // Edit when `ITextProvider.GetSelection()` returns an
+        // empty array (which ours does — PR-B's
+        // ContentHistoryTextProvider has no selection model).
+        // The caret-move event fires, NVDA queries
+        // `GetSelection`, gets nothing back, reads nothing.
+        // Spoken output stopped entirely while menus +
+        // diagnostic announces still worked, confirming the
+        // failure was caret-side, not Announce-side.
+        //
+        // The fix pivots to ADR §4 Option ★★ Augment:
+        //   * Restore the `Announce(text, activityId)` call so
+        //     NVDA receives the content via the channel it
+        //     already knows how to read.
+        //   * Keep `raiseCaretMovedToTail ()` as a defensive
+        //     signal — NVDA may consume the event for review-
+        //     cursor positioning or future client integrations,
+        //     and dropping it would invalidate the PR-C/PR-D
+        //     diff against the rest of the audit.
+        //   * Rely on PR-B's `ControlType=Edit` flip — kept
+        //     in place — for NVDA's "Speech interrupt for
+        //     typed character" setting, which fires on ANY
+        //     key press inside an Edit regardless of how
+        //     speech was initiated. That preserves the
+        //     typing-interrupts-speech win that motivated
+        //     Cycle 46 in the first place.
+        //
+        // Net effect: spoken output behaves as it did pre-
+        // Cycle-46 (via Announce), AND typing interrupts
+        // speech (via the Edit-control type), AND the
+        // architectural cleanup of PR-D (legacy screen-grid
+        // types deleted, new ContentHistory-backed substrate)
+        // stays in place. See ADR 0002 Status notes for the
+        // post-merge audit entry.
+        let speechCursorAnnounce ((text: string), (activityId: string)) =
+            window.TerminalSurface.Announce(text, activityId)
             raiseCaretMovedToTail ()
 
         // "Wake up" trigger: ContentHistory has appended.
@@ -1679,8 +1712,18 @@ module Program =
                 // — under `LineByLine` per-TextSpan announces
                 // already covered the output and we shouldn't
                 // double-fire; under `Off` we want silence.
+                // Cycle 46 PR-C + post-PR-D audit — Option ★★
+                // Augment. The Announce restores spoken output
+                // (NVDA reads the tuple-final text); the
+                // caret-move event signals the Edit-control
+                // change; the ControlType=Edit (PR-B) enables
+                // NVDA's typed-character interrupt. See the
+                // matching comment on `speechCursorAnnounce`
+                // above for the full rationale.
                 match tupleFinaliseAnnounce with
-                | Some _ -> raiseCaretMovedToTail ()
+                | Some text ->
+                    window.TerminalSurface.Announce(text, ActivityIds.output)
+                    raiseCaretMovedToTail ()
                 | None -> ()
             window.Dispatcher.InvokeAsync(Action(boundaryAction))
             |> ignore
