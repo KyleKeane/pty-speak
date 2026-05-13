@@ -992,9 +992,21 @@ module Program =
         // types deleted, new ContentHistory-backed substrate)
         // stays in place. See ADR 0002 Status notes for the
         // post-merge audit entry.
+        // Cycle 47 follow-up (2026-05-13, post-preview.113) —
+        // dropped the `raiseCaretMovedToTail ()` call. The
+        // helper is preserved (defined above) for future
+        // re-introduction with a selection-aware ITextProvider,
+        // but auto-driven Announce paths no longer fire the
+        // caret event because NVDA reads DocumentRange (which
+        // carries semantic-boundary markers via
+        // `tailTextWithMarkers`) when the event fires, and the
+        // maintainer reported hearing "--- prompt ---" mid-
+        // narration during the preview.113 dogfood. Announce is
+        // sufficient for the auto-drive path; manual Speech
+        // Cursor navigation surfaces markers explicitly when
+        // the user wants to inspect boundary structure.
         let speechCursorAnnounce ((text: string), (activityId: string)) =
             window.TerminalSurface.Announce(text, activityId)
-            raiseCaretMovedToTail ()
 
         // "Wake up" trigger: ContentHistory has appended.
         // SpeechCursor.onAppend reads from history directly
@@ -1784,43 +1796,50 @@ module Program =
                 // audible text — keep the cap silent at the
                 // channel layer and trust the hotkey + log to
                 // surface the cap when needed.
-                // Cycle 47 follow-up (2026-05-13) — slice from
-                // the idle-flush watermark to the current
-                // ContentHistory tail rather than announcing
-                // `tuple.OutputText` whole. The watermark
-                // captures whatever idle-flush has already
-                // narrated during the script; tuple-finalise
-                // here just announces the residual gap (zero,
-                // typically, if idle-flushes kept up). Avoids
-                // double-narration when idle-flush has covered
-                // the tuple. `tupleFinaliseAnnounce` is still
-                // checked because it carries the streaming-
-                // policy gate and the non-blank-output filter
-                // — the slice path inherits both implicitly
-                // (None payload → skip; blank slice → skip).
+                // Cycle 47 follow-up (2026-05-13, post-preview.113)
+                // — revert from the watermark-slice approach back
+                // to announcing `tuple.OutputText` directly. The
+                // slice approach (introduced in the post-PR-#296
+                // audit) was wrong: ContentHistory's tail spans
+                // input echo + output + the next prompt's path
+                // bytes (the cmd reader keeps emitting after the
+                // command finishes), so `sliceText(lastAnnouncedSeq,
+                // latest+1)` picked up "command + output + next
+                // input line path" instead of just the output.
+                // SessionModel's tuple-extractor already knows
+                // where the curated output region starts and ends
+                // (`tuple.OutputText`); use that.
+                //
+                // Idle-flush continues to use the watermark + slice
+                // path for the intra-script (`set /p`, `pause`) gap
+                // case where there's no curated tuple yet. The
+                // watermark advances at tuple-finalise time to the
+                // current `latestSeq` so the next idle-flush doesn't
+                // re-announce what tuple-finalise just covered.
+                //
+                // No `raiseCaretMovedToTail ()` call here — NVDA
+                // reads the DocumentRange (which carries semantic-
+                // boundary markers via `tailTextWithMarkers` for
+                // the review cursor) when the caret event fires,
+                // and the maintainer reported hearing
+                // "--- prompt ---" mid-narration during the
+                // preview.113 dogfood. The Announce above is the
+                // sole audible path; the review cursor remains
+                // available via Speech Cursor navigation when the
+                // user explicitly wants to inspect markers.
                 match tupleFinaliseAnnounce with
-                | Some _ ->
-                    let latest = ContentHistory.latestSeq contentHistory
-                    if latest > lastAnnouncedSeq then
-                        let text =
-                            ContentHistory.sliceText
-                                contentHistory
-                                lastAnnouncedSeq
-                                (latest + 1L)
-                        if not (System.String.IsNullOrWhiteSpace text) then
-                            let toSay =
-                                if text.Length <= OutputAnnounceCapChars then text
-                                else text.Substring(text.Length - OutputAnnounceCapChars)
-                            if toSay.Length < text.Length then
-                                log.LogInformation(
-                                    "Tuple-final announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
-                                    text.Length, toSay.Length, OutputAnnounceCapChars)
-                            log.LogInformation(
-                                "Tuple-final announce. SliceFrom={From} SliceTo={To} Length={Len}",
-                                lastAnnouncedSeq, latest, toSay.Length)
-                            window.TerminalSurface.Announce(toSay, ActivityIds.output)
-                            raiseCaretMovedToTail ()
-                        lastAnnouncedSeq <- latest
+                | Some text ->
+                    let toSay =
+                        if text.Length <= OutputAnnounceCapChars then text
+                        else text.Substring(text.Length - OutputAnnounceCapChars)
+                    if toSay.Length < text.Length then
+                        log.LogInformation(
+                            "Tuple-final announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
+                            text.Length, toSay.Length, OutputAnnounceCapChars)
+                    log.LogInformation(
+                        "Tuple-final announce. Length={Len}", toSay.Length)
+                    window.TerminalSurface.Announce(toSay, ActivityIds.output)
+                    lastAnnouncedSeq <- ContentHistory.latestSeq contentHistory
                 | None -> ()
             window.Dispatcher.InvokeAsync(Action(boundaryAction))
             |> ignore
@@ -3240,6 +3259,55 @@ module Program =
                     let path = Config.defaultConfigFilePath ()
                     Diagnostics.readFileSafe path)
 
+        // --- Extract → Test Run → <testId> ---
+        //
+        // Cycle 47 follow-up (2026-05-13) — eight extractors, one
+        // per CMD test in `scripts/cmd-tests/`. Body source is
+        // `ContentHistory.tailText` (256 KB cap — same window
+        // PR-B's UIA substrate uses); `DiagnosticExtracts.extractByTest`
+        // does the bracket-marker scan. Output is the bracketed
+        // body of every run in the tail, with run dividers when
+        // there are multiple. Falls back to a one-line "no runs
+        // found" placeholder when the bracket markers haven't
+        // been emitted yet (e.g. the user hasn't run the
+        // companion `CmdTest*` invocation in this session).
+        let runExtractTestRun
+                (extractorName: string)
+                (testId: string)
+                : unit =
+            runExtractorClipboard
+                extractorName
+                (sprintf
+                    "ContentHistory tail; bracketed slice for %s"
+                    testId)
+                (fun () ->
+                    let tail =
+                        try
+                            ContentHistory.tailText
+                                contentHistory
+                                (256 * 1024)
+                            |> AnnounceSanitiser.sanitise
+                        with _ ->
+                            "(ContentHistory tail unavailable)"
+                    DiagnosticExtracts.extractByTest testId tail)
+
+        let runExtractTestEcho () : unit =
+            runExtractTestRun "ExtractTestEcho" "test-01-echo"
+        let runExtractTestTextInput () : unit =
+            runExtractTestRun "ExtractTestTextInput" "test-02-text-input"
+        let runExtractTestNumericInput () : unit =
+            runExtractTestRun "ExtractTestNumericInput" "test-03-numeric-input"
+        let runExtractTestYesNo () : unit =
+            runExtractTestRun "ExtractTestYesNo" "test-04-yes-no"
+        let runExtractTestMultiChoice () : unit =
+            runExtractTestRun "ExtractTestMultiChoice" "test-05-multi-choice"
+        let runExtractTestPause () : unit =
+            runExtractTestRun "ExtractTestPause" "test-06-pause"
+        let runExtractTestProgress () : unit =
+            runExtractTestRun "ExtractTestProgress" "test-07-progress"
+        let runExtractTestStderr () : unit =
+            runExtractTestRun "ExtractTestStderr" "test-08-stderr"
+
         // --- Extract → Snapshot → Version + environment header ---
         let runExtractVersionHeader () : unit =
             runExtractorClipboard
@@ -3297,6 +3365,15 @@ module Program =
         bind HotkeyRegistry.ExtractErrorsAndWarnings runExtractErrorsAndWarnings
         bind HotkeyRegistry.ExtractActiveConfig runExtractActiveConfig
         bind HotkeyRegistry.ExtractVersionHeader runExtractVersionHeader
+        // Cycle 47 follow-up — test-bracketed extractors.
+        bind HotkeyRegistry.ExtractTestEcho runExtractTestEcho
+        bind HotkeyRegistry.ExtractTestTextInput runExtractTestTextInput
+        bind HotkeyRegistry.ExtractTestNumericInput runExtractTestNumericInput
+        bind HotkeyRegistry.ExtractTestYesNo runExtractTestYesNo
+        bind HotkeyRegistry.ExtractTestMultiChoice runExtractTestMultiChoice
+        bind HotkeyRegistry.ExtractTestPause runExtractTestPause
+        bind HotkeyRegistry.ExtractTestProgress runExtractTestProgress
+        bind HotkeyRegistry.ExtractTestStderr runExtractTestStderr
 
         // Cycle 45 Commit 2 — SpeechCursor navigation commands.
         // Menu-only (no keyboard accelerators in this cycle —
@@ -3473,6 +3550,29 @@ module Program =
                     let idleMs =
                         (DateTimeOffset.UtcNow - lastReadUtc).TotalMilliseconds
                     if idleMs >= float thresholdMs then
+                        // Cycle 47 follow-up (2026-05-13, post-preview.113)
+                        // — force a `ContentHistory.tick` before
+                        // reading `latestSeq`. The active span
+                        // (text accumulated since the last
+                        // newline / Overwrite / marker) is NOT
+                        // visible to `latestSeq` until it seals;
+                        // `set /p` writes a prompt line WITHOUT a
+                        // trailing newline (e.g.
+                        // "Enter your name: "), so the active
+                        // span never seals, `latestSeq` never
+                        // advances, and idle-flush concludes
+                        // there's nothing to announce. `tick`
+                        // seals stale active spans whose last
+                        // append is older than the substrate's
+                        // staleness threshold, which then bumps
+                        // `latestSeq` so the slice path picks it
+                        // up. The 350 ms idle threshold and
+                        // ContentHistory's staleness window are
+                        // compatible — once idle-flush fires
+                        // (≥ 350 ms quiet) the active span is by
+                        // definition stale.
+                        ContentHistory.tick contentHistory DateTime.UtcNow
+                        |> ignore
                         let latest = ContentHistory.latestSeq contentHistory
                         if latest > lastAnnouncedSeq then
                             let text =
@@ -3493,9 +3593,20 @@ module Program =
                                     idleMs,
                                     thresholdMs,
                                     toSay.Length)
+                                // No `raiseCaretMovedToTail ()`
+                                // call — see the matching comment
+                                // on the boundary-handler
+                                // tuple-finalise path. NVDA's
+                                // DocumentRange read picks up the
+                                // markers from
+                                // `tailTextWithMarkers`, which
+                                // the maintainer reported hearing
+                                // mid-narration during the
+                                // preview.113 dogfood. The
+                                // Announce above is the sole
+                                // audible path.
                                 window.TerminalSurface.Announce(
                                     toSay, ActivityIds.output)
-                                raiseCaretMovedToTail ()
                             lastAnnouncedSeq <- latest
                 | None -> ()
             with ex ->

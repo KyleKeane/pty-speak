@@ -174,6 +174,23 @@ module HotkeyRegistry =
         | ExtractErrorsAndWarnings
         | ExtractActiveConfig
         | ExtractVersionHeader
+        // Cycle 47 follow-up (2026-05-13) — test-bracketed
+        // extractors. Each one pulls the `=== PTYSPEAK-TEST-START:
+        // <id> === ... === PTYSPEAK-TEST-END: <id> ===` slice
+        // for the matching CMD test out of the ContentHistory
+        // tail. Companion to `CmdTest*` (which writes the script
+        // invocation to the PTY input cursor); pair the two to
+        // run + extract a focused triage slice without touching
+        // the surrounding session output. All menu-only;
+        // surfaced under Diagnostics → Extract → Test Run.
+        | ExtractTestEcho
+        | ExtractTestTextInput
+        | ExtractTestNumericInput
+        | ExtractTestYesNo
+        | ExtractTestMultiChoice
+        | ExtractTestPause
+        | ExtractTestProgress
+        | ExtractTestStderr
         // Cycle 45 Commit 2 — SpeechCursor navigation. All
         // menu-only (no keyboard accelerators in 45; future
         // cycles can layer accelerators on after the muscle
@@ -224,6 +241,14 @@ module HotkeyRegistry =
         | ExtractErrorsAndWarnings -> "ExtractErrorsAndWarnings"
         | ExtractActiveConfig -> "ExtractActiveConfig"
         | ExtractVersionHeader -> "ExtractVersionHeader"
+        | ExtractTestEcho -> "ExtractTestEcho"
+        | ExtractTestTextInput -> "ExtractTestTextInput"
+        | ExtractTestNumericInput -> "ExtractTestNumericInput"
+        | ExtractTestYesNo -> "ExtractTestYesNo"
+        | ExtractTestMultiChoice -> "ExtractTestMultiChoice"
+        | ExtractTestPause -> "ExtractTestPause"
+        | ExtractTestProgress -> "ExtractTestProgress"
+        | ExtractTestStderr -> "ExtractTestStderr"
         | SpeechCursorNext -> "SpeechCursorNext"
         | SpeechCursorPrevious -> "SpeechCursorPrevious"
         | SpeechCursorJumpToLatest -> "SpeechCursorJumpToLatest"
@@ -418,6 +443,43 @@ module HotkeyRegistry =
             Key = None
             Modifiers = None
             Description = "Extract the version + environment header (version, OS, .NET, PID) to the clipboard (Cycle 43a; Snapshot)" }
+          // Cycle 47 follow-up (2026-05-13) — test-bracketed
+          // extractors. Each one pulls every
+          // `=== PTYSPEAK-TEST-START: <id> === ... === PTYSPEAK-TEST-END:
+          // <id> ===` slice for the matching CMD test out of the
+          // ContentHistory tail. All menu-only.
+          { Command = ExtractTestEcho
+            Key = None
+            Modifiers = None
+            Description = "Extract every test-01-echo bracketed slice from the ContentHistory tail (Cycle 47 follow-up; Test Run)" }
+          { Command = ExtractTestTextInput
+            Key = None
+            Modifiers = None
+            Description = "Extract every test-02-text-input bracketed slice from the ContentHistory tail (Cycle 47 follow-up; Test Run)" }
+          { Command = ExtractTestNumericInput
+            Key = None
+            Modifiers = None
+            Description = "Extract every test-03-numeric-input bracketed slice from the ContentHistory tail (Cycle 47 follow-up; Test Run)" }
+          { Command = ExtractTestYesNo
+            Key = None
+            Modifiers = None
+            Description = "Extract every test-04-yes-no bracketed slice from the ContentHistory tail (Cycle 47 follow-up; Test Run)" }
+          { Command = ExtractTestMultiChoice
+            Key = None
+            Modifiers = None
+            Description = "Extract every test-05-multi-choice bracketed slice from the ContentHistory tail (Cycle 47 follow-up; Test Run)" }
+          { Command = ExtractTestPause
+            Key = None
+            Modifiers = None
+            Description = "Extract every test-06-pause bracketed slice from the ContentHistory tail (Cycle 47 follow-up; Test Run)" }
+          { Command = ExtractTestProgress
+            Key = None
+            Modifiers = None
+            Description = "Extract every test-07-progress bracketed slice from the ContentHistory tail (Cycle 47 follow-up; Test Run)" }
+          { Command = ExtractTestStderr
+            Key = None
+            Modifiers = None
+            Description = "Extract every test-08-stderr bracketed slice from the ContentHistory tail (Cycle 47 follow-up; Test Run)" }
           // Cycle 45 Commit 2 — SpeechCursor navigation. Menu-only.
           //
           // Cycle 45 backlog (docs/USER-SETTINGS.md "Speech-cursor
@@ -545,6 +607,14 @@ module HotkeyRegistry =
           ExtractErrorsAndWarnings
           ExtractActiveConfig
           ExtractVersionHeader
+          ExtractTestEcho
+          ExtractTestTextInput
+          ExtractTestNumericInput
+          ExtractTestYesNo
+          ExtractTestMultiChoice
+          ExtractTestPause
+          ExtractTestProgress
+          ExtractTestStderr
           SpeechCursorNext
           SpeechCursorPrevious
           SpeechCursorJumpToLatest

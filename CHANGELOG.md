@@ -15,6 +15,121 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 47 follow-up (2026-05-13, post-preview.113): tuple-final revert + `tick`-on-idle + caret-event drop + test-bracketed extractors
+
+Four fixes triggered by the maintainer's preview.113 walk of a
+simple `echo hi` session through cmd. The Cycle 47-and-prior
+post-audit churn left three correctness regressions and one
+new feature requested in the same triage round.
+
+#### 1. Tuple-final: announce `tuple.OutputText`, not a `ContentHistory` slice
+
+**Symptom**: at command-end, NVDA spoke the input line echo +
+the actual output + the path bytes of the next prompt — three
+distinct regions joined into one utterance. For an `echo hi`
+that should narrate "hi", the maintainer heard
+"echo hi[newline]hi[newline]C:\\Users\\dev>".
+
+**Root cause**: the post-PR-#296 audit re-wired the boundary
+handler's `Announce` payload from `tuple.OutputText` (the
+curated output region SessionModel's tuple-extractor computes)
+to a `ContentHistory.sliceText` between two `latestSeq`
+watermarks. The slice spans the entire tail between the
+watermark and the current latest — including the input echo
+emitted before `OutputStart` fired and the next prompt's path
+emitted after `OutputEnd` sealed. The narrative size matched
+the log line: `SliceFrom=3 SliceTo=7 Length=56` vs
+`CmdLen=7 OutLen=2` — 54 bytes more than the curated output.
+
+**Fix**: `src/Terminal.App/Program.fs` boundary handler tuple-
+finalise match block reverts to `tupleFinaliseAnnounce`'s
+`Some text` payload (which IS `tuple.OutputText`), capped at
+`OutputAnnounceCapChars` (800), with `lastAnnouncedSeq`
+advanced to the current `ContentHistory.latestSeq` so the
+next idle-flush doesn't re-announce the same span.
+
+#### 2. Idle-flush: call `ContentHistory.tick` first
+
+**Symptom** (`test-02-text-input.cmd`): the script read the
+"Welcome to ..." block, fell silent through the `set /p`
+prompt, and only spoke "Enter your name:" AFTER the user
+typed input and pressed Enter — at which point NVDA
+narrated the prompt, the typed value, and the rest of the
+evaluation all jumbled together.
+
+**Root cause**: `ContentHistory.latestSeq` returns
+`NextSeq - 1`, which only advances when an `Entry` seals.
+`set /p` emits "Enter your name: " WITHOUT a trailing
+newline, so the active span never seals; idle-flush's
+`latest > lastAnnouncedSeq` returned false and the timer
+went quiet.
+
+**Fix**: call `ContentHistory.tick contentHistory
+DateTime.UtcNow |> ignore` at the top of the idle-flush
+tick body. `tick` seals stale active spans whose last
+append is older than the substrate's
+`IdleSpanSealMs` threshold, which then bumps `latestSeq`
+so the slice path picks up the unfinished `set /p`
+prompt. The 350 ms idle threshold and the staleness
+window are compatible — once idle-flush fires
+(≥ 350 ms quiet) the active span is by definition stale.
+
+#### 3. Drop `raiseCaretMovedToTail` from auto-narrate paths
+
+**Symptom**: during `echo hi` auto-narrate, NVDA spoke
+"--- prompt ---" mid-utterance. The marker was supposed to
+appear only in the review-cursor document, not the audible
+narration.
+
+**Root cause**: the boundary handler's `raiseCaretMovedToTail()`
+call (and the matching one inside `speechCursorAnnounce`)
+fires `AutomationEvents.TextPatternOnTextSelectionChanged` on
+the `TerminalAutomationPeer`. NVDA reads the
+DocumentRange in response, and DocumentRange is materialised
+via `tailTextWithMarkers` (the Cycle 47-13 fix gave the
+review cursor labelled boundary lines). The `Announce` text
+itself is correct (no markers), but NVDA layers the
+DocumentRange read on top.
+
+**Fix**: drop the `raiseCaretMovedToTail ()` call from
+(a) the boundary-handler tuple-finalise path, (b) the
+idle-flush tick, and (c) `speechCursorAnnounce`. The helper
+definition stays in place (defensive infrastructure for a
+future selection-aware ITextProvider). The audible path is
+now `Announce` alone; marker labels remain in the
+DocumentRange for explicit Speech Cursor navigation when
+the user wants to inspect boundaries.
+
+#### 4. Test-bracketed diagnostic extractors
+
+**New feature**: eight menu items under Diagnostics →
+Extract → _Test Run. One per CMD interaction test in
+`scripts/cmd-tests/`. Each scans the ContentHistory tail
+(256 KB cap) for `=== PTYSPEAK-TEST-START: <id> === ...
+=== PTYSPEAK-TEST-END: <id> ===` bracket pairs and writes
+the bracketed body (all instances, divider-separated when
+multiple) to clipboard + an extract file under
+`%LOCALAPPDATA%\PtySpeak\extracts\`.
+
+Pairs naturally with Diagnostics → _CMD Interaction Tests:
+fire the matching `CmdTest*` item to insert the script
+invocation into the PTY input cursor, review + press Enter
+to run, then fire the matching `ExtractTest*` item to copy
+the bracketed slice for paste-back to triage chat — no
+surrounding session noise.
+
+Pure helper `DiagnosticExtracts.extractByTest testId
+content` is the substrate; seven new xUnit cases cover the
+happy path, multi-run dividers, missing END markers
+("still in flight" tail case), other-test-id rejection,
+empty / no-matches placeholder, and CRLF tolerance.
+
+#### Verification
+
+Matrix rows `Cycle 47-14` through `Cycle 47-17` in
+[`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
+cover the new behaviours.
+
 ### Cycle 47 follow-up (2026-05-13): semantic-boundary markers in the materialised tail
 
 Issue 4 from the maintainer's post-Cycle-47 walk: the NVDA

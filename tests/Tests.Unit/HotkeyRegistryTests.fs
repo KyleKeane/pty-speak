@@ -120,6 +120,17 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               HotkeyRegistry.ExtractErrorsAndWarnings
               HotkeyRegistry.ExtractActiveConfig
               HotkeyRegistry.ExtractVersionHeader
+              // Cycle 47 follow-up — test-bracketed extractors.
+              // One per CMD test in `scripts/cmd-tests/`; surfaced
+              // under Diagnostics → Extract → Test Run.
+              HotkeyRegistry.ExtractTestEcho
+              HotkeyRegistry.ExtractTestTextInput
+              HotkeyRegistry.ExtractTestNumericInput
+              HotkeyRegistry.ExtractTestYesNo
+              HotkeyRegistry.ExtractTestMultiChoice
+              HotkeyRegistry.ExtractTestPause
+              HotkeyRegistry.ExtractTestProgress
+              HotkeyRegistry.ExtractTestStderr
               // Cycle 45 Commit 2 — SpeechCursor navigation
               // (menu-only).
               HotkeyRegistry.SpeechCursorNext

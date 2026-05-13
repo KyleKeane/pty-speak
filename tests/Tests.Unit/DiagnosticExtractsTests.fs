@@ -267,3 +267,86 @@ let ``formatExtractHeader carries extractor name, source, and body`` () =
     Assert.Contains("body line 1", header)
     Assert.Contains("body line 2", header)
     Assert.Contains("2 lines", header)
+
+// ---------------------------------------------------------------------
+// extractByTest (Cycle 47 follow-up)
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``extractByTest returns body between matching START and END markers`` () =
+    let content =
+        String.concat "\n"
+            [ "C:\\Users\\dev> test-01-echo.cmd"
+              "=== PTYSPEAK-TEST-START: test-01-echo ==="
+              "This is a simple echo test."
+              "Line 2 of 8."
+              "=== PTYSPEAK-TEST-END: test-01-echo ==="
+              "C:\\Users\\dev>" ]
+    let extracted = DiagnosticExtracts.extractByTest "test-01-echo" content
+    Assert.Contains("This is a simple echo test.", extracted)
+    Assert.Contains("Line 2 of 8.", extracted)
+    Assert.DoesNotContain("PTYSPEAK-TEST-START", extracted)
+    Assert.DoesNotContain("PTYSPEAK-TEST-END", extracted)
+    Assert.DoesNotContain("C:\\Users\\dev>", extracted)
+
+[<Fact>]
+let ``extractByTest returns placeholder when no runs found`` () =
+    let content = "some session output\nno markers here\n"
+    let extracted = DiagnosticExtracts.extractByTest "test-01-echo" content
+    Assert.Contains("no runs of test-01-echo found", extracted)
+
+[<Fact>]
+let ``extractByTest returns placeholder for empty content`` () =
+    let extracted = DiagnosticExtracts.extractByTest "test-01-echo" ""
+    Assert.Contains("no runs of test-01-echo found", extracted)
+
+[<Fact>]
+let ``extractByTest returns all runs with run-number dividers when multiple`` () =
+    let content =
+        String.concat "\n"
+            [ "=== PTYSPEAK-TEST-START: test-04-yes-no ==="
+              "first run body"
+              "=== PTYSPEAK-TEST-END: test-04-yes-no ==="
+              "intervening session noise"
+              "=== PTYSPEAK-TEST-START: test-04-yes-no ==="
+              "second run body"
+              "=== PTYSPEAK-TEST-END: test-04-yes-no ===" ]
+    let extracted = DiagnosticExtracts.extractByTest "test-04-yes-no" content
+    Assert.Contains("first run body", extracted)
+    Assert.Contains("second run body", extracted)
+    Assert.Contains("run 1 of 2", extracted)
+    Assert.Contains("run 2 of 2", extracted)
+    Assert.DoesNotContain("intervening session noise", extracted)
+
+[<Fact>]
+let ``extractByTest ignores bracket markers for other test ids`` () =
+    let content =
+        String.concat "\n"
+            [ "=== PTYSPEAK-TEST-START: test-02-text-input ==="
+              "wrong-test body"
+              "=== PTYSPEAK-TEST-END: test-02-text-input ===" ]
+    let extracted = DiagnosticExtracts.extractByTest "test-01-echo" content
+    Assert.Contains("no runs of test-01-echo found", extracted)
+
+[<Fact>]
+let ``extractByTest surfaces in-flight run when END marker is missing`` () =
+    let content =
+        String.concat "\n"
+            [ "=== PTYSPEAK-TEST-START: test-07-progress ==="
+              "tick 1"
+              "tick 2"
+              "(extractor pressed before END marker fired)" ]
+    let extracted = DiagnosticExtracts.extractByTest "test-07-progress" content
+    Assert.Contains("tick 1", extracted)
+    Assert.Contains("tick 2", extracted)
+    Assert.Contains("still in flight", extracted)
+
+[<Fact>]
+let ``extractByTest tolerates trailing CR on marker lines`` () =
+    // ContentHistory tail can carry CRLF line endings when the
+    // PTY emits cmd's native CRLF; the extractor must match on
+    // the trimmed line content, not on the literal bytes.
+    let content = "=== PTYSPEAK-TEST-START: test-01-echo ===\r\nhi\r\n=== PTYSPEAK-TEST-END: test-01-echo ===\r\n"
+    let extracted = DiagnosticExtracts.extractByTest "test-01-echo" content
+    Assert.Contains("hi", extracted)
+    Assert.DoesNotContain("no runs", extracted)
