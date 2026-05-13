@@ -46,6 +46,23 @@ let ``claude default enables selection detector`` () =
     let claude = ShellPolicy.defaults.["claude"]
     Assert.True(claude.SelectionEnabled)
 
+[<Fact>]
+let ``cmd + powershell default IdleFlushMs is Some 350`` () =
+    // Cycle 47 follow-up — idle-flush is enabled by default
+    // for cmd / PowerShell at a 350 ms threshold so intra-
+    // script `set /p` prompts speak before the user has to
+    // guess what's being asked.
+    Assert.Equal(Some 350, ShellPolicy.defaults.["cmd"].IdleFlushMs)
+    Assert.Equal(Some 350, ShellPolicy.defaults.["powershell"].IdleFlushMs)
+
+[<Fact>]
+let ``claude default IdleFlushMs is None`` () =
+    // Claude streams per-token frequently enough that the
+    // idle-flush threshold rarely triggers, and any flush
+    // would partially overlap a per-token `LineByLine`
+    // announce. Disabled by default.
+    Assert.Equal(None, ShellPolicy.defaults.["claude"].IdleFlushMs)
+
 // ---- forShell -------------------------------------------------------
 
 [<Fact>]

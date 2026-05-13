@@ -1288,6 +1288,59 @@ finalised with an empty `OutputText` (cmd / PowerShell can
 do this for commands that don't emit visible output — try a
 clearly-visible command like `dir` instead).
 
+### Cycle 47 — CMD interaction test corpus + idle-flush
+
+Cycle 47 shipped a `Diagnostics → CMD Interaction Tests`
+submenu corpus exercising each cmd interaction primitive
+(echo / `set /p` text + numeric / `choice` yes-no + multi
+/ `pause` / progress loop / stderr) and an idle-flush
+mechanism that fires `Announce` after a configurable parser-
+idle period so intra-script prompts (`set /p`, `pause`,
+`choice`) speak before the user has to guess what's being
+asked. Each matrix row walks one script through the submenu
++ verifies the new behaviour.
+
+Pre-walk setup: bind a fresh preview build with the post-
+Cycle-47-follow-up `main` and a default config. Default
+shell = `cmd`. NVDA running. No active typing in the
+prompt before each test (so the Esc-clear can't surprise
+you mid-keystroke).
+
+| Row | Test | Pass criterion |
+|---|---|---|
+| **47-1** | Open Alt menu → arrow to `Diagnostics` → arrow to `CMD Interaction Tests` (`C`) → submenu opens. | NVDA announces "CMD Interaction Tests, submenu". Each sub-item reads as e.g. "Simple Echo, item 1 of 8" — no `"11 of 8"` garbling from the old digit-prefixed mnemonics. |
+| **47-2** | Click `Simple Echo` (test 01). | NVDA announces "Test command inserted: test-01-echo. Press Enter to run." The script path is now in the cmd input buffer. Press Enter; all eight numbered lines audible; ready-prompt click at the end. |
+| **47-3** | Click `Text Input` (test 02). Listen **before** typing anything. | NVDA announces "Test command inserted: test-02-text-input. Press Enter to run." Press Enter. Wait ~½ second. Idle-flush fires: NVDA narrates "This test prompts for a text string and echoes it back. Enter your name:" **before** you've typed anything. Type a name + Enter; NVDA narrates the greeting line. |
+| **47-4** | Click `Numeric Input + Calculation` (test 03). | Same pattern as 47-3 but for `set /p num=` + `set /a`. Prompt audible before typing; result audible after Enter. |
+| **47-5** | Click `Yes / No Choice` (test 04). | Idle-flush narrates the test description + `"Continue? [Y, N]?"` prompt **before** the user presses Y or N. Single-key press; branch result narrates. |
+| **47-6** | Click `Multi-Option Choice` (test 05). | Idle-flush narrates the four options + the `"Pick 1-4:"` prompt before the user picks. |
+| **47-7** | Click `Pause / Continue` (test 06). | First section audible; idle-flush narrates the cmd `"Press any key to continue . . ."` prompt; press any key; second section audible. |
+| **47-8** | Click `Progress Loop` (test 07). | The five `"Step N of 5"` lines arrive across ~5 seconds. Idle-flush fires every ~350 ms during the gaps between steps, so each `"Step N of 5"` is narrated separately, not all batched at tuple finalise as it would have been pre-Cycle-47. |
+| **47-9** | Click `Stderr Output` (test 08). | All six lines audible (no audible distinction between stdout and stderr; pty-speak unified streams). |
+| **47-10** | **Esc-clear behaviour**: type `garbage` into the cmd prompt without Enter. Open the submenu, click any test (e.g. `Simple Echo`). | The `garbage` text is wiped; the inserted invocation is `"...test-01-echo.cmd"` alone, ready for Enter. Without the Esc prefix, the typed `garbage` would prepend to the invocation and break the parse. |
+| **47-11** | **`Ctrl+Shift+A` after a test ran**: walk test 01, then press `Ctrl+Shift+A`. | NVDA re-narrates the last 800 chars of the test's output — the same content the auto-narrate produced when the test finalised. |
+| **47-12** | **`Ctrl+Shift+O` after a test ran**: walk test 07 (progress loop), then press `Ctrl+Shift+O`. | The default text editor opens with the full `OutputText` of the just-finished progress-loop tuple. All five `"Step N of 5"` lines visible alongside the start / end markers. |
+
+**Diagnostic decoder.** If a test's prompt isn't audible
+before user input (47-3 / 47-4 / 47-5 / 47-6 / 47-7 fail):
+the idle-flush isn't firing. Check the FileLogger log for
+`Idle-flush announce.` lines at INFO; if absent, the
+`ShellPolicy.IdleFlushMs` value is `None` for the active
+shell (check `currentShellPolicy` via a fresh
+`Ctrl+Shift+D` snapshot — the diagnostic battery doesn't
+include it today; could be added later) or the
+`DispatcherTimer` failed to start. If 47-2 fails with
+"NVDA announces nothing on menu click": the
+`MenuItem_CmdTest*` reflective wiring (`Program.fs` line
+~3877) didn't find a matching named MenuItem — check
+`MainWindow.xaml`'s `x:Name` matches the AppCommand
+`nameOf` result. If 47-8 batches all five steps instead of
+narrating each: the idle-flush threshold is too high
+(should be ≤ the inter-step gap; tune `IdleFlushMs` down
+from 350 if needed). If 47-10 the `garbage` text still
+prepends the invocation: the Esc byte didn't reach cmd —
+verify `runCmdTest` is prepending `0x1Buy` to the bytes.
+
 ## Recording results
 
 For each release tag:

@@ -206,33 +206,40 @@
                      script to the PTY input cursor (no Enter);
                      the user reviews + presses Enter to run.
                      All menu-only (no keyboard accelerators).
-                     Headers prefix with the test number so
-                     they sort + read predictably in the menu. -->
-                <MenuItem Header="CMD Interaction T_ests">
+                     Cycle 47 follow-up (2026-05-13): dropped
+                     the leading digit prefixes from sub-item
+                     headers — they caused NVDA to read
+                     "1, 1 of 8" as "11 of 8" by speech-running
+                     the mnemonic + position together. Letter
+                     mnemonics now (each unique among siblings)
+                     and the parent gets `_C` so the submenu is
+                     reachable via Alt → G → C from the menu
+                     bar. -->
+                <MenuItem Header="_CMD Interaction Tests">
                     <MenuItem x:Name="MenuItem_CmdTestEcho"
                               x:FieldModifier="public"
-                              Header="_1: Simple Echo" />
+                              Header="_Simple Echo" />
                     <MenuItem x:Name="MenuItem_CmdTestTextInput"
                               x:FieldModifier="public"
-                              Header="_2: Text Input" />
+                              Header="_Text Input" />
                     <MenuItem x:Name="MenuItem_CmdTestNumericInput"
                               x:FieldModifier="public"
-                              Header="_3: Numeric Input + Calculation" />
+                              Header="_Numeric Input + Calculation" />
                     <MenuItem x:Name="MenuItem_CmdTestYesNo"
                               x:FieldModifier="public"
-                              Header="_4: Yes / No Choice" />
+                              Header="_Yes / No Choice" />
                     <MenuItem x:Name="MenuItem_CmdTestMultiChoice"
                               x:FieldModifier="public"
-                              Header="_5: Multi-Option Choice" />
+                              Header="_Multi-Option Choice" />
                     <MenuItem x:Name="MenuItem_CmdTestPause"
                               x:FieldModifier="public"
-                              Header="_6: Pause / Continue" />
+                              Header="_Pause / Continue" />
                     <MenuItem x:Name="MenuItem_CmdTestProgress"
                               x:FieldModifier="public"
-                              Header="_7: Progress Loop" />
+                              Header="Pro_gress Loop" />
                     <MenuItem x:Name="MenuItem_CmdTestStderr"
                               x:FieldModifier="public"
-                              Header="_8: Stderr Output" />
+                              Header="Stderr _Output" />
                 </MenuItem>
                 <Separator />
                 <!-- Cycle 43a — diagnostic chunking. Top-level
