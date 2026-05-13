@@ -655,6 +655,19 @@ let ``tailTextWithMarkers preserves text content alongside marker lines`` () =
             dirIdx markerIdx abIdx result)
 
 [<Fact>]
+let ``tailTextWithMarkersSealedOnly excludes the active span`` () =
+    // Cycle 47 follow-up (2026-05-13) post-preview.114 — the
+    // typing-window gate in the UIA materialiser routes through
+    // this variant. The unsealed tail (here: "in_progress")
+    // must NOT contribute.
+    let state = freshHistory ()
+    feed state t0 [ printRune 's'; printRune 'e'; printRune 'a'; printRune 'l'; printRune 'e'; printRune 'd'; lf ] |> ignore
+    feed state t0 [ printRune 'i'; printRune 'n'; printRune '_'; printRune 'p'; printRune 'r'; printRune 'o'; printRune 'g'; printRune 'r'; printRune 'e'; printRune 's'; printRune 's' ] |> ignore
+    let result = ContentHistory.tailTextWithMarkersSealedOnly state 4096
+    Assert.Contains("sealed", result)
+    Assert.DoesNotContain("in_progress", result)
+
+[<Fact>]
 let ``tailText and tailTextWithMarkers agree when no markers exist`` () =
     let state = freshHistory ()
     feed state t0 [ printRune 'a'; printRune 'b'; lf; printRune 'c'; lf ] |> ignore

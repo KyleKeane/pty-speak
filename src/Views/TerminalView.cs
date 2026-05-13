@@ -75,6 +75,22 @@ public class TerminalView : FrameworkElement
     private ContentHistory.T? _contentHistory;
 
     /// <summary>
+    /// Cycle 47 follow-up (2026-05-13) post-preview.114 — UTC
+    /// timestamp of the most recent <see cref="OnPreviewKeyDown"/>
+    /// firing. Read by <see cref="ContentHistoryTextProvider"/>'s
+    /// keystroke-source delegate so the UIA Text-pattern view can
+    /// suppress the active (unsealed) TextSpan while the user is
+    /// typing — NVDA's <c>ITextProvider</c> polling otherwise
+    /// announces the accreting mid-keystroke text deltas
+    /// ("e", "ec", "ech", ...) as inserted text, independent of
+    /// the user's "Speak typed characters" NVDA setting. Written
+    /// on the WPF UI thread (where key events fire); read on the
+    /// UIA RPC thread (where NVDA queries DocumentRange). Atomic
+    /// 64-bit reads / writes on x64 + ARM64 — no lock needed.
+    /// </summary>
+    private DateTime _lastKeystrokeAtUtc = DateTime.MinValue;
+
+    /// <summary>
     /// Stage 6 PR-B — sink for keyboard / paste / focus bytes. Set
     /// by <see cref="SetPtyHost"/> from <c>Program.fs compose ()</c>
     /// after the ConPtyHost is up. Until set (and during teardown),
@@ -173,7 +189,9 @@ public class TerminalView : FrameworkElement
         // an empty range. PR-D deleted the legacy screen-grid
         // `TerminalTextProvider`. See
         // `docs/adr/0002-uia-textedit-caret-output.md`.
-        TextProvider = new ContentHistoryTextProvider(() => _contentHistory);
+        TextProvider = new ContentHistoryTextProvider(
+            () => _contentHistory,
+            () => _lastKeystrokeAtUtc);
 
         // Stage 6 PR-B — paste hook. ApplicationCommands.Paste fires
         // for right-click → Paste, Edit menu → Paste, and any future
@@ -391,6 +409,24 @@ public class TerminalView : FrameworkElement
                 log,
                 "RaiseNotificationEvent firing. ActivityId={ActivityId} MsgLen={MsgLen} Processing={Processing}",
                 activityId, message.Length, processing);
+            // Cycle 47 follow-up (2026-05-13) post-preview.114 —
+            // first 60 chars of the announce text at Debug so a
+            // diagnostic-bundle paste-back can grep `MsgHead=` and
+            // see exactly what NVDA was asked to read at each
+            // notification raise. Already an audible signal so
+            // the privacy posture is unchanged; INFO stays as the
+            // metadata-only baseline (length + activityId).
+            if (log.IsEnabled(Microsoft.Extensions.Logging.LogLevel.Debug))
+            {
+                var head = message.Length <= 60
+                    ? message
+                    : message.Substring(0, 60) + "...";
+                head = Terminal.Core.AnnounceSanitiser.sanitise(head);
+                Microsoft.Extensions.Logging.LoggerExtensions.LogDebug(
+                    log,
+                    "RaiseNotificationEvent firing. ActivityId={ActivityId} MsgHead={MsgHead}",
+                    activityId, head);
+            }
             peer.RaiseNotificationEvent(
                 AutomationNotificationKind.Other,
                 processing,
@@ -695,6 +731,24 @@ public class TerminalView : FrameworkElement
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
         base.OnPreviewKeyDown(e);
+
+        // Cycle 47 follow-up (2026-05-13) post-preview.114 — record
+        // the keystroke time before the gesture-dispatch logic
+        // below runs, so the UIA materialiser sees the typing
+        // window open on the very first key in a burst. Modifier-
+        // only keypresses (Ctrl, Alt, Shift) are excluded because
+        // they don't generate cmd-side echo and stamping them
+        // would extend the suppression window through chord
+        // shortcuts (Ctrl+Shift+D etc.) where the active span
+        // genuinely isn't changing.
+        if (e.Key != Key.LeftCtrl && e.Key != Key.RightCtrl
+            && e.Key != Key.LeftAlt && e.Key != Key.RightAlt
+            && e.Key != Key.LeftShift && e.Key != Key.RightShift
+            && e.Key != Key.LWin && e.Key != Key.RWin
+            && e.Key != Key.System)
+        {
+            _lastKeystrokeAtUtc = DateTime.UtcNow;
+        }
 
         var pressedModifiers = Keyboard.Modifiers;
 

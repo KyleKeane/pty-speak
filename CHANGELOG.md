@@ -15,6 +15,50 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 47 follow-up (2026-05-13, post-preview.114): typing-window UIA suppression + Announce content logging
+
+**Symptom**: maintainer reported NVDA reading aloud each accreting
+prefix as letters are typed at the cmd prompt
+(`"e"`, `"ec"`, `"ech"`, `"echo"`, ...), distinct from NVDA's
+keyboard-hook `Speak typed characters` behaviour and therefore not
+silenceable via the user's NVDA settings.
+
+**Root cause**: NVDA's `ITextProvider` polling re-reads
+`DocumentRange` periodically on a focused UIA Edit. As cmd echoes
+each typed character back into ContentHistory, the active
+(unsealed) TextSpan grows char-by-char; the materialised tail
+changes between polls; NVDA detects the diff and announces it as
+inserted text.
+
+**Fix**: `ContentHistoryMaterialiser.materialise` takes a
+`lastKeystrokeAtUtc` argument. While a keystroke is within the
+350 ms typing window, the materialiser calls a new
+`ContentHistory.tailTextWithMarkersSealedOnly` variant that
+excludes the active span — NVDA polling sees a stable tail across
+successive captures. After the window elapses, the active span
+re-enters the view so the review cursor can navigate to it.
+
+`TerminalView.OnPreviewKeyDown` stamps `_lastKeystrokeAtUtc` on
+every non-modifier key. `ContentHistoryTextProvider` exposes the
+stamp via a `Func<DateTime>` delegate so the materialiser reads
+it lazily on each UIA call.
+
+**Observability**: `TerminalView.Announce`'s existing INFO log
+entry (`RaiseNotificationEvent firing. ActivityId=... MsgLen=...`)
+now has a paired Debug entry carrying the first 60 chars of the
+announce text (`MsgHead="hi"`). Grep the diagnostic-bundle's
+FileLogger section for `MsgHead=` to audit "what did NVDA hear?"
+without live audio capture.
+
+**NVDA settings recommendation** added to
+`docs/ACCESSIBILITY-TESTING.md` § Test environment:
+`Speak typed characters` is user preference;
+`Speak typed words` should be `Off`;
+`Speech interruption for typed character` should be `On`.
+
+Matrix rows Cycle 47-21 (typing-window suppression) + 47-22
+(announce-trail audit) added.
+
 ### Cycle 47 follow-up (2026-05-13, post-preview.114): preserve newlines in diagnostic bundle + relabel markers + synthesise end-output
 
 Three connected fixes from the maintainer's preview.114 review walk
