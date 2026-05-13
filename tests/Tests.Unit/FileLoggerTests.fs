@@ -195,6 +195,19 @@ let ``retention sweep deletes day-folders older than RetentionDays`` () =
     // Force the drain task to actually run by writing one entry.
     let logger = provider.CreateLogger("Test")
     logger.LogInformation("kick the writer")
+    // 2026-05-13 CI flake fix: pre-fix this test relied on
+    // `Dispose`'s 2-second `drainTask.Wait(2000)` budget to
+    // give the retention sweep time to run. Under heavy CI
+    // load (parallel filesystem-I/O tests), 2 s wasn't always
+    // enough for Task.Run to even schedule the drainTask let
+    // alone enumerate + recursively delete a directory.
+    // `FlushPending(5000)` blocks until the drain has both run
+    // `runRetention ()` (sequential at task start) AND
+    // processed the enqueued LogInformation entry (signals
+    // flush complete from inside the reader loop), so retention
+    // has definitely fired by the time it returns. Same fix
+    // shape PR #297 applied to the FlushPending-self test.
+    sink.FlushPending(5000).Wait() |> ignore
     (provider :> IDisposable).Dispose()
     Assert.False(Directory.Exists(staleDir),
         "Expected the 30-day-old day-folder to be deleted")
