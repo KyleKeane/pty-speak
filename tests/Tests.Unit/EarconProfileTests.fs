@@ -133,8 +133,10 @@ let ``WarningLine Apply emits one pair with warning-tone ChannelDecision`` () =
 [<Fact>]
 let ``ReadyForInput Apply emits one pair with ready-prompt ChannelDecision`` () =
     // Cycle 45 — fired by `Program.fs handlePromptBoundary`
-    // on tuple finalise. Maps to the 1200Hz × 60ms chime
-    // defined in `EarconPalette.defaultPalette`.
+    // on tuple finalise. Maps to the `ready-prompt` entry in
+    // `EarconPalette.defaultPalette` (Cycle 46 post-audit
+    // re-tuned to 3000Hz × 15ms click; this test pins the
+    // semantic-to-id mapping, not the waveform parameters).
     let profile = EarconProfile.create ()
     let event = buildEvent SemanticCategory.ReadyForInput
     let pairs = profile.Apply event

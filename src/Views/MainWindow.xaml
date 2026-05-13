@@ -139,18 +139,27 @@
                 <MenuItem x:Name="MenuItem_OpenConfig"
                           x:FieldModifier="public"
                           Header="_Edit Config" />
+                <!-- Cycle 46 post-audit (2026-05-13) — group the
+                     two "last command output" affordances under a
+                     dedicated submenu so screen-reader navigation
+                     reaches both with one expand. The named
+                     MenuItems are reachable by the reflective
+                     binding loop (Program.fs ~line 3877) regardless
+                     of XAML nesting depth. -->
+                <MenuItem Header="_Last Output">
+                    <MenuItem x:Name="MenuItem_OpenLastOutput"
+                              x:FieldModifier="public"
+                              Header="_Open in Text Editor" />
+                    <MenuItem x:Name="MenuItem_AnnounceLastOutput"
+                              x:FieldModifier="public"
+                              Header="_Announce Again" />
+                </MenuItem>
                 <MenuItem x:Name="MenuItem_CopyHistoryToClipboard"
                           x:FieldModifier="public"
                           Header="Copy _History to Clipboard" />
                 <MenuItem x:Name="MenuItem_AnnounceSessionLogPath"
                           x:FieldModifier="public"
                           Header="Announce _Session Log Path" />
-                <MenuItem x:Name="MenuItem_OpenLastOutput"
-                          x:FieldModifier="public"
-                          Header="Open _Last Output" />
-                <MenuItem x:Name="MenuItem_AnnounceLastOutput"
-                          x:FieldModifier="public"
-                          Header="_Announce Last Output" />
             </MenuItem>
             <MenuItem Header="Dia_gnostics">
                 <!-- Cycle 38a-followup — Logging Level moved here
