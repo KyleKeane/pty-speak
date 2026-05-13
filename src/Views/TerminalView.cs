@@ -60,8 +60,10 @@ public class TerminalView : FrameworkElement
     /// <summary>
     /// Cycle 46 PR-B — backing store for the UIA Text pattern.
     /// Replaces the screen-grid <see cref="Screen"/> snapshot
-    /// that the pre-PR-B <c>TerminalTextProvider</c> read.
-    /// Set post-construction via <see cref="SetContentHistory"/>
+    /// the pre-PR-B Text provider read; the pre-PR-B types
+    /// (<c>TerminalTextProvider</c> / <c>TerminalTextRange</c>)
+    /// were deleted in PR-D. Set post-construction via
+    /// <see cref="SetContentHistory"/>
     /// mirroring the existing <see cref="SetScreen"/> /
     /// <see cref="SetDisplayBuffer"/> injection pattern;
     /// <see cref="ContentHistoryTextProvider"/> captures the
@@ -138,10 +140,9 @@ public class TerminalView : FrameworkElement
     // Cycle 46 PR-B widened this from `TerminalTextProvider`
     // (the screen-grid-backed implementation) to the public
     // `ITextProvider` interface so we can swap in
-    // `ContentHistoryTextProvider`. The single consumer is
-    // `TerminalAutomationPeer`'s constructor below, which has
-    // always taken `ITextProvider`. The screen-grid types
-    // remain in source for now; cleanup is deferred to PR-D.
+    // `ContentHistoryTextProvider`. PR-D deleted the legacy
+    // type. The single consumer is `TerminalAutomationPeer`'s
+    // constructor below, which has always taken `ITextProvider`.
     internal ITextProvider TextProvider { get; }
 
     /// <summary>Default background fill for the terminal grid.
@@ -164,16 +165,14 @@ public class TerminalView : FrameworkElement
         _cellWidth = sample.WidthIncludingTrailingWhitespace;
         _cellHeight = sample.Height;
 
-        // Cycle 46 PR-B — substrate-swap of the UIA Text
-        // pattern from screen grid to ContentHistory. The
+        // Cycle 46 PR-B — UIA Text pattern is backed by
+        // ContentHistory (via ContentHistoryTextProvider). The
         // closure captures the post-construction field
         // `_contentHistory`; UIA queries arriving before
-        // `SetContentHistory` resolve to null and produce an
-        // empty range. The pre-PR-B
-        // `new TerminalTextProvider(() => _screen)` form
-        // remains in source under
-        // `TerminalAutomationPeer.fs:1051` until PR-D's
-        // cleanup. See `docs/adr/0002-uia-textedit-caret-output.md`.
+        // `SetContentHistory` runs resolve to null and produce
+        // an empty range. PR-D deleted the legacy screen-grid
+        // `TerminalTextProvider`. See
+        // `docs/adr/0002-uia-textedit-caret-output.md`.
         TextProvider = new ContentHistoryTextProvider(() => _contentHistory);
 
         // Stage 6 PR-B — paste hook. ApplicationCommands.Paste fires

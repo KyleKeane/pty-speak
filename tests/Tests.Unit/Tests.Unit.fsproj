@@ -24,7 +24,6 @@
     <Compile Include="VtParserTests.fs" />
     <Compile Include="ScreenTests.fs" />
     <Compile Include="UpdateMessagesTests.fs" />
-    <Compile Include="WordBoundaryTests.fs" />
     <Compile Include="AnnounceSanitiserTests.fs" />
     <Compile Include="CanonicalStateTests.fs" />
     <Compile Include="SessionModelTests.fs" />
@@ -104,11 +103,14 @@
     <ProjectReference Include="..\..\src\Terminal.Pty\Terminal.Pty.fsproj" />
     <ProjectReference Include="..\..\src\Terminal.Parser\Terminal.Parser.fsproj" />
     <!--
-      Audit-cycle PR-D added Terminal.Accessibility so
-      WordBoundaryTests can reach `TerminalTextRange`'s
-      static internal helpers via the
-      `[<assembly: InternalsVisibleTo("PtySpeak.Tests.Unit")>]`
-      declaration PR-C added to Terminal.Accessibility.
+      Audit-cycle PR-D added Terminal.Accessibility so the
+      original WordBoundaryTests could reach `TerminalTextRange`'s
+      static internal helpers. Cycle 46 PR-D deleted those
+      helpers along with the screen-grid `TerminalTextProvider`;
+      the project reference now serves
+      `ContentHistoryTextRangeTests` (the
+      `ContentHistoryTextRange` static helpers replaced the old
+      `TerminalTextRange` ones).
     -->
     <ProjectReference Include="..\..\src\Terminal.Accessibility\Terminal.Accessibility.fsproj" />
     <!--
