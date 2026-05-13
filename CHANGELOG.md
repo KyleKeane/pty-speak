@@ -15,6 +15,86 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 47 follow-up (2026-05-13): idle-flush + menu fixes + Esc-clear
+
+Three connected fixes the maintainer surfaced after walking the
+Cycle 47 corpus on the post-Cycle-46-audit preview build:
+
+#### 1. Idle-flush for intra-script prompts
+
+**Symptom**: `test-02-text-input.cmd` (and any `set /p` /
+`pause` / `choice` script) didn't speak the prompt until
+after the user had typed input and pressed Enter. The user
+had to guess what cmd was asking for.
+
+**Root cause**: under `TupleFinalOnly` streaming, the
+boundary-handler `Announce` fires only at `PromptStart`
+(shell-prompt boundary). An intra-script `set /p` prompt
+doesn't emit `PromptStart` — cmd just stops writing bytes
+and waits for keystroke input. The auto-narrate had no
+trigger; the prompt sat silently in `ContentHistory` until
+the script completed and a fresh shell prompt appeared.
+
+**Fix**: new `ShellPolicy.IdleFlushMs : int option` field +
+WPF `DispatcherTimer` ticking every 100 ms. When the parser
+has been idle for ≥ N ms AND `ContentHistory.latestSeq` is
+past the new `lastAnnouncedSeq` watermark, slice the gap,
+cap at `OutputAnnounceCapChars` (800), fire
+`Announce(text, ActivityIds.output)`, advance the watermark.
+
+The tuple-finalise path now also slices from the watermark
+rather than announcing `tuple.OutputText` whole, so
+idle-flush + tuple-finalise share one source of truth and
+don't double-narrate. If idle-flushes covered the whole
+script, tuple-finalise's slice is empty and is silent — the
+ready-prompt earcon click is the only "command complete"
+cue (intentional; user already heard the content).
+
+`ShellPolicy.IdleFlushMs` defaults:
+- `cmd`, `powershell`: `Some 350` (responsive during a
+  `set /p` pause; tolerant of `dir`-style line emission
+  rates).
+- `claude`: `None` (Claude's per-token streaming hits the
+  threshold too rarely AND would overlap a future
+  `LineByLine` policy; idle-flush stays opt-in for Claude
+  pending the streaming-experience cycle).
+
+Watermark resets to `-1L` on `ContentHistory.reset` (shell
+hot-switch) so post-switch narration starts from a clean
+state.
+
+#### 2. CMD Interaction Tests menu: `C` accelerator + numbering fix
+
+- Parent menu header `"CMD Interaction T_ests"` →
+  `"_CMD Interaction Tests"`. Reachable via `Alt → G → C`
+  from the menu bar.
+- Sub-item headers dropped the leading `_N:` digit prefix
+  that caused NVDA to read "1, item 1 of 8" as "11 of 8"
+  (the mnemonic-digit + position-N collision). Each sub-
+  item now has a unique letter mnemonic:
+  `_Simple Echo` / `_Text Input` / `_Numeric Input + Calculation`
+  / `_Yes / No Choice` / `_Multi-Option Choice` /
+  `_Pause / Continue` / `Pro_gress Loop` / `Stderr _Output`.
+
+#### 3. `runCmdTest` Esc-prefix to clear the input buffer
+
+`runCmdTest` now prepends `0x1B` (Esc) to the script
+invocation bytes. cmd.exe's cooked-mode line editor treats
+Esc as "clear the current input buffer", so anything the
+user had partially typed before clicking the menu item
+gets wiped before our quoted script invocation lands.
+Avoids the "we appended to whatever was already there and
+broke the parse" failure mode.
+
+Files: `src/Terminal.Core/ShellPolicy.fs` (new field +
+defaults), `src/Terminal.App/Program.fs` (compose-level
+`lastAnnouncedSeq` + `DispatcherTimer` + boundary-handler
+rewrite + shell-switch reset + `runCmdTest` Esc prefix),
+`src/Views/MainWindow.xaml` (menu headers),
+`tests/Tests.Unit/ShellPolicyTests.fs` (idle-flush
+defaults assertion), `CHANGELOG.md`,
+`docs/ACCESSIBILITY-TESTING.md` (Cycle 47 matrix rows).
+
 ### Cycle 47 (2026-05-13): CMD interaction test corpus
 
 Adds eight tiny `.cmd` scripts under

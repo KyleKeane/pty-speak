@@ -83,6 +83,31 @@ module ShellPolicy =
         { ShellKey: string
           Streaming: StreamingMode
           PromptPath: PromptPathMode
+          /// Cycle 47 follow-up (2026-05-13) — idle-flush
+          /// threshold. When `Some N`, an idle-flush timer
+          /// fires `Announce(text, ActivityIds.output)` if the
+          /// parser has been idle for at least N ms AND
+          /// `ContentHistory` has unannounced content past the
+          /// last-announced watermark. Solves the
+          /// "intra-script `set /p` prompt doesn't speak until
+          /// after the user has typed" problem: the boundary
+          /// handler only fires `Announce` at `PromptStart`
+          /// (shell-prompt boundary), but a `set /p` prompt
+          /// inside a script doesn't emit `PromptStart` — cmd
+          /// just stops writing and waits. The idle-flush fills
+          /// that gap.
+          ///
+          /// `None` disables idle-flush — useful for shells like
+          /// Claude that already stream per-token frequently
+          /// enough that the threshold rarely triggers AND any
+          /// flush would partially overlap a per-token
+          /// `LineByLine` announce. 350 ms is the default for
+          /// cmd / PowerShell — short enough to feel responsive
+          /// during a `set /p` pause, long enough to avoid
+          /// firing between rapid output chunks of a normal
+          /// command (`dir`'s line emission rate is well under
+          /// 350 ms per line).
+          IdleFlushMs: int option
           // -- Cycle 45g consolidation seats; unread in 45f --
           /// Regex string for `HeuristicPromptDetector` to match
           /// against the cursor row when detecting prompt
@@ -109,6 +134,7 @@ module ShellPolicy =
               { ShellKey = "cmd"
                 Streaming = TupleFinalOnly
                 PromptPath = Suppress
+                IdleFlushMs = Some 350
                 PromptRegex = Some @"^[A-Za-z]:\\.*>\s?$"
                 PromptStabilityMs = Some 150
                 SelectionEnabled = false }
@@ -116,6 +142,7 @@ module ShellPolicy =
               { ShellKey = "powershell"
                 Streaming = TupleFinalOnly
                 PromptPath = Suppress
+                IdleFlushMs = Some 350
                 PromptRegex = Some @"^PS [A-Za-z]:\\.*>\s?$"
                 PromptStabilityMs = Some 200
                 SelectionEnabled = false }
@@ -123,6 +150,7 @@ module ShellPolicy =
               { ShellKey = "claude"
                 Streaming = TupleFinalOnly
                 PromptPath = Suppress
+                IdleFlushMs = None
                 PromptRegex = None
                 PromptStabilityMs = None
                 SelectionEnabled = true } ]

@@ -1765,17 +1765,43 @@ module Program =
                 // audible text — keep the cap silent at the
                 // channel layer and trust the hotkey + log to
                 // surface the cap when needed.
+                // Cycle 47 follow-up (2026-05-13) — slice from
+                // the idle-flush watermark to the current
+                // ContentHistory tail rather than announcing
+                // `tuple.OutputText` whole. The watermark
+                // captures whatever idle-flush has already
+                // narrated during the script; tuple-finalise
+                // here just announces the residual gap (zero,
+                // typically, if idle-flushes kept up). Avoids
+                // double-narration when idle-flush has covered
+                // the tuple. `tupleFinaliseAnnounce` is still
+                // checked because it carries the streaming-
+                // policy gate and the non-blank-output filter
+                // — the slice path inherits both implicitly
+                // (None payload → skip; blank slice → skip).
                 match tupleFinaliseAnnounce with
-                | Some text ->
-                    let toSay =
-                        if text.Length <= OutputAnnounceCapChars then text
-                        else text.Substring(text.Length - OutputAnnounceCapChars)
-                    if toSay.Length < text.Length then
-                        log.LogInformation(
-                            "Tuple-final announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
-                            text.Length, toSay.Length, OutputAnnounceCapChars)
-                    window.TerminalSurface.Announce(toSay, ActivityIds.output)
-                    raiseCaretMovedToTail ()
+                | Some _ ->
+                    let latest = ContentHistory.latestSeq contentHistory
+                    if latest > lastAnnouncedSeq then
+                        let text =
+                            ContentHistory.sliceText
+                                contentHistory
+                                lastAnnouncedSeq
+                                (latest + 1L)
+                        if not (System.String.IsNullOrWhiteSpace text) then
+                            let toSay =
+                                if text.Length <= OutputAnnounceCapChars then text
+                                else text.Substring(text.Length - OutputAnnounceCapChars)
+                            if toSay.Length < text.Length then
+                                log.LogInformation(
+                                    "Tuple-final announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
+                                    text.Length, toSay.Length, OutputAnnounceCapChars)
+                            log.LogInformation(
+                                "Tuple-final announce. SliceFrom={From} SliceTo={To} Length={Len}",
+                                lastAnnouncedSeq, latest, toSay.Length)
+                            window.TerminalSurface.Announce(toSay, ActivityIds.output)
+                            raiseCaretMovedToTail ()
+                        lastAnnouncedSeq <- latest
                 | None -> ()
             window.Dispatcher.InvokeAsync(Action(boundaryAction))
             |> ignore
@@ -2353,6 +2379,27 @@ module Program =
         // weird-looking entry occasionally is acceptable.
         let mutable lastReadUtc = DateTimeOffset.UtcNow
 
+        // Cycle 47 follow-up (2026-05-13) — idle-flush watermark.
+        // Tracks the highest ContentHistory `seq` whose content
+        // has already been narrated via Announce. The boundary
+        // handler (tuple finalise) and the idle-flush
+        // `DispatcherTimer` both:
+        //   1. Slice from `lastAnnouncedSeq` to current
+        //      `latestSeq` (via `ContentHistory.sliceText`),
+        //   2. Cap at `OutputAnnounceCapChars` (800),
+        //   3. Fire `Announce(text, ActivityIds.output)`,
+        //   4. Advance `lastAnnouncedSeq` to the new latest.
+        //
+        // The unified watermark means tuple-finalise doesn't
+        // re-announce content that idle-flush already covered;
+        // idle-flush fills the intra-script gaps (`set /p`
+        // pauses, `pause` builtin, slow output between
+        // sections) that PromptStart-driven tuple-finalise
+        // would otherwise leave silent. Initial value -1L
+        // matches `ContentHistory.latestSeq` on a fresh empty
+        // history.
+        let mutable lastAnnouncedSeq : int64 = -1L
+
         // Stage 7-followup PR-F — incident-marker handler. Single
         // press writes a clear "=== INCIDENT MARKER {timestamp} ==="
         // boundary line to the active log via the standard
@@ -2854,10 +2901,22 @@ module Program =
                 // a trailing space so the user can type more
                 // arguments / redirects before Enter if they
                 // want.
+                //
+                // Cycle 47 follow-up (2026-05-13) — prepend an
+                // `Esc` (0x1B) byte before the invocation.
+                // cmd.exe's cooked-mode line editor treats Esc
+                // as "clear the current input buffer", so any
+                // text the user had partially typed before
+                // clicking the menu item is wiped before our
+                // script invocation lands. Without this, the
+                // invocation appends to whatever was already
+                // pending and breaks parsing.
                 let invocation =
                     sprintf "\"%s\" " scriptPath
-                let bytes =
+                let cmdBytes =
                     System.Text.Encoding.UTF8.GetBytes(invocation)
+                let bytes =
+                    Array.append [| 0x1Buy |] cmdBytes
                 window.TerminalSurface.WritePtyBytes(bytes)
                 window.TerminalSurface.Announce(
                     sprintf
@@ -3371,6 +3430,87 @@ module Program =
                 dueTime = TimeSpan.FromSeconds(5.0),
                 period = TimeSpan.FromSeconds(5.0))
 
+        // Cycle 47 follow-up (2026-05-13) — idle-flush
+        // dispatcher. Ticks every 100 ms on the WPF dispatcher;
+        // if `currentShellPolicy.IdleFlushMs` is `Some N` AND
+        // the parser has been idle for ≥ N ms (i.e.
+        // `lastReadUtc` is at least N ms in the past) AND
+        // `ContentHistory.latestSeq` is past
+        // `lastAnnouncedSeq`, slice the gap, cap at
+        // `OutputAnnounceCapChars`, fire
+        // `Announce(text, ActivityIds.output)`, advance the
+        // watermark.
+        //
+        // Solves the intra-script `set /p` / `pause` /
+        // `choice` problem: cmd just stops emitting bytes
+        // when it's waiting for keystroke input; no
+        // `PromptStart` fires; the tuple-finalise auto-narrate
+        // is silent until the script completes. With idle-flush,
+        // the parser-quiet period IS the trigger — after 350 ms
+        // of stillness, pty-speak announces whatever has
+        // accumulated since the last announce.
+        //
+        // 350 ms threshold (configurable per-shell via
+        // `ShellPolicy.IdleFlushMs`) is short enough to feel
+        // responsive during a `set /p` pause, long enough to
+        // avoid firing between rapid output chunks of a normal
+        // streaming command (`dir`'s line-emission rate is well
+        // under 350 ms per line, but each chunk produces
+        // multiple lines so 350 ms idle = the whole batch is
+        // done streaming).
+        //
+        // Uses `DispatcherTimer` (WPF UI thread) rather than
+        // `System.Threading.Timer` because `Announce` calls
+        // through `peer.RaiseNotificationEvent` which must run
+        // on the WPF dispatcher per the UIA peer contract. The
+        // tuple-finalise path achieves this via
+        // `window.Dispatcher.InvokeAsync`; here we just run
+        // natively on the dispatcher thread to begin with.
+        let idleFlushTimer = DispatcherTimer()
+        idleFlushTimer.Interval <- TimeSpan.FromMilliseconds(100.0)
+        idleFlushTimer.Tick.Add(fun _ ->
+            try
+                match currentShellPolicy.IdleFlushMs with
+                | Some thresholdMs ->
+                    let idleMs =
+                        (DateTimeOffset.UtcNow - lastReadUtc).TotalMilliseconds
+                    if idleMs >= float thresholdMs then
+                        let latest = ContentHistory.latestSeq contentHistory
+                        if latest > lastAnnouncedSeq then
+                            let text =
+                                ContentHistory.sliceText
+                                    contentHistory
+                                    lastAnnouncedSeq
+                                    (latest + 1L)
+                            if not (System.String.IsNullOrWhiteSpace text) then
+                                let toSay =
+                                    if text.Length <= OutputAnnounceCapChars then text
+                                    else
+                                        text.Substring(
+                                            text.Length - OutputAnnounceCapChars)
+                                log.LogInformation(
+                                    "Idle-flush announce. SliceFrom={From} SliceTo={To} IdleMs={Idle:F0} Threshold={Threshold} Length={Len}",
+                                    lastAnnouncedSeq,
+                                    latest,
+                                    idleMs,
+                                    thresholdMs,
+                                    toSay.Length)
+                                window.TerminalSurface.Announce(
+                                    toSay, ActivityIds.output)
+                                raiseCaretMovedToTail ()
+                            lastAnnouncedSeq <- latest
+                | None -> ()
+            with ex ->
+                // Idle-flush exceptions must not wedge the
+                // timer. Log + continue; the next tick fires
+                // the same path and would surface a persistent
+                // bug rather than silently nothing.
+                log.LogWarning(
+                    ex,
+                    "Idle-flush tick raised exception: {Message}",
+                    ex.Message))
+        idleFlushTimer.Start()
+
         // Stage 7 PR-C — extracted from the initial-spawn branch
         // so the shell-switch coordinator below can reuse the
         // exact same wiring without duplication. Wires the
@@ -3726,6 +3866,23 @@ module Program =
                                         // dispatcher thread.
                                         ContentHistory.reset contentHistory
                                         SpeechCursor.reset speechCursor
+                                        // Cycle 47 follow-up —
+                                        // reset the idle-flush
+                                        // watermark when
+                                        // ContentHistory's
+                                        // sequence numbering
+                                        // restarts. Without
+                                        // this, the comparison
+                                        // `latest > watermark`
+                                        // would stay false
+                                        // until the new shell
+                                        // accumulated more
+                                        // seqs than the old
+                                        // one had — meaning
+                                        // initial new-shell
+                                        // output would silently
+                                        // skip narration.
+                                        lastAnnouncedSeq <- -1L
                                         // Cycle 45f — apply the
                                         // new shell's verbosity
                                         // policy through the
