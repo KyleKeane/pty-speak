@@ -15,6 +15,49 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 48 post-PR-F (2026-05-13): SpeechCursor hotkeys + menu reorg + sub-prompt echo strip
+
+Three connected fixes from preview.118 dogfood:
+
+1. **`Ctrl+Shift+Up/Down/End` bound to SpeechCursor**
+   Previous / Next / JumpToLatest. Previously menu-only; the
+   HotkeyRegistry has had a comment anticipating this since
+   Cycle 45. The mirror row in `TerminalView.AppReservedHotkeys`
+   ships alongside per the F#/C# parity tests.
+2. **Menu reorg.** Top-level "Display" renamed to
+   "Interface". The old top-level "Data" menu broken up:
+   "Open Data Folder" and "Edit Config" lifted to Interface
+   direct level (they're infrastructure paths, not output
+   review); the remaining items grouped under "Output
+   History" submenu (Last Output → text editor / re-announce,
+   Copy Session History, Announce Session Log Path).
+   Diagnostics's flat ~10-item list grouped into three
+   submenus: **Probe** (Health Check, Incident Marker, Run
+   Diagnostic Battery), **Test Scripts** (Open Manual Tests,
+   Process Cleanup Test, CMD Interaction Tests), **Inspect**
+   (Copy Latest Bundle, Grep Diagnostics, Extract). Logging
+   Level stays at the top of Diagnostics as a frequent
+   toggle. All mnemonics audited for uniqueness within each
+   submenu.
+3. **Sub-prompt announce strips command echo.** Maintainer
+   reported test 02 (`set/p`) producing garbled announce of
+   `"set /p name=Enter your name:Enter your name:"` after
+   pressing Enter — the SubPromptIdle accumulator included
+   cmd's echo of the typed command line. `recordTransition`
+   now drops everything up to and including the first `\n`
+   in the accumulator before announcing, leaving just the
+   sub-prompt text (e.g., `"Enter your name:"`).
+
+Known issues not addressed in this PR (deferred to follow-up):
+- The review-cursor "needs an extra command to update"
+  behaviour after running a single command — UIA polling /
+  caching issue, requires NVDA-side reasoning.
+- Test 01 "Line 1 of 8" missing from announce (matrix-row
+  validation needed first to confirm whether bug or expected).
+- SpeechCursor menu/hotkey may still land on a sequence of
+  Composing-state entries that all return None — needs
+  diagnostic to confirm.
+
 ### Cycle 48 closure (2026-05-13): six PRs (#306–this) shipped
 
 Six-PR sequence implementing ADR 0003's `ShellInteraction`

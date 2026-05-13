@@ -68,7 +68,15 @@
                  (it's a diagnostic-relevant control, not a
                  display setting). Display now hosts only the
                  Earcons multi-state. -->
-            <MenuItem Header="_Display">
+            <!-- Cycle 48 post-PR-F (2026-05-13) — top-level
+                 "Display" renamed to "Interface" + the previous
+                 top-level "Data" menu nested inside it as a
+                 child submenu. Per maintainer dogfood of
+                 preview.118: top-level had too many siblings;
+                 grouping all interface-presentation + data-
+                 storage concerns under one umbrella reduces
+                 menu-bar scanning. -->
+            <MenuItem Header="_Interface">
                 <MenuItem x:Name="MenuItem_EarconsMode"
                           x:FieldModifier="public"
                           Header="_Earcons">
@@ -79,12 +87,6 @@
                               x:FieldModifier="public"
                               Header="_Muted" />
                 </MenuItem>
-                <!-- Cycle 45 Commit 2 — SpeechCursor navigation
-                     (menu-only). The cursor is the announce-and-
-                     navigate primitive over the ContentHistory
-                     substrate; AutoDrive announces new entries as
-                     they arrive; Manual lets the user navigate
-                     the history at their own pace. -->
                 <MenuItem Header="_Speech Cursor">
                     <MenuItem x:Name="MenuItem_SpeechCursorNext"
                               x:FieldModifier="public"
@@ -99,12 +101,6 @@
                               x:FieldModifier="public"
                               Header="Toggle _Mode (AutoDrive / Manual)" />
                 </MenuItem>
-                <!-- Cycle 45f — per-shell verbosity modes. Pick
-                     applies to the currently-active shell's
-                     runtime override (Layer 3 of the three-layer
-                     settings model); persists across hot-switches
-                     until app restart. See docs/USER-SETTINGS.md
-                     "Verbosity" for the resolution model. -->
                 <MenuItem x:Name="MenuItem_OutputVerbosity"
                           x:FieldModifier="public"
                           Header="_Output Verbosity">
@@ -131,41 +127,44 @@
                               x:FieldModifier="public"
                               Header="F_ull" />
                 </MenuItem>
-            </MenuItem>
-            <MenuItem Header="D_ata">
+                <!-- Cycle 48 post-PR-F (2026-05-13) — infrastructure
+                     items (open data folder, edit config) lifted
+                     from the old Data submenu to Interface direct
+                     level per maintainer feedback. They're not
+                     about command output; they're about where
+                     pty-speak's app data lives. The
+                     last-command + session-history items kept
+                     together under "Output History". -->
                 <MenuItem x:Name="MenuItem_OpenDataFolder"
                           x:FieldModifier="public"
-                          Header="_Open Data Folder" />
+                          Header="Open _Data Folder" />
                 <MenuItem x:Name="MenuItem_OpenConfig"
                           x:FieldModifier="public"
-                          Header="_Edit Config" />
-                <!-- Cycle 46 post-audit (2026-05-13) — group the
-                     two "last command output" affordances under a
-                     dedicated submenu so screen-reader navigation
-                     reaches both with one expand. The named
-                     MenuItems are reachable by the reflective
-                     binding loop (Program.fs ~line 3877) regardless
-                     of XAML nesting depth. -->
-                <MenuItem Header="_Last Output">
-                    <MenuItem x:Name="MenuItem_OpenLastOutput"
+                          Header="Edit _Config" />
+                <MenuItem Header="Output _History">
+                    <MenuItem Header="_Last Output">
+                        <MenuItem x:Name="MenuItem_OpenLastOutput"
+                                  x:FieldModifier="public"
+                                  Header="Open in _Text Editor" />
+                        <MenuItem x:Name="MenuItem_AnnounceLastOutput"
+                                  x:FieldModifier="public"
+                                  Header="_Announce Again" />
+                    </MenuItem>
+                    <MenuItem x:Name="MenuItem_CopyHistoryToClipboard"
                               x:FieldModifier="public"
-                              Header="_Open in Text Editor" />
-                    <MenuItem x:Name="MenuItem_AnnounceLastOutput"
+                              Header="_Copy Session History to Clipboard" />
+                    <MenuItem x:Name="MenuItem_AnnounceSessionLogPath"
                               x:FieldModifier="public"
-                              Header="_Announce Again" />
+                              Header="Announce _Session Log Path" />
                 </MenuItem>
-                <MenuItem x:Name="MenuItem_CopyHistoryToClipboard"
-                          x:FieldModifier="public"
-                          Header="Copy _History to Clipboard" />
-                <MenuItem x:Name="MenuItem_AnnounceSessionLogPath"
-                          x:FieldModifier="public"
-                          Header="Announce _Session Log Path" />
             </MenuItem>
+            <!-- Cycle 48 post-PR-F (2026-05-13) — Diagnostics
+                 reorganised into three submenus (Probe / Tests /
+                 Inspect) per maintainer preview.118 feedback.
+                 Top-level had ~10 items; grouping by "what it
+                 does" reduces scan depth. Logging Level stays
+                 at top because it's a frequent toggle. -->
             <MenuItem Header="Dia_gnostics">
-                <!-- Cycle 38a-followup — Logging Level moved here
-                     from Display (formerly View). It's a diagnostic
-                     verbosity control, not a display setting. First
-                     item so it's reachable without arrow-scrolling. -->
                 <MenuItem x:Name="MenuItem_LoggingLevel"
                           x:FieldModifier="public"
                           Header="Logging _Level">
@@ -176,95 +175,73 @@
                               x:FieldModifier="public"
                               Header="_Debug" />
                 </MenuItem>
-                <MenuItem x:Name="MenuItem_HealthCheck"
-                          x:FieldModifier="public"
-                          Header="_Health Check" />
-                <MenuItem x:Name="MenuItem_IncidentMarker"
-                          x:FieldModifier="public"
-                          Header="_Incident Marker" />
-                <MenuItem x:Name="MenuItem_RunDiagnostic"
-                          x:FieldModifier="public"
-                          Header="Run Diagnostic _Battery" />
-                <!-- Cycle 26c — first menu-only command (no
-                     keyboard accelerator). Launches the
-                     interactive process-cleanup test script in
-                     a separate PowerShell window. -->
-                <MenuItem x:Name="MenuItem_RunProcessCleanupScript"
-                          x:FieldModifier="public"
-                          Header="Test Process _Cleanup" />
-                <!-- Cycle 38a-followup — second menu-only command.
-                     Filters ACCESSIBILITY-TESTING.md to sections
-                     marked with the DOGFOOD HTML comment, renders
-                     Markdig HTML, and opens in the default browser
-                     for NVDA browse-mode H-key heading navigation. -->
-                <MenuItem x:Name="MenuItem_OpenManualTests"
-                          x:FieldModifier="public"
-                          Header="Open Manual _Tests" />
-                <!-- Cycle 47 — CMD interaction test corpus.
-                     Each child writes a quoted invocation of
-                     the corresponding scripts/cmd-tests/*.cmd
-                     script to the PTY input cursor (no Enter);
-                     the user reviews + presses Enter to run.
-                     All menu-only (no keyboard accelerators).
-                     Cycle 47 follow-up (2026-05-13): dropped
-                     the leading digit prefixes from sub-item
-                     headers — they caused NVDA to read
-                     "1, 1 of 8" as "11 of 8" by speech-running
-                     the mnemonic + position together. Letter
-                     mnemonics now (each unique among siblings)
-                     and the parent gets `_M` (i.e. C_MD Interaction
-                     Tests) so the submenu is reachable via
-                     Alt → G → M from the menu bar. Cycle 47
-                     follow-up post-preview.114 moved the parent
-                     mnemonic from `_C` to `_M` because the original
-                     `_C` collided with Diagnostics' "Test Process
-                     _Cleanup" — Alt + C resolved to whichever item
-                     was first in the menu, not the one the user
-                     intended. -->
-                <MenuItem Header="C_MD Interaction Tests">
-                    <MenuItem x:Name="MenuItem_CmdTestEcho"
+                <!-- Probe — quick "fire an action and watch what
+                     happens" probes: health check, incident
+                     marker, the diagnostic battery. The
+                     longer-running Process Cleanup Test moves
+                     to Test Scripts below (per maintainer
+                     preview.118 feedback) so the accelerators
+                     within Probe stay short + unique. -->
+                <MenuItem Header="_Probe">
+                    <MenuItem x:Name="MenuItem_HealthCheck"
                               x:FieldModifier="public"
-                              Header="_Simple Echo" />
-                    <MenuItem x:Name="MenuItem_CmdTestTextInput"
+                              Header="_Health Check" />
+                    <MenuItem x:Name="MenuItem_IncidentMarker"
                               x:FieldModifier="public"
-                              Header="_Text Input" />
-                    <MenuItem x:Name="MenuItem_CmdTestNumericInput"
+                              Header="_Incident Marker" />
+                    <MenuItem x:Name="MenuItem_RunDiagnostic"
                               x:FieldModifier="public"
-                              Header="_Numeric Input + Calculation" />
-                    <MenuItem x:Name="MenuItem_CmdTestYesNo"
-                              x:FieldModifier="public"
-                              Header="_Yes / No Choice" />
-                    <MenuItem x:Name="MenuItem_CmdTestMultiChoice"
-                              x:FieldModifier="public"
-                              Header="_Multi-Option Choice" />
-                    <MenuItem x:Name="MenuItem_CmdTestPause"
-                              x:FieldModifier="public"
-                              Header="_Pause / Continue" />
-                    <MenuItem x:Name="MenuItem_CmdTestProgress"
-                              x:FieldModifier="public"
-                              Header="Pro_gress Loop" />
-                    <MenuItem x:Name="MenuItem_CmdTestStderr"
-                              x:FieldModifier="public"
-                              Header="Stderr _Output" />
+                              Header="Run Diagnostic _Battery" />
                 </MenuItem>
-                <Separator />
-                <!-- Cycle 43a — diagnostic chunking. Top-level
-                     `Copy Latest Bundle` and `Grep Diagnostics`
-                     are the load-bearing triage tools; the
-                     `Extract` submenu tree provides the catalog of
-                     small targeted slices. All six items are
-                     menu-only (no keyboard accelerators) per the
-                     hotkey-count working-memory ceiling — the
-                     existing Ctrl+Shift+D path stays for users
-                     who want the full battery + clipboard copy
-                     in one keystroke. -->
-                <MenuItem x:Name="MenuItem_CopyLatestBundle"
-                          x:FieldModifier="public"
-                          Header="Copy Latest Bun_dle to Clipboard" />
-                <MenuItem x:Name="MenuItem_GrepDiagnostics"
-                          x:FieldModifier="public"
-                          Header="_Grep Diagnostics..." />
-                <MenuItem Header="E_xtract">
+                <!-- Test Scripts — runnable scripts that exercise
+                     specific subsystems. The CMD Interaction
+                     Tests submenu, the manual-test browser,
+                     and the process-cleanup test all live here
+                     per maintainer preview.118 feedback. -->
+                <MenuItem Header="_Test Scripts">
+                    <MenuItem x:Name="MenuItem_OpenManualTests"
+                              x:FieldModifier="public"
+                              Header="Open _Manual Tests" />
+                    <MenuItem x:Name="MenuItem_RunProcessCleanupScript"
+                              x:FieldModifier="public"
+                              Header="_Process Cleanup Test" />
+                    <MenuItem Header="_CMD Interaction Tests">
+                        <MenuItem x:Name="MenuItem_CmdTestEcho"
+                                  x:FieldModifier="public"
+                                  Header="_Simple Echo" />
+                        <MenuItem x:Name="MenuItem_CmdTestTextInput"
+                                  x:FieldModifier="public"
+                                  Header="_Text Input" />
+                        <MenuItem x:Name="MenuItem_CmdTestNumericInput"
+                                  x:FieldModifier="public"
+                                  Header="_Numeric Input + Calculation" />
+                        <MenuItem x:Name="MenuItem_CmdTestYesNo"
+                                  x:FieldModifier="public"
+                                  Header="_Yes / No Choice" />
+                        <MenuItem x:Name="MenuItem_CmdTestMultiChoice"
+                                  x:FieldModifier="public"
+                                  Header="_Multi-Option Choice" />
+                        <MenuItem x:Name="MenuItem_CmdTestPause"
+                                  x:FieldModifier="public"
+                                  Header="_Pause / Continue" />
+                        <MenuItem x:Name="MenuItem_CmdTestProgress"
+                                  x:FieldModifier="public"
+                                  Header="Pro_gress Loop" />
+                        <MenuItem x:Name="MenuItem_CmdTestStderr"
+                                  x:FieldModifier="public"
+                                  Header="Stderr _Output" />
+                    </MenuItem>
+                </MenuItem>
+                <!-- Inspect — "look at what already happened"
+                     tools: bundle copy, grep, extract submenu. -->
+                <MenuItem Header="_Inspect">
+                    <MenuItem x:Name="MenuItem_CopyLatestBundle"
+                              x:FieldModifier="public"
+                              Header="Copy Latest Bun_dle to Clipboard" />
+                    <MenuItem x:Name="MenuItem_GrepDiagnostics"
+                              x:FieldModifier="public"
+                              Header="_Grep Diagnostics..." />
+                    <MenuItem Header="E_xtract">
                     <MenuItem Header="By _Recency">
                         <MenuItem x:Name="MenuItem_ExtractLast50LogLines"
                                   x:FieldModifier="public"
@@ -324,6 +301,7 @@
                                   Header="Test 08 — _Stderr Output" />
                     </MenuItem>
                 </MenuItem>
+                </MenuItem><!-- /Inspect -->
             </MenuItem>
             <!-- Cycle 28 — Window menu. Both items are menu-only
                  commands (no keyboard accelerator registered with

@@ -496,21 +496,21 @@ module HotkeyRegistry =
           // (NVDA's default review-cursor commands are
           // `NVDA+Up/Down`).
           { Command = SpeechCursorNext
-            Key = None
-            Modifiers = None
-            Description = "Speech Cursor: move to the next entry (Cycle 45 Commit 2)" }
+            Key = Some Key.Down
+            Modifiers = Some (ModifierKeys.Control ||| ModifierKeys.Shift)
+            Description = "Speech Cursor: move to the next entry" }
           { Command = SpeechCursorPrevious
-            Key = None
-            Modifiers = None
-            Description = "Speech Cursor: move to the previous entry (Cycle 45 Commit 2)" }
+            Key = Some Key.Up
+            Modifiers = Some (ModifierKeys.Control ||| ModifierKeys.Shift)
+            Description = "Speech Cursor: move to the previous entry" }
           { Command = SpeechCursorJumpToLatest
-            Key = None
-            Modifiers = None
-            Description = "Speech Cursor: jump to the latest entry (Cycle 45 Commit 2)" }
+            Key = Some Key.End
+            Modifiers = Some (ModifierKeys.Control ||| ModifierKeys.Shift)
+            Description = "Speech Cursor: jump to the latest entry" }
           { Command = SpeechCursorToggleMode
             Key = None
             Modifiers = None
-            Description = "Speech Cursor: toggle AutoDrive / Manual mode (Cycle 45 Commit 2)" } ]
+            Description = "Speech Cursor: toggle AutoDrive / Manual mode (menu-only)" } ]
 
     /// Look up the default Hotkey for a command. Throws
     /// `KeyNotFoundException` if the registry is incomplete —
