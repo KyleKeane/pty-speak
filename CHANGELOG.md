@@ -15,6 +15,36 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 47 follow-up batch (2026-05-13, post-preview.114): closure
+
+Five PRs (#299–#303) shipped this session in response to the
+maintainer's preview.114 `echo hi` / `set /p` dogfood walk:
+
+- **#299** — diagnostic bundle preserves newlines via
+  `sanitiseForBundle`; marker labels relabelled to the parallel
+  `begin/end prompt/output` form; `CommandFinished` synthesised
+  on the cmd-shell `PromptStart-while-AwaitingCommandStart`
+  transition.
+- **#300** — typing-window UIA suppression: the UIA Text-pattern
+  view excludes the active TextSpan for 350 ms after each
+  non-modifier keypress so NVDA's `ITextProvider` polling
+  doesn't surface mid-keystroke deltas as inserted text.
+  Announce content logged at Debug (`MsgHead=`).
+  `ACCESSIBILITY-TESTING.md` gained an NVDA settings
+  recommendation block.
+- **#301** — tuple-final announce trims any prefix matching
+  `lastAnnouncedText` so `set/p` doesn't replay the idle-flush
+  prompt at tuple-finalise time.
+- **#302** — `ReadyForInput` earcon dispatched on idle-flush so
+  `set/p` / `pause` produce the same "you can type now" click
+  the tuple-final path uses.
+- **#303** — top-level menu mnemonic conflicts fixed:
+  `_Display` vs `_Data` (renamed to `D_ata`); Diagnostics
+  `Test Process _Cleanup` vs `_CMD Interaction Tests` (renamed
+  to `C_MD Interaction Tests`).
+
+Matrix rows Cycle 47-18 through 47-25 cover the batch.
+
 ### Cycle 47 follow-up (2026-05-13, post-preview.114): menu mnemonic conflict fixes
 
 Maintainer reported menu access keys ambiguous in the preview.114
