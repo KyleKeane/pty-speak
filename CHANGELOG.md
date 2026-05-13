@@ -15,6 +15,23 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 47 follow-up (2026-05-13, post-preview.114): menu mnemonic conflict fixes
+
+Maintainer reported menu access keys ambiguous in the preview.114
+build. Two collisions found + fixed:
+
+- **Top-level `_Display` vs `_Data`**: both used `D`. Renamed
+  `_Data` → `D_ata` (mnemonic on `a`). Alt + D → Display;
+  Alt + A → Data.
+- **Diagnostics `Test Process _Cleanup` vs `_CMD Interaction Tests`**:
+  both used `C`. Renamed the parent submenu mnemonic from `_C`
+  to `_M` (`C_MD Interaction Tests`). Reachable via Alt → G → M.
+
+The Cycle 47 post-preview.113 comment above the CMD Interaction
+Tests block (which documented the prior `_C` choice) updated to
+reflect the new `_M` parent. No code-side handlers changed —
+the access-key letters are purely XAML.
+
 ### Cycle 47 follow-up (2026-05-13, post-preview.114): mid-evaluation input earcon on idle-flush
 
 **Symptom**: cmd's `set /p var=Enter your text:`, `pause`, and
