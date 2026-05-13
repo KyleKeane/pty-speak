@@ -4,6 +4,7 @@ open System
 open System.Threading
 open System.Threading.Tasks
 open System.Windows
+open System.Windows.Automation.Peers
 open System.Windows.Controls
 open System.Windows.Input
 open System.Windows.Threading
@@ -15,6 +16,7 @@ open Terminal.Core.Channels
 open Terminal.Audio
 open Terminal.Parser
 open Terminal.Pty
+open Terminal.Accessibility
 open PtySpeak.Views
 
 module Program =
@@ -1624,9 +1626,48 @@ module Program =
                         contentHistory
                         speechCursorAnnounce
                 | None -> ()
+                // Cycle 46 PR-C — caret-move replaces the
+                // RaiseNotificationEvent path for terminal output.
+                // ContentHistory already holds the new content
+                // (appended by the reader loop ahead of this
+                // boundary handler); raising
+                // `AutomationEvents.TextSelectionChanged` on the
+                // peer signals NVDA to re-read DocumentRange and
+                // pick up the tail. NVDA's native "read from
+                // caret" path handles the pacing + the
+                // typing-interrupts-speech behaviour the previous
+                // `RaiseNotificationEvent + MostRecent` path
+                // couldn't deliver (the failure trail recorded in
+                // ADR 0002 Context). The `tupleFinaliseAnnounce`
+                // gate (`ShellPolicy.Streaming` matching
+                // `TupleFinalOnly` with non-blank output) stays
+                // — under `LineByLine` per-TextSpan announces
+                // already covered the output and we shouldn't
+                // double-fire; under `Off` we want silence.
                 match tupleFinaliseAnnounce with
-                | Some text ->
-                    speechCursorAnnounce (text, ActivityIds.output)
+                | Some _ ->
+                    let peer =
+                        UIElementAutomationPeer.FromElement(window.TerminalSurface)
+                    match peer with
+                    | null ->
+                        // No UIA client connected yet — peer
+                        // hasn't been lazily constructed. Same
+                        // silent-no-op semantics as the
+                        // previous Announce path
+                        // (TerminalView.cs:344). NVDA will pick
+                        // up the tail on its next
+                        // DocumentRange query when it does
+                        // connect.
+                        ()
+                    | :? TerminalAutomationPeer as tp ->
+                        tp.RaiseCaretMovedToTail()
+                    | _ ->
+                        // Peer exists but isn't the expected
+                        // type — shouldn't happen
+                        // (`TerminalView.OnCreateAutomationPeer`
+                        // returns exactly `TerminalAutomationPeer`).
+                        // Defensive no-op rather than throw.
+                        ()
                 | None -> ()
             window.Dispatcher.InvokeAsync(Action(boundaryAction))
             |> ignore

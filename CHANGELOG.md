@@ -15,6 +15,58 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Caret-move replaces output notification (Cycle 46 PR-C): `TextSelectionChangedEvent` on tuple finalise
+
+Implements PR-C of the four-PR Cycle 46 sequence per
+[`docs/adr/0002-uia-textedit-caret-output.md`](docs/adr/0002-uia-textedit-caret-output.md)
++ [`docs/CYCLE-46-NEXT-STEPS.md`](docs/CYCLE-46-NEXT-STEPS.md) §2.
+The notification-based output read
+(`Announce(text, ActivityIds.output, AutomationNotificationProcessing.MostRecent)`)
+fired from `Program.fs`'s `handlePromptBoundary` is replaced by a
+caret-move event on the existing `TerminalAutomationPeer`.
+
+**User-visible payoff** (the original motivating issue for
+Cycle 46): NVDA's native "read from caret" path now handles
+pacing for long output, **and typing into the prompt
+interrupts the read** via NVDA's "Speech interrupt for typed
+character" setting. The failure modes recorded in ADR 0002
+Context — PR #282 `MostRecent` default, PR #284 empty-string
+flush, PR #285 single-space flush ("blank" verbalisation),
+PR #286 revert — are resolved.
+
+- **Added** `TerminalAutomationPeer.RaiseCaretMovedToTail()`
+  (in
+  [`src/Terminal.Accessibility/TerminalAutomationPeer.fs`](src/Terminal.Accessibility/TerminalAutomationPeer.fs)).
+  Raises `AutomationEvents.TextSelectionChanged` on the peer;
+  NVDA queries `DocumentRange` and re-reads the new
+  `ContentHistory` tail with user-tunable pacing.
+- **Added** `InternalsVisibleTo("Terminal.App")` to
+  Terminal.Accessibility's assembly attributes so the
+  composition root in `Program.fs` can call the new helper
+  without widening the public API. The peer type stays
+  `internal`.
+- **Modified**
+  [`src/Terminal.App/Program.fs`](src/Terminal.App/Program.fs)
+  to call the helper from the boundary handler
+  (`handlePromptBoundary` → `boundaryAction`, dispatched on
+  the WPF dispatcher). The `tupleFinaliseAnnounce` gate
+  (`ShellPolicy.Streaming = TupleFinalOnly` with non-blank
+  output) stays so `LineByLine` / `Off` policies still
+  produce the right number of announces.
+- **Kept** the `SpeechCursor.onAppend` invocation in the
+  boundary handler and the reader loop. PR-D collapses the
+  remaining `SpeechCursor → Announce` paths into the same
+  caret-move helper.
+- **Kept** `ActivityIds.output` — still used by
+  `SpeechCursor`'s `renderEntry` and `NvdaChannel`'s
+  `semanticToActivityId` map. Deletion (if anywhere) is a
+  PR-D concern.
+- **NVDA matrix gate Cycle 46-PRC-1**: cmd `dir` long output
+  (caret-pacing + typing-interrupt), cmd `echo hi`
+  (short-output round-trip), Claude REPL turn
+  (streaming-via-caret), `Alt` interrupts in-progress read
+  (the maintainer's original pain point).
+
 ### Session-handoff docs (2026-05-13): Cycle 46 PR-C / PR-D scoping
 
 Captures the in-flight Cycle 46 state for the next session:
