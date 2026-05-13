@@ -397,7 +397,7 @@ let ``Backspace at start is no-op`` () =
 let ``MoveCursor and AppendChar at non-end inserts`` () =
     let b = ShellInteraction.UserInputBuffer()
     "echo".ToCharArray() |> Array.iter b.AppendChar
-    b.MoveCursor(-2)  // cursor between 'h' and 'o'
+    b.MoveCursor(-1)  // cursor between 'h' and 'o' (index 3)
     b.AppendChar('X')
     Assert.Equal("echXo", b.Snapshot())
     Assert.Equal(4, b.CursorIndex)
@@ -406,10 +406,10 @@ let ``MoveCursor and AppendChar at non-end inserts`` () =
 let ``Delete removes char at cursor`` () =
     let b = ShellInteraction.UserInputBuffer()
     "echo".ToCharArray() |> Array.iter b.AppendChar
-    b.MoveCursor(-2)  // cursor between 'h' and 'o'
+    b.MoveCursor(-1)  // cursor between 'h' and 'o' (index 3)
     b.Delete()  // removes 'o'
     Assert.Equal("ech", b.Snapshot())
-    Assert.Equal(2, b.CursorIndex)
+    Assert.Equal(3, b.CursorIndex)
 
 [<Fact>]
 let ``MoveCursor clamps at boundaries`` () =
