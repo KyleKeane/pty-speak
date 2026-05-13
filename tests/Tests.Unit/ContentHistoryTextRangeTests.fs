@@ -123,8 +123,14 @@ let ``Compare returns false for different endpoints over same string`` () =
 
 [<Fact>]
 let ``Compare returns false for ranges over different string instances`` () =
+    // F# interns string literals, so two `"abcdef"` literals
+    // resolve to the same `String` instance and would Compare
+    // equal under `obj.ReferenceEquals(r.Materialised,
+    // materialised)`. Force two distinct instances by routing
+    // one through `StringBuilder.ToString()`, which always
+    // allocates a fresh `String`.
     let r1 = rangeFor "abcdef" 0 3
-    let r2 = rangeFor (String('a', 0) + "abcdef") 0 3
+    let r2 = rangeFor (StringBuilder("abcdef").ToString()) 0 3
     Assert.False(r1.Compare(r2))
 
 [<Fact>]

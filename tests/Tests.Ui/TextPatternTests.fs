@@ -2,6 +2,7 @@ module PtySpeak.Tests.Ui.TextPatternTests
 
 open System
 open System.IO
+open System.Threading
 open Xunit
 open FlaUI.Core
 open FlaUI.Core.AutomationElements
@@ -48,39 +49,59 @@ let rec private findTextPattern
         children |> Array.tryPick findTextPattern
     | pattern -> Some pattern
 
+/// Cycle 46 PR-B — poll `DocumentRange.GetText` until the
+/// materialised ContentHistory tail has at least
+/// `minimumLength` characters or `timeout` elapses. The
+/// substrate (`ContentHistory`) starts empty and fills as the
+/// cmd.exe banner streams through the PTY reader; the
+/// pre-PR-B screen-grid `TerminalTextProvider` had no such
+/// settling phase (the 30×120 grid was pre-populated with
+/// blanks at composition time). Returns the final text — the
+/// caller asserts whatever it wants on it.
+let private waitForDocumentContent
+        (textPattern: FlaUI.Core.Patterns.ITextPattern)
+        (minimumLength: int)
+        (timeout: TimeSpan)
+        : string =
+    let sw = System.Diagnostics.Stopwatch.StartNew()
+    let mutable text = textPattern.DocumentRange.GetText(-1)
+    while text.Length < minimumLength && sw.Elapsed < timeout do
+        Thread.Sleep(100)
+        text <- textPattern.DocumentRange.GetText(-1)
+    text
+
 /// Stage 4 end-to-end verification that the WPF
 /// `TerminalAutomationPeer.GetPattern` override for
 /// `PatternInterface.Text` actually surfaces the UIA Text
 /// pattern to a real UIA3 client (PR #56's ship architecture).
 ///
+/// Cycle 46 PR-B substrate-swap (ADR 0002): `DocumentRange`
+/// now reflects the `ContentHistory` tail (materialised via
+/// `ContentHistory.tailText`, capped at 256 KB) instead of
+/// the screen grid. Behavioural differences this test now
+/// accounts for:
+///   * `ContentHistory` starts empty and fills as cmd.exe
+///     emits its banner. Old test relied on the pre-populated
+///     30×120 screen grid (≥3629 chars from blank cells); new
+///     test waits for actual cmd.exe banner content to arrive.
+///   * Line counts and lengths are variable (cmd.exe banner
+///     is ~3 lines of ~60-80 chars), not the old grid-shaped
+///     30 rows of 120 cells.
+///
 /// Verification chain:
 ///   1. Launch `Terminal.App.exe`. `Program.compose` calls
-///      `TerminalSurface.SetScreen(Screen(30, 120))` synchronously
-///      during composition, so by the time the main window is
-///      visible to UIA the snapshot source is wired up.
-///   2. Attach via UIA3. FlaUI walks the WPF UIA peer tree;
-///      `TerminalAutomationPeer.GetPattern(PatternInterface.Text)`
-///      returns `TerminalTextProvider`. UIA3 surfaces it on the
-///      peer element directly — no WM_GETOBJECT raw-provider
-///      indirection. (Audit-cycle PR-C deleted that indirection;
-///      see commit history if you need the WM_GETOBJECT path
-///      back for some reason.)
-///   3. Walk the tree searching for any element that exposes the
-///      Text pattern. The pattern lands on whichever element
-///      WPF's peer tree assigns to it; UIA3's merge
-///      semantics with the WPF host provider make the exact node
-///      identity an implementation detail not worth pinning.
-///   4. Read `DocumentRange.GetText(-1)`. The 30×120 blank screen
-///      yields 30 rows of 120 spaces each joined by `\n`, so the
-///      result has length `30*120 + 29 = 3629` minimum. cmd.exe's
-///      banner ("Microsoft Windows [Version ...]" + prompt) may
-///      fill some of those cells before the snapshot, but the
-///      length floor stays the same — every cell has a rune even
-///      when blank. The test only asserts the length floor; it
-///      does not pin specific banner content because cmd.exe's
-///      output isn't deterministic across Windows builds.
+///      `TerminalSurface.SetContentHistory(contentHistory)`
+///      synchronously during composition, so by the time the
+///      main window is visible to UIA the substrate is wired.
+///   2. Attach via UIA3. `TerminalAutomationPeer.GetPattern(
+///      PatternInterface.Text)` returns
+///      `ContentHistoryTextProvider`.
+///   3. Walk the tree searching for the Text pattern.
+///   4. Poll `DocumentRange.GetText(-1)` until the cmd.exe
+///      banner content arrives (cap at ~5s; cmd.exe banner is
+///      typically present within a few hundred ms).
 [<Fact>]
-let ``UIA Text pattern is reachable and DocumentRange.GetText reflects the screen snapshot`` () =
+let ``UIA Text pattern is reachable and DocumentRange.GetText reflects the ContentHistory tail`` () =
     let exePath = locateTerminalAppExe ()
     use app = Application.Launch(exePath)
 
@@ -137,38 +158,32 @@ let ``UIA Text pattern is reachable and DocumentRange.GetText reflects the scree
                 mainWindowPatternNames
         | Some tp -> tp
 
-    // FlaUI annotates `ITextPattern.DocumentRange` and
-    // `ITextRange.GetText` as non-nullable, so F# 9's
-    // Nullable=enable rejects defensive `match | null` patterns
-    // here (FS3261). If either ever does return null at runtime
-    // it'll be a `NullReferenceException` from the next call —
-    // a noisy failure that points at the FlaUI surface, which
-    // is the right place for the diagnostic since our F# side
-    // never returns null for either value.
-    let docRange = textPattern.DocumentRange
+    // Cycle 46 PR-B: ContentHistory starts empty and fills as
+    // cmd.exe streams its banner through the PTY reader. Poll
+    // for content; cap at 5s to keep the test bounded if
+    // something upstream wedges. A 16-char floor is well below
+    // the cmd.exe banner length ("Microsoft Windows [Version
+    // 10.0.x.y]\n(c) Microsoft Corporation. All rights
+    // reserved.") so it tolerates banner variation across
+    // Windows builds while still asserting that real content
+    // arrived (not just a single prompt char).
+    let minimumLength = 16
+    let text =
+        waitForDocumentContent
+            textPattern
+            minimumLength
+            (TimeSpan.FromSeconds(5.0))
 
-    // GetText(-1) returns the whole document; FlaUI / UIA pass
-    // through the maxLength as-is, so the F# side's
-    // "negative length means everything" branch handles this.
-    let text = docRange.GetText(-1)
-
-    // Stage 3b composes Screen(rows=30, cols=120) before the
-    // window becomes visible to UIA, so the snapshot has every
-    // cell populated (with U+0020 by default). The length floor
-    // is 30*120 + 29 newlines = 3629. We assert >= rather than
-    // == because cmd.exe banner / shell output may run before
-    // the snapshot is captured but won't shrink it.
-    let minimumLength = 30 * 120 + 29
     Assert.True(
         text.Length >= minimumLength,
         sprintf
-            "Expected DocumentRange.GetText length >= %d (30 rows × 120 cols + 29 newlines from a default Screen snapshot); got %d. If the length is 0 the snapshot fell through to the empty-screen branch (screenSource returned null); if it's between 1 and %d the snapshot machinery is firing but the row dimensions don't match Program.compose's Screen(30, 120)."
+            "Expected DocumentRange.GetText length >= %d after 5s of polling (cmd.exe banner content via ContentHistory); got %d. If the length is 0 the substrate is empty — likely SetContentHistory was never wired (check Program.fs after SetScreen / SetDisplayBuffer) or the reader loop is wedged before the cmd.exe banner emits. If non-zero but below %d, the banner arrived but is shorter than expected — check cmd.exe behaviour on the runner."
             minimumLength
             text.Length
-            (minimumLength - 1))
+            minimumLength)
 
-    // Newlines confirm that SnapshotText.render is joining rows
-    // (the per-row character stream alone wouldn't have any).
+    // Newlines confirm that the materialised tail spans rows.
+    // cmd.exe banner is ~3 lines so this is reliably present.
     Assert.Contains("\n", text)
 
     app.Close() |> ignore
@@ -185,16 +200,25 @@ let ``UIA Text pattern is reachable and DocumentRange.GetText reflects the scree
 /// "blank"). This test pins that working line navigation
 /// stays working.
 ///
+/// Cycle 46 PR-B substrate-swap (ADR 0002): the range is now
+/// over the `ContentHistory` materialised tail, not the 30×120
+/// screen grid. cmd.exe banner lines are typically 0-80 chars;
+/// no fixed `cols` to assert against. The single-line bound
+/// is now an absolute upper limit (256) rather than the
+/// grid-derived 200; the meaningful regression test is still
+/// "Line-expanded range is much shorter than the full
+/// document", which a 256-char ceiling catches.
+///
 /// What's asserted:
 ///   1. After `ExpandToEnclosingUnit(Line)` on the document
-///      range, `GetText` length is bounded above by ~`cols`
-///      (one row plus one row-separator newline at most).
+///      range, `GetText` length is bounded above by 256 chars.
 ///      This catches the no-op-stub regression — without
 ///      navigation the range stays at full-document length
-///      (3629).
-///   2. After `Move(Line, 1)` the range stays Line-shaped
-///      (same length bound), confirming Move preserves the
-///      unit shape rather than e.g. collapsing the range.
+///      (typically thousands of chars for a populated tail).
+///   2. After `Move(Line, 1)` the range either stays Line-
+///      shaped (same length bound) or returns 0 if the
+///      content was a single line. We accept either since
+///      cmd.exe banner length varies across Windows builds.
 ///
 /// What's deliberately not asserted:
 ///   * Specific cell content — cmd.exe banner timing isn't
@@ -219,37 +243,49 @@ let ``Text-pattern range navigation can pin to a single line and advance`` () =
         | None -> failwith "Text pattern not found in the UIA tree."
         | Some tp -> tp
 
+    // Cycle 46 PR-B: wait for ContentHistory to populate with
+    // cmd.exe banner before navigating. Without the wait the
+    // document range starts empty and ExpandToEnclosingUnit(Line)
+    // can't show meaningful behaviour.
+    let _ =
+        waitForDocumentContent
+            textPattern
+            16
+            (TimeSpan.FromSeconds(5.0))
+
     let docRange = textPattern.DocumentRange
     let docLength = docRange.GetText(-1).Length
 
-    // After Line expansion the range should cover at most
-    // one row plus one row-separator. `Program.compose`
-    // sets cols=120; the upper bound 200 leaves slack for
-    // implementation choices around the trailing newline
-    // without admitting "full document" (3629).
+    // After Line expansion the range should cover at most one
+    // line of cmd.exe output. 256 chars is a comfortable
+    // ceiling for any single banner line.
     let lineRange = docRange.Clone()
     lineRange.ExpandToEnclosingUnit(FlaUI.Core.Definitions.TextUnit.Line)
     let lineText = lineRange.GetText(-1)
     let firstLineLength = lineText.Length
     Assert.True(
-        firstLineLength > 0 && firstLineLength <= 200,
+        firstLineLength > 0 && firstLineLength <= 256,
         sprintf
-            "Expected Line-expanded range length in (0, 200]; got %d. If %d == %d, ExpandToEnclosingUnit(Line) regressed to a no-op (Stage 4's preview.20 failure mode)."
+            "Expected Line-expanded range length in (0, 256]; got %d. If %d == %d, ExpandToEnclosingUnit(Line) regressed to a no-op (preview.20 failure mode)."
             firstLineLength
             firstLineLength
             docLength)
 
-    // Move to next line should preserve Line shape.
+    // Move to next line should preserve Line shape OR return 0
+    // if the content was a single line. cmd.exe banner is
+    // typically >1 line but isn't guaranteed across Windows
+    // builds; we accept either outcome.
     let moved = lineRange.Move(FlaUI.Core.Definitions.TextUnit.Line, 1)
     Assert.True(
         moved >= 0,
         sprintf "Expected Move(Line, 1) to return non-negative count; got %d" moved)
-    let secondLineLength = lineRange.GetText(-1).Length
-    Assert.True(
-        secondLineLength > 0 && secondLineLength <= 200,
-        sprintf
-            "Expected post-Move Line range length in (0, 200]; got %d. Move regressed if this matches the document length (%d)."
-            secondLineLength
-            docLength)
+    if moved > 0 then
+        let secondLineLength = lineRange.GetText(-1).Length
+        Assert.True(
+            secondLineLength >= 0 && secondLineLength <= 256,
+            sprintf
+                "Expected post-Move Line range length in [0, 256]; got %d. Move regressed if this matches the document length (%d)."
+                secondLineLength
+                docLength)
 
     app.Close() |> ignore
