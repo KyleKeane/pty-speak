@@ -296,6 +296,17 @@ module SpeechCursor =
             (promptPath: ShellPolicy.PromptPathMode)
             (entry: ContentHistory.Entry)
             : (string * string) option =
+        // Cycle 48 PR-E (ADR 0003 §9.6) — SpeechCursor filters
+        // entries tagged `UserInputEcho` in BOTH AutoDrive AND
+        // Manual navigation. Bytes appended during Composing
+        // (the user typing into the prompt) are echo of what
+        // the screen reader's keyboard hook already covered;
+        // re-narrating them via the speech cursor would
+        // duplicate.
+        if ContentHistory.entrySource entry
+           = ContentHistory.EntrySource.UserInputEcho then
+            None
+        else
         match entry with
         | ContentHistory.TextSpan d ->
             if String.IsNullOrEmpty d.Text then None

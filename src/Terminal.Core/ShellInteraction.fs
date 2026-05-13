@@ -205,6 +205,14 @@ module ShellInteraction =
         { NewState : InteractionState
           Trigger : Transition
           PriorState : InteractionState
+          /// Cycle 48 PR-E — bytes accumulated during the
+          /// just-finished Executing window. Non-empty only on
+          /// Executing → Composing transitions; empty
+          /// otherwise. Sanitised for announce by
+          /// `AnnounceSanitiser.sanitise` at the call site, not
+          /// here (the substrate accumulates raw bytes; the
+          /// channel decides how to read them).
+          AccumulatedOutput : string
           At : DateTime }
 
     /// State container. Holds the current state plus the
@@ -402,6 +410,19 @@ module ShellInteraction =
             match tryTransition prior trigger at with
             | None -> None
             | Some newState ->
+                // Cycle 48 PR-E — capture the Executing window's
+                // accumulated bytes BEFORE the state transition.
+                // The accumulator is the "output the user should
+                // hear" for transition [b] or [c]; we capture +
+                // clear here so the caller gets the bytes and a
+                // subsequent Executing entry starts fresh.
+                let priorOutput =
+                    match prior, newState with
+                    | Executing _, Composing _ ->
+                        let s = state.SubPromptAccumulator.ToString()
+                        state.SubPromptAccumulator.Clear() |> ignore
+                        s
+                    | _ -> ""
                 state.Current <- newState
                 state.LastTransitionAt <- at
                 match newState with
@@ -414,6 +435,7 @@ module ShellInteraction =
                     { NewState = newState
                       Trigger = trigger
                       PriorState = prior
+                      AccumulatedOutput = priorOutput
                       At = at })
 
     /// Observe a single byte arriving from the PTY. Updates
