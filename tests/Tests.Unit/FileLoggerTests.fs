@@ -298,14 +298,19 @@ let ``FlushPending makes recently-enqueued entries readable while the writer is 
     for i in 1..5 do
         logger.LogInformation("flush-test-{Marker}-{Num}", marker, i)
 
-    // 2-second budget; on a healthy CI box this completes in
-    // low ms. Failure here means the drain loop didn't fire a
-    // flush within the window — likely a regression in
+    // Cycle 47 follow-up (2026-05-13) — bumped from 2 to 5
+    // seconds. The 2s budget was tight enough to flake under
+    // GitHub Actions windows-latest runner load (observed
+    // intermittently across Cycle 46 PRs #292 and #297). On a
+    // healthy CI box this still completes in low ms; the
+    // higher cap only matters when the runner is contending
+    // for CPU. Failure here still means the drain loop didn't
+    // fire a flush within the window — likely a regression in
     // signalFlushComplete wiring or the TCS-swap path.
-    let drained = sink.FlushPending(2000).Result
+    let drained = sink.FlushPending(5000).Result
     Assert.True(
         drained,
-        "Expected FlushPending to signal completion within 2 seconds")
+        "Expected FlushPending to signal completion within 5 seconds")
 
     // Read while the writer is still active. File.ReadAllText
     // would fail with the default FileShare.Read — the writer
