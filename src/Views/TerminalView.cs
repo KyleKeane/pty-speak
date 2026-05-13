@@ -91,6 +91,14 @@ public class TerminalView : FrameworkElement
     private DateTime _lastKeystrokeAtUtc = DateTime.MinValue;
 
     /// <summary>
+    /// Public read-only view of <see cref="_lastKeystrokeAtUtc"/>
+    /// for the composition root's idle-flush typing-window gate
+    /// (Cycle 47 follow-up post-preview.116). Read on the WPF
+    /// dispatcher thread by the idle-flush timer tick.
+    /// </summary>
+    public DateTime LastKeystrokeAtUtc => _lastKeystrokeAtUtc;
+
+    /// <summary>
     /// Stage 6 PR-B — sink for keyboard / paste / focus bytes. Set
     /// by <see cref="SetPtyHost"/> from <c>Program.fs compose ()</c>
     /// after the ConPtyHost is up. Until set (and during teardown),
