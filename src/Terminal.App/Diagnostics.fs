@@ -1616,7 +1616,7 @@ module Diagnostics =
                     let tailText =
                         try
                             ContentHistory.tailText history (64 * 1024)
-                            |> AnnounceSanitiser.sanitise
+                            |> AnnounceSanitiser.sanitiseForBundle
                         with _ -> "(ContentHistory tail unavailable)"
                     // Cycle 45c follow-up — ContentHistory stats
                     // header. Surfaces total entry count, per-kind

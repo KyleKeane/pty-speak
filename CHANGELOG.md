@@ -15,6 +15,93 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 47 follow-up (2026-05-13, post-preview.114): preserve newlines in diagnostic bundle + relabel markers + synthesise end-output
+
+Three connected fixes from the maintainer's preview.114 review walk
+of a simple `echo hi` session.
+
+#### 1. Diagnostic bundle preserves the newline structure
+
+**Symptom**: the `Ctrl+Shift+D` snapshot's
+`--- CONTENT HISTORY (last 64KB) ---` section pasted back as one
+long squashed blob:
+`echo hihiC:\Users\Kyle\AppData\Local\pty-speak\current>echo PtySpeakDiagPlain...`
+with no row structure between the command echo, the output, and
+the next prompt's path.
+
+**Root cause**: three sites piped `ContentHistory.tailText` through
+`AnnounceSanitiser.sanitise` (`Diagnostics.fs:1619`,
+`Program.fs:3021` lightweight bundle, `Program.fs:3289`
+test-bracketed extractor). `sanitise` is the one-line NVDA-announce
+chokepoint — it strips every C0 control byte (`< 0x20`) INCLUDING
+`\n` (`0x0A`), `\r` (`0x0D`), and `\t` (`0x09`). Correct for
+announce; wrong for bundle-paste triage where row structure is the
+point.
+
+**Fix**: new `AnnounceSanitiser.sanitiseForBundle` variant that
+preserves the three "useful whitespace" controls but still strips
+BEL / ESC / DEL / C1. All three bundle paths switched to it;
+announce paths continue to use the strip-all `sanitise`.
+
+#### 2. Marker labels relabelled to a parallel begin/end form
+
+**User request**: replace the single `--- prompt ---` marker with
+four parallel boundary labels so the review cursor can answer
+"where am I in the prompt / command / output structure" by line.
+
+**Fix**: `ContentHistory.renderMarkerLine` relabels:
+- `PromptStart` → `--- begin prompt ---`
+- `CommandStart` → `--- end prompt ---`
+- `OutputStart` → `--- begin output ---`
+- `CommandFinished` → `--- end output ---`
+
+Other markers (`BellRang`, `SelectionShown`, etc.) unchanged.
+
+#### 3. Synthesise `CommandFinished` at the SessionModel
+"PromptStart while AwaitingCommandStart" transition
+
+**User request**: a detectable boundary between commands so the
+review cursor sees `--- end output ---` before the next prompt's
+content.
+
+**Root cause**: cmd doesn't emit OSC 133, so
+`HeuristicPromptDetector` only fires `PromptStart`. No
+`CommandFinished` boundary signal naturally exists for cmd —
+SessionModel synthesises a "finalising prior as incomplete" tuple
+but ContentHistory had no matching marker.
+
+**Fix**: in `Program.fs`'s boundary handler, before appending the
+incoming `PromptStart` marker to ContentHistory, append a
+`CommandFinished` marker first iff SessionModel finalised a prior
+tuple (`finalisedOpt.IsSome`) AND the incoming kind is
+`PromptStart`. The marker lands AFTER the prior tuple's output
+TextSpan + Newline entries that already sealed via cmd's CRLF
+output, giving the review cursor walk:
+
+```
+...prior command's output bytes...
+--- end output ---
+next prompt's path bytes
+--- begin prompt ---
+...
+```
+
+Note: the marker placement remains heuristic — `appendMarker`
+seals the active span at insertion time, which may already contain
+the new prompt's path bytes (cmd writes them before the heuristic
+detector fires). The marker therefore appears AFTER the new
+prompt's path in the rendered tail, not before it. A cleaner
+ordering would require either OSC 133 emissions (which cmd doesn't
+provide) or backtrack-insert semantics in ContentHistory
+(deferred).
+
+#### Verification
+
+Matrix rows in `docs/ACCESSIBILITY-TESTING.md`:
+- **Cycle 47-18** Diagnostic bundle preserves newlines for cmd `echo hi`.
+- **Cycle 47-19** Marker labels read in the begin/end form.
+- **Cycle 47-20** `--- end output ---` synthesised between commands.
+
 ### Cycle 47 follow-up (2026-05-13, post-preview.113): tuple-final revert + `tick`-on-idle + caret-event drop + test-bracketed extractors
 
 Four fixes triggered by the maintainer's preview.113 walk of a

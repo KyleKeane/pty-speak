@@ -66,3 +66,37 @@ module AnnounceSanitiser =
                     if not isControl then
                         sb.Append(ch) |> ignore
                 sb.ToString()
+
+    /// Cycle 47 follow-up (2026-05-13) — bundle-friendly variant
+    /// of `sanitise` that preserves the three "useful whitespace"
+    /// control characters: `\n` (0x0A), `\r` (0x0D), and `\t`
+    /// (0x09). Used for diagnostic-bundle content where the
+    /// rendering target is human triage (paste-back to chat,
+    /// open in editor) rather than a single-line NVDA announce.
+    ///
+    /// The maintainer's preview.114 dogfood surfaced the
+    /// behavioural gap: piping `ContentHistory.tailText` through
+    /// the strip-all `sanitise` produced an unreadable
+    /// "echo hihiC:\Users\..." blob in the bundle's
+    /// `--- CONTENT HISTORY ---` section because every CRLF
+    /// between visual rows got removed. Now the bundle preserves
+    /// the row structure cmd's PTY output already encoded;
+    /// announce paths continue to use the strip-all variant.
+    let sanitiseForBundle (s: string | null) : string =
+        if isNull s then ""
+        else
+            let s = nonNull s
+            if s.Length = 0 then s
+            else
+                let sb = StringBuilder(s.Length)
+                for ch in s do
+                    let code = int ch
+                    let preserve =
+                        code = 0x09 || code = 0x0A || code = 0x0D
+                    let isControl =
+                        code < 0x20
+                        || code = 0x7F
+                        || (code >= 0x80 && code <= 0x9F)
+                    if preserve || not isControl then
+                        sb.Append(ch) |> ignore
+                sb.ToString()

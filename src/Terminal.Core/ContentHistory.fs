@@ -273,12 +273,28 @@ module ContentHistory =
     /// calls this helper so each marker becomes its own
     /// navigable line in the materialised tail.
     let private renderMarkerLine (kind: MarkerKind) : string =
+        // Cycle 47 follow-up (2026-05-13) — relabelled per
+        // maintainer's preview.114 review feedback. The four
+        // input/output boundary markers use a parallel
+        // "begin X / end X" wording so the review cursor walking
+        // a session can answer "where am I in the prompt /
+        // command / output structure" by line. PromptStart and
+        // CommandStart bracket the prompt area; OutputStart and
+        // CommandFinished bracket the output area. For cmd
+        // (no OSC 133), only PromptStart is heuristic-detected
+        // directly; CommandFinished is synthesised at the
+        // PromptStart-while-AwaitingCommandStart transition in
+        // `Program.fs`'s boundary handler so the user sees
+        // `--- end output ---` between commands. CommandStart
+        // and OutputStart remain unsynthesised for cmd (no
+        // reliable signal) and appear only under shells that
+        // emit OSC 133.
         let label =
             match kind with
-            | MarkerKind.PromptStart -> "prompt"
-            | MarkerKind.CommandStart -> "input begins"
-            | MarkerKind.OutputStart -> "output begins"
-            | MarkerKind.CommandFinished -> "output ends"
+            | MarkerKind.PromptStart -> "begin prompt"
+            | MarkerKind.CommandStart -> "end prompt"
+            | MarkerKind.OutputStart -> "begin output"
+            | MarkerKind.CommandFinished -> "end output"
             | MarkerKind.BellRang -> "bell"
             | MarkerKind.SelectionShown -> "selection prompt"
             | MarkerKind.SelectionDismissed -> "selection dismissed"
