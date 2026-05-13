@@ -43,7 +43,17 @@ before deviating.
    reserved peer panes (notification queue, contextual keyword
    info, input assistant). Read before working on substrate or
    channel code.
-6. **RFC 0001 (archived)** — Cycle 33 pivot-gate RFC, formalised
+6. **[`docs/adr/0003-shell-interaction-state-machine.md`](docs/adr/0003-shell-interaction-state-machine.md)**
+   — Cycle 48 architectural pivot (Proposed 2026-05-13). Adds a
+   third framing on top of substrate / channel: **interaction**
+   as a semantic layer that classifies each byte as user-input
+   echo vs cmd output via a two-state machine
+   (`Composing` / `Executing`). Replaces the Cycle 47 idle-flush +
+   tuple-final + prefix-trim + typing-window gate pile-up
+   (PRs #299–#305) with a single transition table. Read before
+   working on the announce / NVDA-channel routing code or the
+   UIA Text-pattern materialiser.
+7. **RFC 0001 (archived)** — Cycle 33 pivot-gate RFC, formalised
    the `LinearTextStream` substrate + streaming-emission protocol.
    The substrate it specified was replaced by `ContentHistory` +
    `SpeechCursor` in Cycle 45 (PRs #263–#270, 2026-05-12); the RFC
@@ -53,7 +63,7 @@ before deviating.
    context — the live substrate lives in `src/Terminal.Core/`
    (`ContentHistory.fs`, `SpeechCursor.fs`) and is described
    informally in CORE-ABSTRACTION-BOUNDARY.md §7.
-7. **[`docs/CANONICAL-DISPLAY-CATALOG.md`](docs/CANONICAL-DISPLAY-CATALOG.md)**
+8. **[`docs/CANONICAL-DISPLAY-CATALOG.md`](docs/CANONICAL-DISPLAY-CATALOG.md)**
    — Cycle 33 pivot-gate companion. Full per-primitive UIA /
    ARIA / NVDA / JAWS / Narrator / interaction-contract /
    channel-routing specs for the three exemplars (raw text +
@@ -62,11 +72,11 @@ before deviating.
    extension points (severity alert, indeterminate progress,
    Tier-2 deferred, Tier-3 deferred). Read before working on
    any output-side framework or channel implementation.
-8. **[`spec/tech-plan.md`](spec/tech-plan.md)** §N for the canonical
+9. **[`spec/tech-plan.md`](spec/tech-plan.md)** §N for the canonical
    spec of whatever stage you're working on.
-9. **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — canonical PR shape,
-   branch naming, F# / .NET 9 gotchas, accessibility
-   non-negotiables, P/Invoke conventions, test conventions.
+10. **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — canonical PR shape,
+    branch naming, F# / .NET 9 gotchas, accessibility
+    non-negotiables, P/Invoke conventions, test conventions.
 
 Doc ownership and audience-by-doc routing live in
 [`docs/DOC-MAP.md`](docs/DOC-MAP.md). When in doubt about which

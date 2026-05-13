@@ -128,10 +128,32 @@ confirm in passing.
 
 ## 4. Candidate next cycles
 
-None of these block each other. Pick by maintainer priority.
-Cycle 46 (the channel swap from `RaiseNotificationEvent` to
-the UIA caret) is **complete** as of 2026-05-13 — the
-remaining items below are independent.
+**Cycle 48 (ShellInteraction state machine)** is the active
+cycle as of 2026-05-13, scoped in
+[`docs/adr/0003-shell-interaction-state-machine.md`](adr/0003-shell-interaction-state-machine.md).
+Five-PR sequence: PR-A (this ADR), PR-B (observe-only state
+machine), PR-C (UserInputBuffer), PR-D (announce routing
+switch), PR-E (cleanup + closure audit). All other Cycle 48
+work is gated on the maintainer accepting ADR 0003 and
+walking each PR's validation row.
+
+Motivation: Cycle 47 follow-up PRs (#299–#305) attempted to
+patch the announce path via gates (typing-window, prefix
+trim, sealed-only, cursor-row newlines). preview.117
+dogfood confirmed the patches don't compose — each fix
+revealed or introduced another regression. The root cause
+is that the announce path is driven by byte-stream deltas,
+not by a semantic model of shell interaction. ADR 0003 adds
+the semantic model.
+
+The other Cycle 47 work (preview.114 batch) shipped and
+remains correct: marker labels, sanitiseForBundle,
+synthesised CommandFinished, menu mnemonic fixes,
+diagnostic-bundle closure. Those land into Cycle 48 as
+prerequisites, not as items to revisit.
+
+None of the candidates below block Cycle 48 directly; they
+are independent and pick-by-priority once Cycle 48 closes.
 
 ### Short-term
 
@@ -201,3 +223,5 @@ segmentation + spatial audio. `pty-speak-replay` CLI
 | 2026-05-12 | Cycle 45c (post-merge) | This plan supersedes `PROJECT-PLAN-2026-05-09.md`. Captures post-Cycle-45c state: ContentHistory/SpeechCursor is sole substrate; old pathway pipeline deleted via PRs #274–#278. NVDA matrix walk 45c-1 → 45c-6 is the validation gate. Roadmap reset around the new substrate. |
 | 2026-05-13 | Cycle 46 PR-A + PR-B (post-merge) | Added §"Cycle 46" to §1 + roadmap. ADR 0002 drafted (PR #287, 2026-05-12) and accepted (2026-05-13 with all five Open Questions resolved). PR #288 swapped the UIA `ITextProvider` from screen grid to `ContentHistory`, flipped `ControlType` Document→Edit. PR-C / PR-D scoped in [`CYCLE-46-NEXT-STEPS.md`](CYCLE-46-NEXT-STEPS.md). Validation gate renamed from 45c-1→6 to 46-PRB-1 (subsumes the carry-over). The roadmap kept the 45g / 45d / semantic-labels / spinner / Coalescer cycles as a parallel track. |
 | 2026-05-13 | Cycle 46 PR-C + PR-D (post-merge) | PRs #290 + #291 closed Cycle 46. PR-C added `RaiseCaretMovedToTail` and replaced the tuple-finalise `Announce` call. PR-D rewired `speechCursorAnnounce` to delegate to the same helper and deleted the legacy screen-grid `TerminalTextProvider` / `TerminalTextRange` / `SnapshotText` (~680 LOC) + `WordBoundaryTests.fs`. The §1 summary collapsed PR-A through PR-D into one Cycle-46 entry. The §4 "Primary track" subsection was removed (Cycle 46 done; nothing else is in primary track). Validation gate consolidated to NVDA matrix Cycle 46-1 in `ACCESSIBILITY-TESTING.md`. |
+| 2026-05-13 | Cycle 47 follow-up batch (PRs #299–#305, preview.114 → preview.117) | Shipped marker-label parallelism, sanitiseForBundle newlines, CommandFinished synthesis, typing-window UIA gate, prefix-trim, mid-eval earcon, menu mnemonic fixes, cursor-row synthetic newlines, idle-flush typing gate. preview.117 dogfood found the gates don't compose: typed chars still announced, set/p replays, review cursor drifts. Diagnosis: announce path is byte-stream-driven, not semantic. |
+| 2026-05-13 | Cycle 48 PR-A (ADR 0003 draft) | Active cycle. Five-PR sequence specified in [`docs/adr/0003-shell-interaction-state-machine.md`](adr/0003-shell-interaction-state-machine.md): ShellInteraction state machine (`Composing` / `Executing`) as the semantic layer above the substrate; UserInputBuffer for canonical "what the user typed"; sub-prompt detection via "idle and last-byte-not-LF"; announce routing collapsed from `tuple-final + idle-flush + prefix-trim` to one transition-driven path. Validation: maintainer reads + approves ADR before PR-B writes any code. |
