@@ -15,6 +15,89 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 46 post-audit (2026-05-13): cap tuple-final output Announce + `Ctrl+Shift+O` open-last-output
+
+Resolves the "DIR freezes all speech for ~5 minutes" symptom
+the maintainer reported on the post-audit preview build
+(version 0.0.1-preview.109, commit `bb0b239`).
+
+**Root cause (confirmed via `Ctrl+Shift+D` log slice 2026-05-13
+06:30:58 UTC)**: `SessionModel finalize extraction CmdLen=5
+OutLen=18953` → `RaiseNotificationEvent firing.
+ActivityId=pty-speak.output MsgLen=18953 Processing=MostRecent`.
+A single 19 KB notification hits NVDA's queue; NVDA hands to
+SAPI as one ~5–10 minute utterance which neither
+`MostRecent` (different `activityId` → no supersede) nor the
+Edit-control typed-character interrupt (NVDA's interrupt
+runs at the keyboard layer; once SAPI has begun a render it
+runs to completion) can cancel mid-utterance.
+
+**Fix**:
+
+- **`Program.fs` `OutputAnnounceCapChars = 800`**. The
+  boundary handler caps `tupleFinaliseAnnounce` to the last
+  800 characters of the tuple's `OutputText` before passing
+  to `TerminalView.Announce`. Worst-case SAPI utterance is
+  now ~30–60 seconds rather than 5–10 minutes; user can
+  interrupt by typing (Edit-control flow), pressing Alt, or
+  running another command that triggers its own announce.
+  No prefix or suffix is added to the audible text — the
+  truncation is silent at the channel; a
+  `Tuple-final announce truncated.` log line at INFO
+  records `OriginalLen` / `CappedLen` for diagnosis.
+- **`Ctrl+Shift+O` — open last output in default text
+  editor** (mnemonic: O for *O*pen Output). Writes the most
+  recent tuple's full `OutputText` to a fresh timestamped
+  file under `%LOCALAPPDATA%\PtySpeak\extracts\last-output-<ts>.txt`
+  and launches it via `Process.Start` with
+  `UseShellExecute=true` (registered `.txt` handler — Notepad
+  by default, or whatever the user configured). The
+  announce-then-700ms-delay pattern matches `Ctrl+Shift+E`
+  (Edit config). Announces "Opening last output." on
+  success, "No prior output." when `SessionModel.History`
+  is empty.
+- **Hotkey wiring**: new `HotkeyRegistry.OpenLastOutput`
+  AppCommand (Letter 'O' + ctrlShift); registered in
+  `AppReservedHotkeys` (`src/Views/TerminalView.cs`); menu
+  item `MenuItem_OpenLastOutput` under "Data" in
+  `MainWindow.xaml`. The reflective menu-binding loop
+  (`Program.fs` ~line 3877) picks it up automatically.
+- **`Ctrl+Shift+A` — re-narrate last command output**
+  (mnemonic: *A*nnounce). Spoken counterpart to
+  `Ctrl+Shift+O` for the user who missed the auto-narrate
+  (was speaking, typing, switched window). Re-speaks the
+  most recent tuple's `OutputText` via the same
+  `TerminalView.Announce` channel + `ActivityIds.output`
+  activity ID, capped at the same `OutputAnnounceCapChars`
+  (800) the auto-narrate uses. NVDA's `MostRecent`
+  processing means re-pressing supersedes the prior
+  in-flight `pty-speak.output` notification, so the user can
+  use it as a "say it again" / "say it louder" lever.
+  Announces "No prior output." when `History` is empty;
+  "Last command produced no output." when the latest
+  tuple's `OutputText` is whitespace-only.
+- **Hotkey wiring (`Ctrl+Shift+A`)**: new
+  `HotkeyRegistry.AnnounceLastOutput` AppCommand
+  (Letter 'A' + ctrlShift); registered in
+  `AppReservedHotkeys`; menu item
+  `MenuItem_AnnounceLastOutput` under "Data".
+- **CLAUDE.md** §"Currently shipped" hotkey list gains a
+  `Ctrl+Shift+O` entry alongside the existing `Ctrl+Shift+S` /
+  `Ctrl+Shift+Y` companions.
+- **`docs/ACCESSIBILITY-TESTING.md`** Cycle 46 matrix gains
+  rows 46-11 (cap behaviour on `dir`), 46-12 (`Ctrl+Shift+O`
+  happy path), and 46-13 (`Ctrl+Shift+O` empty-history
+  guard) + a diagnostic-decoder paragraph for cap / hotkey
+  failure modes.
+
+**Claude shell unaffected**. `Claude`'s
+`ShellPolicy.Streaming` is `LineByLine` (not `TupleFinalOnly`),
+so the boundary handler's `tupleFinaliseAnnounce` is `None`
+on every prompt and the cap path is never entered. Each
+streaming chunk arrives via `SpeechCursor.onAppend` →
+`Announce` independently and `MostRecent` does the right
+thing per-chunk.
+
 ### Cycle 46 closure audit + Option ★★ pivot (no-spoken-output fix)
 
 Post-PR-D audit PR sweeping for drift between the now-

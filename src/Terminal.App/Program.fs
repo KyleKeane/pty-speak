@@ -24,6 +24,26 @@ module Program =
     let private ScreenRows = 30
     let private ScreenCols = 120
 
+    /// Cycle 46 post-audit (2026-05-13) — cap for the tuple-
+    /// final `Announce(text, ActivityIds.output)` call's payload
+    /// length. The pre-cap behaviour shipped a single 19 KB
+    /// notification for a default-shell `dir`, which NVDA hands
+    /// to SAPI as one ~5–10 minute utterance that cannot be
+    /// interrupted by another notification or by the
+    /// Edit-control typed-character setting (NVDA's interrupt
+    /// path doesn't displace an in-flight SAPI render).
+    /// 800 characters caps the worst-case utterance to roughly
+    /// 30–60 seconds at normal SAPI rate; the user hears the
+    /// tail of the output, which usually carries the
+    /// most-relevant bytes (final summary / next prompt / exit
+    /// status). Full output remains in `ContentHistory` and is
+    /// reachable via the `Ctrl+Shift+O` open-last-output hotkey
+    /// (writes the tuple's full `OutputText` to a temp file
+    /// under `%LOCALAPPDATA%\PtySpeak\extracts\` and opens it
+    /// in the default text editor) or via `Ctrl+Shift+Y`
+    /// (copies the SessionModel history to the clipboard).
+    let private OutputAnnounceCapChars = 800
+
     /// GitHub Releases endpoint Velopack pulls update metadata
     /// from. `prerelease=true` because Stage 11 ships on the
     /// `0.0.x-preview.N` channel; once the line graduates to
@@ -1720,9 +1740,41 @@ module Program =
                 // NVDA's typed-character interrupt. See the
                 // matching comment on `speechCursorAnnounce`
                 // above for the full rationale.
+                //
+                // Cycle 46 post-audit (2026-05-13) — cap the
+                // tuple-final announce at the last
+                // OutputAnnounceCapChars characters. The
+                // pre-cap behaviour shipped one giant Announce
+                // (observed: MsgLen=18953 for a default-shell
+                // `dir`) which becomes a 5–10 minute single
+                // SAPI utterance NVDA cannot interrupt — neither
+                // `MostRecent` on a different `activityId` nor
+                // the Edit-control typed-character setting
+                // displaces an in-flight SAPI render. Capping at
+                // ~800 chars keeps the worst-case utterance to
+                // ~30–60 seconds; the user hears the tail of the
+                // command's output (typically the most relevant
+                // bytes — final summary line / next prompt /
+                // exit status). Full output is preserved in
+                // ContentHistory and reachable via
+                // `Ctrl+Shift+O` (open last output in the default
+                // text editor) or `Ctrl+Shift+Y` (copy session
+                // history to clipboard).
+                //
+                // No prefix or NVDA instruction is added to the
+                // audible text — keep the cap silent at the
+                // channel layer and trust the hotkey + log to
+                // surface the cap when needed.
                 match tupleFinaliseAnnounce with
                 | Some text ->
-                    window.TerminalSurface.Announce(text, ActivityIds.output)
+                    let toSay =
+                        if text.Length <= OutputAnnounceCapChars then text
+                        else text.Substring(text.Length - OutputAnnounceCapChars)
+                    if toSay.Length < text.Length then
+                        log.LogInformation(
+                            "Tuple-final announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
+                            text.Length, toSay.Length, OutputAnnounceCapChars)
+                    window.TerminalSurface.Announce(toSay, ActivityIds.output)
                     raiseCaretMovedToTail ()
                 | None -> ()
             window.Dispatcher.InvokeAsync(Action(boundaryAction))
@@ -2605,6 +2657,156 @@ module Program =
             ()
 
         // Cycle 24e — `Ctrl+Shift+S`: announce the active
+        // Cycle 46 post-audit (2026-05-13) — open the latest
+        // tuple's full `OutputText` in the default text editor.
+        // Companion to the 800-char tuple-final Announce cap:
+        // the cap keeps the audible read interruptible; this
+        // hotkey is the escape hatch for hearing / reading the
+        // full output when the cap matters.
+        //
+        // File path:
+        //   %LOCALAPPDATA%\PtySpeak\extracts\last-output-<ts>.txt
+        // A fresh timestamped file per invocation (matches the
+        // Diagnostics → Grep diagnostics extract pattern). The
+        // accumulation in `extracts\` is bounded by the user's
+        // explicit invocation count; no auto-pruning.
+        //
+        // Defaults to the most recently-finalised tuple
+        // (`History |> Seq.tryLast`). Mid-command Active tuples
+        // aren't surfaced — the user can wait for the prompt to
+        // return. If the history is empty, the hotkey announces
+        // "No prior output" rather than opening an empty file.
+        //
+        // The 700ms announce-then-launch delay mirrors
+        // `runOpenConfig`'s pattern: NVDA finishes speaking the
+        // confirmation before the editor takes focus and starts
+        // its own UIA traffic.
+        let runOpenLastOutput () : unit =
+            let log =
+                Logger.get "Terminal.App.Program.runOpenLastOutput"
+            log.LogInformation(
+                "Ctrl+Shift+O pressed — opening last output in default editor.")
+            let snapshot = currentSession
+            match snapshot.History |> Seq.tryLast with
+            | None ->
+                log.LogInformation(
+                    "No prior output to open (History is empty).")
+                window.TerminalSurface.Announce(
+                    "No prior output.",
+                    ActivityIds.diagnostic)
+            | Some tuple ->
+                let timestamp =
+                    DateTime.UtcNow.ToString("yyyy-MM-dd-HH-mm-ss-fff")
+                let extractsDir =
+                    System.IO.Path.Combine(
+                        Environment.GetFolderPath(
+                            Environment.SpecialFolder.LocalApplicationData),
+                        "PtySpeak",
+                        "extracts")
+                let filePath =
+                    System.IO.Path.Combine(
+                        extractsDir,
+                        sprintf "last-output-%s.txt" timestamp)
+                try
+                    System.IO.Directory.CreateDirectory(extractsDir)
+                    |> ignore
+                    System.IO.File.WriteAllText(
+                        filePath,
+                        tuple.OutputText,
+                        System.Text.Encoding.UTF8)
+                    log.LogInformation(
+                        "Wrote last output to file. Path={Path} OutputLen={Len}",
+                        filePath, tuple.OutputText.Length)
+                    window.TerminalSurface.Announce(
+                        "Opening last output.",
+                        ActivityIds.diagnostic)
+                    let _ =
+                        task {
+                            do! Task.Delay(700)
+                            let action () =
+                                try
+                                    let psi =
+                                        System.Diagnostics.ProcessStartInfo()
+                                    psi.FileName <- filePath
+                                    psi.UseShellExecute <- true
+                                    System.Diagnostics.Process.Start(psi)
+                                    |> ignore
+                                with ex ->
+                                    let safe =
+                                        AnnounceSanitiser.sanitise ex.Message
+                                    log.LogError(
+                                        ex,
+                                        "Could not launch text editor: {Path}",
+                                        filePath)
+                                    window.TerminalSurface.Announce(
+                                        sprintf
+                                            "Could not open output file: %s"
+                                            safe,
+                                        ActivityIds.error)
+                            do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                            ()
+                        }
+                    ()
+                with ex ->
+                    let safe = AnnounceSanitiser.sanitise ex.Message
+                    log.LogError(
+                        ex,
+                        "Could not write last-output file at {Path}.",
+                        filePath)
+                    window.TerminalSurface.Announce(
+                        sprintf "Could not save output: %s" safe,
+                        ActivityIds.error)
+
+        // Cycle 46 post-audit (2026-05-13) — re-narrate the
+        // latest finalised tuple's `OutputText`, capped at the
+        // same `OutputAnnounceCapChars` the auto-narrate uses.
+        // For the user who missed the auto-Announce (was
+        // speaking, typing, switched window, etc.). Goes
+        // through the same `TerminalView.Announce` channel +
+        // `ActivityIds.output` activity ID, so it supersedes
+        // any other in-flight `pty-speak.output` notification
+        // via NVDA's `MostRecent` processing — the cap keeps
+        // the utterance bounded to ~30–60s either way.
+        //
+        // `Ctrl+Shift+O` is the companion when the user wants
+        // the FULL output (writes to a file + opens the default
+        // text editor); this hotkey is the spoken counterpart.
+        let runAnnounceLastOutput () : unit =
+            let log =
+                Logger.get "Terminal.App.Program.runAnnounceLastOutput"
+            log.LogInformation(
+                "Ctrl+Shift+A pressed — re-narrating last output.")
+            let snapshot = currentSession
+            match snapshot.History |> Seq.tryLast with
+            | None ->
+                log.LogInformation(
+                    "No prior output to re-narrate (History is empty).")
+                window.TerminalSurface.Announce(
+                    "No prior output.",
+                    ActivityIds.diagnostic)
+            | Some tuple when System.String.IsNullOrWhiteSpace tuple.OutputText ->
+                log.LogInformation(
+                    "Latest tuple has empty OutputText.")
+                window.TerminalSurface.Announce(
+                    "Last command produced no output.",
+                    ActivityIds.diagnostic)
+            | Some tuple ->
+                let toSay =
+                    if tuple.OutputText.Length <= OutputAnnounceCapChars then
+                        tuple.OutputText
+                    else
+                        tuple.OutputText.Substring(
+                            tuple.OutputText.Length - OutputAnnounceCapChars)
+                if toSay.Length < tuple.OutputText.Length then
+                    log.LogInformation(
+                        "Re-narrate truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
+                        tuple.OutputText.Length,
+                        toSay.Length,
+                        OutputAnnounceCapChars)
+                window.TerminalSurface.Announce(
+                    toSay,
+                    ActivityIds.output)
+
         // session-log file path. Reads `sessionLogWriter` (post
         // -Cycle-24c) + `persistenceConfig.Mode` (post-Cycle-24a)
         // from compose-local state. The closure is defined here
@@ -2951,6 +3153,8 @@ module Program =
         bind HotkeyRegistry.RunDiagnostic runDiagnostic
         bind HotkeyRegistry.CopyHistoryToClipboard runCopyHistoryToClipboard
         bind HotkeyRegistry.AnnounceSessionLogPath runAnnounceSessionLogPath
+        bind HotkeyRegistry.OpenLastOutput runOpenLastOutput
+        bind HotkeyRegistry.AnnounceLastOutput runAnnounceLastOutput
         // Cycle 43a — diagnostic chunk extractors + grep dialog.
         // All menu-only (no keyboard accelerator); `bindHotkey`
         // skips the KeyBinding installation but still registers

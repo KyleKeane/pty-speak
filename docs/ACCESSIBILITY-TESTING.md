@@ -1249,6 +1249,12 @@ to a post-Cycle-46 fixup PR rather than tagging a release.
 | **46-8** | Claude REPL + a streaming response. | Mid-stream chunks flow through `ContentHistory.appendFromEvent`; the caret-move event fires per tuple finalisation. Streaming should feel like NVDA is reading along with the model, not a delayed block-read at the end. |
 | **46-9** | Non-output notifications: press `Ctrl+Shift+H` (health check), `Ctrl+Shift+S` (session-log path), `Ctrl+Shift+D` (diagnostic snapshot). | Each still produces a notification-style announce. ADR §"Decision" clause 5 keeps notifications for non-terminal-content events; the caret-only path is for terminal command I/O. |
 | **46-10** | Trigger an error (e.g. a malformed escape sequence; `printf '\033[?garbage'` in cmd). | `ActivityIds.error` notification fires as today. Error path was not touched by Cycle 46. |
+| **46-11** | cmd + `dir` of a moderately-large directory (the install dir works; produces ~19 KB of output). Listen for the audible read after the command completes. | NVDA reads the last ~800 chars of output and stops cleanly. Pre-cap behaviour was a single 5–10 minute SAPI utterance that NVDA could not interrupt; post-cap the utterance is bounded to ~30–60 seconds. Subsequent commands' announces are no longer queued behind the giant read. |
+| **46-12** | After 46-11, press `Ctrl+Shift+O`. | A new text editor window opens (whichever app handles `.txt` files) with the full `OutputText` of the most recent tuple. NVDA announces "Opening last output." then transitions focus to the editor. The file lives under `%LOCALAPPDATA%\PtySpeak\extracts\last-output-<timestamp>.txt`. |
+| **46-13** | Restart pty-speak (so `History` is empty), focus the terminal, press `Ctrl+Shift+O` before running any command. | NVDA announces "No prior output." No editor opens. No file is written. |
+| **46-14** | After 46-11, press `Ctrl+Shift+A`. | NVDA re-narrates the last ~800 chars of the most recent output via `ActivityIds.output`. Useful when the auto-narrate was missed (user was speaking, typing, switched window). Same cap as the auto-narrate. |
+| **46-15** | Fresh app (no commands run), press `Ctrl+Shift+A`. | NVDA announces "No prior output." No re-narration. |
+| **46-16** | Run `echo` with no argument (cmd shell will print a single empty-line response), then press `Ctrl+Shift+A`. | NVDA announces "Last command produced no output." (the latest tuple's `OutputText` is whitespace-only; covered by the `IsNullOrWhiteSpace` guard). |
 
 **Diagnostic decoder.** If 46-1 fails (focus still announces
 "document"): `TerminalAutomationPeer.GetAutomationControlTypeCore`
@@ -1271,7 +1277,16 @@ site). If 46-6 fails: the
 `runSpeechCursorNext/Previous/JumpToLatest` handlers in
 `Program.fs` may have accidentally been routed through the
 caret helper — those should stay on `window.TerminalSurface.Announce`
-per the PR-D scope refinement.
+per the PR-D scope refinement. If 46-11 NVDA still hangs on
+the `dir` read for minutes: the `OutputAnnounceCapChars` cap
+in `Program.fs` either isn't being applied (check for
+`Tuple-final announce truncated.` log line at
+INFO level in the FileLogger active log) or the cap value is
+too large for SAPI's chunking — drop from 800 to 400 and
+retest. If 46-12 the editor opens but is empty: the tuple
+finalised with an empty `OutputText` (cmd / PowerShell can
+do this for commands that don't emit visible output — try a
+clearly-visible command like `dir` instead).
 
 ## Recording results
 

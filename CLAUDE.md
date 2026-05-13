@@ -524,6 +524,30 @@ Currently shipped (orientation reference; spec section 6 is canonical):
   and `Ctrl+Shift+D` (which folds the same summary into the
   bundle's `--- SESSION LOG ---` section so a paste-back
   carries it without a separate keystroke).
+- `Ctrl+Shift+O` — open the last command's full `OutputText`
+  in the default text editor (Cycle 46 post-audit, 2026-05-13).
+  Companion to the 800-char tuple-final `Announce` cap in
+  `Program.fs` (`OutputAnnounceCapChars`): the cap keeps the
+  audible read interruptible for a `dir`-shaped output; this
+  hotkey is the escape hatch for hearing / reading the full
+  body. Writes a fresh timestamped file under
+  `%LOCALAPPDATA%\PtySpeak\extracts\last-output-<ts>.txt` and
+  launches it via `Process.Start` with `UseShellExecute=true`
+  (the registered `.txt` handler — Notepad by default, or
+  whatever the user has configured). Announces "Opening last
+  output." on success; "No prior output." when
+  `SessionModel.History` is empty.
+- `Ctrl+Shift+A` — re-narrate the last command's `OutputText`
+  via NVDA, capped at the same `OutputAnnounceCapChars` (800)
+  the auto-narrate uses (Cycle 46 post-audit, 2026-05-13). For
+  the user who missed the auto-Announce (was speaking, typing,
+  switched window). Spoken counterpart to `Ctrl+Shift+O`'s
+  text-editor surface. Uses the same `ActivityIds.output`
+  activity ID, so NVDA's `MostRecent` processing supersedes
+  any other in-flight `pty-speak.output` notification.
+  Announces "No prior output." when `SessionModel.History`
+  is empty; "Last command produced no output." when the
+  latest tuple's `OutputText` is whitespace-only.
 
 Multi-state menu items (Cycle 27 paradigm; menu-only, no
 keyboard accelerator):
