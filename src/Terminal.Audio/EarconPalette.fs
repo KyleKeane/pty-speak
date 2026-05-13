@@ -44,15 +44,19 @@ module EarconPalette =
     ///   colour-detection (yellow rows). Same status as
     ///   error-tone — present in the palette for diagnostic
     ///   coverage, no producer wired yet.
-    /// - `ready-prompt` (1200Hz × 60ms): Cycle 45 — a brief
-    ///   high-pitched chime fired when a command finishes and
-    ///   the shell is ready for the next input. Higher-pitched
-    ///   + shorter than `bell-ping` so it's audibly distinct
-    ///   from the BEL ping; brief enough that consecutive
-    ///   commands don't overlap. Routes through the same
-    ///   non-blocking WASAPI stream as every other earcon, so
-    ///   it plays alongside NVDA's read-back of the OutputText
-    ///   without interrupting speech.
+    /// - `ready-prompt` (3000Hz × 15ms): Cycle 46 post-audit
+    ///   (2026-05-13). Originally shipped at 1200Hz × 60ms but
+    ///   the maintainer reported the 60ms tone was disruptive
+    ///   when it overlapped the auto-narrate of the just-
+    ///   finished command. Re-tuned to a sharp click: shorter
+    ///   (15ms total) + higher pitch (3000Hz; near the upper
+    ///   edge of the speech band so it perceptually separates
+    ///   from spoken output) + no attack envelope (0ms — the
+    ///   transient onset IS the click character). Routes
+    ///   through the same non-blocking WASAPI stream as every
+    ///   other earcon. If the click is still disruptive, the
+    ///   existing Display → Earcons → Muted toggle silences
+    ///   all earcons globally; per-earcon mute is a follow-up.
     /// All earcons stay shorter than the StreamProfile's 200ms
     /// debounce window so consecutive earcons don't overlap.
     /// Tunable in Phase 2 via TOML.
@@ -71,6 +75,6 @@ module EarconPalette =
                 DurationMs = 120
                 AttackMs = 10 }
               "ready-prompt",
-              { FrequencyHz = 1200.0
-                DurationMs = 60
-                AttackMs = 5 } ]
+              { FrequencyHz = 3000.0
+                DurationMs = 15
+                AttackMs = 0 } ]

@@ -15,6 +15,43 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 46 post-audit follow-up (2026-05-13): ready-prompt earcon to a click + Data → Last Output submenu
+
+Two small follow-ups to the audit PR per maintainer feedback:
+
+- **`ready-prompt` earcon re-tuned from a tone to a click.**
+  Was 1200Hz × 60ms (with 5ms attack); now 3000Hz × 15ms
+  (no attack envelope). The 60ms tone overlapped the auto-
+  narrate of the just-finished command in a way the
+  maintainer described as disruptive. The shorter, higher,
+  attack-free form perceptually separates from spoken
+  output and reads as a brief tick rather than a tone.
+  Implementation: parameter-only change in
+  [`src/Terminal.Audio/EarconPalette.fs`](src/Terminal.Audio/EarconPalette.fs);
+  the synthesis path
+  (`EarconWaveform.synthSineEnvelope`) is unchanged. The
+  existing Display → Earcons → Muted toggle silences this
+  + every other earcon globally if the click is still
+  unwanted; per-earcon mute is a follow-up (the maintainer
+  explicitly asked not to over-invest in per-sound config
+  yet).
+- **Menu reorganization: Data → Last Output submenu.**
+  The two `Ctrl+Shift+O` / `Ctrl+Shift+A` affordances added
+  in the audit PR landed loose under the Data menu. They're
+  now grouped under a `Last Output` submenu with two
+  children: `Open in Text Editor`
+  (`MenuItem_OpenLastOutput`) and `Announce Again`
+  (`MenuItem_AnnounceLastOutput`). The reflective
+  menu-binding loop (`Program.fs` ~line 3877) finds the
+  named MenuItems via `window.GetType().GetField(...)`
+  regardless of XAML nesting, so no Program.fs wiring
+  changes are required.
+
+No code paths changed beyond the palette numbers and the
+XAML hierarchy. Hotkeys (Ctrl+Shift+O, Ctrl+Shift+A) are
+unchanged. ACCESSIBILITY-TESTING matrix rows 46-11 → 46-16
+continue to apply.
+
 ### Cycle 46 post-audit (2026-05-13): cap tuple-final output Announce + `Ctrl+Shift+O` open-last-output
 
 Resolves the "DIR freezes all speech for ~5 minutes" symptom
