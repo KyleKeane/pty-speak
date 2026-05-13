@@ -2700,8 +2700,7 @@ module Program =
                 let extractsDir =
                     System.IO.Path.Combine(
                         Environment.GetFolderPath(
-                            Environment.SpecialFolder.LocalApplicationData)
-                        |> nonNull,
+                            Environment.SpecialFolder.LocalApplicationData),
                         "PtySpeak",
                         "extracts")
                 let filePath =
