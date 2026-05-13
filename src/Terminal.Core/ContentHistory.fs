@@ -265,13 +265,45 @@ module ContentHistory =
                 i <- i - 1
             found)
 
-    /// Cycle 45c — tail of the reconstructed text. Used by the
-    /// diagnostic bundle to render a `--- CONTENT HISTORY (last
-    /// N KB) ---` section without forcing the caller to allocate
-    /// the full reconstruction first. Walks `Entries` from tail,
-    /// accumulating until the byte cap is hit, then reverses to
-    /// chronological order.
-    let tailText (state: T) (maxBytes: int) : string =
+    /// Cycle 47 follow-up (2026-05-13) — render a `Marker` entry
+    /// as a labelled boundary line suitable for the UIA
+    /// Text-pattern materialiser (where NVDA's review cursor
+    /// navigates). `tailText` skips markers entirely (they're
+    /// metadata-only for the substrate); `tailTextWithMarkers`
+    /// calls this helper so each marker becomes its own
+    /// navigable line in the materialised tail.
+    let private renderMarkerLine (kind: MarkerKind) : string =
+        let label =
+            match kind with
+            | MarkerKind.PromptStart -> "prompt"
+            | MarkerKind.CommandStart -> "input begins"
+            | MarkerKind.OutputStart -> "output begins"
+            | MarkerKind.CommandFinished -> "output ends"
+            | MarkerKind.BellRang -> "bell"
+            | MarkerKind.SelectionShown -> "selection prompt"
+            | MarkerKind.SelectionDismissed -> "selection dismissed"
+            | MarkerKind.AltScreenEnter -> "entered alt-screen"
+            | MarkerKind.AltScreenExit -> "left alt-screen"
+            | MarkerKind.Custom tag -> sprintf "custom: %s" tag
+        // Leading + trailing newlines guarantee the marker
+        // stands on its own line regardless of whether the
+        // prior / following content ends with `\n`. Multiple
+        // consecutive newlines collapse harmlessly under
+        // NVDA's line-walking semantics (blank lines read as
+        // "blank" but don't break Move(Line, ±1)).
+        sprintf "\n--- %s ---\n" label
+
+    /// Cycle 47 follow-up (2026-05-13) — shared implementation
+    /// for `tailText` (markers stripped, used by the diagnostic
+    /// bundle) and `tailTextWithMarkers` (markers rendered as
+    /// labelled lines, used by the UIA Text-pattern
+    /// materialiser). Pre-this-cycle this body lived inline in
+    /// `tailText`; refactored to a private helper + two public
+    /// wrappers so the bundle and UIA paths can diverge on
+    /// marker rendering without diverging on the byte-cap +
+    /// tail-walk machinery.
+    let private tailTextInternal
+            (state: T) (maxBytes: int) (includeMarkers: bool) : string =
         lock state.Gate (fun () ->
             let frames = ResizeArray<string>()
             let mutable bytes = 0
@@ -289,7 +321,9 @@ module ContentHistory =
                     | Newline _ -> "\n"
                     | Overwrite d -> d.Text
                     | Spinner d -> d.LatestText
-                    | Marker _ -> ""
+                    | Marker m ->
+                        if includeMarkers then renderMarkerLine m.Kind
+                        else ""
                 if contribution.Length > 0 then
                     frames.Add(contribution)
                     bytes <- bytes + System.Text.Encoding.UTF8.GetByteCount(contribution)
@@ -311,6 +345,25 @@ module ContentHistory =
                 let startOffset = bytesArr.Length - maxBytes
                 System.Text.Encoding.UTF8.GetString(
                     bytesArr, startOffset, maxBytes))
+
+    /// Cycle 45c — tail of the reconstructed text. Used by the
+    /// diagnostic bundle to render a `--- CONTENT HISTORY (last
+    /// N KB) ---` section without forcing the caller to allocate
+    /// the full reconstruction first. Markers are stripped; for
+    /// the markers-rendered variant see `tailTextWithMarkers`.
+    let tailText (state: T) (maxBytes: int) : string =
+        tailTextInternal state maxBytes false
+
+    /// Cycle 47 follow-up (2026-05-13) — variant of `tailText`
+    /// that renders `Marker` entries as labelled boundary lines
+    /// (`--- prompt ---`, `--- input begins ---`, etc.) rather
+    /// than skipping them. Used by the UIA Text-pattern
+    /// materialiser so NVDA's review cursor surfaces semantic
+    /// boundaries between commands. The diagnostic snapshot
+    /// keeps using `tailText` (no marker noise) so paste-back
+    /// triage stays readable.
+    let tailTextWithMarkers (state: T) (maxBytes: int) : string =
+        tailTextInternal state maxBytes true
 
     /// Cycle 45c — reconstruct the user-visible text payload for
     /// entries whose Seq is strictly between `fromSeqExclusive`

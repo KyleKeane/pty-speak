@@ -34,10 +34,24 @@ module internal ContentHistoryMaterialiser =
     /// single string. Returns the empty string if `history`
     /// is null (the early-startup case before
     /// `TerminalView.SetContentHistory` has been called).
+    ///
+    /// Cycle 47 follow-up (2026-05-13) — uses
+    /// `ContentHistory.tailTextWithMarkers` (rather than the
+    /// plain `tailText` it called pre-this-cycle) so semantic
+    /// boundary markers (`--- prompt ---`,
+    /// `--- output begins ---`, etc.) appear as navigable
+    /// lines in the UIA Text-pattern view. NVDA's review
+    /// cursor finds them via `Move(Line, ±1)`; the maintainer
+    /// can walk between commands via prompt-to-prompt
+    /// navigation rather than scanning prose for boundaries.
+    ///
+    /// The diagnostic-bundle path still uses `tailText`
+    /// (markers-stripped) so paste-back triage stays
+    /// readable — the marker lines would be noise there.
     let materialise (history: ContentHistory.T | null) : string =
         match history with
         | null -> ""
-        | h -> ContentHistory.tailText h TailCapBytes
+        | h -> ContentHistory.tailTextWithMarkers h TailCapBytes
 
 /// UIA `ITextRangeProvider` over a materialised
 /// `ContentHistory` tail. Endpoints are character offsets

@@ -567,3 +567,95 @@ let ``sliceText excludes the marker entries themselves`` () =
     Assert.Equal("x\n", result)
     Assert.DoesNotContain("prompt-text", result)
     Assert.DoesNotContain("output-marker-text", result)
+
+// ---------------------------------------------------------------------
+// tailText / tailTextWithMarkers (Cycle 45c + Cycle 47 follow-up)
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``tailText skips markers; markers do not appear in output`` () =
+    let state = freshHistory ()
+    feed state t0 [ printRune 'h'; printRune 'i'; lf ] |> ignore
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.PromptStart t0 None
+    |> ignore
+    feed state t0 [ printRune 'a'; printRune 'b'; lf ] |> ignore
+    let result = ContentHistory.tailText state 4096
+    Assert.Equal("hi\nab\n", result)
+    Assert.DoesNotContain("prompt", result)
+    Assert.DoesNotContain("---", result)
+
+[<Fact>]
+let ``tailTextWithMarkers renders PromptStart as a navigable line`` () =
+    let state = freshHistory ()
+    feed state t0 [ printRune 'h'; printRune 'i'; lf ] |> ignore
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.PromptStart t0 None
+    |> ignore
+    feed state t0 [ printRune 'a'; printRune 'b'; lf ] |> ignore
+    let result = ContentHistory.tailTextWithMarkers state 4096
+    Assert.Contains("--- prompt ---", result)
+    // Marker line is bracketed by newlines so NVDA's
+    // Move(Line, ±1) lands on it as a standalone unit.
+    Assert.Contains("\n--- prompt ---\n", result)
+
+[<Fact>]
+let ``tailTextWithMarkers renders each MarkerKind with the documented label`` () =
+    // Cover every MarkerKind so a future rename / addition
+    // surfaces here.
+    let expectations =
+        [ ContentHistory.MarkerKind.PromptStart, "prompt"
+          ContentHistory.MarkerKind.CommandStart, "input begins"
+          ContentHistory.MarkerKind.OutputStart, "output begins"
+          ContentHistory.MarkerKind.CommandFinished, "output ends"
+          ContentHistory.MarkerKind.BellRang, "bell"
+          ContentHistory.MarkerKind.SelectionShown, "selection prompt"
+          ContentHistory.MarkerKind.SelectionDismissed, "selection dismissed"
+          ContentHistory.MarkerKind.AltScreenEnter, "entered alt-screen"
+          ContentHistory.MarkerKind.AltScreenExit, "left alt-screen" ]
+    for (kind, expectedLabel) in expectations do
+        let state = freshHistory ()
+        ContentHistory.appendMarker state kind t0 None |> ignore
+        let result = ContentHistory.tailTextWithMarkers state 4096
+        Assert.Contains(sprintf "--- %s ---" expectedLabel, result)
+
+[<Fact>]
+let ``tailTextWithMarkers renders Custom marker with the tag payload`` () =
+    let state = freshHistory ()
+    ContentHistory.appendMarker
+        state (ContentHistory.MarkerKind.Custom "tool-call") t0 None
+    |> ignore
+    let result = ContentHistory.tailTextWithMarkers state 4096
+    Assert.Contains("--- custom: tool-call ---", result)
+
+[<Fact>]
+let ``tailTextWithMarkers preserves text content alongside marker lines`` () =
+    let state = freshHistory ()
+    feed state t0 [ printRune 'd'; printRune 'i'; printRune 'r'; lf ] |> ignore
+    ContentHistory.appendMarker
+        state ContentHistory.MarkerKind.OutputStart t0 None
+    |> ignore
+    feed state t0 [ printRune 'a'; printRune 'b'; lf ] |> ignore
+    let result = ContentHistory.tailTextWithMarkers state 4096
+    Assert.Contains("dir", result)
+    Assert.Contains("--- output begins ---", result)
+    Assert.Contains("ab", result)
+    // Chronological order is preserved: content before marker
+    // appears before the marker label; content after appears
+    // after.
+    let dirIdx = result.IndexOf("dir")
+    let markerIdx = result.IndexOf("--- output begins ---")
+    let abIdx = result.IndexOf("ab")
+    Assert.True(
+        dirIdx < markerIdx && markerIdx < abIdx,
+        sprintf
+            "Expected dir<marker<ab; got dir=%d marker=%d ab=%d (result=%A)"
+            dirIdx markerIdx abIdx result)
+
+[<Fact>]
+let ``tailText and tailTextWithMarkers agree when no markers exist`` () =
+    let state = freshHistory ()
+    feed state t0 [ printRune 'a'; printRune 'b'; lf; printRune 'c'; lf ] |> ignore
+    Assert.Equal(
+        ContentHistory.tailText state 4096,
+        ContentHistory.tailTextWithMarkers state 4096)
