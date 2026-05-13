@@ -48,6 +48,28 @@
       <Link>test-process-cleanup.ps1</Link>
     </Content>
     <!--
+      Cycle 47 — CMD interaction test corpus. Each `.cmd` script
+      under `scripts/cmd-tests/` exercises one cmd interaction
+      primitive (echo, `set /p` text/numeric input, `choice`
+      yes-no / multi-option, `pause`, progress loop with
+      `timeout`, stderr). The corresponding
+      `Diagnostics → CMD Interaction Tests → ...` menu items in
+      `MainWindow.xaml` write a quoted invocation of the script
+      to the PTY input cursor so the user can review + press
+      Enter to run.
+      `<Link>` flattens them next to `Terminal.App.exe` under a
+      `scripts\cmd-tests\` subdirectory so the runtime path
+      resolution uses `AppContext.BaseDirectory + scripts\cmd-tests\<name>`.
+    -->
+    <Content Include="..\..\scripts\cmd-tests\*.cmd">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>scripts\cmd-tests\%(Filename)%(Extension)</Link>
+    </Content>
+    <Content Include="..\..\scripts\cmd-tests\README.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>scripts\cmd-tests\README.md</Link>
+    </Content>
+    <!--
       Cycle 38a — canonical interaction-pair corpus. The TOML
       file lives in `tests/fixtures/` (alongside other planned
       replay fixtures per `docs/ACCESSIBILITY-TESTING.md:50-69`)
