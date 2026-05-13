@@ -15,6 +15,41 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 48 PR-D (2026-05-13): `UserInputBuffer` byte-stream wiring
+
+Implements ADR 0003 §5.1's `UserInputBuffer` as a self-locked
+class on `ShellInteraction.State.UserInputBuffer`. Updated at
+byte-write time in the `writePtyBytes` wrapper:
+
+- printable ASCII (0x20–0x7E) → `AppendChar`
+- BS (0x08) → `Backspace`
+- CR (0x0D) → `Capture` + clear; the captured text becomes the
+  `EnterPressed` transition's `submittedCommand` (replacing
+  PR-B's empty placeholder)
+
+Multi-byte sequences (arrow keys, Tab, Unicode chars outside
+ASCII) are not tracked in PR-D's MVP — refining to true key-
+level tracking is deferred (would require routing the `KeyCode`
+through to the buffer alongside the encoded bytes; see ADR
+§5.5). Plain typed input (the dominant case) is captured
+correctly; the `EnterPressed` transition log will show the
+exact submitted command for the maintainer to verify.
+
+`State.Reset()` extends to also reset the buffer on shell
+hot-switch.
+
+11 new unit tests in `ShellInteractionTests` cover buffer
+operations: append, backspace at start (no-op), backspace mid-
+buffer, MoveCursor + insert at non-end, Delete, MoveCursor
+clamping, JumpTo Home/End, Capture clears, Reset clears, State-
+level instance shared, State.Reset clears buffer.
+
+PR-E switches announce routing onto the state-machine
+transitions and adds the SpeechCursor filter for `UserInputEcho`
+entries. PR-F is the closure audit.
+
+Matrix rows Cycle 48-D1 → 48-D3 added.
+
 ### Cycle 48 PR-C (2026-05-13): `ContentHistory.Entry.Source : EntrySource`
 
 Implements ADR 0003 §9.5 — every `ContentHistory.Entry` now
