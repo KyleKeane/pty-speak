@@ -87,6 +87,18 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               // Cycle 46 post-audit — re-narrate last command
               // output capped at 800 chars (Ctrl+Shift+A).
               HotkeyRegistry.AnnounceLastOutput
+              // Cycle 47 — CMD interaction test corpus (eight
+              // menu-only items under Diagnostics → CMD
+              // Interaction Tests; each inserts a quoted
+              // script invocation into the PTY input cursor).
+              HotkeyRegistry.CmdTestEcho
+              HotkeyRegistry.CmdTestTextInput
+              HotkeyRegistry.CmdTestNumericInput
+              HotkeyRegistry.CmdTestYesNo
+              HotkeyRegistry.CmdTestMultiChoice
+              HotkeyRegistry.CmdTestPause
+              HotkeyRegistry.CmdTestProgress
+              HotkeyRegistry.CmdTestStderr
               // Cycle 26c — first menu-only command. Surfaced
               // via Diagnostics → Test Process Cleanup; no
               // keyboard accelerator.

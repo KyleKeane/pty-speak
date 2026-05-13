@@ -2807,6 +2807,73 @@ module Program =
                     toSay,
                     ActivityIds.output)
 
+        // Cycle 47 — CMD interaction test runner. The user
+        // selects one of eight `Diagnostics → CMD Interaction
+        // Tests → ...` menu items; this writes the script
+        // invocation to the PTY input cursor so the user can
+        // review + press Enter to run. Doesn't auto-Enter so
+        // the maintainer keeps control (avoid surprising the
+        // user with an automatic execution; also lets them
+        // edit the path if they want to redirect output to a
+        // file or pipe to another command first).
+        //
+        // The PTY write goes through `TerminalView.WritePtyBytes`
+        // which is the same path keystrokes use, so cmd sees
+        // it as typed input. cmd's default ECHO behaviour
+        // echoes the path back so it shows up in
+        // ContentHistory; NVDA will read the announce we fire
+        // ("Test command inserted: <id>") rather than the path
+        // bytes themselves.
+        //
+        // Path resolution: scripts live under
+        // `<install-dir>/scripts/cmd-tests/<id>.cmd` per the
+        // `<Content Include>` glob in `Terminal.App.fsproj`.
+        // `AppContext.BaseDirectory` is the install dir at
+        // runtime.
+        let runCmdTest (testId: string) : unit =
+            let log =
+                Logger.get "Terminal.App.Program.runCmdTest"
+            log.LogInformation(
+                "CmdTest invoked. TestId={TestId}", testId)
+            let scriptPath =
+                System.IO.Path.Combine(
+                    AppContext.BaseDirectory,
+                    "scripts",
+                    "cmd-tests",
+                    sprintf "%s.cmd" testId)
+            if not (System.IO.File.Exists scriptPath) then
+                log.LogError(
+                    "CmdTest script missing. TestId={TestId} Path={Path}",
+                    testId, scriptPath)
+                window.TerminalSurface.Announce(
+                    sprintf "Could not find test script %s." testId,
+                    ActivityIds.error)
+            else
+                // Quote the path (handles spaces in install
+                // dir like "Program Files (x86)") and append
+                // a trailing space so the user can type more
+                // arguments / redirects before Enter if they
+                // want.
+                let invocation =
+                    sprintf "\"%s\" " scriptPath
+                let bytes =
+                    System.Text.Encoding.UTF8.GetBytes(invocation)
+                window.TerminalSurface.WritePtyBytes(bytes)
+                window.TerminalSurface.Announce(
+                    sprintf
+                        "Test command inserted: %s. Press Enter to run."
+                        testId,
+                    ActivityIds.diagnostic)
+
+        let runCmdTestEcho () = runCmdTest "test-01-echo"
+        let runCmdTestTextInput () = runCmdTest "test-02-text-input"
+        let runCmdTestNumericInput () = runCmdTest "test-03-numeric-input"
+        let runCmdTestYesNo () = runCmdTest "test-04-yes-no"
+        let runCmdTestMultiChoice () = runCmdTest "test-05-multi-choice"
+        let runCmdTestPause () = runCmdTest "test-06-pause"
+        let runCmdTestProgress () = runCmdTest "test-07-progress"
+        let runCmdTestStderr () = runCmdTest "test-08-stderr"
+
         // session-log file path. Reads `sessionLogWriter` (post
         // -Cycle-24c) + `persistenceConfig.Mode` (post-Cycle-24a)
         // from compose-local state. The closure is defined here
@@ -3155,6 +3222,14 @@ module Program =
         bind HotkeyRegistry.AnnounceSessionLogPath runAnnounceSessionLogPath
         bind HotkeyRegistry.OpenLastOutput runOpenLastOutput
         bind HotkeyRegistry.AnnounceLastOutput runAnnounceLastOutput
+        bind HotkeyRegistry.CmdTestEcho runCmdTestEcho
+        bind HotkeyRegistry.CmdTestTextInput runCmdTestTextInput
+        bind HotkeyRegistry.CmdTestNumericInput runCmdTestNumericInput
+        bind HotkeyRegistry.CmdTestYesNo runCmdTestYesNo
+        bind HotkeyRegistry.CmdTestMultiChoice runCmdTestMultiChoice
+        bind HotkeyRegistry.CmdTestPause runCmdTestPause
+        bind HotkeyRegistry.CmdTestProgress runCmdTestProgress
+        bind HotkeyRegistry.CmdTestStderr runCmdTestStderr
         // Cycle 43a — diagnostic chunk extractors + grep dialog.
         // All menu-only (no keyboard accelerator); `bindHotkey`
         // skips the KeyBinding installation but still registers

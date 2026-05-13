@@ -15,6 +15,67 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 47 (2026-05-13): CMD interaction test corpus
+
+Adds eight tiny `.cmd` scripts under
+[`scripts/cmd-tests/`](scripts/cmd-tests/README.md) each
+exercising one cmd interaction primitive, plus a
+`Diagnostics → CMD Interaction Tests` submenu that writes the
+quoted script invocation to the PTY input cursor (no Enter)
+so the maintainer can review + press Enter to run. The
+corpus is the foundation for the post-Cycle-46 "evaluate how
+basic interaction works beyond `echo` / `dir`" pass.
+
+- **The eight scripts**:
+  - `test-01-echo.cmd` — multi-line `echo` output (basic
+    output narration + cap behaviour).
+  - `test-02-text-input.cmd` — `set /p name=...` text input
+    (line-edited prompt + echo back).
+  - `test-03-numeric-input.cmd` — `set /p num=...` +
+    `set /a` arithmetic (the maintainer's specific example
+    in the feature ask).
+  - `test-04-yes-no.cmd` — `choice /c YN` single-keystroke
+    prompt.
+  - `test-05-multi-choice.cmd` — `choice /c 1234 /n`
+    multi-option (the closest cmd analogue to Claude's
+    tool-use selection lists).
+  - `test-06-pause.cmd` — `pause` between output sections.
+  - `test-07-progress.cmd` — loop with `timeout` (tests
+    mid-stream narration under `TupleFinalOnly`).
+  - `test-08-stderr.cmd` — `>&2` redirected stderr output.
+
+- **Test-marker discipline**: every script wraps its body
+  in `=== PTYSPEAK-TEST-START: <id> ===` / `=== PTYSPEAK-
+  TEST-END: <id> ===` markers so the boundaries appear in
+  `Ctrl+Shift+D` snapshots. The `Program.fs` handler emits
+  an INFO log line (`CmdTest invoked. TestId=<id>`) on menu
+  click; combined with the in-script markers, timing
+  correlation between the click and the resulting
+  `ContentHistory` entries is one `grep` away.
+
+- **Wiring**: eight `HotkeyRegistry.CmdTest*` AppCommands
+  (menu-only — no keyboard accelerators); one shared
+  `runCmdTest testId` helper in `Program.fs` that resolves
+  `AppContext.BaseDirectory/scripts/cmd-tests/<id>.cmd`,
+  writes the quoted invocation via
+  `TerminalView.WritePtyBytes`, and announces "Test command
+  inserted: `<id>`. Press Enter to run." through
+  `ActivityIds.diagnostic`. Eight thin wrappers bind one
+  AppCommand each. The 8 corresponding `MenuItem_CmdTest*`
+  entries in `MainWindow.xaml` are picked up by the
+  reflective menu-binding loop.
+
+- **`Terminal.App.fsproj`** copies the scripts (and the
+  README) flat into `<install-dir>/scripts/cmd-tests/` via a
+  `<Content Include="..\..\scripts\cmd-tests\*.cmd">` glob
+  with `<Link>scripts\cmd-tests\%(Filename)%(Extension)`.
+
+- **`HotkeyRegistryTests`** documented-commands set extended
+  to pin all eight new AppCommands. The Cycle 26b mirror
+  test (`AppReservedHotkeysMirrorTests`) is unaffected since
+  the new commands are menu-only (no `Key`/`Modifiers` →
+  no `AppReservedHotkeys` row required).
+
 ### Cycle 46 post-audit follow-up (2026-05-13): ready-prompt earcon to a click + Data → Last Output submenu
 
 Two small follow-ups to the audit PR per maintainer feedback:

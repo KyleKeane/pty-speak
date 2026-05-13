@@ -113,6 +113,21 @@ module HotkeyRegistry =
         // when the user wants spoken rather than text-editor
         // surface.
         | AnnounceLastOutput
+        // Cycle 47 — CMD interaction tests. Each menu item
+        // writes a quoted invocation of the corresponding
+        // `scripts/cmd-tests/*.cmd` script to the PTY input
+        // cursor (no Enter); the user reviews + presses Enter
+        // to run. No keyboard accelerators (menu-only); too
+        // many to assign reasonable mnemonics. Mirrors the
+        // shape of `RunProcessCleanupScript`.
+        | CmdTestEcho
+        | CmdTestTextInput
+        | CmdTestNumericInput
+        | CmdTestYesNo
+        | CmdTestMultiChoice
+        | CmdTestPause
+        | CmdTestProgress
+        | CmdTestStderr
         // Cycle 26c — first menu-only command. Interactive
         // process-cleanup test (`scripts/test-process-cleanup.ps1`)
         // surfaced via Diagnostics → Test Process Cleanup. No
@@ -191,6 +206,14 @@ module HotkeyRegistry =
         | AnnounceSessionLogPath -> "AnnounceSessionLogPath"
         | OpenLastOutput -> "OpenLastOutput"
         | AnnounceLastOutput -> "AnnounceLastOutput"
+        | CmdTestEcho -> "CmdTestEcho"
+        | CmdTestTextInput -> "CmdTestTextInput"
+        | CmdTestNumericInput -> "CmdTestNumericInput"
+        | CmdTestYesNo -> "CmdTestYesNo"
+        | CmdTestMultiChoice -> "CmdTestMultiChoice"
+        | CmdTestPause -> "CmdTestPause"
+        | CmdTestProgress -> "CmdTestProgress"
+        | CmdTestStderr -> "CmdTestStderr"
         | RunProcessCleanupScript -> "RunProcessCleanupScript"
         | CloseWindow -> "CloseWindow"
         | ExitApp -> "ExitApp"
@@ -302,6 +325,43 @@ module HotkeyRegistry =
             Key = Some (Letter 'A')
             Modifiers = Some ctrlShift
             Description = "Re-narrate last command output (capped at 800 chars; Cycle 46 post-audit)" }
+          // Cycle 47 — CMD interaction test corpus. All menu-
+          // only (no keyboard accelerators). Each item writes
+          // an invocation of the corresponding `.cmd` script
+          // to the PTY input cursor; the user reviews + Enters
+          // to run.
+          { Command = CmdTestEcho
+            Key = None
+            Modifiers = None
+            Description = "CMD test: simple echo (Cycle 47)" }
+          { Command = CmdTestTextInput
+            Key = None
+            Modifiers = None
+            Description = "CMD test: text input via set /p (Cycle 47)" }
+          { Command = CmdTestNumericInput
+            Key = None
+            Modifiers = None
+            Description = "CMD test: numeric input + set /a calculation (Cycle 47)" }
+          { Command = CmdTestYesNo
+            Key = None
+            Modifiers = None
+            Description = "CMD test: yes/no choice via choice /c YN (Cycle 47)" }
+          { Command = CmdTestMultiChoice
+            Key = None
+            Modifiers = None
+            Description = "CMD test: multi-option choice via choice /c 1234 (Cycle 47)" }
+          { Command = CmdTestPause
+            Key = None
+            Modifiers = None
+            Description = "CMD test: pause / continue (Cycle 47)" }
+          { Command = CmdTestProgress
+            Key = None
+            Modifiers = None
+            Description = "CMD test: progress loop with timeout (Cycle 47)" }
+          { Command = CmdTestStderr
+            Key = None
+            Modifiers = None
+            Description = "CMD test: stderr output (Cycle 47)" }
           // Cycle 26c — menu-only; no default keyboard accelerator.
           // Surfaced as Diagnostics → Test Process Cleanup.
           { Command = RunProcessCleanupScript
@@ -467,6 +527,14 @@ module HotkeyRegistry =
           AnnounceSessionLogPath
           OpenLastOutput
           AnnounceLastOutput
+          CmdTestEcho
+          CmdTestTextInput
+          CmdTestNumericInput
+          CmdTestYesNo
+          CmdTestMultiChoice
+          CmdTestPause
+          CmdTestProgress
+          CmdTestStderr
           RunProcessCleanupScript
           CloseWindow
           ExitApp
