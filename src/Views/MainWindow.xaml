@@ -132,7 +132,7 @@
                               Header="F_ull" />
                 </MenuItem>
             </MenuItem>
-            <MenuItem Header="_Data">
+            <MenuItem Header="D_ata">
                 <MenuItem x:Name="MenuItem_OpenDataFolder"
                           x:FieldModifier="public"
                           Header="_Open Data Folder" />
@@ -212,10 +212,16 @@
                      "1, 1 of 8" as "11 of 8" by speech-running
                      the mnemonic + position together. Letter
                      mnemonics now (each unique among siblings)
-                     and the parent gets `_C` so the submenu is
-                     reachable via Alt → G → C from the menu
-                     bar. -->
-                <MenuItem Header="_CMD Interaction Tests">
+                     and the parent gets `_M` (i.e. C_MD Interaction
+                     Tests) so the submenu is reachable via
+                     Alt → G → M from the menu bar. Cycle 47
+                     follow-up post-preview.114 moved the parent
+                     mnemonic from `_C` to `_M` because the original
+                     `_C` collided with Diagnostics' "Test Process
+                     _Cleanup" — Alt + C resolved to whichever item
+                     was first in the menu, not the one the user
+                     intended. -->
+                <MenuItem Header="C_MD Interaction Tests">
                     <MenuItem x:Name="MenuItem_CmdTestEcho"
                               x:FieldModifier="public"
                               Header="_Simple Echo" />
