@@ -1,6 +1,6 @@
 # ADR 0003 — Shell interaction is modelled as a state machine over user-input vs cmd-output, not as a byte-stream announce pipeline
 
-- **Status**: Proposed (2026-05-13)
+- **Status**: Accepted / Implemented (2026-05-13)
 - **Date**: 2026-05-13 (Proposed)
 - **Deciders**: maintainer (KyleKeane)
 - **Authoring item**: Cycle 48 PR-A, in response to the
@@ -1391,6 +1391,43 @@ splitting the substrate change (Source tag) from the
 keyboard-handler change (UserInputBuffer). Updated §6
 sequencing reflects this; the validation gates and
 overall rollout shape are unchanged.
+
+### 2026-05-13 — Implementation shipped (PRs #306–#310 + closure)
+
+Six PRs landed on `main`:
+
+| PR    | Commit    | Per-PR deviation from §6 plan, if any                           |
+|-------|-----------|-----------------------------------------------------------------|
+| #306  | `f0fbbe8` | PR-A as planned (ADR + open-question resolution).               |
+| #307  | `3c2a372` | PR-B as planned (observe-only state machine).                   |
+| #308  | `5d34369` | PR-C as planned, with one rename: `EntrySource.Marker` → `EntrySource.BoundaryMarker` to avoid shadowing `ContentHistory.Entry.Marker` at qualified-access under `[<RequireQualifiedAccess>]`. Caught by F# compiler post-merge; fix landed in same PR via fixup. |
+| #309  | `96b6e56` | PR-D as planned (UserInputBuffer + writePtyBytes wrapper). The §5.5 history-navigation Screen-row resync is **deferred** to a future cycle — byte-stream MVP only handles printable ASCII + BS + CR. |
+| #310  | `459a0b2` | PR-E **narrowed in scope** from the §6 plan. Sub-prompt announce moves to the state machine (`SubPromptIdle` transition); SpeechCursor filter for `UserInputEcho` ships; idle-flush announce body retired. The §6 plan also called for routing `PromptDetected` (transition [b]) through the state machine and replacing `tuple.OutputText` with the state-machine accumulator; this deviation **keeps the SessionModel-driven tuple-final path** because the accumulator includes command-echo + next-prompt-path bytes (messy) while SessionModel extracts clean screen-row text. Defence-in-depth: the `tupleFinaliseAnnounce` + `lastAnnouncedText` prefix-trim machinery from PR #301 stays in source. PR-F (this) doesn't delete it; a future PR can after preview.118 dogfood confirms PR-E is robust. |
+| this PR (PR-F) | (closure) | Docs-only sweep: SESSION-HANDOFF, CLAUDE.md "Current sequencing", project plan change log, ADR status + this note. The §6 plan mentioned PR-F "removes now-dead code"; the deviation in PR-E (keeping SessionModel-driven announce + prefix-trim) means PR-F does NOT delete that dead code yet. Cleanup is staged for a follow-up PR after dogfood validation. |
+
+The Cycle 48 model is now live. Audible behaviour changes:
+
+- **Per-character chatter from `idle-flush` is gone.** The
+  body that produced "e", "ec", "ech", ... announces no
+  longer runs.
+- **Sub-prompts (`set/p`, `pause`, `choice`) announce via
+  state-machine transitions.** The detector "idle for
+  `IdleThresholdMs` AND last byte not LF" fires the
+  announce + earcon together.
+- **SpeechCursor skips `UserInputEcho` entries** in both
+  AutoDrive and Manual navigation.
+
+What did NOT change:
+
+- Tuple-final announce for regular shell commands still
+  comes through `SessionModel.applyAndCapture` → boundary
+  handler. The Cycle 22b row-extraction code path is
+  intact.
+- ReadyForInput earcon on `SessionModel.finalisedOpt`
+  still fires.
+- The PR #300 UIA-materialiser typing-window gate is still
+  in place (not made redundant by PR-E since it serves the
+  UIA polling case, not the announce path).
 
 ## References
 

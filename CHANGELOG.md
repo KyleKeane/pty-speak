@@ -15,6 +15,55 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 48 closure (2026-05-13): six PRs (#306–this) shipped
+
+Six-PR sequence implementing ADR 0003's `ShellInteraction`
+semantic state machine on top of the byte-level substrate.
+ADR status flipped to **Accepted / Implemented** with a
+per-PR deviation log in its Status notes block.
+
+- **#306 PR-A** — ADR drafted + open questions §9.1 → §9.6
+  resolved.
+- **#307 PR-B** — `ShellInteraction.State` + types + pure
+  `tryTransition` + sub-prompt detector, wired observe-only.
+- **#308 PR-C** — `ContentHistory.Entry.Source : EntrySource`
+  substrate-schema change. Per-source counts in the
+  diagnostic bundle's `Stats:` line.
+- **#309 PR-D** — `UserInputBuffer` byte-stream wiring via
+  `writePtyBytes` wrapper. `EnterPressed` transition
+  carries the captured command text (replacing PR-B's empty
+  placeholder).
+- **#310 PR-E** — sub-prompt announce via state machine +
+  SpeechCursor filters `UserInputEcho` entries (both
+  AutoDrive AND Manual) + idle-flush announce body retired.
+  Per-character chatter from `idle-flush` is gone.
+- **This PR-F** — docs sweep (SESSION-HANDOFF, CLAUDE.md
+  sequencing, project plan change log, ADR status notes).
+
+Cycle 47 dead code (`tupleFinaliseAnnounce` prefix-trim
+machinery from #301; PR #300 UIA-materialiser typing-window
+gate) preserved as defence-in-depth pending preview.118
+dogfood. A follow-up PR can delete after the audible
+behaviour holds.
+
+Validation: NVDA matrix rows Cycle 48-B1 → 48-E8 walk the
+CMD test corpus against the new audible behaviour. The
+listening criteria for the headline issues from the
+preview.117 dogfood:
+
+- **Per-char chatter gone** — typing `echo hi` slowly
+  produces zero per-char pty-speak announces (matrix 48-E1).
+- **Tuple-final still works** — `hi` announces after Enter
+  via the unchanged SessionModel path (matrix 48-E2).
+- **set/p announces correctly** — sub-prompt
+  `Enter your name:` reads aloud after the ~350 ms idle
+  (matrix 48-E3).
+- **`pause` announces correctly** — same path, with
+  SinglekeySubmit flagged (matrix 48-E4).
+- **SpeechCursor skips echo** — manual `Ctrl+Shift+Up/Down`
+  navigation lands only on output + markers, never on
+  echoed-input bytes (matrix 48-E5 + 48-E6).
+
 ### Cycle 48 PR-E (2026-05-13): announce routing — sub-prompt via state machine; SpeechCursor filters echo
 
 **Narrow scope** to keep the audible-UX risk small:

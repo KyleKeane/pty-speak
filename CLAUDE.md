@@ -708,23 +708,31 @@ points at the cycle headline.
   `RaiseNotificationEvent` to a UIA TextEdit caret on
   `TerminalView`. See
   [ADR 0002](docs/adr/0002-uia-textedit-caret-output.md).
-- **Cycle 47 dogfood batch** (PRs #295–#303, 2026-05-13,
-  post-preview.114) layered the
-  preview-driven adjustments: sealed-only typing-window UIA
-  view (#300), tuple-final prefix-trim against last-announced
-  text (#301), `ReadyForInput` earcon on idle-flush so
-  `set/p` produces an audible cue (#302), top-level mnemonic
-  conflict fixes (#303), `sanitiseForBundle` preserving
-  newlines + `begin/end prompt/output` marker labels +
-  synthesised `CommandFinished` for cmd (#299).
-- **NVDA matrix walk Cycle 47-18 through 47-25** is the
-  immediate validation gate for the
-  post-preview.114 dogfood batch (see
+- **Cycle 47 dogfood batch** (PRs #295–#305, 2026-05-13,
+  post-preview.114 → post-preview.117) layered byte-stream
+  patches on top of Cycle 46's substrate flip — typing-window
+  gates, prefix-trim, mid-eval earcon, marker-label
+  parallelism. preview.117 dogfood confirmed the patches
+  don't compose; root cause is that announce routing is
+  byte-stream driven, not semantic.
+- **Cycle 48** (PRs #306–this-PR-F, 2026-05-13) added the
+  semantic state machine on top of the substrate per
+  [ADR 0003](docs/adr/0003-shell-interaction-state-machine.md):
+  `ShellInteraction` with `Composing` / `Executing` states,
+  `EntrySource` provenance on every `ContentHistory.Entry`,
+  `UserInputBuffer` byte-stream tracking, sub-prompt-announce
+  via state-machine transition, SpeechCursor filter for
+  `UserInputEcho`. Idle-flush announce body retired.
+- **NVDA matrix walk Cycle 48-B1 → 48-E8** is the
+  immediate validation gate for the Cycle 48 cycle (see
   [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)).
+  preview.118 is the build cut after PR-F merges.
 - **Next-cycle candidates** (none block each other; pick by
   priority): 45g `ShellPolicy` consolidation, 45d review-
-  cursor focus, semantic-labels foundation, spinner/red-tone
-  refinements, Coalescer rename, UIA semantic caret. Sequencing
+  cursor focus, spinner/red-tone refinements, Coalescer
+  rename, UIA semantic caret, byte-level echo matching (the
+  full §5.5 history-nav resync deferred from PR-D),
+  LineByLine per-line streaming announces. Sequencing
   in [`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md).
 
 ## When in doubt
