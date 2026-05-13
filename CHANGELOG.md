@@ -15,6 +15,38 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Session-handoff docs (2026-05-13): Cycle 46 PR-C / PR-D scoping
+
+Captures the in-flight Cycle 46 state for the next session:
+
+- **New**:
+  [`docs/CYCLE-46-NEXT-STEPS.md`](docs/CYCLE-46-NEXT-STEPS.md) —
+  file-level edits, threading concerns, test plans, and NVDA
+  matrix gate definitions for PR-C (wire output to caret) and
+  PR-D (`SpeechCursor` delegation + screen-grid cleanup).
+  Self-contained; the next session can pick up without prior
+  chat context.
+- **Updated**:
+  [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md) — Current
+  state moves from "Cycle 45c cleanup complete" to "Cycle 46
+  PR-A + PR-B merged". Next-stage section reframes the primary
+  track around PR-C / PR-D while preserving the parallel-track
+  candidates (45g / 45d / semantic labels / spinner-red-tone /
+  Coalescer rename). Operational-gotcha row added for the GitHub
+  MCP outage observed 2026-05-13.
+- **Updated**:
+  [`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md) —
+  §1 "What changed" extends to cover Cycle 46 PR-A + PR-B. §3
+  validation gate renamed from 45c-1→6 to 46-PRB-1. §4
+  candidate cycles add a "Primary track" subsection with PR-C
+  / PR-D linked to CYCLE-46-NEXT-STEPS.md. §7 change log
+  appended.
+- **Updated**: [`CLAUDE.md`](CLAUDE.md) §"Current sequencing"
+  — adds Cycle 46 PR-A + PR-B + PR-C + PR-D headlines, points
+  at CYCLE-46-NEXT-STEPS.md.
+
+No code changes; pure docs.
+
 ### Substrate-swap (Cycle 46 PR-B): ContentHistory backs the UIA Text pattern
 
 Implements PR-B of the four-PR Cycle 46 sequence per

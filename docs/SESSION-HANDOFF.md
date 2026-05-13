@@ -11,60 +11,81 @@ previous (multi-thousand-line) handoff is at
 [`docs/archive/pre-cycle-45/SESSION-HANDOFF-pre-cycle-45c-historical.md`](archive/pre-cycle-45/SESSION-HANDOFF-pre-cycle-45c-historical.md)
 and serves the decision-trail role this file used to overload.
 
-## Current state (2026-05-12)
+## Current state (2026-05-13)
 
-**Cycle 45c cleanup complete.** PRs #274–#278 merged 2026-05-12.
-The pre-Cycle-45 substrate pipeline (`StreamPathway` /
-`LinearTextStream` / `DisplayPathway` / `TuiPathway` /
-`PathwaySelector`) is fully retired. `ContentHistory` +
-`SpeechCursor` is the sole aural substrate.
+**Cycle 46 PR-A + PR-B merged.** PR #287 (ADR 0002) landed
+2026-05-12; PR #288 (substrate-swap + ControlType flip) landed
+2026-05-13. The UIA Text pattern is now backed by
+`ContentHistory.tailText` (256 KB cap) instead of the screen
+grid; `TerminalAutomationPeer.AutomationControlType` returns
+`Edit` instead of `Document`. NVDA's native text-edit reading
+path (read-all, line nav) now operates against the substrate
+tail.
 
-**Validation gate in flight.** The maintainer is cutting a fresh
-preview build and will walk the six new NVDA-matrix rows
-(`45c-1` through `45c-6` in
-[`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md))
-before tagging a release. Until that walk lands, treat the
-post-Cycle-45c state as code-clean but UX-unconfirmed.
+**No call-site change for output yet.**
+`TerminalView.Announce` keeps firing `RaiseNotificationEvent`
+on `ActivityIds.output`; PR-C drops that call and replaces it
+with a `TextSelectionChangedEvent` raise. See
+[`CYCLE-46-NEXT-STEPS.md`](CYCLE-46-NEXT-STEPS.md) for the
+file-level PR-C / PR-D scoping.
+
+**Validation gate in flight.** **NVDA matrix Cycle 46-PRB-1**
+in [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
+covers cmd `dir`, PowerShell `Get-Process`, and Claude REPL
+turn. Confirm "edit" focus announce + `Insert+Down` reads
+ContentHistory tail before starting PR-C.
+
+**Cycle 45c-1 → 45c-6** matrix rows (the previous validation
+gate) — assumed walked or rolled forward into 46-PRB-1; check
+the matrix file for the live status.
 
 ## Where we left off
 
-`main` at `e51c23e` after the five Cycle-45c PRs (docs archive →
-test prune → OSC 133 migration → Program.fs rewire → module
-delete). Net change for the cycle: roughly **5,000+ LOC removed**.
+`main` at `f27d5e2` (Cycle 46 PR-B squash-merge).
 Working tree clean; no in-flight branches; no pending fixups.
 
-If the NVDA walk surfaces regressions, they land here as
-post-Cycle-45c fixups rather than as a new cycle.
+`docs/adr/0002-uia-textedit-caret-output.md` is in **Accepted**
+state with §1–§5 resolutions baked into the Decision section
+and recorded inline in the Status notes.
+
+If the NVDA matrix walk surfaces regressions, they land here
+as PR-B-followup fixups rather than progressing to PR-C.
 
 ## Next stage
 
-Candidate cycles, sourced from
-[`docs/PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md)
-(read that for the sequencing rationale + risks):
+**Primary track: complete Cycle 46.**
+See [`docs/CYCLE-46-NEXT-STEPS.md`](CYCLE-46-NEXT-STEPS.md) for
+file-level edits, threading concerns, test plans, and the NVDA
+matrix gate definitions. Summary:
 
-- **Cycle 45g** — `ShellPolicy` consolidation. Migrate
-  `HeuristicPromptDetector` + `SelectionDetector`'s per-shell
-  gates onto the `ShellPolicy` table introduced by Cycle 45f.
-  Pure refactor (~200 LOC).
-- **Cycle 45d** — Interactive review-cursor focus.
-  `Enter` on a focused row dispatches per type (copy a prompt,
-  select an item, etc.). ~150 LOC.
+- **PR-C** — `SessionModel` raises `TextSelectionChangedEvent`
+  on tuple finalise; drops the `Announce(text,
+  ActivityIds.output, MostRecent)` call site at
+  `Program.fs:1627–1630`. Adds a `RaiseCaretMovedToTail`
+  helper to `TerminalAutomationPeer`. NVDA matrix gate
+  Cycle 46-PRC-1.
+- **PR-D** — `SpeechCursor` callbacks delegate to the caret
+  helper (channel-side wiring; substrate-side `SpeechCursor`
+  unchanged). Removes the legacy screen-grid
+  `TerminalTextProvider` / `TerminalTextRange` / `SnapshotText`
+  (~600 LOC). NVDA matrix gate Cycle 46-PRD-1.
+
+**Parallel track: pre-Cycle-46 candidates from the project
+plan.** None block each other:
+
+- **Cycle 45g** — `ShellPolicy` consolidation (~200 LOC pure
+  refactor).
+- **Cycle 45d** — Interactive review-cursor focus (~150 LOC).
 - **Semantic labels** — Add `Source: EntrySource` to every
-  `ContentHistory.Entry`. Powers chunk-level navigation
-  announces and the "inject past input" action. Foundational
-  for several downstream items.
-- **Spinner / red-tone fixes** — The pre-Cycle-45 spinner storm
-  + false-positive red-tone earcons surfaced during Cycle 29b
-  Claude dogfood. The old fixes were in `StreamPathway`;
-  rewrite against ContentHistory.
-- **Coalescer rename** — `Coalescer` no longer coalesces
-  announce events (kept only for its `hashRow` / `hashRowContent`
-  helpers that `CanonicalState` uses). Renaming would touch ~25
-  sites; standalone refactor.
+  `ContentHistory.Entry`. Foundational for chunk-level
+  navigation + inject-past-input.
+- **Spinner / red-tone fixes** — Rewrite Cycle 29b storm
+  fixes against ContentHistory.
+- **Coalescer rename** — Standalone refactor (~25 sites).
 
-Pick one when ready. None of these block each other; the only
-hard dependency is "semantic labels before chunk-level
-navigation announces."
+See [`docs/PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md)
+for sequencing rationale + risks; PR-C / PR-D depend on no
+other cycle and unblock the §"Cycle 46 done" milestone.
 
 ## Operational gotchas
 
@@ -85,6 +106,12 @@ Things a new session needs that aren't in
   `productionresultssa*.blob.core.windows.net` and
   `api.github.com`. When CI fails, ask the maintainer for the
   log slice rather than guessing from the diff.
+- **GitHub MCP can disconnect mid-session.** Observed
+  2026-05-13: MCP token failed to retrieve during the PR-B
+  fixup cycle, blocking auto-merge + check-status queries.
+  Fallback: ask the maintainer to merge via the GitHub UI
+  "Squash and merge" button. Webhook events kept flowing
+  independently. See CLAUDE.md "Sandbox / runtime constraints".
 - **Diagnostic-bundle chunking.** Don't ask for full
   `Ctrl+Shift+D` bundles unprompted — they can be multi-MB and
   crash iOS chat clients on paste. Use the menu items under
@@ -95,6 +122,8 @@ Things a new session needs that aren't in
 | If you need… | Open |
 |---|---|
 | Cycle-by-cycle trail | [`CHANGELOG.md`](../CHANGELOG.md) `[Unreleased]` |
+| Cycle 46 PR-C / PR-D file-level plan | [`docs/CYCLE-46-NEXT-STEPS.md`](CYCLE-46-NEXT-STEPS.md) |
+| Cycle 46 ADR (decision + Open Question resolutions) | [`docs/adr/0002-uia-textedit-caret-output.md`](adr/0002-uia-textedit-caret-output.md) |
 | Active strategic plan + roadmap | [`docs/PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md) |
 | Pre-Cycle-45 decision history | [`docs/archive/pre-cycle-45/`](archive/pre-cycle-45/) (README inside) |
 | Substrate / architecture | [`docs/CORE-ABSTRACTION-BOUNDARY.md`](CORE-ABSTRACTION-BOUNDARY.md) + [`docs/adr/0001-substrate-channel-dichotomy.md`](adr/0001-substrate-channel-dichotomy.md) |
