@@ -81,6 +81,9 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               HotkeyRegistry.CopyHistoryToClipboard
               // Cycle 24e — announce session-log file path.
               HotkeyRegistry.AnnounceSessionLogPath
+              // Cycle 46 post-audit — open last command output
+              // in default text editor (Ctrl+Shift+O).
+              HotkeyRegistry.OpenLastOutput
               // Cycle 26c — first menu-only command. Surfaced
               // via Diagnostics → Test Process Cleanup; no
               // keyboard accelerator.

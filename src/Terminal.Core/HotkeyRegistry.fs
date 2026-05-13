@@ -96,6 +96,15 @@ module HotkeyRegistry =
         | CopyHistoryToClipboard
         // Cycle 24e — announce active session-log file path.
         | AnnounceSessionLogPath
+        // Cycle 46 post-audit (2026-05-13) — open the latest
+        // tuple's full OutputText in the default text editor.
+        // Companion to the 800-char tuple-final Announce cap;
+        // when the cap truncates a long output, this hotkey
+        // surfaces the full text on demand. Writes a fresh
+        // timestamped file under
+        // %LOCALAPPDATA%\PtySpeak\extracts\ and shell-executes
+        // it (registered .txt handler).
+        | OpenLastOutput
         // Cycle 26c — first menu-only command. Interactive
         // process-cleanup test (`scripts/test-process-cleanup.ps1`)
         // surfaced via Diagnostics → Test Process Cleanup. No
@@ -172,6 +181,7 @@ module HotkeyRegistry =
         | SwitchToClaude -> "SwitchToClaude"
         | CopyHistoryToClipboard -> "CopyHistoryToClipboard"
         | AnnounceSessionLogPath -> "AnnounceSessionLogPath"
+        | OpenLastOutput -> "OpenLastOutput"
         | RunProcessCleanupScript -> "RunProcessCleanupScript"
         | CloseWindow -> "CloseWindow"
         | ExitApp -> "ExitApp"
@@ -269,6 +279,13 @@ module HotkeyRegistry =
             Key = Some (Letter 'S')
             Modifiers = Some ctrlShift
             Description = "Announce the active session-log file path (Cycle 24e)" }
+          // Cycle 46 post-audit (2026-05-13) — open last
+          // command output in the default text editor.
+          // Companion to the tuple-final Announce cap.
+          { Command = OpenLastOutput
+            Key = Some (Letter 'O')
+            Modifiers = Some ctrlShift
+            Description = "Open last command output in default text editor (Cycle 46 post-audit)" }
           // Cycle 26c — menu-only; no default keyboard accelerator.
           // Surfaced as Diagnostics → Test Process Cleanup.
           { Command = RunProcessCleanupScript
@@ -432,6 +449,7 @@ module HotkeyRegistry =
           SwitchToClaude
           CopyHistoryToClipboard
           AnnounceSessionLogPath
+          OpenLastOutput
           RunProcessCleanupScript
           CloseWindow
           ExitApp

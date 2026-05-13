@@ -621,6 +621,20 @@ public class TerminalView : FrameworkElement
             // OS level.
             (Key.S, ModifierKeys.Control | ModifierKeys.Shift, "Announce session-log file path"),
 
+            // Cycle 46 post-audit (2026-05-13) — open the last
+            // command output in the default text editor.
+            // Mnemonic: O for *O*pen Output. Companion to the
+            // 800-char tuple-final Announce cap (Program.fs
+            // `OutputAnnounceCapChars`): when a long command
+            // (e.g. `dir`, `git log`) produces output that
+            // exceeds the cap, the user hears the trailing
+            // ~800 chars; Ctrl+Shift+O writes the full
+            // OutputText to a fresh timestamped file under
+            // %LOCALAPPDATA%\PtySpeak\extracts\ and opens it
+            // via the registered .txt handler. NVDA collision
+            // check: no default NVDA binding for Ctrl+Shift+O.
+            (Key.O, ModifierKeys.Control | ModifierKeys.Shift, "Open last command output in default editor"),
+
             // Future entries (NOT yet bound; commented for
             // forward-planning):
             //   (Key.R, ModifierKeys.Alt | ModifierKeys.Shift,

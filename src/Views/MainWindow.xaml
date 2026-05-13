@@ -145,6 +145,9 @@
                 <MenuItem x:Name="MenuItem_AnnounceSessionLogPath"
                           x:FieldModifier="public"
                           Header="Announce _Session Log Path" />
+                <MenuItem x:Name="MenuItem_OpenLastOutput"
+                          x:FieldModifier="public"
+                          Header="Open _Last Output" />
             </MenuItem>
             <MenuItem Header="Dia_gnostics">
                 <!-- Cycle 38a-followup — Logging Level moved here
