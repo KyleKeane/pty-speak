@@ -582,7 +582,7 @@ let ``tailText skips markers; markers do not appear in output`` () =
     feed state t0 [ printRune 'a'; printRune 'b'; lf ] |> ignore
     let result = ContentHistory.tailText state 4096
     Assert.Equal("hi\nab\n", result)
-    Assert.DoesNotContain("prompt", result)
+    Assert.DoesNotContain("begin prompt", result)
     Assert.DoesNotContain("---", result)
 
 [<Fact>]
@@ -594,20 +594,22 @@ let ``tailTextWithMarkers renders PromptStart as a navigable line`` () =
     |> ignore
     feed state t0 [ printRune 'a'; printRune 'b'; lf ] |> ignore
     let result = ContentHistory.tailTextWithMarkers state 4096
-    Assert.Contains("--- prompt ---", result)
+    Assert.Contains("--- begin prompt ---", result)
     // Marker line is bracketed by newlines so NVDA's
     // Move(Line, ±1) lands on it as a standalone unit.
-    Assert.Contains("\n--- prompt ---\n", result)
+    Assert.Contains("\n--- begin prompt ---\n", result)
 
 [<Fact>]
 let ``tailTextWithMarkers renders each MarkerKind with the documented label`` () =
     // Cover every MarkerKind so a future rename / addition
-    // surfaces here.
+    // surfaces here. Cycle 47 follow-up relabelled the four
+    // input/output boundary markers to the parallel
+    // begin/end wording per maintainer preview.114 review.
     let expectations =
-        [ ContentHistory.MarkerKind.PromptStart, "prompt"
-          ContentHistory.MarkerKind.CommandStart, "input begins"
-          ContentHistory.MarkerKind.OutputStart, "output begins"
-          ContentHistory.MarkerKind.CommandFinished, "output ends"
+        [ ContentHistory.MarkerKind.PromptStart, "begin prompt"
+          ContentHistory.MarkerKind.CommandStart, "end prompt"
+          ContentHistory.MarkerKind.OutputStart, "begin output"
+          ContentHistory.MarkerKind.CommandFinished, "end output"
           ContentHistory.MarkerKind.BellRang, "bell"
           ContentHistory.MarkerKind.SelectionShown, "selection prompt"
           ContentHistory.MarkerKind.SelectionDismissed, "selection dismissed"
@@ -638,13 +640,13 @@ let ``tailTextWithMarkers preserves text content alongside marker lines`` () =
     feed state t0 [ printRune 'a'; printRune 'b'; lf ] |> ignore
     let result = ContentHistory.tailTextWithMarkers state 4096
     Assert.Contains("dir", result)
-    Assert.Contains("--- output begins ---", result)
+    Assert.Contains("--- begin output ---", result)
     Assert.Contains("ab", result)
     // Chronological order is preserved: content before marker
     // appears before the marker label; content after appears
     // after.
     let dirIdx = result.IndexOf("dir")
-    let markerIdx = result.IndexOf("--- output begins ---")
+    let markerIdx = result.IndexOf("--- begin output ---")
     let abIdx = result.IndexOf("ab")
     Assert.True(
         dirIdx < markerIdx && markerIdx < abIdx,

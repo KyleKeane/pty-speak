@@ -1737,6 +1737,45 @@ module Program =
             let boundaryAction () =
                 match markerKind with
                 | Some k ->
+                    // Cycle 47 follow-up (2026-05-13) — synthesize
+                    // CommandFinished ("--- end output ---") marker
+                    // BEFORE the PromptStart when SessionModel
+                    // finalised a prior tuple as incomplete (the
+                    // heuristic "PromptStart while
+                    // Active=AwaitingCommandStart" transition fires
+                    // here for cmd, which has no OSC 133). Result
+                    // in the review-cursor document:
+                    //
+                    //   ...prior command's output bytes...
+                    //   --- end output ---
+                    //   next prompt's path bytes
+                    //   --- begin prompt ---
+                    //   ...new command...
+                    //
+                    // The CommandFinished marker lands AFTER the
+                    // prior tuple's output TextSpan and Newline
+                    // entries that already sealed (via cmd's CRLF),
+                    // so navigation by line gives the user a
+                    // detectable "end of evaluation" boundary
+                    // before the new prompt's path TextSpan. Note
+                    // that this is heuristic — `appendMarker` seals
+                    // the active span (which may contain the new
+                    // prompt's path bytes already accumulated
+                    // between cmd writing them and the heuristic
+                    // detector firing). The marker therefore appears
+                    // AFTER the new prompt's path in the rendered
+                    // tail, not before it. A cleaner model would
+                    // require either OSC 133 emissions (which cmd
+                    // doesn't provide) or backtrack-insert
+                    // semantics in ContentHistory (deferred).
+                    if finalisedOpt.IsSome
+                        && k = ContentHistory.MarkerKind.PromptStart then
+                        ContentHistory.appendMarker
+                            contentHistory
+                            ContentHistory.MarkerKind.CommandFinished
+                            DateTime.UtcNow
+                            None
+                        |> ignore
                     ContentHistory.appendMarker
                         contentHistory k DateTime.UtcNow markerPayload
                     |> ignore
@@ -3018,7 +3057,7 @@ module Program =
             let tailText =
                 try
                     ContentHistory.tailText contentHistory (64 * 1024)
-                    |> AnnounceSanitiser.sanitise
+                    |> AnnounceSanitiser.sanitiseForBundle
                 with _ -> "(ContentHistory tail unavailable)"
             // Cycle 45c follow-up — prepend the ContentHistory
             // stats header so the lightweight bundle carries the
@@ -3286,7 +3325,7 @@ module Program =
                             ContentHistory.tailText
                                 contentHistory
                                 (256 * 1024)
-                            |> AnnounceSanitiser.sanitise
+                            |> AnnounceSanitiser.sanitiseForBundle
                         with _ ->
                             "(ContentHistory tail unavailable)"
                     DiagnosticExtracts.extractByTest testId tail)

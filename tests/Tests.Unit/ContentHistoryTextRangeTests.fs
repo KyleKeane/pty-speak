@@ -115,8 +115,8 @@ let ``materialise renders Marker entries as navigable boundary lines`` () =
         state ContentHistory.MarkerKind.CommandFinished t0 None
     |> ignore
     let result = ContentHistoryMaterialiser.materialise state
-    Assert.Contains("--- output begins ---", result)
-    Assert.Contains("--- output ends ---", result)
+    Assert.Contains("--- begin output ---", result)
+    Assert.Contains("--- end output ---", result)
     Assert.Contains("echo hi", result)
     Assert.Contains("hi", result)
 

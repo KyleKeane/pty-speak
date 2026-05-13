@@ -100,3 +100,41 @@ let ``strips a long control-byte run without losing surrounding context`` () =
     let ctrls = String.replicate 200 "\x07"
     let input = sprintf "alpha%somega" ctrls
     Assert.Equal("alphaomega", AnnounceSanitiser.sanitise input)
+
+// ---------------------------------------------------------------------
+// sanitiseForBundle: Cycle 47 follow-up bundle-friendly variant.
+// Preserves \n, \r, \t so diagnostic-bundle paste-back triage
+// keeps the row structure that ContentHistory's CRLF-driven
+// rendering produced; everything else (BEL, ESC, DEL, C1
+// controls) still gets stripped because those would render as
+// garbage glyphs in the bundle paste target.
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``sanitiseForBundle empty returns empty`` () =
+    Assert.Equal("", AnnounceSanitiser.sanitiseForBundle "")
+
+[<Fact>]
+let ``sanitiseForBundle null returns empty`` () =
+    Assert.Equal("", AnnounceSanitiser.sanitiseForBundle null)
+
+[<Fact>]
+let ``sanitiseForBundle preserves LF, CR, and Tab`` () =
+    let input = "row 1\nrow 2\r\ntab\there"
+    Assert.Equal(input, AnnounceSanitiser.sanitiseForBundle input)
+
+[<Fact>]
+let ``sanitiseForBundle strips BEL, ESC, DEL, C1 controls`` () =
+    let input = "a\x07b\x1Bc\x7Fdef"
+    Assert.Equal("abcdef", AnnounceSanitiser.sanitiseForBundle input)
+
+[<Fact>]
+let ``sanitiseForBundle preserves printable ASCII verbatim`` () =
+    let s = "echo hi\nhi\nC:\\Users\\Kyle>"
+    Assert.Equal(s, AnnounceSanitiser.sanitiseForBundle s)
+
+[<Fact>]
+let ``sanitiseForBundle preserves non-BMP Unicode`` () =
+    let emoji = "\U0001F600"
+    let input = sprintf "before %s\nafter" emoji
+    Assert.Equal(input, AnnounceSanitiser.sanitiseForBundle input)
