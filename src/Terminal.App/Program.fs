@@ -946,88 +946,20 @@ module Program =
         let shellInteraction = ShellInteraction.State()
         let shellInteractionLog =
             Logger.get "Terminal.Core.ShellInteraction"
-        // Cycle 48 PR-E (ADR 0003) — recordTransition drives BOTH
-        // the log AND the audible announce path. Replaces today's
-        // tuple-final (SessionModel.finalisedOpt) + idle-flush
-        // dual-path with one transition-driven announce. The
-        // outcome's AccumulatedOutput carries the bytes captured
-        // during the just-finished Executing window; on
-        // Executing → Composing we announce them and clear the
-        // watermarks. The PR-D UserInputBuffer-captured Enter
-        // text is the SubmittedCommand on the prior Executing
-        // entry; not announced here (it was already echoed and
-        // captured at write-time).
-        let recordTransition (trigger : ShellInteraction.Transition) =
-            let now = DateTime.UtcNow
-            match ShellInteraction.applyTransition shellInteraction trigger now with
-            | Some outcome ->
-                shellInteractionLog.LogInformation(
-                    "ShellInteraction transition: {Prior} --[{Trigger}]--> {New} AccumulatedOutputLen={Len}",
-                    ShellInteraction.describeState outcome.PriorState,
-                    ShellInteraction.describeTrigger outcome.Trigger,
-                    ShellInteraction.describeState outcome.NewState,
-                    outcome.AccumulatedOutput.Length)
-                // Cycle 48 PR-E announce-routing — surgical
-                // scope: ONLY drive announces from SubPromptIdle
-                // (transition [c], the new sub-prompt case).
-                // PromptDetected (transition [b]) keeps using the
-                // existing SessionModel.applyAndCapture →
-                // tuple.OutputText path in boundaryAction
-                // (screen-row extraction, clean) which has
-                // proven correct since Cycle 22b.
-                //
-                // The accumulator-based announce is appropriate
-                // for sub-prompts (short, atomic — "Enter your
-                // name:") but messy for command-completion
-                // cases (would include the typed command echo +
-                // newlines + next prompt path). SessionModel's
-                // row-based extraction handles those cleanly.
-                let isSubPromptTransition =
-                    match outcome.Trigger, outcome.PriorState, outcome.NewState with
-                    | ShellInteraction.SubPromptIdle _,
-                        ShellInteraction.Executing _,
-                        ShellInteraction.Composing _ -> true
-                    | _ -> false
-                let shouldAnnounce =
-                    isSubPromptTransition
-                    && (match currentShellPolicy.Streaming with
-                        | ShellPolicy.TupleFinalOnly -> true
-                        | ShellPolicy.LineByLine -> false
-                        | ShellPolicy.Off -> false)
-                if shouldAnnounce then
-                    let raw = outcome.AccumulatedOutput
-                    let sanitised = AnnounceSanitiser.sanitise raw
-                    let trimmed = sanitised.Trim()
-                    if not (System.String.IsNullOrWhiteSpace trimmed) then
-                        let toSay =
-                            if trimmed.Length <= OutputAnnounceCapChars then trimmed
-                            else trimmed.Substring(trimmed.Length - OutputAnnounceCapChars)
-                        if toSay.Length < trimmed.Length then
-                            log.LogInformation(
-                                "PR-E sub-prompt announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
-                                trimmed.Length, toSay.Length, OutputAnnounceCapChars)
-                        log.LogInformation(
-                            "PR-E sub-prompt announce. Length={Len}", toSay.Length)
-                        window.TerminalSurface.Announce(toSay, ActivityIds.output)
-                        lastAnnouncedText <- toSay
-                        lastAnnouncedSeq <- ContentHistory.latestSeq contentHistory
-                    // Earcon on sub-prompt transition. The
-                    // PromptDetected path fires its own
-                    // ReadyForInput earcon (existing
-                    // SessionModel-driven dispatch); we only
-                    // dispatch here for the SubPromptIdle case.
-                    let readyEvent =
-                        OutputEvent.create
-                            SemanticCategory.ReadyForInput
-                            Priority.Background
-                            "shell-interaction-sub-prompt"
-                            ""
-                    OutputDispatcher.dispatch readyEvent
-            | None ->
-                shellInteractionLog.LogDebug(
-                    "ShellInteraction trigger no-op for current state: {State} --[{Trigger}]--",
-                    ShellInteraction.describeState shellInteraction.Current,
-                    ShellInteraction.describeTrigger trigger)
+        // Cycle 48 PR-E (ADR 0003) — recordTransition drives the
+        // log AND, for SubPromptIdle transitions, the announce
+        // path. Forward-declared here as a mutable ref so it can
+        // be invoked from the boundary handler / writePtyBytes
+        // wrapper / idle-flush timer (all defined before the
+        // dependencies `currentShellPolicy` + `lastAnnouncedText`
+        // get declared). The real implementation is assigned
+        // below the dependencies; pre-assignment calls (none in
+        // practice — all callers are event handlers that fire
+        // post-compose) no-op.
+        let mutable recordTransitionImpl
+                : ShellInteraction.Transition -> unit =
+            fun _ -> ()
+        let recordTransition trigger = recordTransitionImpl trigger
 
         // Cycle 48 PR-C — wire ContentHistory's source-resolver
         // delegate to read the current ShellInteraction state.
@@ -1607,6 +1539,65 @@ module Program =
             ShellPolicy.forShell (shellIdToConfigKey ShellRegistry.Cmd)
         let mutable runtimeShellPolicy : Map<string, ShellPolicy.T> =
             Map.empty
+
+        // Cycle 48 PR-E — install the real recordTransition body
+        // now that `currentShellPolicy` + `lastAnnouncedText` are
+        // in scope. Closes over both; later mutations to
+        // `currentShellPolicy` (shell switch, verbosity menu)
+        // are picked up on each call because they're mutable
+        // cells.
+        recordTransitionImpl <-
+            fun (trigger : ShellInteraction.Transition) ->
+                let now = DateTime.UtcNow
+                match ShellInteraction.applyTransition shellInteraction trigger now with
+                | Some outcome ->
+                    shellInteractionLog.LogInformation(
+                        "ShellInteraction transition: {Prior} --[{Trigger}]--> {New} AccumulatedOutputLen={Len}",
+                        ShellInteraction.describeState outcome.PriorState,
+                        ShellInteraction.describeTrigger outcome.Trigger,
+                        ShellInteraction.describeState outcome.NewState,
+                        outcome.AccumulatedOutput.Length)
+                    let isSubPromptTransition =
+                        match outcome.Trigger, outcome.PriorState, outcome.NewState with
+                        | ShellInteraction.SubPromptIdle _,
+                            ShellInteraction.Executing _,
+                            ShellInteraction.Composing _ -> true
+                        | _ -> false
+                    let shouldAnnounce =
+                        isSubPromptTransition
+                        && (match currentShellPolicy.Streaming with
+                            | ShellPolicy.TupleFinalOnly -> true
+                            | ShellPolicy.LineByLine -> false
+                            | ShellPolicy.Off -> false)
+                    if shouldAnnounce then
+                        let raw = outcome.AccumulatedOutput
+                        let sanitised = AnnounceSanitiser.sanitise raw
+                        let trimmed = sanitised.Trim()
+                        if not (System.String.IsNullOrWhiteSpace trimmed) then
+                            let toSay =
+                                if trimmed.Length <= OutputAnnounceCapChars then trimmed
+                                else trimmed.Substring(trimmed.Length - OutputAnnounceCapChars)
+                            if toSay.Length < trimmed.Length then
+                                log.LogInformation(
+                                    "PR-E sub-prompt announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
+                                    trimmed.Length, toSay.Length, OutputAnnounceCapChars)
+                            log.LogInformation(
+                                "PR-E sub-prompt announce. Length={Len}", toSay.Length)
+                            window.TerminalSurface.Announce(toSay, ActivityIds.output)
+                            lastAnnouncedText <- toSay
+                            lastAnnouncedSeq <- ContentHistory.latestSeq contentHistory
+                        let readyEvent =
+                            OutputEvent.create
+                                SemanticCategory.ReadyForInput
+                                Priority.Background
+                                "shell-interaction-sub-prompt"
+                                ""
+                        OutputDispatcher.dispatch readyEvent
+                | None ->
+                    shellInteractionLog.LogDebug(
+                        "ShellInteraction trigger no-op for current state: {State} --[{Trigger}]--",
+                        ShellInteraction.describeState shellInteraction.Current,
+                        ShellInteraction.describeTrigger trigger)
 
         // Resolve and apply the effective policy for `shellKey`
         // through the three-layer overlay (runtime → TOML →
