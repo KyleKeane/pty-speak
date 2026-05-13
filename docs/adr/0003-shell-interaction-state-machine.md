@@ -1000,32 +1000,38 @@ Same as today's `AnnounceSanitiser.sanitise` +
 
 ### §6. Migration plan
 
-Implementation lands as five PRs (call them Cycle 48
-PR-A → PR-E). Each PR is independently CI-gated and matrix-
-walked where applicable. The state machine ships in **silent
+Implementation lands as **six PRs** (call them Cycle 48
+PR-A → PR-F). The plan was five PRs in the initial draft;
+the §9.5 resolution (add `Source : EntrySource` to
+`ContentHistory.Entry` now rather than defer) split the
+substrate-schema change out of what was PR-C.
+
+Each PR is independently CI-gated and matrix-walked where
+applicable. The state machine ships in **silent
 observe-only mode first** so we can validate signal
 correctness before changing announce routing.
 
 #### PR-A — This document.
 
 Land ADR 0003 in `docs/adr/0003-shell-interaction-state-
-machine.md`. Update `CLAUDE.md` reading order to include it.
-Add a Cycle 48 sub-section to `docs/PROJECT-PLAN-2026-05-
-12.md` (or the current plan doc) naming the five-PR
+machine.md`. Update `CLAUDE.md` reading order to include
+it. Add a Cycle 48 sub-section to
+`docs/PROJECT-PLAN-2026-05-12.md` naming the six-PR
 sequence. **Validation gate**: maintainer review of this
 ADR. No code changes; eligible for the docs-only fast
 merge.
 
 #### PR-B — `ShellInteraction` types + observer.
 
-Ship the `InteractionState` DU + `UserInputBuffer` type +
-`tryTransition` pure function + the sub-prompt detector,
-all in `Terminal.Core/ShellInteraction.fs`. Wire it as an
+Ship the `InteractionState` DU + `tryTransition` pure
+function + the sub-prompt detector, all in
+`Terminal.Core/ShellInteraction.fs`. Wire it as an
 **observer** at the composition root: it receives the same
 signals (Enter pressed, PromptStart fired, idle ticks) and
 logs its state transitions at Info level, but does NOT
-change announce routing or the materialised view. Existing
-idle-flush / tuple-final paths still drive audible output.
+change announce routing, materialised view, or
+ContentHistory schema. Existing idle-flush / tuple-final
+paths still drive audible output.
 
 **Validation**: matrix rows Cycle 48-B1 through 48-B8 walk
 each test in the CMD corpus with Debug logging on and
@@ -1034,67 +1040,107 @@ a transition fires at the wrong time, the failure shows up
 in the log without disturbing the maintainer's audible
 session.
 
-#### PR-C — `UserInputBuffer` updated by keyboard handler.
+#### PR-C — `ContentHistory.Entry.Source : EntrySource`.
+
+Add the `EntrySource` DU (per §9.5 resolution:
+`UserInputEcho` / `CmdOutput` / `CmdSubPrompt` /
+`ShellPrompt` / `Marker` / `Unknown`). Add the `Source`
+field to every `Entry` variant. Update
+`appendFromEvent` + `appendMarker` to set the field by
+reading the current `InteractionState` (provided as a
+delegate from the composition root). Pre-state-machine
+entries (those that landed before PR-B) get `Unknown`.
+
+**Validation**: matrix row Cycle 48-C1 walks test 01–08
+with the diagnostic bundle and verifies the
+`--- CONTENT HISTORY ---` section shows the right `Source`
+distribution per test. Test 02 (set /p) should show
+`UserInputEcho` for the user's name + `CmdSubPrompt` for
+"Enter your name:" + `ShellPrompt` for the path rows +
+`CmdOutput` for "Hello Kyle!". The diagnostic bundle's
+content-history rendering gains an `[Source]` prefix on
+each line for forensic readability.
+
+#### PR-D — `UserInputBuffer` updated by keyboard handler.
 
 `TerminalView.OnPreviewKeyDown` calls into the buffer for
 each non-reserved key. Buffer content is logged at Debug
-on every Enter (for diagnostic correlation). No effect on
-announce routing yet.
+on every Enter (for diagnostic correlation). The buffer
+participates in the InteractionState (transition [a] reads
+it) but the announce routing still goes through the old
+paths. The §5.5 history-navigation Screen-row resync
+ships here.
 
-**Validation**: matrix row Cycle 48-C1 verifies that for
-test 01 (echo Line 1 of 8), the buffer log on Enter shows
-the exact submitted text. Tests 02 / 03 / 04 are walked to
-confirm sub-prompt input lines also captured correctly.
-Cycle 48-C2 verifies that pressing Backspace mid-type
-removes the char from the buffer (log shows the shrinking
-buffer length). Cycle 48-C3 walks history navigation
-(Up/Down) and confirms the post-resync buffer matches the
-recalled line.
+**Validation**: matrix row Cycle 48-D1 verifies that for
+test 01, the buffer log on Enter shows the exact
+submitted text. Tests 02 / 03 / 04 walked to confirm
+sub-prompt input lines also captured correctly. Cycle
+48-D2 verifies that pressing Backspace mid-type removes
+the char from the buffer. Cycle 48-D3 walks history
+navigation (Up/Down) and confirms the post-resync buffer
+matches the recalled line.
 
-#### PR-D — Switch announce routing to InteractionState.
+#### PR-E — Switch announce routing to InteractionState.
 
 The Executing → Composing transition's announce fires as
 the *sole* tuple-final path. Idle-flush is removed (its
 sub-prompt detection moves to the state machine). The
-materialiser substitutes `UserInputBuffer` content for the
-active TextSpan during Composing. Today's gates (PR #300
-typing-window, PR #301 prefix trim) are removed — the
-state machine makes them moot.
+UIA materialiser substitutes `UserInputBuffer` content
+for the active TextSpan during Composing. SpeechCursor
+filters out entries where `Source = UserInputEcho` (per
+§9.6 resolution: applies to both AutoDrive AND Manual
+navigation). Today's gates (PR #300 typing-window, PR #301
+prefix trim, PR #305 idle-flush typing gate) are
+removed — the state machine makes them moot.
 
-**Validation**: full matrix walk Cycle 48-D1 through D8
-on the CMD test corpus. The maintainer dogfoods preview.118.
-Listening criteria for each test:
+**Validation**: full matrix walk Cycle 48-E1 through E8
+on the CMD test corpus. The maintainer dogfoods
+preview.118. Listening criteria for each test:
 
-- Test 01: silent during typing; one announce of the
-  full output; one earcon at the end.
-- Test 02: silent during typing of `set /p`; announce
-  of `Enter your name:` + earcon; silent during typing
-  of the answer; announce of `Hello Kyle!` + earcon.
+- Test 01: silent during typing; one announce of the full
+  output; one earcon at the end.
+- Test 02: silent during typing of `set /p`; announce of
+  `Enter your name:` + earcon; silent during typing of
+  the answer; announce of `Hello Kyle!` + earcon.
+- Test 04 / 05 (yes-no, choice): sub-prompt announce +
+  earcon; SinglekeySubmit consumes the user's single
+  keypress; next prompt announce + earcon.
 - Test 06 (pause): announce of `Press any key to
   continue . . .` + earcon; silent on any-key press
   (which is the user's input + transition [a]); announce
   of next prompt + earcon.
-- Test 07 (progress loop): under default
-  TupleFinalOnly, silent for 20 s + one capped announce
-  at the end. Under LineByLine, one announce per
-  `Step N`.
+- Test 07 (progress loop): under default TupleFinalOnly,
+  silent for 20 s + one capped announce at the end. Under
+  LineByLine, one announce per `Step N`; tuple-final
+  skipped (per §9.3).
+- Test 08 (stderr): error-tone earcon on the red line;
+  tuple-final announce of "error" + ready-prompt earcon.
+- SpeechCursor manual nav (`Ctrl+Shift+Up/Down/End`)
+  skips the Composing-window entries; user hears only
+  output + markers.
 
-If any test fails the listening criterion, fix in a
-fixup commit on PR-D before merge.
+If any test fails the listening criterion, fix in a fixup
+commit on PR-E before merge.
 
-#### PR-E — Cleanup + closure audit.
+#### PR-F — Cleanup + closure audit.
 
 Remove now-dead code: `SessionModel.applyAndCapture` tuple-
 extraction is preserved for the history-replay path but
 the state-machine fields collapse to a thin shim; the
 `HeuristicPromptDetector → SessionModel → tuple-final
 announce` chain is replaced by `HeuristicPromptDetector →
-ShellInteraction → tuple-final announce`. Update
-`SESSION-HANDOFF.md`, `CLAUDE.md` "Current sequencing",
-and the `[Unreleased]` CHANGELOG section. Mark ADR 0003
-status as `Accepted / Implemented`. Add a `Status notes`
-block at the end of the ADR recording the per-PR
-deviations from the proposed design.
+ShellInteraction → tuple-final announce`. PR #300's
+typing-window materialise gate, PR #301's prefix trim,
+PR #305's idle-flush typing gate, and the per-character-
+heuristic earcon dispatch all delete cleanly.
+
+Update `SESSION-HANDOFF.md`, `CLAUDE.md` "Current
+sequencing", `docs/PROJECT-PLAN-2026-05-12.md` change
+log, and the `[Unreleased]` CHANGELOG section. Mark ADR
+0003 status as `Accepted / Implemented`. Extend the
+"Status notes" block (already present from §9 resolution
+on 2026-05-13) with per-PR deviations from the proposed
+design, if any.
 
 ### §7. Risks and mitigations
 
@@ -1181,9 +1227,11 @@ fixing the per-character-chatter and replay bugs.
 
 ### §9. Open questions
 
-These are the design decisions I want explicit maintainer
-input on before PR-B lands. Each one is recorded here so a
-future audit can trace the resolution.
+These were the design decisions I wanted explicit
+maintainer input on before PR-B lands. **Resolved
+2026-05-13** via in-chat AskUserQuestion. Each one is
+recorded here with the original framing + the resolved
+choice, so a future audit can trace why each call was made.
 
 #### §9.1. Idle threshold for sub-prompt detection
 
@@ -1198,8 +1246,9 @@ drives transition [c]. Is 350 ms right?
 - **Too long**: `set /p` users wait noticeably longer
   before hearing the prompt.
 
-Recommendation: keep 350 ms for cmd; expose as a per-
-shell setting in `ShellPolicy`.
+**Resolution: 350 ms cmd default; expose as a per-shell
+setting in `ShellPolicy`.** PowerShell can use a longer
+value (~800 ms) when its support lands.
 
 #### §9.2. Tuple-final announce content when Executing produced no output
 
@@ -1210,11 +1259,11 @@ announce time) and shows the next prompt.
 - **Option A**: skip the announce entirely (just earcon).
 - **Option B**: announce the prompt path ("`C:\Users\...\current>`")
   on every Composing entry, regardless of output.
+- **Option C**: speak path on session-start only.
 
-Recommendation: B for the *initial* Composing entry of a
-session (when there's a clear "you're at a fresh shell
-prompt" moment); A for empty-Executing transitions
-(silent earcon-only).
+**Resolution: Option A — earcon only.** The user knows
+they're at a fresh prompt because they just pressed Enter;
+the click confirms it without verbal repetition.
 
 #### §9.3. LineByLine + transition [b] interaction
 
@@ -1228,8 +1277,8 @@ accumulated text?
 - **Option B**: fire tuple-final anyway; user hears the
   output twice.
 
-Recommendation: A. Skip the redundant announce; earcon is
-the "all done" signal.
+**Resolution: Option A.** Skip the redundant announce;
+earcon is the "all done" signal.
 
 #### §9.4. SinglekeySubmit detection
 
@@ -1241,11 +1290,13 @@ keystroke without Enter?
 - Future: pty-speak's own selection-list overlay (test
   04 alternative).
 
-Recommendation: detect via regex
-`\\[\\w+(,\\w+)*\\]\\?\\s*$` (for `choice`) and
-substring match `Press any key to continue` (for
-`pause`). Add new patterns as we encounter them. Log
-when SinglekeySubmit is activated so we can audit.
+**Resolution: regex + literal patterns.** Detect via regex
+`\\[\\w+(,\\w+)*\\]\\?\\s*$` (for `choice`) and substring
+match `Press any key to continue` (for `pause`). Add new
+patterns as we encounter them. Log when SinglekeySubmit is
+activated so we can audit. Extension points: a TOML config
+table `[shell_policy.sub_prompt_patterns]` lets users add
+custom patterns without a code change.
 
 #### §9.5. Should `ContentHistory` be aware of the InteractionState?
 
@@ -1253,13 +1304,37 @@ Today `ContentHistory` is byte-level. Should it gain a
 per-entry `Provenance` tag (`Echo | Output | UserInput`)
 so the materialised view can color-code or filter?
 
-- **Pro**: precise provenance for diagnostic forensics.
-- **Con**: adds a field to every entry; substantial
-  schema change.
+- **Option A**: defer; reconstruct from transition log.
+- **Option B**: add `Source : EntrySource` to every Entry
+  now.
+- **Option C**: tag boundaries only (cheap middle ground).
 
-Recommendation: defer. Provenance can be reconstructed
-from the InteractionState transition log if needed.
-ContentHistory stays byte-level.
+**Resolution: Option B — add `Source` tag now.** This
+deviates from my initial recommendation (defer). The
+maintainer's call: doing it during Cycle 48 means the
+InteractionState integration writes the tag at append
+time, with no retrofit later. Aligns with the "Semantic
+labels" medium-term cycle on the roadmap (which now
+collapses into Cycle 48 rather than waiting).
+
+**Implementation impact**: `ContentHistory.Entry` gains a
+non-null `Source : EntrySource` field. `EntrySource` is a
+DU:
+
+```
+type EntrySource =
+    | UserInputEcho       // cmd echoed bytes the user typed
+    | CmdOutput           // bytes cmd produced as command output
+    | CmdSubPrompt        // bytes cmd produced as a sub-prompt
+    | ShellPrompt         // bytes that are the shell's PS1
+    | Marker              // boundary marker (PromptStart, etc.)
+    | Unknown             // pre-state-machine fallback
+```
+
+The classification is set at append time by reading the
+current `InteractionState`. PR-C (substrate change) and
+PR-D (state-machine integration) become co-dependent;
+sequencing in §6 updated accordingly.
 
 #### §9.6. What about `SpeechCursor`?
 
@@ -1269,12 +1344,23 @@ ContentHistory's entries. Under ADR 0003, should it
 also be aware of the InteractionState — e.g., skip
 `Composing`-window entries (which are echo)?
 
-Recommendation: yes. Each `ContentHistory` entry gets an
-optional `RecordedDuring : InteractionState voption`
-tag set at append time. SpeechCursor in AutoDrive skips
-entries whose `RecordedDuring = Composing` (they're
-echo). Manual navigation includes them (the user
-explicitly asked to review).
+- **Option A**: AutoDrive skips Composing entries; manual
+  navigation includes them.
+- **Option B**: navigate everything (no awareness).
+- **Option C**: AutoDrive AND manual navigation skip
+  Composing entries.
+
+**Resolution: Option C — skip Composing entries in both
+AutoDrive and Manual.** This deviates from my initial
+recommendation (Option A). The maintainer's call: the
+user shouldn't hear their own typed echo via SpeechCursor
+even when navigating manually. Edit history (BS / re-types)
+is reachable via the UIA review cursor (a separate path),
+which IS byte-faithful.
+
+**Implementation impact**: `SpeechCursor` filters entries
+where `entry.Source = UserInputEcho`. The skip is
+unconditional (no AutoDrive vs Manual branch).
 
 #### §9.7. Multiple shells in one session (hot-switch)
 
@@ -1285,6 +1371,26 @@ Confirmed: `state.Current = Composing { fresh }`,
 `UserInputBuffer.Chars = []`.
 
 Resolution: handled in PR-B. No new question.
+
+## Status notes
+
+### 2026-05-13 — Open Questions §9.1 → §9.6 resolved
+
+In-chat resolution via AskUserQuestion. Maintainer
+accepted defaults on §9.1–§9.4; on §9.5 + §9.6 opted for
+the more substantial-but-cleaner alternative over my
+initial recommendation.
+
+The §9.5 + §9.6 resolutions add scope to Cycle 48:
+adding `Source : EntrySource` to `ContentHistory.Entry`
+is a substrate-level schema change that affects
+serialisation, the diagnostic-bundle reader, every
+tail-walk consumer, and `SpeechCursor`'s filter. Net
+effect: the five-PR plan in §6 expands to six PRs by
+splitting the substrate change (Source tag) from the
+keyboard-handler change (UserInputBuffer). Updated §6
+sequencing reflects this; the validation gates and
+overall rollout shape are unchanged.
 
 ## References
 
