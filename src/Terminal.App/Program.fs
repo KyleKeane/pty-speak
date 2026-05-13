@@ -911,6 +911,19 @@ module Program =
                     screen.SnapshotRows(startRow, count) }
         window.TerminalSurface.SetDisplayBuffer(displayBuffer)
 
+        // Cycle 46 PR-B — wire ContentHistory as the backing
+        // store for TerminalView's UIA Text pattern. The view's
+        // ITextProvider (constructed in TerminalView()'s
+        // constructor as ContentHistoryTextProvider over a
+        // closure on _contentHistory) materialises the
+        // substrate's tail (last 256 KB via
+        // ContentHistory.tailText) on each DocumentRange call.
+        // Until this line runs, the closure resolves to null
+        // and UIA queries return an empty range. See
+        // docs/adr/0002-uia-textedit-caret-output.md PR-B
+        // section.
+        window.TerminalSurface.SetContentHistory(contentHistory)
+
         // Pre-framework-cycle PR-O — wire each app-reserved
         // hotkey through the unified `bindHotkey` helper which
         // looks up the default Hotkey for the AppCommand from

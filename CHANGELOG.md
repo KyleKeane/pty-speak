@@ -15,6 +15,45 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Substrate-swap (Cycle 46 PR-B): ContentHistory backs the UIA Text pattern
+
+Implements PR-B of the four-PR Cycle 46 sequence per
+[`docs/adr/0002-uia-textedit-caret-output.md`](docs/adr/0002-uia-textedit-caret-output.md)
+(Accepted 2026-05-13). The existing screen-grid `TerminalTextProvider`
+is replaced as the runtime `ITextProvider` by a new
+`ContentHistoryTextProvider` + `ContentHistoryTextRange`
+(`src/Terminal.Accessibility/ContentHistoryTextRange.fs`)
+backed by `ContentHistory.tailText` (256 KB cap). The peer's
+`AutomationControlType` flips from `Document` to `Edit` so
+NVDA treats `TerminalView` as a text-edit surface — read-all,
+read-line, character / word / line navigation, jump-to-end all
+operate against the substrate's linear-text tail instead of
+the screen-grid snapshot.
+
+- **No call-site changes yet.** `TerminalView.Announce` keeps
+  firing `RaiseNotificationEvent` on `ActivityIds.output`
+  exactly as today; the caret-move wiring lands in PR-C.
+- **NVDA matrix gate (Cycle 46-PRB-1) required before merge.**
+  User-visible changes: NVDA announces "edit" on focus
+  instead of "document"; "read all" reads the
+  `ContentHistory` tail (last 256 KB) instead of the screen
+  grid.
+- **Open Questions §1–§5 resolved** (2026-05-13 inline in
+  ADR Status notes): full `ITextRangeProvider` interface
+  (§1); `TerminalView` itself becomes `Edit` (§2 Option B);
+  `SpeechCursor` delegates to the caret in PR-D (§3
+  Option β); notification path replaced for terminal I/O
+  (§4 Option ★); `SessionModel` calls peer directly without
+  substrate change (§5 Option ◇◇).
+- **Files**:
+  `src/Terminal.Accessibility/ContentHistoryTextRange.fs`
+  (new); `src/Terminal.Accessibility/Terminal.Accessibility.fsproj`,
+  `src/Terminal.Accessibility/TerminalAutomationPeer.fs`,
+  `src/Views/TerminalView.cs`, `src/Terminal.App/Program.fs`,
+  `docs/adr/0002-uia-textedit-caret-output.md`,
+  `tests/Tests.Unit/ContentHistoryTextRangeTests.fs` (new),
+  `tests/Tests.Unit/Tests.Unit.fsproj`.
+
 ### Proposed (Cycle 46 PR-A): ADR 0002 — UIA TextEdit caret as the output channel
 
 Drafts [`docs/adr/0002-uia-textedit-caret-output.md`](docs/adr/0002-uia-textedit-caret-output.md)

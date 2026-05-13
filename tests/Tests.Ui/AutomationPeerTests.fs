@@ -40,15 +40,21 @@ let private locateTerminalAppExe () : string =
 ///   2. attaches via UIA3
 ///   3. finds the TerminalView element by the ClassName the
 ///      TerminalAutomationPeer (PR #48) sets explicitly
-///   4. asserts the element's ControlType is Document and Name is
+///   4. asserts the element's ControlType is Edit and Name is
 ///      "Terminal"
 /// If this passes on CI, the FlaUI test infrastructure is real
 /// and we have a verification harness any future Text-pattern
 /// implementation can build on. If it fails — for desktop-session
 /// reasons, P/Invoke quirks, or anything else — the failure mode
 /// itself is the diagnostic.
+///
+/// Cycle 46 PR-B flipped the asserted ControlType from
+/// `Document` to `Edit` per the substrate swap in ADR 0002 —
+/// NVDA now treats TerminalView as a text-edit surface so its
+/// native text-edit reading path (read-all, line nav, etc.)
+/// applies to the ContentHistory tail.
 [<Fact>]
-let ``TerminalView is exposed as a UIA Document with the correct ClassName and Name`` () =
+let ``TerminalView is exposed as a UIA Edit with the correct ClassName and Name`` () =
     let exePath = locateTerminalAppExe ()
     use app = Application.Launch(exePath)
 
@@ -85,7 +91,7 @@ let ``TerminalView is exposed as a UIA Document with the correct ClassName and N
         | tv -> tv
 
     Assert.Equal(
-        FlaUI.Core.Definitions.ControlType.Document,
+        FlaUI.Core.Definitions.ControlType.Edit,
         terminalView.ControlType)
     Assert.Equal("Terminal", terminalView.Name)
 

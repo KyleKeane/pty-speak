@@ -1,11 +1,17 @@
 # ADR 0002 — Command output is delivered via a UIA TextEdit caret, not a UIA Notification
 
-- **Status**: Proposed
-- **Date**: 2026-05-12
+- **Status**: Accepted (2026-05-13)
+- **Date**: 2026-05-12 (Proposed); 2026-05-13 (Accepted)
 - **Deciders**: maintainer (KyleKeane)
 - **Authoring item**: Cycle 46 PR-A, in response to the
   failed-keystroke-flush sequence (PRs #282 → #284 → #285 →
   #286 revert).
+- **Resolutions of Open Questions §1–§5**: see "Status notes"
+  at the bottom of this document. The 2026-05-13 acceptance
+  recorded the maintainer's call on each open question; the
+  Decision section below has been rewritten around those
+  resolutions and the original framing is preserved in the
+  "Open questions" section for the historical record.
 - **Companion docs**:
   - [`0001-substrate-channel-dichotomy.md`](0001-substrate-channel-dichotomy.md)
     — substrate vs. channel framing this ADR refines.
@@ -93,42 +99,88 @@ trace back to the same wrong choice: trying to make
 ## Decision
 
 **Command output stops being a UIA Notification. It becomes a
-UIA TextEdit caret on a sibling automation peer.**
+UIA TextEdit caret on `TerminalView`'s existing automation
+peer, backed by `ContentHistory`.**
 
-Concretely:
+Concretely (resolutions on Open Questions §1–§5 baked in):
 
-1. **A new `TerminalOutputAutomationPeer` is added** as a
-   child peer of `TerminalView`'s existing
-   `TerminalAutomationPeer`. The new peer implements
-   `ITextProvider` and the minimum subset of
-   `ITextRangeProvider` that NVDA actually uses (see Open
-   Questions §1 for the minimum-subset audit). It exposes its
-   `ControlType` as `Edit` and reports as a multi-line,
-   read-only text control.
+1. **No new sibling peer is added.** `TerminalView`'s existing
+   `TerminalAutomationPeer` keeps its place in the WPF
+   automation tree; the work happens entirely inside that one
+   peer. The peer's `AutomationControlType` flips from
+   `Document` to `Edit` so NVDA treats `TerminalView` as a
+   text-edit surface (resolves Open Question §2 Option B).
 
-2. **The peer is backed by `ContentHistory`.** Content text
-   for any given `(seq, kind)` event is materialised through
-   `ContentHistory`'s existing accessors; the peer maintains
-   a (`character offset` ↔ `(seq, intra-event character
-   offset)`) mapping for `ITextRangeProvider` operations.
+2. **The peer's `ITextProvider` is rebacked from the screen
+   grid to `ContentHistory`.** The current implementation
+   (`TerminalTextProvider` over `Func<Screen | null>`,
+   `TerminalAutomationPeer.fs:1051`) materialises rows from
+   `Screen.SnapshotRows`. The new implementation
+   (`ContentHistoryTextProvider` over
+   `Func<ContentHistory.T | null>`) materialises the tail of
+   `ContentHistory` via `ContentHistory.tailText` capped at
+   256 KB and exposes a single linear string range. The
+   screen-grid `TerminalTextProvider` / `TerminalTextRange`
+   types stay in source for now (cleanup deferred to PR-D —
+   see "Staged implementation plan").
 
-3. **Output events that today call `Announce(text,
-   ActivityIds.output, MostRecent)` instead call
-   `TerminalOutputAutomationPeer.AppendAndMoveCaret(text)`,
-   followed by `RaiseAutomationEvent(TextSelectionChangedEvent)`.**
-   NVDA's native "read from caret" path picks up the caret
-   move and reads.
+3. **The new `ContentHistoryTextRange` implements the full
+   `ITextRangeProvider` interface.** Every method that the
+   existing `TerminalTextRange` implements is implemented in
+   the new range type — `Clone`, `Compare`,
+   `CompareEndpoints`, `ExpandToEnclosingUnit`,
+   `FindAttribute`, `FindText`, `GetAttributeValue`,
+   `GetBoundingRectangles`, `GetChildren`, `GetEnclosingElement`,
+   `GetText`, `Move`, `MoveEndpointByUnit`,
+   `MoveEndpointByRange`, `Select`, `AddToSelection`,
+   `RemoveFromSelection`, `ScrollIntoView` — covering every
+   `TextUnit` value (`Character`, `Word`, `Line`,
+   `Paragraph`, `Page`, `Document`, `Format`). Selection
+   mutations and read-only attribute writes are no-ops to
+   match the read-only surface. The full surface insures
+   against NVDA-version-skew surprises (resolves Open
+   Question §1).
 
-4. **Notification announces stay for short status events.**
-   `ActivityIds.diagnostic` (battery progress),
-   `ActivityIds.error` (parser errors, exceptions),
-   `ActivityIds.newRelease`, hotkey announces
-   (`Ctrl+Shift+H` health-check, `Ctrl+Shift+S` session-log
-   path) — all of these are <1 KB status messages that
-   `RaiseNotificationEvent` was designed for. They keep the
-   notification path.
+4. **Output events that today call `Announce(text,
+   ActivityIds.output, MostRecent)` will instead update
+   `ContentHistory` (already happens; the substrate is
+   append-only on the reader thread) and the channel side
+   will raise `AutomationEvents.TextSelectionChangedEvent` on
+   the peer to move NVDA's caret to the new tail.** NVDA's
+   native "read from caret" path picks up the caret move and
+   reads. **`SessionModel` (channel-side) is the orchestrator
+   that calls the peer**; `ContentHistory` (substrate) gains
+   no `ContentChanged` event — the substrate / channel
+   boundary stays clean (resolves Open Question §5
+   Option ◇◇). PR-C will land the wiring; PR-B does not yet
+   raise the event.
 
-5. **The user-visible interrupt path becomes typing itself.**
+5. **Output notifications are replaced entirely for terminal
+   command I/O.** PR-C drops the
+   `Announce(text, ActivityIds.output, MostRecent)` call once
+   the caret-move path is wired (resolves Open Question §4
+   Option ★). `ActivityIds.output` itself may end up unused
+   after PR-C; if so, it's removed in PR-D. **Notification
+   announces stay for non-terminal-content events** — menu
+   activations, errors, diagnostic battery progress
+   (`ActivityIds.diagnostic`), hotkey announces (`Ctrl+Shift+H`
+   health-check, `Ctrl+Shift+S` session-log path),
+   `ActivityIds.newRelease`, parser errors
+   (`ActivityIds.error`). All of those remain <1 KB status
+   messages — the use case `RaiseNotificationEvent` was
+   designed for.
+
+6. **`SpeechCursor` (Ctrl+Shift+Up/Down/End) is preserved as
+   a keyboard surface; its implementation delegates to the
+   peer's caret in PR-D.** `Ctrl+Shift+Up` becomes "move the
+   peer's caret up one line + raise
+   `TextSelectionChangedEvent`" rather than firing a separate
+   `Announce(text, ActivityIds.output)`. Net behaviour
+   identical for the user; muscle memory preserved; the
+   announce-side code path collapses to one (resolves Open
+   Question §3 Option β).
+
+7. **The user-visible interrupt path becomes typing itself.**
    With a real text-edit surface, NVDA's "Speech interrupt
    for typed character" setting fires naturally — no
    keystroke-flush hack needed. Alt activates the menu
@@ -204,64 +256,90 @@ Pure docs. Ships the ADR + a CHANGELOG entry naming
 **Cycle 46** as the umbrella for the work. Merges under the
 docs-only fast lane after the link checker passes.
 
-### PR-B — Add `TerminalOutputAutomationPeer` (not yet wired).
+### PR-B — Substrate-swap the `ITextProvider` + flip ControlType to `Edit`.
 
-- **Adds** `src/Terminal.Accessibility/TerminalOutputAutomationPeer.cs`
-  implementing `AutomationPeer` + `ITextProvider` + minimum
-  `ITextRangeProvider`.
-- **Adds** unit tests in `tests/Tests.Unit/TextRangeProviderTests.fs`
+- **Adds** `src/Terminal.Accessibility/ContentHistoryTextRange.fs`
+  containing `ContentHistoryTextRange` (full
+  `ITextRangeProvider` over a materialised `ContentHistory`
+  tail) + `ContentHistoryTextProvider` (`ITextProvider` over
+  `Func<ContentHistory.T | null>`).
+- **Modifies** `src/Terminal.Accessibility/TerminalAutomationPeer.fs`
+  `GetAutomationControlTypeCore` to return
+  `AutomationControlType.Edit` (was `Document`).
+- **Modifies** `src/Views/TerminalView.cs` to construct the
+  new provider (`new ContentHistoryTextProvider(() => _contentHistory)`)
+  in place of the screen-grid one, and adds a
+  `SetContentHistory(ContentHistory.T)` post-construction
+  injection method mirroring the existing
+  `SetScreen` / `SetDisplayBuffer` pattern.
+- **Modifies** `src/Terminal.App/Program.fs` to call
+  `window.TerminalSurface.SetContentHistory(contentHistory)`
+  after the `SetScreen` call.
+- **Adds** unit tests in `tests/Tests.Unit/ContentHistoryTextRangeTests.fs`
   pinning the offset arithmetic against `ContentHistory`
-  fixtures. Cover: empty history, single-event history,
-  multi-event history, multi-line events, `Move(Unit.Line,
-  +N)` / `Move(Unit.Character, ±N)` / `MoveEndpointByUnit`
-  boundary cases.
-- **No call sites change.** `TerminalView.Announce` keeps
-  firing notifications on `ActivityIds.output` exactly as
-  today. The new peer is added to the automation tree but
-  has no content yet.
-- **CI gate**: full Windows build + xUnit suite. NVDA matrix
-  walk NOT required (no user-visible change).
+  fixtures. Cover: empty history, single TextSpan,
+  multi-line content, `Move(Unit.Line, ±N)`,
+  `Move(Unit.Character, ±N)`, `MoveEndpointByUnit`,
+  `ExpandToEnclosingUnit` for every `TextUnit`, `Clone` /
+  `Compare` / `CompareEndpoints`, `GetText(maxLength)`.
+- **Tail cap**: 256 KB hardcoded. Rationale: ~5–10 minutes
+  of SAPI speech at normal rate; bounded materialisation
+  cost. Configurable later if needed.
+- **No `TextSelectionChangedEvent` raised yet.** The peer
+  exposes the new ContentHistory-backed text but nothing on
+  the channel side moves the caret. Existing
+  `Announce(text, ActivityIds.output, MostRecent)` calls
+  keep firing as today.
+- **Existing `TerminalTextProvider` / `TerminalTextRange`
+  remain in source** (no removal in PR-B). Cleanup to PR-D
+  once PR-C has validated the new path end-to-end.
+- **CI gate**: full Windows build + xUnit suite.
+- **User-visible change**: NVDA focus announces "edit"
+  instead of "document"; NVDA's "read all" reads the
+  ContentHistory tail (up to 256 KB) instead of the current
+  screen-grid content. **NVDA matrix gate required** before
+  merge — minimum: cmd `dir`, PowerShell `Get-Process`,
+  Claude REPL turn. New matrix row Cycle 46-PRB-1 per
+  ACCESSIBILITY-TESTING.md.
 
 ### PR-C — Wire output to the caret.
 
-- **Modifies** `TerminalOutputAutomationPeer` to subscribe to
-  `ContentHistory` changes (probably via a new event raised
-  from `Terminal.Core.ContentHistory` — needs a substrate-
-  side hook).
-- **Modifies** `SessionModel` / `NvdaChannel` so the
-  tuple-final emit path moves the caret + raises
-  `TextSelectionChangedEvent` instead of (or in addition to —
-  see Open Questions §4) calling `Announce(text,
-  ActivityIds.output, MostRecent)`.
+- **Modifies** `SessionModel` to call the peer's
+  `TextSelectionChangedEvent` raise on tuple finalisation
+  (channel-side orchestrator per §5 Option ◇◇; no substrate
+  change). Helper method on `TerminalAutomationPeer` such as
+  `RaiseCaretMovedToTail()` so the call site doesn't have to
+  reach into `AutomationPeer.RaiseAutomationEvent` directly.
+- **Drops** the
+  `Announce(text, ActivityIds.output, MostRecent)` call for
+  terminal command I/O (§4 Option ★ replace). Status-event
+  announces (errors, diagnostic, hotkey, etc.) keep firing.
 - **CI gate**: full Windows build + xUnit + lints.
-- **NVDA matrix gate**: a new matrix row (Cycle 46-1) per
-  ACCESSIBILITY-TESTING.md. The matrix walks cmd / PowerShell
-  / Claude through the canonical exemplars
-  (CANONICAL-DISPLAY-CATALOG.md §1-§3). At minimum: `dir`,
-  `echo hi`, `claude` REPL turn.
+- **NVDA matrix gate**: a new matrix row (Cycle 46-PRC-1)
+  per ACCESSIBILITY-TESTING.md.
 
 ### PR-D — Polish & follow-ups.
 
-- **Wires** typing-interrupts-speech via NVDA's native
-  setting (the prompt textbox becomes the focused edit
-  surface; NVDA's "Speech interrupt for typed character"
-  takes over).
-- **Decides** `SpeechCursor` (Ctrl+Shift+Up/Down/End) future
-  — keep its own machinery, delegate to the caret, or
-  deprecate. Resolution of Open Questions §3.
+- **Delegates `SpeechCursor` (Ctrl+Shift+Up/Down/End) to the
+  caret peer** (§3 Option β). Net behaviour identical for the
+  user; announce-side code path collapses to one.
+- **Removes the screen-grid `TerminalTextProvider` and
+  `TerminalTextRange`** (deprecated by PR-B). Possibly
+  several hundred lines of code drop.
+- **Trims dead code.** `ActivityIds.output` removed if PR-C
+  left it unused.
 - **Wires** new keyboard gestures if needed (e.g.
   `Ctrl+Shift+End` to move caret to end-of-history if NVDA's
   default `Ctrl+End` doesn't behave usefully through our
   custom peer).
-- **Trims dead code.** `ActivityIds.output` may end up unused
-  if PR-C drops the notification path entirely; if so, remove
-  it cleanly here.
 
 ## Open questions
 
 These are the decision points where me being wrong costs us
-another cycle. **Maintainer call required on each before the
-relevant PR ships.**
+another cycle. **All five were resolved 2026-05-13** — the
+resolutions are recorded inline below and folded into the
+Decision section above. Original framing preserved for the
+historical record.
 
 ### §1. Minimum `ITextRangeProvider` subset NVDA actually uses
 
@@ -288,6 +366,16 @@ acceptable per the UIA contract.
 NVDA review-cursor path needs more. Action item for PR-B
 implementation: dump NVDA's UIA call sequence for a real
 text-edit control (Notepad) as a reference.
+
+**Resolution 2026-05-13**: implement the **full
+`ITextRangeProvider` interface**, not a minimum subset.
+Belt-and-suspenders against NVDA-version-skew surprises;
+mirrors the surface the existing screen-grid
+`TerminalTextRange` already implements. Every `TextUnit`
+value is handled (`Format` / `Page` / `Paragraph` degrade
+to `Line` per the UIA contract). Cost: more code in PR-B,
+but the implementation is mechanical given the existing
+`TerminalTextRange` to reference.
 
 ### §2. Focus model — sibling peer vs. `TerminalView` becomes `Edit`
 
@@ -321,6 +409,16 @@ informs PR-B's peer-tree decision and PR-C's wiring.
 or C might be necessary if NVDA's text-edit reading path
 won't work without focus.
 
+**Resolution 2026-05-13**: **Option B — `TerminalView`
+itself becomes `Edit`**. One surface for input + output;
+no new sibling peer; closer to how Notepad models its text;
+NVDA's text-edit reading path applies naturally because the
+focused element IS the edit. The "prompt vs. emitted output"
+distinction blurring is real but acceptable — the prompt
+text in cmd / PowerShell IS part of the shell's emitted
+output, so treating them as one stream matches the user's
+mental model.
+
 ### §3. `SpeechCursor` integration / future
 
 `SpeechCursor.fs` (Cycle 45 PRs #263–#270) provides
@@ -352,6 +450,14 @@ Option β (delegation) — preserves the keyboard surface the
 maintainer has muscle-memory for while collapsing duplicate
 logic.
 
+**Resolution 2026-05-13**: **Option β — delegation**.
+`Ctrl+Shift+Up/Down/End` keep their existing key bindings;
+their implementation in PR-D becomes "move the peer's caret
++ raise `TextSelectionChangedEvent`" instead of firing an
+independent announce. Net behaviour identical for the user;
+muscle memory preserved; the announce-side code path
+collapses to one.
+
 ### §4. Drop notification announces for output entirely, or keep as fallback?
 
 PR-C's wiring change can either:
@@ -369,6 +475,16 @@ PowerShell / Claude (the matrix shells); ★★ might make sense
 later if we see a screen reader (JAWS, Narrator) that
 doesn't track the caret well.
 
+**Resolution 2026-05-13**: **Option ★ — replace entirely for
+terminal command I/O**. Notification announces stay for
+non-terminal-content events: menus, errors, diagnostic
+battery progress, hotkey announces, new-release prompts,
+parser errors. Terminal command input + output goes through
+the caret. JAWS / Narrator fallback can be revisited if a
+matrix walk against either of them shows the caret path
+doesn't track; until evidence appears, the simpler one-path
+model is preferred.
+
 ### §5. Does `Terminal.Core.ContentHistory` need a change-notification event?
 
 Today `ContentHistory` is read by `SessionModel` /
@@ -384,6 +500,13 @@ react to appends. Options:
 **Decision needed**: ◇ or ◇◇? **My instinct**: ◇◇ — keeps
 the substrate / channel boundary clean (substrate doesn't
 need to know about UIA peers).
+
+**Resolution 2026-05-13**: **Option ◇◇ — `SessionModel` calls
+the peer directly**. No `ContentChanged` event on
+`ContentHistory`; the substrate stays UIA-ignorant. Channel
+side already knows when tuples finalise (the existing
+boundary handler in `Program.fs`); the same hook moves the
+caret in PR-C.
 
 ## Alternatives considered
 
@@ -443,8 +566,25 @@ new".
 
 - **2026-05-12**: Proposed. Awaiting maintainer review +
   Open Questions §1-§5 resolutions before PR-B begins.
-- **Supersession**: this ADR may be revised if Open
-  Question resolutions invalidate the staged plan (e.g. if
-  Option C from §2 wins, PR-B's peer-tree decision changes
-  and the ADR §"Decision" needs a "Sibling-peer + focus-on-
-  review" paragraph).
+- **2026-05-13**: Accepted. Maintainer resolved all five
+  Open Questions:
+  - §1 → full `ITextRangeProvider` interface.
+  - §2 → Option B (`TerminalView` itself becomes `Edit`).
+  - §3 → Option β (`SpeechCursor` delegates to caret in
+    PR-D).
+  - §4 → Option ★ (replace notification announces for
+    terminal I/O entirely; notifications stay for menus,
+    errors, diagnostics, hotkey announces, releases).
+  - §5 → Option ◇◇ (`SessionModel` calls peer directly; no
+    substrate change).
+
+  Decision section rewritten to bake in the resolutions.
+  PR-B (substrate-swap of `ITextProvider` from screen grid
+  to `ContentHistory` + `ControlType` flip
+  `Document`→`Edit`) starts now.
+- **Supersession**: this ADR may be revised if NVDA matrix
+  validation of PR-B (Cycle 46-PRB-1) or PR-C (Cycle
+  46-PRC-1) surfaces NVDA behaviour the resolutions
+  didn't anticipate (most likely candidate: NVDA's
+  text-edit reading path requiring focus when the caret
+  isn't where the user expects).

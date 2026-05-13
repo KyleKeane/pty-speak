@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -55,6 +56,21 @@ public class TerminalView : FrameworkElement
     /// implementation; the C# render loop is unchanged.
     /// </summary>
     private IDisplayBuffer? _displayBuffer;
+
+    /// <summary>
+    /// Cycle 46 PR-B — backing store for the UIA Text pattern.
+    /// Replaces the screen-grid <see cref="Screen"/> snapshot
+    /// that the pre-PR-B <c>TerminalTextProvider</c> read.
+    /// Set post-construction via <see cref="SetContentHistory"/>
+    /// mirroring the existing <see cref="SetScreen"/> /
+    /// <see cref="SetDisplayBuffer"/> injection pattern;
+    /// <see cref="ContentHistoryTextProvider"/> captures the
+    /// closure over this field so UIA queries that arrive
+    /// before the wiring runs return an empty range rather
+    /// than throwing.
+    /// See <c>docs/adr/0002-uia-textedit-caret-output.md</c>.
+    /// </summary>
+    private ContentHistory.T? _contentHistory;
 
     /// <summary>
     /// Stage 6 PR-B — sink for keyboard / paste / focus bytes. Set
@@ -119,7 +135,14 @@ public class TerminalView : FrameworkElement
     // `TerminalAutomationPeer`'s constructor which takes
     // `ITextProvider` (a system-public interface, not the
     // internal type).
-    internal TerminalTextProvider TextProvider { get; }
+    // Cycle 46 PR-B widened this from `TerminalTextProvider`
+    // (the screen-grid-backed implementation) to the public
+    // `ITextProvider` interface so we can swap in
+    // `ContentHistoryTextProvider`. The single consumer is
+    // `TerminalAutomationPeer`'s constructor below, which has
+    // always taken `ITextProvider`. The screen-grid types
+    // remain in source for now; cleanup is deferred to PR-D.
+    internal ITextProvider TextProvider { get; }
 
     /// <summary>Default background fill for the terminal grid.
     /// FrameworkElement (unlike Control / Panel) does not expose
@@ -141,7 +164,17 @@ public class TerminalView : FrameworkElement
         _cellWidth = sample.WidthIncludingTrailingWhitespace;
         _cellHeight = sample.Height;
 
-        TextProvider = new TerminalTextProvider(() => _screen);
+        // Cycle 46 PR-B — substrate-swap of the UIA Text
+        // pattern from screen grid to ContentHistory. The
+        // closure captures the post-construction field
+        // `_contentHistory`; UIA queries arriving before
+        // `SetContentHistory` resolve to null and produce an
+        // empty range. The pre-PR-B
+        // `new TerminalTextProvider(() => _screen)` form
+        // remains in source under
+        // `TerminalAutomationPeer.fs:1051` until PR-D's
+        // cleanup. See `docs/adr/0002-uia-textedit-caret-output.md`.
+        TextProvider = new ContentHistoryTextProvider(() => _contentHistory);
 
         // Stage 6 PR-B — paste hook. ApplicationCommands.Paste fires
         // for right-click → Paste, Edit menu → Paste, and any future
@@ -213,6 +246,30 @@ public class TerminalView : FrameworkElement
     {
         _displayBuffer = displayBuffer
             ?? throw new ArgumentNullException(nameof(displayBuffer));
+    }
+
+    /// <summary>
+    /// Cycle 46 PR-B — wires the
+    /// <see cref="ContentHistory.T"/> instance that backs the
+    /// UIA Text pattern. Called once at composition from
+    /// <c>Program.fs compose ()</c> after the substrate is
+    /// constructed; mirrors the existing
+    /// <see cref="SetScreen"/> / <see cref="SetDisplayBuffer"/>
+    /// post-construction-injection pattern.
+    /// </summary>
+    /// <remarks>
+    /// The <see cref="ContentHistoryTextProvider"/> constructed
+    /// in the view's constructor captures a closure over
+    /// <c>_contentHistory</c>; before this method runs, that
+    /// closure resolves to null and UIA queries return an empty
+    /// range rather than throwing. After this method runs, UIA
+    /// queries materialise the last 256 KB of the substrate's
+    /// tail through <c>ContentHistory.tailText</c>.
+    /// </remarks>
+    public void SetContentHistory(ContentHistory.T contentHistory)
+    {
+        _contentHistory = contentHistory
+            ?? throw new ArgumentNullException(nameof(contentHistory));
     }
 
     /// <summary>
