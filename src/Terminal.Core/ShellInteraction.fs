@@ -34,27 +34,6 @@ module ShellInteraction =
     /// that still reach via `ShellInteraction.EntrySource`.
     type EntrySource = ContentHistory.EntrySource
 
-    /// Map an `InteractionState` to the `EntrySource` that
-    /// non-marker entries appended during that state should
-    /// carry. Used by the composition root's
-    /// `setSourceResolver` delegate. Marker entries always get
-    /// `EntrySource.Marker` regardless of state.
-    let entrySourceFor (state : InteractionState) : ContentHistory.EntrySource =
-        match state with
-        | Composing _ ->
-            // Bytes from cmd during Composing are echo of user
-            // input. PR-D's UserInputBuffer makes this richer
-            // (we'll be able to distinguish echo from sub-prompt
-            // residual); for now everything during Composing is
-            // tagged UserInputEcho.
-            ContentHistory.EntrySource.UserInputEcho
-        | Executing _ ->
-            // Bytes during Executing are real cmd output. PR-D /
-            // PR-E may refine to distinguish CmdSubPrompt vs
-            // CmdOutput once the sub-prompt detection is wired
-            // into the source-resolver path.
-            ContentHistory.EntrySource.CmdOutput
-
     /// Composing — pty-speak is waiting for user input. cmd's
     /// output during this state is treated as *echo* of the
     /// user's typing (or of pty-speak's own writes, in the
@@ -89,6 +68,18 @@ module ShellInteraction =
     type InteractionState =
         | Composing of ComposingData
         | Executing of ExecutingData
+
+    /// Map an `InteractionState` to the `EntrySource` that
+    /// non-marker entries appended during that state should
+    /// carry. Used by the composition root's
+    /// `setSourceResolver` delegate. Marker entries always get
+    /// `EntrySource.BoundaryMarker` regardless of state.
+    let entrySourceFor (state : InteractionState) : ContentHistory.EntrySource =
+        match state with
+        | Composing _ ->
+            ContentHistory.EntrySource.UserInputEcho
+        | Executing _ ->
+            ContentHistory.EntrySource.CmdOutput
 
     /// External signal types. Each transition is named after
     /// the event that drove it, not the state it goes to.

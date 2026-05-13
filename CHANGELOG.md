@@ -20,15 +20,19 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 Implements ADR 0003 §9.5 — every `ContentHistory.Entry` now
 carries a `Source : EntrySource` tag. `EntrySource` is a DU
 with six values: `UserInputEcho`, `CmdOutput`, `CmdSubPrompt`,
-`ShellPrompt`, `Marker`, `Unknown`.
+`ShellPrompt`, `BoundaryMarker`, `Unknown`. (`BoundaryMarker`
+rather than `Marker` because the latter would shadow
+`ContentHistory.Entry.Marker` at qualified-access under the
+`[<RequireQualifiedAccess>]` attribute.)
 
 The tag is set at append time. `ContentHistory.setSourceResolver`
 takes a `unit -> EntrySource` delegate; the composition root
 wires it to `ShellInteraction.entrySourceFor shellInteraction.Current`,
 mapping `Composing` → `UserInputEcho` and `Executing` →
-`CmdOutput`. Marker entries always get `EntrySource.Marker`
-regardless of the resolver. Pre-state-machine entries (or
-exceptions in the resolver) get `Unknown`.
+`CmdOutput`. Marker entries always get
+`EntrySource.BoundaryMarker` regardless of the resolver. Pre-
+state-machine entries (or exceptions in the resolver) get
+`Unknown`.
 
 Also moves the `EntrySource` DU itself out of
 `ShellInteraction.fs` (where PR-B drafted it) to

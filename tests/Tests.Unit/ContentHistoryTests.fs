@@ -779,7 +779,7 @@ let ``Default Source is Unknown when no resolver is set`` () =
             ContentHistory.entrySource e)
 
 [<Fact>]
-let ``Marker entries always carry EntrySource.Marker`` () =
+let ``Marker entries always carry EntrySource.BoundaryMarker`` () =
     let state = freshHistory ()
     // Set a non-default resolver — Marker should still be Marker.
     ContentHistory.setSourceResolver state (fun () ->
@@ -795,7 +795,7 @@ let ``Marker entries always carry EntrySource.Marker`` () =
             | ContentHistory.Marker _ -> true
             | _ -> false)
     Assert.Equal(
-        ContentHistory.EntrySource.Marker,
+        ContentHistory.EntrySource.BoundaryMarker,
         ContentHistory.entrySource marker)
 
 [<Fact>]

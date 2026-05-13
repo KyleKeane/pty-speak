@@ -397,7 +397,7 @@ let ``renderEntry returns mode activity for AltScreenEnter`` () =
               Kind = ContentHistory.MarkerKind.AltScreenEnter
               At = t0
               Payload = None
-              Source = ContentHistory.EntrySource.Marker }
+              Source = ContentHistory.EntrySource.BoundaryMarker }
     match SpeechCursor.renderEntry m with
     | Some (_, activityId) -> Assert.Equal(ActivityIds.mode, activityId)
     | None -> Assert.Fail("expected announce for AltScreenEnter")
@@ -410,7 +410,7 @@ let ``renderEntry returns selection announce for SelectionShown with payload`` (
               Kind = ContentHistory.MarkerKind.SelectionShown
               At = t0
               Payload = Some "Edit, Yes, Always, No"
-              Source = ContentHistory.EntrySource.Marker }
+              Source = ContentHistory.EntrySource.BoundaryMarker }
     match SpeechCursor.renderEntry m with
     | Some (text, _) ->
         Assert.Contains("Selection prompt", text)
@@ -427,7 +427,7 @@ let private promptMarker (payload: string option) : ContentHistory.Entry =
           Kind = ContentHistory.MarkerKind.PromptStart
           At = t0
           Payload = payload
-          Source = ContentHistory.EntrySource.Marker }
+          Source = ContentHistory.EntrySource.BoundaryMarker }
 
 [<Fact>]
 let ``PromptStart under Suppress returns None`` () =

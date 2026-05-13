@@ -43,7 +43,7 @@ module ContentHistory =
     /// The tag is set at append time by reading the current
     /// `InteractionState` via `setSourceResolver` (a delegate
     /// the composition root provides). Pre-state-machine
-    /// entries get `Unknown`. Markers get `Marker`
+    /// entries get `Unknown`. Markers get `BoundaryMarker`
     /// unconditionally.
     [<RequireQualifiedAccess>]
     type EntrySource =
@@ -61,8 +61,11 @@ module ContentHistory =
         /// The shell's PS1 / prompt path bytes.
         | ShellPrompt
         /// A semantic boundary marker entry. Not text;
-        /// always navigable in the review cursor.
-        | Marker
+        /// always navigable in the review cursor. Renamed from
+        /// `Marker` (PR-C initial draft) to avoid shadowing
+        /// `ContentHistory.Entry.Marker` at qualified-access
+        /// when `EntrySource` is `[<RequireQualifiedAccess>]`.
+        | BoundaryMarker
         /// Pre-state-machine fallback. Entries that landed
         /// before the resolver was wired (or while the
         /// resolver returned an unresolvable state) get this
@@ -150,7 +153,7 @@ module ContentHistory =
     /// itself. The `Payload` is optional — most markers carry only
     /// their kind, but some (e.g. `SelectionShown` carrying the
     /// option list) need additional data. Markers always have
-    /// `Source = EntrySource.Marker`; field included for shape
+    /// `Source = EntrySource.BoundaryMarker`; field included for shape
     /// uniformity with the other Data records.
     type MarkerData =
         { Seq: int64
@@ -811,7 +814,7 @@ module ContentHistory =
                               Kind = MarkerKind.BellRang
                               At = now
                               Payload = None
-                              Source = EntrySource.Marker }
+                              Source = EntrySource.BoundaryMarker }
                     state.Entries.Add(bellEntry)
                     match sealedEntry with
                     | Some e -> [ e; bellEntry ]
@@ -853,7 +856,7 @@ module ContentHistory =
                       Kind = kind
                       At = at
                       Payload = payload
-                      Source = EntrySource.Marker }
+                      Source = EntrySource.BoundaryMarker }
             state.Entries.Add(markerEntry)
             match sealedEntry with
             | Some e -> [ e; markerEntry ]

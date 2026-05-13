@@ -881,7 +881,7 @@ module Diagnostics =
         let sourceTally (src: ContentHistory.EntrySource) : int =
             Map.tryFind src sourceCounts |> Option.defaultValue 0
         sprintf
-            "Stats: entries=%d latestSeq=%d PromptStart=%d CommandStart=%d OutputStart=%d CommandFinished=%d BellRang=%d SelectionShown=%d AltScreenEnter=%d | Sources: UserInputEcho=%d CmdOutput=%d CmdSubPrompt=%d ShellPrompt=%d Marker=%d Unknown=%d"
+            "Stats: entries=%d latestSeq=%d PromptStart=%d CommandStart=%d OutputStart=%d CommandFinished=%d BellRang=%d SelectionShown=%d AltScreenEnter=%d | Sources: UserInputEcho=%d CmdOutput=%d CmdSubPrompt=%d ShellPrompt=%d BoundaryMarker=%d Unknown=%d"
             entryCount
             latestSeq
             (tally ContentHistory.MarkerKind.PromptStart)
@@ -895,7 +895,7 @@ module Diagnostics =
             (sourceTally ContentHistory.EntrySource.CmdOutput)
             (sourceTally ContentHistory.EntrySource.CmdSubPrompt)
             (sourceTally ContentHistory.EntrySource.ShellPrompt)
-            (sourceTally ContentHistory.EntrySource.Marker)
+            (sourceTally ContentHistory.EntrySource.BoundaryMarker)
             (sourceTally ContentHistory.EntrySource.Unknown)
 
     // ---------------------------------------------------------------
