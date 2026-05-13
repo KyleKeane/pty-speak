@@ -72,6 +72,13 @@
     <Compile Include="ContentHistoryTests.fs" />
     <Compile Include="SpeechCursorTests.fs" />
     <!--
+      Cycle 48 PR-B (ADR 0003) — ShellInteraction state machine
+      pure-function tests. Slot after ContentHistory because the
+      module is substrate-adjacent, no cross-deps with the rest
+      of the test suite.
+    -->
+    <Compile Include="ShellInteractionTests.fs" />
+    <!--
       Cycle 46 PR-B — ContentHistoryTextRange / Provider tests.
       Slot after ContentHistoryTests since the new accessibility
       types consume `Terminal.Core.ContentHistory` directly.

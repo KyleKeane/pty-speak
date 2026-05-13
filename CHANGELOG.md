@@ -15,6 +15,36 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 48 PR-B (2026-05-13): ShellInteraction state machine — observe-only
+
+Implements `Terminal.Core.ShellInteraction` per ADR 0003: a
+two-state machine (`Composing` / `Executing`) classifying each
+transition in the shell session. New file
+`src/Terminal.Core/ShellInteraction.fs` with the pure types,
+the `tryTransition` function, the `State` container, and the
+sub-prompt detector. New test file with 24 tests covering the
+transition table, sub-prompt detector, and SinglekeySubmit
+pattern matcher.
+
+Wired into the composition root in **observe-only** mode: the
+state machine receives the same signals as today's announce
+paths (Enter via the `writePtyBytes` wrapper detecting `\r`
+bytes, PromptStart via the boundary handler, sub-prompt-idle
+via the existing `idleFlushTimer` tick, byte-arrival via a
+new `onByteFromPty` callback in `startReaderLoop`) and logs
+each transition at Information level. Today's tuple-final +
+idle-flush + UIA-materialiser gates remain in place driving
+audible behaviour — PR-B does NOT change announce routing.
+
+PR-C will add `Source : EntrySource` to `ContentHistory.Entry`.
+PR-D adds the `UserInputBuffer`. PR-E switches announce
+routing onto the state-machine transitions. PR-F is the
+cycle closure audit.
+
+Validation: NVDA matrix Cycle 48-B1 → 48-B8 walk the CMD test
+corpus with Debug logging on; the transition log should match
+the ADR §4 mapping for each test. Audible behaviour unchanged.
+
 ### Cycle 47 follow-up (2026-05-13, post-preview.116): cursor-row synthetic newline + idle-flush typing gate + per-char earcon revert
 
 preview.116 dogfood surfaced three connected regressions:
