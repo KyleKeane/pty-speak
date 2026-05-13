@@ -254,6 +254,89 @@ module DiagnosticExtracts =
                         if retainContinuations then kept.Add(line)
                 String.Join("\n", kept)
 
+    /// Cycle 47 follow-up (2026-05-13) — extract the body of
+    /// every `=== PTYSPEAK-TEST-START: <id> ===` /
+    /// `=== PTYSPEAK-TEST-END: <id> ===` bracketed region in
+    /// `content`. The bracket markers are emitted by each
+    /// `scripts/cmd-tests/test-*.cmd` script (Cycle 47); when
+    /// those scripts run during dogfooding the markers land in
+    /// the ContentHistory tail and the FileLogger log. Greppable
+    /// after the fact, but the maintainer requested a one-press
+    /// extractor that surfaces just the bracketed slice so a
+    /// paste-back to triage chat carries only the relevant
+    /// section and not the surrounding session noise.
+    ///
+    /// Multiple runs of the same test in one session each emit
+    /// their own bracket pair; all are returned, separated by a
+    /// "--- run N of M ---" divider so the paste-back consumer
+    /// can tell them apart. An empty body case (start marker
+    /// without matching end) is included for visibility — useful
+    /// when the script is still mid-run at extract-time. A test
+    /// that didn't run yet returns a one-line "no runs found"
+    /// placeholder so the announce is informative.
+    ///
+    /// Implementation: line-by-line scan with a tiny state
+    /// machine (`outsideBracket` / `insideBracket`). Each
+    /// matched start marker opens an accumulator; the matching
+    /// end marker closes it. Bracket markers are NOT included
+    /// in the extracted body (the test slug appears in the
+    /// header instead). Marker matching is exact-string against
+    /// the canonical `=== PTYSPEAK-TEST-START: <id> ===` form
+    /// trimmed of leading / trailing whitespace; trailing
+    /// `\r` is stripped first.
+    let extractByTest (testId: string) (content: string) : string =
+        if String.IsNullOrEmpty content then
+            sprintf "(no runs of %s found in the bundle)" testId
+        else
+            let startMarker =
+                sprintf "=== PTYSPEAK-TEST-START: %s ===" testId
+            let endMarker =
+                sprintf "=== PTYSPEAK-TEST-END: %s ===" testId
+            let lines = splitLinesStripTrailing content
+            let runs = ResizeArray<string>()
+            let mutable current : StringBuilder option = None
+            for rawLine in lines do
+                let line = rawLine.TrimEnd('\r')
+                let trimmed = line.Trim()
+                match current with
+                | None ->
+                    if trimmed = startMarker then
+                        current <- Some (StringBuilder())
+                | Some sb ->
+                    if trimmed = endMarker then
+                        runs.Add(sb.ToString().TrimEnd('\n'))
+                        current <- None
+                    elif trimmed = startMarker then
+                        // Nested / unterminated previous run.
+                        // Close the previous one as in-flight,
+                        // open a fresh accumulator.
+                        runs.Add(
+                            sb.ToString().TrimEnd('\n')
+                            + "\n[... run unterminated at start of next run ...]")
+                        current <- Some (StringBuilder())
+                    else
+                        sb.AppendLine(line) |> ignore
+            // Tail case: extractor pressed mid-run.
+            match current with
+            | Some sb ->
+                runs.Add(
+                    sb.ToString().TrimEnd('\n')
+                    + "\n[... run still in flight at extract time ...]")
+            | None -> ()
+            if runs.Count = 0 then
+                sprintf "(no runs of %s found in the bundle)" testId
+            else
+                let total = runs.Count
+                let sb = StringBuilder()
+                for i in 0 .. total - 1 do
+                    if total > 1 then
+                        sb.AppendLine(
+                            sprintf "--- %s run %d of %d ---" testId (i + 1) total)
+                        |> ignore
+                    sb.AppendLine(runs.[i]) |> ignore
+                    if i < total - 1 then sb.AppendLine("") |> ignore
+                sb.ToString().TrimEnd('\n')
+
     /// Cap `content` at `maxBytes` UTF-8 bytes. Returns the
     /// (possibly-truncated) content and a `wasTruncated` flag the
     /// orchestrator uses to decide whether to surface a truncation

@@ -279,6 +279,44 @@
                                   x:FieldModifier="public"
                                   Header="_Version Header" />
                     </MenuItem>
+                    <!-- Cycle 47 follow-up (2026-05-13) — test-bracketed
+                         extractors. One per CMD test in
+                         `scripts/cmd-tests/`. Pair with the matching
+                         Diagnostics → CMD Interaction Tests entry to
+                         (a) write the script invocation to the PTY
+                         input cursor, (b) review + Enter to run,
+                         (c) extract the bracketed slice via the
+                         matching item here. The body source is the
+                         ContentHistory tail (256 KB cap); the
+                         bracket markers are emitted by each script
+                         (`=== PTYSPEAK-TEST-START: <id> ===` /
+                         `=== PTYSPEAK-TEST-END: <id> ===`). -->
+                    <MenuItem Header="_Test Run">
+                        <MenuItem x:Name="MenuItem_ExtractTestEcho"
+                                  x:FieldModifier="public"
+                                  Header="Test 01 — _Echo" />
+                        <MenuItem x:Name="MenuItem_ExtractTestTextInput"
+                                  x:FieldModifier="public"
+                                  Header="Test 02 — _Text Input" />
+                        <MenuItem x:Name="MenuItem_ExtractTestNumericInput"
+                                  x:FieldModifier="public"
+                                  Header="Test 03 — _Numeric Input" />
+                        <MenuItem x:Name="MenuItem_ExtractTestYesNo"
+                                  x:FieldModifier="public"
+                                  Header="Test 04 — _Yes / No" />
+                        <MenuItem x:Name="MenuItem_ExtractTestMultiChoice"
+                                  x:FieldModifier="public"
+                                  Header="Test 05 — _Multi Choice" />
+                        <MenuItem x:Name="MenuItem_ExtractTestPause"
+                                  x:FieldModifier="public"
+                                  Header="Test 06 — _Pause" />
+                        <MenuItem x:Name="MenuItem_ExtractTestProgress"
+                                  x:FieldModifier="public"
+                                  Header="Test 07 — Pr_ogress" />
+                        <MenuItem x:Name="MenuItem_ExtractTestStderr"
+                                  x:FieldModifier="public"
+                                  Header="Test 08 — _Stderr Output" />
+                    </MenuItem>
                 </MenuItem>
             </MenuItem>
             <!-- Cycle 28 — Window menu. Both items are menu-only
