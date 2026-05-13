@@ -946,15 +946,83 @@ module Program =
         let shellInteraction = ShellInteraction.State()
         let shellInteractionLog =
             Logger.get "Terminal.Core.ShellInteraction"
+        // Cycle 48 PR-E (ADR 0003) — recordTransition drives BOTH
+        // the log AND the audible announce path. Replaces today's
+        // tuple-final (SessionModel.finalisedOpt) + idle-flush
+        // dual-path with one transition-driven announce. The
+        // outcome's AccumulatedOutput carries the bytes captured
+        // during the just-finished Executing window; on
+        // Executing → Composing we announce them and clear the
+        // watermarks. The PR-D UserInputBuffer-captured Enter
+        // text is the SubmittedCommand on the prior Executing
+        // entry; not announced here (it was already echoed and
+        // captured at write-time).
         let recordTransition (trigger : ShellInteraction.Transition) =
             let now = DateTime.UtcNow
             match ShellInteraction.applyTransition shellInteraction trigger now with
             | Some outcome ->
                 shellInteractionLog.LogInformation(
-                    "ShellInteraction transition: {Prior} --[{Trigger}]--> {New}",
+                    "ShellInteraction transition: {Prior} --[{Trigger}]--> {New} AccumulatedOutputLen={Len}",
                     ShellInteraction.describeState outcome.PriorState,
                     ShellInteraction.describeTrigger outcome.Trigger,
-                    ShellInteraction.describeState outcome.NewState)
+                    ShellInteraction.describeState outcome.NewState,
+                    outcome.AccumulatedOutput.Length)
+                // Cycle 48 PR-E announce-routing — surgical
+                // scope: ONLY drive announces from SubPromptIdle
+                // (transition [c], the new sub-prompt case).
+                // PromptDetected (transition [b]) keeps using the
+                // existing SessionModel.applyAndCapture →
+                // tuple.OutputText path in boundaryAction
+                // (screen-row extraction, clean) which has
+                // proven correct since Cycle 22b.
+                //
+                // The accumulator-based announce is appropriate
+                // for sub-prompts (short, atomic — "Enter your
+                // name:") but messy for command-completion
+                // cases (would include the typed command echo +
+                // newlines + next prompt path). SessionModel's
+                // row-based extraction handles those cleanly.
+                let isSubPromptTransition =
+                    match outcome.Trigger, outcome.PriorState, outcome.NewState with
+                    | ShellInteraction.SubPromptIdle _,
+                        ShellInteraction.Executing _,
+                        ShellInteraction.Composing _ -> true
+                    | _ -> false
+                let shouldAnnounce =
+                    isSubPromptTransition
+                    && (match currentShellPolicy.Streaming with
+                        | ShellPolicy.TupleFinalOnly -> true
+                        | ShellPolicy.LineByLine -> false
+                        | ShellPolicy.Off -> false)
+                if shouldAnnounce then
+                    let raw = outcome.AccumulatedOutput
+                    let sanitised = AnnounceSanitiser.sanitise raw
+                    let trimmed = sanitised.Trim()
+                    if not (System.String.IsNullOrWhiteSpace trimmed) then
+                        let toSay =
+                            if trimmed.Length <= OutputAnnounceCapChars then trimmed
+                            else trimmed.Substring(trimmed.Length - OutputAnnounceCapChars)
+                        if toSay.Length < trimmed.Length then
+                            log.LogInformation(
+                                "PR-E sub-prompt announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
+                                trimmed.Length, toSay.Length, OutputAnnounceCapChars)
+                        log.LogInformation(
+                            "PR-E sub-prompt announce. Length={Len}", toSay.Length)
+                        window.TerminalSurface.Announce(toSay, ActivityIds.output)
+                        lastAnnouncedText <- toSay
+                        lastAnnouncedSeq <- ContentHistory.latestSeq contentHistory
+                    // Earcon on sub-prompt transition. The
+                    // PromptDetected path fires its own
+                    // ReadyForInput earcon (existing
+                    // SessionModel-driven dispatch); we only
+                    // dispatch here for the SubPromptIdle case.
+                    let readyEvent =
+                        OutputEvent.create
+                            SemanticCategory.ReadyForInput
+                            Priority.Background
+                            "shell-interaction-sub-prompt"
+                            ""
+                    OutputDispatcher.dispatch readyEvent
             | None ->
                 shellInteractionLog.LogDebug(
                     "ShellInteraction trigger no-op for current state: {State} --[{Trigger}]--",
@@ -1954,30 +2022,6 @@ module Program =
                 // user explicitly wants to inspect markers.
                 match tupleFinaliseAnnounce with
                 | Some text ->
-                    // Cycle 47 follow-up (2026-05-13) post-
-                    // preview.114 — trim the prefix that
-                    // idle-flush already announced for the
-                    // `set/p` failure mode: idle-flush had
-                    // spoken "Enter your text:" when cmd printed
-                    // the set/p prompt + paused, and the
-                    // tuple-finalise `OutputText` after the user
-                    // pressed Enter started with the same
-                    // prefix. Without the trim NVDA spoke it
-                    // twice.
-                    //
-                    // The check is exact StartsWith (not
-                    // longest-common-prefix or whitespace-
-                    // normalised) so it only fires when the
-                    // overlap is unambiguous. False-positive
-                    // cost: an idle-flush whose text happens to
-                    // be a prefix of the tuple's output loses
-                    // its second narration — acceptable because
-                    // the user already heard it. False-negative
-                    // cost: cmd reformats the line slightly (an
-                    // extra space, a CR-LF normalisation
-                    // difference) and the trim doesn't fire —
-                    // user hears the prefix twice, no worse
-                    // than pre-fix.
                     let trimmed =
                         if lastAnnouncedText.Length > 0
                            && text.StartsWith(lastAnnouncedText, StringComparison.Ordinal) then
@@ -2009,18 +2053,6 @@ module Program =
             window.Dispatcher.InvokeAsync(Action(boundaryAction))
             |> ignore
 
-            // Cycle 45 (2026-05-12) — ready-for-input earcon. When a
-            // tuple just sealed (a command actually completed, not
-            // just a prompt redraw), fire a `ReadyForInput`
-            // OutputEvent. The EarconProfile maps this to
-            // `ready-prompt` (1200Hz × 60ms chime); EarconChannel
-            // plays on a separate WASAPI stream, non-blocking, so
-            // NVDA's read-back of the OutputText (queued above via
-            // window.Dispatcher) is NOT interrupted — the chime and
-            // the speech play concurrently. Empty payload means
-            // NvdaChannel skips its decision (no double-up).
-            // Honours the existing View → Earcons → Enabled / Muted
-            // toggle (the channel itself short-circuits when muted).
             if finalisedOpt.IsSome then
                 let readyEvent =
                     OutputEvent.create
@@ -3741,98 +3773,29 @@ module Program =
                     // `ReadyForInput` earcon too — the user heard a
                     // beep AND a per-char read on every keystroke.
                     //
-                    // Gate: if the maintainer has typed within the
-                    // last 350 ms, skip the entire idle-flush body
-                    // — no announce, no earcon, no watermark
-                    // advance. The same window as the UIA
-                    // `materialise` typing suppression (PR #300).
-                    // When the user stops typing for ≥ 350 ms, the
-                    // next tick fires normally and announces the
-                    // accumulated cmd echo + output as one chunk.
-                    let lastKeystroke =
-                        window.TerminalSurface.LastKeystrokeAtUtc
-                    let typingActive =
-                        lastKeystroke <> DateTime.MinValue
-                        && (DateTime.UtcNow - lastKeystroke).TotalMilliseconds < 350.0
-                    if typingActive then
-                        // Silent skip; next tick re-evaluates.
-                        ()
-                    elif idleMs >= float thresholdMs then
-                        // Cycle 47 follow-up (2026-05-13, post-preview.113)
-                        // — force a `ContentHistory.tick` before
-                        // reading `latestSeq`. The active span
-                        // (text accumulated since the last
-                        // newline / Overwrite / marker) is NOT
-                        // visible to `latestSeq` until it seals;
-                        // `set /p` writes a prompt line WITHOUT a
-                        // trailing newline (e.g.
-                        // "Enter your name: "), so the active
-                        // span never seals, `latestSeq` never
-                        // advances, and idle-flush concludes
-                        // there's nothing to announce. `tick`
-                        // seals stale active spans whose last
-                        // append is older than the substrate's
-                        // staleness threshold, which then bumps
-                        // `latestSeq` so the slice path picks it
-                        // up. The 350 ms idle threshold and
-                        // ContentHistory's staleness window are
-                        // compatible — once idle-flush fires
-                        // (≥ 350 ms quiet) the active span is by
-                        // definition stale.
+                    // Cycle 48 PR-E (ADR 0003) — typing-window
+                    // gate + idle-flush announce body retired.
+                    // Sub-prompt detection happens via
+                    // ShellInteraction's trySubPromptDetect (run
+                    // earlier in this same tick) which fires
+                    // recordTransition → sub-prompt announce.
+                    // The legacy ContentHistory.tick + sliceText
+                    // + Announce path is gone; the tick stays
+                    // because it seals stale active spans (so
+                    // the rendered tail in the diagnostic
+                    // bundle stays current). The watermark
+                    // bumping below preserves the no-double-
+                    // talk invariant if any future legacy-path
+                    // query re-reads.
+                    if idleMs >= float thresholdMs then
                         ContentHistory.tick contentHistory DateTime.UtcNow
                         |> ignore
                         let latest = ContentHistory.latestSeq contentHistory
                         if latest > lastAnnouncedSeq then
-                            let text =
-                                ContentHistory.sliceText
-                                    contentHistory
-                                    lastAnnouncedSeq
-                                    (latest + 1L)
-                            if not (System.String.IsNullOrWhiteSpace text) then
-                                let toSay =
-                                    if text.Length <= OutputAnnounceCapChars then text
-                                    else
-                                        text.Substring(
-                                            text.Length - OutputAnnounceCapChars)
-                                log.LogInformation(
-                                    "Idle-flush announce. SliceFrom={From} SliceTo={To} IdleMs={Idle:F0} Threshold={Threshold} Length={Len}",
-                                    lastAnnouncedSeq,
-                                    latest,
-                                    idleMs,
-                                    thresholdMs,
-                                    toSay.Length)
-                                // No `raiseCaretMovedToTail ()`
-                                // call — see the matching comment
-                                // on the boundary-handler
-                                // tuple-finalise path. NVDA's
-                                // DocumentRange read picks up the
-                                // markers from
-                                // `tailTextWithMarkers`, which
-                                // the maintainer reported hearing
-                                // mid-narration during the
-                                // preview.113 dogfood. The
-                                // Announce above is the sole
-                                // audible path.
-                                window.TerminalSurface.Announce(
-                                    toSay, ActivityIds.output)
-                                lastAnnouncedText <- toSay
-                                // Cycle 47 follow-up (2026-05-13)
-                                // post-preview.116 — the
-                                // `ReadyForInput` earcon dispatch
-                                // that PR #302 added here was
-                                // reverted: it fired on every
-                                // single-character idle-flush
-                                // announce during typing, so the
-                                // user heard a beep per keystroke.
-                                // The earcon is now scoped to the
-                                // tuple-final boundary only (the
-                                // boundary-handler block above).
-                                // If `set/p` / `pause` still feel
-                                // mute, a distinct-from-tuple-
-                                // final earcon scoped to "cmd
-                                // emitted a prompt-like line but
-                                // no shell-prompt fired" is a
-                                // future option.
+                            // Advance the watermark silently so
+                            // future legacy-path queries (if any
+                            // remain) don't see the same bytes
+                            // twice once we re-enable.
                             lastAnnouncedSeq <- latest
                 | None -> ()
             with ex ->

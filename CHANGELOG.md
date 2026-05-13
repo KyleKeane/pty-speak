@@ -15,6 +15,53 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 48 PR-E (2026-05-13): announce routing — sub-prompt via state machine; SpeechCursor filters echo
+
+**Narrow scope** to keep the audible-UX risk small:
+
+- **Sub-prompt announce moves to the state machine.** When
+  `ShellInteraction` fires `SubPromptIdle` (transition [c]),
+  `recordTransition` reads `outcome.AccumulatedOutput`,
+  sanitises + trims + caps to `OutputAnnounceCapChars`, and
+  speaks it. Earcon `ReadyForInput` plays via
+  `OutputDispatcher`. This replaces the per-character
+  idle-flush chatter the maintainer reported in preview.117 —
+  the idle-flush announce body is now silent; only the
+  sub-prompt-idle transition fires speech for the
+  set/p / pause / choice case.
+- **Regular tuple-final announce unchanged.** The
+  `PromptDetected` transition (transition [b]) does NOT drive
+  the announce — `SessionModel.applyAndCapture` →
+  `tuple.OutputText` → boundaryAction's existing
+  Cycle-22b-onwards path keeps that responsibility. Reason:
+  the SessionModel extracts clean OutputText from screen rows
+  (no command echo, no next-prompt path leakage); the
+  state-machine accumulator includes those messy bytes and
+  wouldn't be a drop-in replacement.
+- **SpeechCursor filters `UserInputEcho` entries** in both
+  AutoDrive AND Manual navigation per ADR §9.6 resolution.
+  `renderEntryWithPolicy` returns `None` whenever
+  `entry.Source = UserInputEcho`. The user never hears their
+  own typed echo via SpeechCursor even when navigating
+  manually.
+- **Idle-flush announce body retired.** The
+  `ContentHistory.tick` call stays (seals stale active spans
+  for the diagnostic-bundle tail) and the watermark advances,
+  but no Announce fires from idle-flush anymore. The legacy
+  PR #305 typing-window gate is also gone (made moot by the
+  body removal).
+
+Deferred to PR-F (closure audit) or a follow-up:
+- Removing the now-unused `tupleFinaliseAnnounce` prefix-trim
+  machinery (left in source as a defence-in-depth path; if
+  PR-E proves robust under dogfood, PR-F deletes it).
+- UIA materialiser substituting `UserInputBuffer` for the
+  active TextSpan during Composing (the screen ↔ review-
+  cursor parity refinement).
+- Removing the PR #300 materialiser typing-window gate.
+
+Matrix rows Cycle 48-E1 → 48-E8 added.
+
 ### Cycle 48 PR-D (2026-05-13): `UserInputBuffer` byte-stream wiring
 
 Implements ADR 0003 §5.1's `UserInputBuffer` as a self-locked
