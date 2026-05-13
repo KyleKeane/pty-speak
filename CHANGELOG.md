@@ -15,6 +15,46 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 47 follow-up (2026-05-13, post-preview.114): tuple-final prefix-trim against last-announced text
+
+**Symptom (test-02 dogfood)**: with the test corpus's `set /p var=Enter your text:` step, the maintainer heard:
+
+1. Idle-flush announces `"Enter your text:"` (cmd printed the
+   set/p prompt then paused waiting for input).
+2. Maintainer types `"foo"` + Enter.
+3. Tuple-finalise announces `"Enter your text: foo"` — the
+   already-spoken prefix gets read aloud again, then the
+   echoed input the maintainer just typed gets re-spoken.
+
+**Root cause**: idle-flush updated a substrate-seq watermark
+(`lastAnnouncedSeq`) to track "what's been said". But
+`tuple.OutputText` is curated from screen rows by SessionModel,
+not from ContentHistory seqs — there's no seq-level mapping back
+to "where in OutputText did we already speak up to?" An earlier
+attempt to seq-slice the tuple-final text picked up the next
+prompt's path bytes (Cycle 47-post-preview.113 revert), so the
+last-shipped state announces the full `OutputText` every time.
+
+**Fix**: add a companion text watermark
+(`lastAnnouncedText`) updated alongside `lastAnnouncedSeq` on
+every Announce. At tuple-finalise time, if
+`tuple.OutputText.StartsWith(lastAnnouncedText)` exactly, trim
+the prefix and announce only the suffix; if the suffix is
+whitespace-only, suppress the announce entirely. Reset to `""`
+on shell hot-switch alongside the seq reset.
+
+Exact `StartsWith` (rather than longest-common-prefix or
+whitespace-normalised matching) keeps the trim conservative —
+fires only when the overlap is unambiguous. False-positive cost:
+an idle-flush whose text happens to be a prefix of the tuple's
+output loses its second narration (acceptable, already heard).
+False-negative cost: cmd reformats the line slightly (extra
+space, CR/LF normalisation difference) and the trim doesn't
+fire — user hears the prefix twice, no worse than pre-fix.
+
+Matrix row Cycle 47-23 covers the test-02 dogfood replay
+suppression.
+
 ### Cycle 47 follow-up (2026-05-13, post-preview.114): typing-window UIA suppression + Announce content logging
 
 **Symptom**: maintainer reported NVDA reading aloud each accreting
