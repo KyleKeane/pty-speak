@@ -21,6 +21,14 @@ open Terminal.Core
 // breaking-change concern.
 [<assembly: System.Runtime.CompilerServices.InternalsVisibleTo("PtySpeak.Views")>]
 [<assembly: System.Runtime.CompilerServices.InternalsVisibleTo("PtySpeak.Tests.Unit")>]
+// Cycle 46 PR-C — Terminal.App needs to call
+// `TerminalAutomationPeer.RaiseCaretMovedToTail` on tuple
+// finalise (replaces the previous
+// `Announce(text, ActivityIds.output)` notification path). The
+// peer type stays `internal`; the assembly attribute opens the
+// surface to the composition root without widening the public
+// API.
+[<assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Terminal.App")>]
 do ()
 
 /// Stage 4 — UIA peer that exposes `TerminalView` to the WPF
@@ -379,6 +387,41 @@ type internal TerminalAutomationPeer
             // kinds (e.g. multi-select pickers) land here without
             // throwing.
             ()
+
+    /// Cycle 46 PR-C — channel-side caret advance. Called from
+    /// `Program.fs`'s boundary handler on tuple finalise
+    /// (replaces the previous
+    /// `Announce(text, ActivityIds.output, MostRecent)`
+    /// notification). Raises
+    /// `AutomationEvents.TextPatternOnTextSelectionChanged` on
+    /// this peer so NVDA's native "read from caret" path picks
+    /// up the new `ContentHistory` tail.
+    ///
+    /// The WPF enum name is verbose but precise: the
+    /// `TextPatternOn*` prefix marks it as belonging to the
+    /// UIA Text-pattern event family (the underlying UIA
+    /// event ID is `TextPattern.TextSelectionChangedEvent`;
+    /// WPF prefixes the enum name to keep it distinct from
+    /// `LegacyIAccessibleSelectionChanged` etc.).
+    ///
+    /// Why no offset / text argument: UIA's event signature is
+    /// fire-and-forget. The listening client (NVDA) queries the
+    /// provider for the new state. Our
+    /// `ContentHistoryTextProvider` re-materialises on each
+    /// `DocumentRange` call, so NVDA always sees the latest
+    /// tail without us threading content through the event.
+    ///
+    /// Must be called on the WPF dispatcher thread (per the
+    /// `AutomationPeer.RaiseAutomationEvent` contract). The
+    /// existing boundary handler in `Program.fs` is already
+    /// inside `window.Dispatcher.InvokeAsync` so the dispatch
+    /// requirement is satisfied at the call site.
+    ///
+    /// See `docs/adr/0002-uia-textedit-caret-output.md` and
+    /// `docs/CYCLE-46-NEXT-STEPS.md` §2.
+    member this.RaiseCaretMovedToTail() =
+        this.RaiseAutomationEvent(
+            AutomationEvents.TextPatternOnTextSelectionChanged)
 
     /// Add the Text pattern to this peer. For every other
     /// pattern interface we defer to the base implementation
