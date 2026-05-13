@@ -916,6 +916,21 @@ module Program =
         // `ContentHistory.reset` call site in `switchToShell`).
         let mutable lastAnnouncedSeq : int64 = -1L
 
+        // Cycle 47 follow-up (2026-05-13) post-preview.114 —
+        // companion text watermark: the most recent string this
+        // process asked NVDA to read (capped at
+        // `OutputAnnounceCapChars`; preview only). Used at
+        // tuple-finalise time to trim the prefix of
+        // `tuple.OutputText` that the idle-flush watermark
+        // already announced — the test-02 `set/p` failure mode
+        // where the user heard "Enter your text:" via idle-flush
+        // and then heard "Enter your text: foo" again at
+        // tuple-final after pressing Enter. Seq-based slicing
+        // (the earlier approach) couldn't solve this because
+        // `tuple.OutputText` is curated from screen rows, not
+        // ContentHistory seqs. Resets to "" on shell hot-switch.
+        let mutable lastAnnouncedText : string = ""
+
         // Cycle 45 Commit 2 — SpeechCursor announce callback +
         // "wake up" trigger. Defined here (very early in compose)
         // so the prompt-boundary handler and the selection-
@@ -1868,16 +1883,56 @@ module Program =
                 // user explicitly wants to inspect markers.
                 match tupleFinaliseAnnounce with
                 | Some text ->
-                    let toSay =
-                        if text.Length <= OutputAnnounceCapChars then text
-                        else text.Substring(text.Length - OutputAnnounceCapChars)
-                    if toSay.Length < text.Length then
+                    // Cycle 47 follow-up (2026-05-13) post-
+                    // preview.114 — trim the prefix that
+                    // idle-flush already announced for the
+                    // `set/p` failure mode: idle-flush had
+                    // spoken "Enter your text:" when cmd printed
+                    // the set/p prompt + paused, and the
+                    // tuple-finalise `OutputText` after the user
+                    // pressed Enter started with the same
+                    // prefix. Without the trim NVDA spoke it
+                    // twice.
+                    //
+                    // The check is exact StartsWith (not
+                    // longest-common-prefix or whitespace-
+                    // normalised) so it only fires when the
+                    // overlap is unambiguous. False-positive
+                    // cost: an idle-flush whose text happens to
+                    // be a prefix of the tuple's output loses
+                    // its second narration — acceptable because
+                    // the user already heard it. False-negative
+                    // cost: cmd reformats the line slightly (an
+                    // extra space, a CR-LF normalisation
+                    // difference) and the trim doesn't fire —
+                    // user hears the prefix twice, no worse
+                    // than pre-fix.
+                    let trimmed =
+                        if lastAnnouncedText.Length > 0
+                           && text.StartsWith(lastAnnouncedText, StringComparison.Ordinal) then
+                            text.Substring(lastAnnouncedText.Length)
+                        else
+                            text
+                    if System.String.IsNullOrWhiteSpace trimmed then
                         log.LogInformation(
-                            "Tuple-final announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
-                            text.Length, toSay.Length, OutputAnnounceCapChars)
-                    log.LogInformation(
-                        "Tuple-final announce. Length={Len}", toSay.Length)
-                    window.TerminalSurface.Announce(toSay, ActivityIds.output)
+                            "Tuple-final announce suppressed (prefix already announced). OriginalLen={Orig} LastAnnouncedLen={Last}",
+                            text.Length, lastAnnouncedText.Length)
+                    else
+                        let toSay =
+                            if trimmed.Length <= OutputAnnounceCapChars then trimmed
+                            else trimmed.Substring(trimmed.Length - OutputAnnounceCapChars)
+                        if toSay.Length < trimmed.Length then
+                            log.LogInformation(
+                                "Tuple-final announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
+                                trimmed.Length, toSay.Length, OutputAnnounceCapChars)
+                        if trimmed.Length < text.Length then
+                            log.LogInformation(
+                                "Tuple-final prefix trim. OriginalLen={Orig} TrimmedLen={Trim} LastAnnouncedLen={Last}",
+                                text.Length, trimmed.Length, lastAnnouncedText.Length)
+                        log.LogInformation(
+                            "Tuple-final announce. Length={Len}", toSay.Length)
+                        window.TerminalSurface.Announce(toSay, ActivityIds.output)
+                        lastAnnouncedText <- toSay
                     lastAnnouncedSeq <- ContentHistory.latestSeq contentHistory
                 | None -> ()
             window.Dispatcher.InvokeAsync(Action(boundaryAction))
@@ -3646,6 +3701,7 @@ module Program =
                                 // audible path.
                                 window.TerminalSurface.Announce(
                                     toSay, ActivityIds.output)
+                                lastAnnouncedText <- toSay
                             lastAnnouncedSeq <- latest
                 | None -> ()
             with ex ->
@@ -4031,6 +4087,7 @@ module Program =
                                         // output would silently
                                         // skip narration.
                                         lastAnnouncedSeq <- -1L
+                                        lastAnnouncedText <- ""
                                         // Cycle 45f — apply the
                                         // new shell's verbosity
                                         // policy through the
