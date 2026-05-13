@@ -393,9 +393,16 @@ type internal TerminalAutomationPeer
     /// (replaces the previous
     /// `Announce(text, ActivityIds.output, MostRecent)`
     /// notification). Raises
-    /// `AutomationEvents.TextSelectionChanged` on this peer so
-    /// NVDA's native "read from caret" path picks up the new
-    /// `ContentHistory` tail.
+    /// `AutomationEvents.TextPatternOnTextSelectionChanged` on
+    /// this peer so NVDA's native "read from caret" path picks
+    /// up the new `ContentHistory` tail.
+    ///
+    /// The WPF enum name is verbose but precise: the
+    /// `TextPatternOn*` prefix marks it as belonging to the
+    /// UIA Text-pattern event family (the underlying UIA
+    /// event ID is `TextPattern.TextSelectionChangedEvent`;
+    /// WPF prefixes the enum name to keep it distinct from
+    /// `LegacyIAccessibleSelectionChanged` etc.).
     ///
     /// Why no offset / text argument: UIA's event signature is
     /// fire-and-forget. The listening client (NVDA) queries the
@@ -413,7 +420,8 @@ type internal TerminalAutomationPeer
     /// See `docs/adr/0002-uia-textedit-caret-output.md` and
     /// `docs/CYCLE-46-NEXT-STEPS.md` §2.
     member this.RaiseCaretMovedToTail() =
-        this.RaiseAutomationEvent(AutomationEvents.TextSelectionChanged)
+        this.RaiseAutomationEvent(
+            AutomationEvents.TextPatternOnTextSelectionChanged)
 
     /// Add the Text pattern to this peer. For every other
     /// pattern interface we defer to the base implementation
