@@ -1,6 +1,7 @@
 module PtySpeak.Tests.Unit.ContentHistoryTextRangeTests
 
 open System
+open System.Text
 open System.Windows.Automation.Provider
 open System.Windows.Automation.Text
 open Xunit
