@@ -870,8 +870,18 @@ module Diagnostics =
             |> Map.ofArray
         let tally (kind: ContentHistory.MarkerKind) : int =
             Map.tryFind kind markerCounts |> Option.defaultValue 0
+        // Cycle 48 PR-C — per-source counts. Lets paste-back
+        // triage answer "did the substrate classify each byte
+        // correctly?" without scrolling the 64 KB tail.
+        let sourceCounts =
+            entries
+            |> Array.map ContentHistory.entrySource
+            |> Array.countBy id
+            |> Map.ofArray
+        let sourceTally (src: ContentHistory.EntrySource) : int =
+            Map.tryFind src sourceCounts |> Option.defaultValue 0
         sprintf
-            "Stats: entries=%d latestSeq=%d PromptStart=%d CommandStart=%d OutputStart=%d CommandFinished=%d BellRang=%d SelectionShown=%d AltScreenEnter=%d"
+            "Stats: entries=%d latestSeq=%d PromptStart=%d CommandStart=%d OutputStart=%d CommandFinished=%d BellRang=%d SelectionShown=%d AltScreenEnter=%d | Sources: UserInputEcho=%d CmdOutput=%d CmdSubPrompt=%d ShellPrompt=%d Marker=%d Unknown=%d"
             entryCount
             latestSeq
             (tally ContentHistory.MarkerKind.PromptStart)
@@ -881,6 +891,12 @@ module Diagnostics =
             (tally ContentHistory.MarkerKind.BellRang)
             (tally ContentHistory.MarkerKind.SelectionShown)
             (tally ContentHistory.MarkerKind.AltScreenEnter)
+            (sourceTally ContentHistory.EntrySource.UserInputEcho)
+            (sourceTally ContentHistory.EntrySource.CmdOutput)
+            (sourceTally ContentHistory.EntrySource.CmdSubPrompt)
+            (sourceTally ContentHistory.EntrySource.ShellPrompt)
+            (sourceTally ContentHistory.EntrySource.Marker)
+            (sourceTally ContentHistory.EntrySource.Unknown)
 
     // ---------------------------------------------------------------
     // Cycle 25b — diagnostic-dump bundle

@@ -361,7 +361,8 @@ let ``renderEntry returns the TextSpan text on the output activity id`` () =
             { Seq = 0L
               Text = "hello"
               StartedAt = t0
-              SettledAt = t0 }
+              SettledAt = t0
+              Source = ContentHistory.EntrySource.Unknown }
     match SpeechCursor.renderEntry span with
     | Some (text, activityId) ->
         Assert.Equal("hello", text)
@@ -375,12 +376,17 @@ let ``renderEntry returns None for empty TextSpan`` () =
             { Seq = 0L
               Text = ""
               StartedAt = t0
-              SettledAt = t0 }
+              SettledAt = t0
+              Source = ContentHistory.EntrySource.Unknown }
     Assert.Equal(None, SpeechCursor.renderEntry span)
 
 [<Fact>]
 let ``renderEntry returns None for Newline`` () =
-    let nl = ContentHistory.Newline { Seq = 0L; At = t0 }
+    let nl =
+        ContentHistory.Newline
+            { Seq = 0L
+              At = t0
+              Source = ContentHistory.EntrySource.Unknown }
     Assert.Equal(None, SpeechCursor.renderEntry nl)
 
 [<Fact>]
@@ -390,7 +396,8 @@ let ``renderEntry returns mode activity for AltScreenEnter`` () =
             { Seq = 0L
               Kind = ContentHistory.MarkerKind.AltScreenEnter
               At = t0
-              Payload = None }
+              Payload = None
+              Source = ContentHistory.EntrySource.Marker }
     match SpeechCursor.renderEntry m with
     | Some (_, activityId) -> Assert.Equal(ActivityIds.mode, activityId)
     | None -> Assert.Fail("expected announce for AltScreenEnter")
@@ -402,7 +409,8 @@ let ``renderEntry returns selection announce for SelectionShown with payload`` (
             { Seq = 0L
               Kind = ContentHistory.MarkerKind.SelectionShown
               At = t0
-              Payload = Some "Edit, Yes, Always, No" }
+              Payload = Some "Edit, Yes, Always, No"
+              Source = ContentHistory.EntrySource.Marker }
     match SpeechCursor.renderEntry m with
     | Some (text, _) ->
         Assert.Contains("Selection prompt", text)
@@ -418,7 +426,8 @@ let private promptMarker (payload: string option) : ContentHistory.Entry =
         { Seq = 0L
           Kind = ContentHistory.MarkerKind.PromptStart
           At = t0
-          Payload = payload }
+          Payload = payload
+          Source = ContentHistory.EntrySource.Marker }
 
 [<Fact>]
 let ``PromptStart under Suppress returns None`` () =

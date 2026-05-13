@@ -34,6 +34,41 @@ open System.Text
 /// pipeline.
 module ContentHistory =
 
+    /// Cycle 48 PR-C (ADR 0003 §9.5) — provenance tag on every
+    /// `Entry`. Defined here (substrate-level) rather than in
+    /// `ShellInteraction` because every Entry carries one and
+    /// `ContentHistory` is upstream of the state machine in
+    /// the compile order.
+    ///
+    /// The tag is set at append time by reading the current
+    /// `InteractionState` via `setSourceResolver` (a delegate
+    /// the composition root provides). Pre-state-machine
+    /// entries get `Unknown`. Markers get `Marker`
+    /// unconditionally.
+    [<RequireQualifiedAccess>]
+    type EntrySource =
+        /// Cmd's echo of bytes the user typed (or the
+        /// diagnostic battery wrote). Suppressed from
+        /// announces and SpeechCursor navigation.
+        | UserInputEcho
+        /// Bytes cmd produced as command output during
+        /// `Executing`. Announced + navigable.
+        | CmdOutput
+        /// Bytes cmd produced as a sub-prompt (set/p, pause,
+        /// choice). Announced; sub-prompt detector marked the
+        /// transition.
+        | CmdSubPrompt
+        /// The shell's PS1 / prompt path bytes.
+        | ShellPrompt
+        /// A semantic boundary marker entry. Not text;
+        /// always navigable in the review cursor.
+        | Marker
+        /// Pre-state-machine fallback. Entries that landed
+        /// before the resolver was wired (or while the
+        /// resolver returned an unresolvable state) get this
+        /// value.
+        | Unknown
+
     /// Discrete semantic events that detectors emit into the
     /// history. The set is intentionally open-ended via `Custom`
     /// — new canonical interaction modes (per the Cycle 45 plan's
@@ -80,18 +115,22 @@ module ContentHistory =
     /// One sealed `TextSpan` of printable text accumulated from
     /// a contiguous run of `Print` events. Sealing triggers:
     /// newline, marker insertion, idle window, or overwrite.
+    /// `Source` per Cycle 48 PR-C (ADR 0003 §9.5).
     type TextSpanData =
         { Seq: int64
           Text: string
           StartedAt: DateTime
-          SettledAt: DateTime }
+          SettledAt: DateTime
+          Source: EntrySource }
 
     /// A newline boundary in the active tuple's output. Carries
     /// only the seq + timestamp; the actual `\n` byte is logically
-    /// at the end of the preceding TextSpan.
+    /// at the end of the preceding TextSpan. `Source` per Cycle
+    /// 48 PR-C.
     type NewlineData =
         { Seq: int64
-          At: DateTime }
+          At: DateTime
+          Source: EntrySource }
 
     /// An in-place overwrite of a prior `TextSpan`. The
     /// `ReplacesSeq` points at the TextSpan whose visible position
@@ -99,22 +138,26 @@ module ContentHistory =
     /// (e.g. spinner frames, progress bar updates) are represented
     /// — they DO NOT mutate the prior TextSpan. The history is
     /// strictly append-only; "what was already spoken" remains
-    /// addressable by its Seq.
+    /// addressable by its Seq. `Source` per Cycle 48 PR-C.
     type OverwriteData =
         { Seq: int64
           ReplacesSeq: int64
           Text: string
-          At: DateTime }
+          At: DateTime
+          Source: EntrySource }
 
     /// A semantic event emitted by a detector or by the substrate
     /// itself. The `Payload` is optional — most markers carry only
     /// their kind, but some (e.g. `SelectionShown` carrying the
-    /// option list) need additional data.
+    /// option list) need additional data. Markers always have
+    /// `Source = EntrySource.Marker`; field included for shape
+    /// uniformity with the other Data records.
     type MarkerData =
         { Seq: int64
           Kind: MarkerKind
           At: DateTime
-          Payload: string option }
+          Payload: string option
+          Source: EntrySource }
 
     /// A coalesced sequence of `Overwrite` entries that cycle
     /// through a small set of glyph patterns at high frequency —
@@ -122,13 +165,15 @@ module ContentHistory =
     /// single entry so SpeechCursor can skip them in AutoDrive
     /// mode without N redundant announces. Detection is deferred
     /// to a follow-up (Commit 2 or later); the entry shape ships
-    /// in Commit 1 so the data model is complete.
+    /// in Commit 1 so the data model is complete. `Source` per
+    /// Cycle 48 PR-C.
     type SpinnerData =
         { Seq: int64
           LatestText: string
           FrameCount: int
           FirstAt: DateTime
-          LastAt: DateTime }
+          LastAt: DateTime
+          Source: EntrySource }
 
     /// The complete entry taxonomy. Order of cases doesn't matter
     /// for correctness; this listing matches the canonical
@@ -221,12 +266,49 @@ module ContentHistory =
         /// meaning beyond "did the cursor change row between
         /// successive events?"
         member val internal LogicalCursorRow: int = 0 with get, set
+        /// Cycle 48 PR-C — source-resolver delegate. The
+        /// composition root sets this via `setSourceResolver`
+        /// after the `ShellInteraction.State` is constructed.
+        /// Returns the `EntrySource` to tag non-marker entries
+        /// with; called once per append-from-event under the
+        /// gate. Defaults to `ValueNone` → `EntrySource.Unknown`.
+        member val internal SourceResolver: (unit -> EntrySource) voption =
+            ValueNone with get, set
 
     /// Construct a fresh ContentHistory bound to the supplied
     /// parameters. Caller binds the result to a `mutable` cell at
     /// the composition root.
     let create (parameters: Parameters) : T =
         T(parameters)
+
+    /// Cycle 48 PR-C — wire the source-resolver delegate. The
+    /// composition root calls this after constructing both
+    /// `ContentHistory` and `ShellInteraction.State`. The
+    /// delegate reads `ShellInteraction.State.Current` and maps
+    /// it to an `EntrySource`. Without this call, all entries
+    /// get `EntrySource.Unknown` (acceptable for tests + early
+    /// startup; live sessions wire it).
+    let setSourceResolver
+            (state: T) (resolver: unit -> EntrySource) : unit =
+        lock state.Gate (fun () ->
+            state.SourceResolver <- ValueSome resolver)
+
+    /// Resolve the source via the delegate; default to
+    /// `Unknown` if unset.
+    let private resolveSource (state: T) : EntrySource =
+        match state.SourceResolver with
+        | ValueSome f ->
+            try f () with _ -> EntrySource.Unknown
+        | ValueNone -> EntrySource.Unknown
+
+    /// Accessor: every entry has a Source.
+    let entrySource (e: Entry) : EntrySource =
+        match e with
+        | TextSpan d -> d.Source
+        | Newline d -> d.Source
+        | Overwrite d -> d.Source
+        | Marker d -> d.Source
+        | Spinner d -> d.Source
 
     /// Total entry count. Includes the unsealed active TextSpan
     /// only AFTER it seals (it's not in `Entries` while active).
@@ -502,7 +584,8 @@ module ContentHistory =
                     { Seq = nextSeq state
                       Text = state.ActiveSpanText.ToString()
                       StartedAt = startedAt
-                      SettledAt = at }
+                      SettledAt = at
+                      Source = resolveSource state }
             state.ActiveSpanText.Clear() |> ignore
             state.ActiveSpanStartedAt <- ValueNone
             state.Entries.Add(entry)
@@ -540,7 +623,8 @@ module ContentHistory =
                             { Seq = nextSeq state
                               ReplacesSeq = replacesSeq
                               Text = "" // Filled by subsequent Print events into a fresh span; the Overwrite marker just records the boundary
-                              At = now }
+                              At = now
+                              Source = resolveSource state }
                     state.Entries.Add(entry)
                     [ sealed'; entry ]
             | _ ->
@@ -579,7 +663,8 @@ module ContentHistory =
                             { Seq = nextSeq state
                               ReplacesSeq = entrySeq sealed'
                               Text = ""
-                              At = now }
+                              At = now
+                              Source = resolveSource state }
                     state.Entries.Add(entry)
                     [ sealed'; entry ]
 
@@ -682,7 +767,7 @@ module ContentHistory =
                     match sealActiveSpan state now with
                     | Some sealed' ->
                         let nl =
-                            Newline { Seq = nextSeq state; At = now }
+                            Newline { Seq = nextSeq state; At = now; Source = resolveSource state }
                         state.Entries.Add(nl)
                         [ sealed'; nl ]
                     | None -> []
@@ -707,7 +792,7 @@ module ContentHistory =
                     // Newline entry.
                     let sealedEntry = sealActiveSpan state now
                     let nlEntry =
-                        Newline { Seq = nextSeq state; At = now }
+                        Newline { Seq = nextSeq state; At = now; Source = resolveSource state }
                     state.Entries.Add(nlEntry)
                     match sealedEntry with
                     | Some e -> [ e; nlEntry ]
@@ -725,7 +810,8 @@ module ContentHistory =
                             { Seq = nextSeq state
                               Kind = MarkerKind.BellRang
                               At = now
-                              Payload = None }
+                              Payload = None
+                              Source = EntrySource.Marker }
                     state.Entries.Add(bellEntry)
                     match sealedEntry with
                     | Some e -> [ e; bellEntry ]
@@ -766,7 +852,8 @@ module ContentHistory =
                     { Seq = nextSeq state
                       Kind = kind
                       At = at
-                      Payload = payload }
+                      Payload = payload
+                      Source = EntrySource.Marker }
             state.Entries.Add(markerEntry)
             match sealedEntry with
             | Some e -> [ e; markerEntry ]

@@ -961,6 +961,17 @@ module Program =
                     ShellInteraction.describeState shellInteraction.Current,
                     ShellInteraction.describeTrigger trigger)
 
+        // Cycle 48 PR-C — wire ContentHistory's source-resolver
+        // delegate to read the current ShellInteraction state.
+        // appendFromEvent + Marker constructions consult this
+        // closure on every entry so the resulting Entry.Source
+        // reflects whether bytes arrived during Composing
+        // (UserInputEcho) or Executing (CmdOutput).
+        ContentHistory.setSourceResolver
+            contentHistory
+            (fun () ->
+                ShellInteraction.entrySourceFor shellInteraction.Current)
+
         // Cycle 47 follow-up (2026-05-13) post-preview.114 —
         // companion text watermark: the most recent string this
         // process asked NVDA to read (capped at
