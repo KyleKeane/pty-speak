@@ -81,6 +81,96 @@ module ShellInteraction =
         | Executing _ ->
             ContentHistory.EntrySource.CmdOutput
 
+    /// Cycle 48 PR-D (ADR 0003 §5.1) — canonical record of the
+    /// in-progress command line the user is composing. Updated
+    /// at byte-write time (in the `writePtyBytes` wrapper) per
+    /// the simplified MVP design: printable ASCII (0x20–0x7E)
+    /// → AppendChar; BS (0x08) → Backspace; CR (0x0D) →
+    /// Capture + clear (the captured text is the
+    /// `EnterPressed` transition's `submittedCommand`).
+    ///
+    /// Self-locked. The keyboard pipeline runs on the WPF UI
+    /// thread; the byte-write wrapper that drives the buffer
+    /// runs on the UI thread too. Including the lock anyway so
+    /// any future cross-thread reader (e.g., the UIA Text-
+    /// pattern materialiser substituting buffer content for
+    /// the active TextSpan in PR-E) is safe.
+    ///
+    /// The arrow / Home / End / Tab / paste cases are NOT
+    /// handled in PR-D's byte-stream-driven implementation —
+    /// arrow keys send escape sequences that the simple
+    /// printable-ASCII filter ignores; paste sends bytes that
+    /// land in the buffer one-by-one (acceptable for plain
+    /// pastes; multi-line pastes with embedded `\r` will
+    /// trigger multiple Capture calls, one per line). Refining
+    /// to true key-level tracking is deferred to a future
+    /// cycle (would require routing the `KeyCode` through to
+    /// the buffer in addition to the encoded bytes).
+    type UserInputBuffer() =
+        let gate : obj = obj ()
+        let chars = ResizeArray<char>()
+        let mutable cursorIndex = 0
+
+        member _.Count = lock gate (fun () -> chars.Count)
+
+        member _.CursorIndex = lock gate (fun () -> cursorIndex)
+
+        /// Snapshot of the current buffer contents. Doesn't
+        /// mutate the buffer.
+        member _.Snapshot () : string =
+            lock gate (fun () -> System.String(chars.ToArray()))
+
+        /// Insert `c` at the cursor, advance cursor by one.
+        member _.AppendChar (c : char) : unit =
+            lock gate (fun () ->
+                if cursorIndex >= chars.Count then
+                    chars.Add(c)
+                else
+                    chars.Insert(cursorIndex, c)
+                cursorIndex <- cursorIndex + 1)
+
+        /// Remove the char before the cursor; decrement cursor.
+        /// No-op at start of buffer.
+        member _.Backspace () : unit =
+            lock gate (fun () ->
+                if cursorIndex > 0 then
+                    chars.RemoveAt(cursorIndex - 1)
+                    cursorIndex <- cursorIndex - 1)
+
+        /// Remove the char at the cursor (forward delete). No-op
+        /// at end of buffer.
+        member _.Delete () : unit =
+            lock gate (fun () ->
+                if cursorIndex < chars.Count then
+                    chars.RemoveAt(cursorIndex))
+
+        /// Move the cursor by `delta` (positive = right). Clamps
+        /// to `[0, Count]`.
+        member _.MoveCursor (delta : int) : unit =
+            lock gate (fun () ->
+                cursorIndex <- max 0 (min chars.Count (cursorIndex + delta)))
+
+        /// Jump cursor to a specific index. Clamps to `[0, Count]`.
+        member _.JumpTo (index : int) : unit =
+            lock gate (fun () ->
+                cursorIndex <- max 0 (min chars.Count index))
+
+        /// Capture-and-clear: return the current buffer text
+        /// and reset the buffer. Called from the `writePtyBytes`
+        /// wrapper when it sees `0x0D` (Enter / submit).
+        member _.Capture () : string =
+            lock gate (fun () ->
+                let text = System.String(chars.ToArray())
+                chars.Clear()
+                cursorIndex <- 0
+                text)
+
+        /// Reset to empty state. Called on shell hot-switch.
+        member _.Reset () : unit =
+            lock gate (fun () ->
+                chars.Clear()
+                cursorIndex <- 0)
+
     /// External signal types. Each transition is named after
     /// the event that drove it, not the state it goes to.
     type Transition =
@@ -136,6 +226,14 @@ module ShellInteraction =
         let mutable lastByteAt : DateTime = DateTime.MinValue
         let mutable lastByteWasLf : bool = false
         let mutable hadAnyBytesThisExecuting : bool = false
+        // Cycle 48 PR-D — the UserInputBuffer that captures
+        // what the user is composing. Self-locked. Lives at
+        // State scope (not inside ComposingData) so the same
+        // instance persists across Composing → Executing →
+        // Composing transitions; transitions don't recreate
+        // it. The buffer is cleared on shell hot-switch via
+        // State.Reset.
+        let userInputBuffer = UserInputBuffer()
         let mutable subPromptAccumulator : System.Text.StringBuilder =
             System.Text.StringBuilder()
 
@@ -167,6 +265,12 @@ module ShellInteraction =
 
         member _.SubPromptAccumulator = subPromptAccumulator
 
+        /// Cycle 48 PR-D — the in-progress command line being
+        /// composed. Self-locked. See `UserInputBuffer`'s
+        /// docstring for the byte-stream-driven update model
+        /// the `writePtyBytes` wrapper uses.
+        member _.UserInputBuffer = userInputBuffer
+
         /// Reset on shell hot-switch. The new shell's state
         /// starts fresh — `Composing` with no prompt text and
         /// no carried-over byte timing.
@@ -181,7 +285,8 @@ module ShellInteraction =
                 lastByteAt <- DateTime.MinValue
                 lastByteWasLf <- false
                 hadAnyBytesThisExecuting <- false
-                subPromptAccumulator.Clear() |> ignore)
+                subPromptAccumulator.Clear() |> ignore
+                userInputBuffer.Reset())
 
     /// Per §9.4 (resolved 2026-05-13) — auto-detect single-key
     /// submit prompts. Two cases for the MVP:

@@ -354,3 +354,110 @@ let ``describeTrigger produces non-empty single-line text for each variant`` () 
         let s = ShellInteraction.describeTrigger t
         Assert.False(String.IsNullOrEmpty s)
         Assert.DoesNotContain("\n", s)
+
+// ---------------------------------------------------------------------
+// UserInputBuffer (Cycle 48 PR-D)
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``UserInputBuffer starts empty`` () =
+    let b = ShellInteraction.UserInputBuffer()
+    Assert.Equal(0, b.Count)
+    Assert.Equal(0, b.CursorIndex)
+    Assert.Equal("", b.Snapshot())
+
+[<Fact>]
+let ``AppendChar inserts at cursor and advances`` () =
+    let b = ShellInteraction.UserInputBuffer()
+    b.AppendChar('e')
+    b.AppendChar('c')
+    b.AppendChar('h')
+    b.AppendChar('o')
+    Assert.Equal(4, b.Count)
+    Assert.Equal(4, b.CursorIndex)
+    Assert.Equal("echo", b.Snapshot())
+
+[<Fact>]
+let ``Backspace removes char before cursor`` () =
+    let b = ShellInteraction.UserInputBuffer()
+    "echi" |> Seq.iter b.AppendChar
+    b.Backspace()  // remove 'i'
+    b.AppendChar('o')
+    Assert.Equal("echo", b.Snapshot())
+    Assert.Equal(4, b.CursorIndex)
+
+[<Fact>]
+let ``Backspace at start is no-op`` () =
+    let b = ShellInteraction.UserInputBuffer()
+    b.Backspace()
+    Assert.Equal(0, b.Count)
+    Assert.Equal(0, b.CursorIndex)
+
+[<Fact>]
+let ``MoveCursor and AppendChar at non-end inserts`` () =
+    let b = ShellInteraction.UserInputBuffer()
+    "echo".ToCharArray() |> Array.iter b.AppendChar
+    b.MoveCursor(-1)  // cursor between 'h' and 'o' (index 3)
+    b.AppendChar('X')
+    Assert.Equal("echXo", b.Snapshot())
+    Assert.Equal(4, b.CursorIndex)
+
+[<Fact>]
+let ``Delete removes char at cursor`` () =
+    let b = ShellInteraction.UserInputBuffer()
+    "echo".ToCharArray() |> Array.iter b.AppendChar
+    b.MoveCursor(-1)  // cursor between 'h' and 'o' (index 3)
+    b.Delete()  // removes 'o'
+    Assert.Equal("ech", b.Snapshot())
+    Assert.Equal(3, b.CursorIndex)
+
+[<Fact>]
+let ``MoveCursor clamps at boundaries`` () =
+    let b = ShellInteraction.UserInputBuffer()
+    "abc".ToCharArray() |> Array.iter b.AppendChar
+    b.MoveCursor(-100)
+    Assert.Equal(0, b.CursorIndex)
+    b.MoveCursor(100)
+    Assert.Equal(3, b.CursorIndex)
+
+[<Fact>]
+let ``JumpTo Home and End`` () =
+    let b = ShellInteraction.UserInputBuffer()
+    "abc".ToCharArray() |> Array.iter b.AppendChar
+    b.JumpTo(0)
+    Assert.Equal(0, b.CursorIndex)
+    b.JumpTo(b.Count)
+    Assert.Equal(3, b.CursorIndex)
+
+[<Fact>]
+let ``Capture returns content and clears buffer`` () =
+    let b = ShellInteraction.UserInputBuffer()
+    "echo hi".ToCharArray() |> Array.iter b.AppendChar
+    let captured = b.Capture()
+    Assert.Equal("echo hi", captured)
+    Assert.Equal(0, b.Count)
+    Assert.Equal(0, b.CursorIndex)
+    Assert.Equal("", b.Snapshot())
+
+[<Fact>]
+let ``Reset clears the buffer`` () =
+    let b = ShellInteraction.UserInputBuffer()
+    "abc".ToCharArray() |> Array.iter b.AppendChar
+    b.Reset()
+    Assert.Equal(0, b.Count)
+    Assert.Equal(0, b.CursorIndex)
+
+[<Fact>]
+let ``State.UserInputBuffer is shared instance`` () =
+    let s = ShellInteraction.State()
+    s.UserInputBuffer.AppendChar('x')
+    Assert.Equal(1, s.UserInputBuffer.Count)
+    Assert.Equal("x", s.UserInputBuffer.Snapshot())
+
+[<Fact>]
+let ``State.Reset clears the user input buffer`` () =
+    let s = ShellInteraction.State()
+    s.UserInputBuffer.AppendChar('x')
+    s.UserInputBuffer.AppendChar('y')
+    s.Reset()
+    Assert.Equal(0, s.UserInputBuffer.Count)

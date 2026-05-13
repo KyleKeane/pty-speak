@@ -3908,26 +3908,33 @@ module Program =
                     cts.Token
             window.TerminalSurface.SetPtyHost(
                 Action<byte[]>(fun bytes ->
-                    // Cycle 48 PR-B (ADR 0003) — observe Enter
-                    // (any byte equal to 0x0D) so the
-                    // ShellInteraction state machine can fire
-                    // transition [a] (Composing → Executing).
-                    // Multiple `\r` in one write (paste of
-                    // multi-line text) trigger one transition
-                    // per `\r` in order. Observe-only in PR-B:
-                    // logs but doesn't change announce routing.
+                    // Cycle 48 PR-D (ADR 0003) — byte-stream-
+                    // driven UserInputBuffer maintenance + Enter
+                    // detection. Each printable ASCII byte
+                    // (0x20..0x7E) appends to the buffer; BS
+                    // (0x08) backspaces; CR (0x0D) captures the
+                    // current buffer text and fires
+                    // EnterPressed with that text. Multi-byte
+                    // sequences (arrow keys, Unicode chars
+                    // outside ASCII range) fall through and are
+                    // not tracked; refining to true key-level
+                    // tracking is deferred (would route the
+                    // KeyCode through to the buffer alongside
+                    // the encoded bytes — see ADR §5.5).
                     for i in 0 .. bytes.Length - 1 do
-                        if bytes.[i] = 0x0Duy then
-                            // SubmittedCommand text is
-                            // unavailable in PR-B (UserInputBuffer
-                            // lands in PR-D). Pass an empty
-                            // placeholder; the transition log
-                            // will show "EnterPressed(cmd=)" and
-                            // PR-D's tests will confirm the
-                            // capture works once the buffer is
-                            // wired.
+                        let b = bytes.[i]
+                        if b >= 0x20uy && b <= 0x7Euy then
+                            shellInteraction.UserInputBuffer.AppendChar(char b)
+                        elif b = 0x08uy then
+                            shellInteraction.UserInputBuffer.Backspace()
+                        elif b = 0x0Duy then
+                            let captured =
+                                shellInteraction.UserInputBuffer.Capture()
+                            shellInteractionLog.LogDebug(
+                                "UserInputBuffer captured on Enter: Length={Length} Text={Text}",
+                                captured.Length, captured)
                             recordTransition
-                                (ShellInteraction.EnterPressed "")
+                                (ShellInteraction.EnterPressed captured)
                     host.WriteBytes(bytes)),
                 Action<int, int>(fun cols rows ->
                     // Resize is best-effort: a transient failure
