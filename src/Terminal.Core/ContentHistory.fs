@@ -290,27 +290,16 @@ module ContentHistory =
         // "blank" but don't break Move(Line, ±1)).
         sprintf "\n--- %s ---\n" label
 
-    /// Cycle 45c — tail of the reconstructed text. Used by the
-    /// diagnostic bundle to render a `--- CONTENT HISTORY (last
-    /// N KB) ---` section without forcing the caller to allocate
-    /// the full reconstruction first. Walks `Entries` from tail,
-    /// accumulating until the byte cap is hit, then reverses to
-    /// chronological order.
-    let tailText (state: T) (maxBytes: int) : string =
-        tailTextInternal state maxBytes false
-
-    /// Cycle 47 follow-up (2026-05-13) — variant of `tailText`
-    /// that renders `Marker` entries as labelled boundary
-    /// lines (`--- prompt ---`, `--- input begins ---`, etc.)
-    /// rather than skipping them. Used by the UIA Text-pattern
-    /// materialiser so NVDA's review cursor surfaces semantic
-    /// boundaries between commands. The diagnostic snapshot
-    /// keeps using `tailText` (no marker noise) so paste-back
-    /// triage stays readable.
-    and tailTextWithMarkers (state: T) (maxBytes: int) : string =
-        tailTextInternal state maxBytes true
-
-    and private tailTextInternal
+    /// Cycle 47 follow-up (2026-05-13) — shared implementation
+    /// for `tailText` (markers stripped, used by the diagnostic
+    /// bundle) and `tailTextWithMarkers` (markers rendered as
+    /// labelled lines, used by the UIA Text-pattern
+    /// materialiser). Pre-this-cycle this body lived inline in
+    /// `tailText`; refactored to a private helper + two public
+    /// wrappers so the bundle and UIA paths can diverge on
+    /// marker rendering without diverging on the byte-cap +
+    /// tail-walk machinery.
+    let private tailTextInternal
             (state: T) (maxBytes: int) (includeMarkers: bool) : string =
         lock state.Gate (fun () ->
             let frames = ResizeArray<string>()
@@ -353,6 +342,25 @@ module ContentHistory =
                 let startOffset = bytesArr.Length - maxBytes
                 System.Text.Encoding.UTF8.GetString(
                     bytesArr, startOffset, maxBytes))
+
+    /// Cycle 45c — tail of the reconstructed text. Used by the
+    /// diagnostic bundle to render a `--- CONTENT HISTORY (last
+    /// N KB) ---` section without forcing the caller to allocate
+    /// the full reconstruction first. Markers are stripped; for
+    /// the markers-rendered variant see `tailTextWithMarkers`.
+    let tailText (state: T) (maxBytes: int) : string =
+        tailTextInternal state maxBytes false
+
+    /// Cycle 47 follow-up (2026-05-13) — variant of `tailText`
+    /// that renders `Marker` entries as labelled boundary lines
+    /// (`--- prompt ---`, `--- input begins ---`, etc.) rather
+    /// than skipping them. Used by the UIA Text-pattern
+    /// materialiser so NVDA's review cursor surfaces semantic
+    /// boundaries between commands. The diagnostic snapshot
+    /// keeps using `tailText` (no marker noise) so paste-back
+    /// triage stays readable.
+    let tailTextWithMarkers (state: T) (maxBytes: int) : string =
+        tailTextInternal state maxBytes true
 
     /// Cycle 45c — reconstruct the user-visible text payload for
     /// entries whose Seq is strictly between `fromSeqExclusive`
