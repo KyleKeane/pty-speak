@@ -72,6 +72,12 @@
     -->
     <Compile Include="ContentHistoryTests.fs" />
     <Compile Include="SpeechCursorTests.fs" />
+    <!--
+      Cycle 46 PR-B — ContentHistoryTextRange / Provider tests.
+      Slot after ContentHistoryTests since the new accessibility
+      types consume `Terminal.Core.ContentHistory` directly.
+    -->
+    <Compile Include="ContentHistoryTextRangeTests.fs" />
     <Compile Include="ShellPolicyTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

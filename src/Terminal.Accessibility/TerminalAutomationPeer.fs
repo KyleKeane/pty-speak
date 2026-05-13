@@ -305,7 +305,21 @@ type internal TerminalAutomationPeer
     /// the list peer as the sole child while active).
     let mutable currentListPeer : TerminalListAutomationPeer option = None
 
-    override _.GetAutomationControlTypeCore() = AutomationControlType.Document
+    // Cycle 46 PR-B — ControlType flips from `Document` to
+    // `Edit` so NVDA treats TerminalView as a text-edit
+    // surface. Combined with the substrate swap of the
+    // ITextProvider (screen grid → ContentHistory; see
+    // `src/Terminal.Accessibility/ContentHistoryTextRange.fs`
+    // + `src/Views/TerminalView.cs:144`), NVDA's native
+    // text-edit reading path (Insert+Down read-all, Up/Down
+    // line nav, Ctrl+End jump-to-end) now operates against
+    // the ContentHistory tail. User-visible effect on focus:
+    // NVDA announces "edit" instead of "document". Wiring of
+    // caret-move on output (raising
+    // `TextSelectionChangedEvent`) happens in PR-C; PR-B
+    // just exposes the new text surface. See
+    // `docs/adr/0002-uia-textedit-caret-output.md`.
+    override _.GetAutomationControlTypeCore() = AutomationControlType.Edit
     override _.GetClassNameCore() = "TerminalView"
     override _.GetNameCore() = "Terminal"
     override _.IsControlElementCore() = true
