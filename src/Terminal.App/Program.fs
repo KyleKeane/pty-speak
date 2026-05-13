@@ -116,6 +116,11 @@ module Program =
             (onSpeechCursorWake: unit -> unit)
             (notifications: System.Threading.Channels.ChannelWriter<PumpInput>)
             (onChunkRead: int -> unit)
+            // Cycle 48 PR-B (ADR 0003) — observe each PTY-stdout
+            // byte for the ShellInteraction sub-prompt detector.
+            // Called once per byte, on the reader thread, before
+            // VtParser sees it.
+            (onByteFromPty: DateTime -> byte -> unit)
             (ct: CancellationToken) : Task =
         Task.Run(fun () ->
             task {
@@ -131,6 +136,17 @@ module Program =
                             // staleness (a wedged reader vs a quiet
                             // shell).
                             onChunkRead chunk.Length
+                            // Cycle 48 PR-B — observe bytes for
+                            // ShellInteraction sub-prompt
+                            // detection. Use a single timestamp
+                            // per chunk to keep observations
+                            // consistent within a chunk; finer
+                            // resolution would not change
+                            // sub-prompt outcomes (the threshold
+                            // is in the hundreds of ms).
+                            let chunkTs = DateTime.UtcNow
+                            for i in 0 .. chunk.Length - 1 do
+                                onByteFromPty chunkTs chunk.[i]
                             let events = Parser.feedArray parser chunk
                             // Cycle 45c — feed ContentHistory (the
                             // sole aural substrate post-PR-3c).
@@ -915,6 +931,35 @@ module Program =
         // resets to -1L on shell hot-switch (see
         // `ContentHistory.reset` call site in `switchToShell`).
         let mutable lastAnnouncedSeq : int64 = -1L
+
+        // Cycle 48 PR-B (ADR 0003) — ShellInteraction state
+        // machine, observe-only mode. Receives the same signals
+        // as the existing announce paths (Enter pressed via
+        // `writePtyBytes` wrapper, PromptStart via the boundary
+        // handler, idle ticks via the idle-flush timer, byte
+        // arrivals via the reader loop) and logs transitions
+        // at Information. Does NOT alter announce routing or
+        // ContentHistory state in this PR — that switch is
+        // staged for PR-E. PR-C wires the resulting Source tag
+        // into ContentHistory.Entry; PR-D adds the
+        // UserInputBuffer.
+        let shellInteraction = ShellInteraction.State()
+        let shellInteractionLog =
+            Logger.get "Terminal.Core.ShellInteraction"
+        let recordTransition (trigger : ShellInteraction.Transition) =
+            let now = DateTime.UtcNow
+            match ShellInteraction.applyTransition shellInteraction trigger now with
+            | Some outcome ->
+                shellInteractionLog.LogInformation(
+                    "ShellInteraction transition: {Prior} --[{Trigger}]--> {New}",
+                    ShellInteraction.describeState outcome.PriorState,
+                    ShellInteraction.describeTrigger outcome.Trigger,
+                    ShellInteraction.describeState outcome.NewState)
+            | None ->
+                shellInteractionLog.LogDebug(
+                    "ShellInteraction trigger no-op for current state: {State} --[{Trigger}]--",
+                    ShellInteraction.describeState shellInteraction.Current,
+                    ShellInteraction.describeTrigger trigger)
 
         // Cycle 47 follow-up (2026-05-13) post-preview.114 —
         // companion text watermark: the most recent string this
@@ -1750,6 +1795,21 @@ module Program =
                     augmented.MatchedRowText
                 | _ -> None
             let boundaryAction () =
+                // Cycle 48 PR-B (ADR 0003) — observe PromptStart
+                // for the ShellInteraction state machine
+                // (transition [b]: Executing → Composing). The
+                // boundary handler fires for PromptStart /
+                // CommandStart / OutputStart / CommandFinished;
+                // only PromptStart drives transition [b]. Other
+                // boundaries log but don't transition. Observe-
+                // only in PR-B; announce routing unchanged.
+                match markerKind with
+                | Some ContentHistory.MarkerKind.PromptStart ->
+                    let promptText =
+                        defaultArg augmented.MatchedRowText ""
+                    recordTransition
+                        (ShellInteraction.PromptDetected promptText)
+                | _ -> ()
                 match markerKind with
                 | Some k ->
                     // Cycle 47 follow-up (2026-05-13) — synthesize
@@ -3638,6 +3698,22 @@ module Program =
         let idleFlushTimer = DispatcherTimer()
         idleFlushTimer.Interval <- TimeSpan.FromMilliseconds(100.0)
         idleFlushTimer.Tick.Add(fun _ ->
+            // Cycle 48 PR-B (ADR 0003) — observe-mode sub-prompt
+            // detection. Run before the existing idle-flush body
+            // so the state-machine log captures transitions
+            // independently of the legacy announce path. PR-E
+            // will replace the legacy idle-flush body with
+            // routing driven from this transition.
+            try
+                match ShellInteraction.trySubPromptDetect
+                          shellInteraction DateTime.UtcNow with
+                | Some trigger -> recordTransition trigger
+                | None -> ()
+            with ex ->
+                shellInteractionLog.LogWarning(
+                    ex,
+                    "ShellInteraction sub-prompt detector raised: {Message}",
+                    ex.Message)
             try
                 match currentShellPolicy.IdleFlushMs with
                 | Some thresholdMs ->
@@ -3817,9 +3893,31 @@ module Program =
                     onSpeechCursorWake
                     pumpChannel.Writer
                     (fun _ -> lastReadUtc <- DateTimeOffset.UtcNow)
+                    (fun ts b -> ShellInteraction.observeByte shellInteraction ts b)
                     cts.Token
             window.TerminalSurface.SetPtyHost(
-                Action<byte[]>(fun bytes -> host.WriteBytes(bytes)),
+                Action<byte[]>(fun bytes ->
+                    // Cycle 48 PR-B (ADR 0003) — observe Enter
+                    // (any byte equal to 0x0D) so the
+                    // ShellInteraction state machine can fire
+                    // transition [a] (Composing → Executing).
+                    // Multiple `\r` in one write (paste of
+                    // multi-line text) trigger one transition
+                    // per `\r` in order. Observe-only in PR-B:
+                    // logs but doesn't change announce routing.
+                    for i in 0 .. bytes.Length - 1 do
+                        if bytes.[i] = 0x0Duy then
+                            // SubmittedCommand text is
+                            // unavailable in PR-B (UserInputBuffer
+                            // lands in PR-D). Pass an empty
+                            // placeholder; the transition log
+                            // will show "EnterPressed(cmd=)" and
+                            // PR-D's tests will confirm the
+                            // capture works once the buffer is
+                            // wired.
+                            recordTransition
+                                (ShellInteraction.EnterPressed "")
+                    host.WriteBytes(bytes)),
                 Action<int, int>(fun cols rows ->
                     // Resize is best-effort: a transient failure
                     // (e.g. the child has just exited) shouldn't
@@ -4132,6 +4230,13 @@ module Program =
                                         // skip narration.
                                         lastAnnouncedSeq <- -1L
                                         lastAnnouncedText <- ""
+                                        // Cycle 48 PR-B —
+                                        // ShellInteraction state
+                                        // resets on shell switch
+                                        // alongside the watermarks.
+                                        // The new shell starts in
+                                        // a fresh Composing state.
+                                        shellInteraction.Reset()
                                         // Cycle 45f — apply the
                                         // new shell's verbosity
                                         // policy through the

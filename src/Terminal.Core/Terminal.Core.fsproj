@@ -22,6 +22,13 @@
       text reconstruction.
     -->
     <Compile Include="ContentHistory.fs" />
+    <!--
+      Cycle 48 (ADR 0003) — ShellInteraction state machine.
+      Pure F# module; depends only on System / Regex. Placed
+      next to ContentHistory because both are substrate-level
+      and the announce / channel modules below consume both.
+    -->
+    <Compile Include="ShellInteraction.fs" />
     <Compile Include="OutputEventTypes.fs" />
     <Compile Include="CanonicalCorpus.fs" />
     <Compile Include="OutputEventBuilder.fs" />
