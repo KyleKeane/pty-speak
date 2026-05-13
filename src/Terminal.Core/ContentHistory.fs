@@ -208,6 +208,19 @@ module ContentHistory =
         /// CR deferred-resolution: parallel to PendingCUB. Bare CR
         /// → overwrite of current line; CR+LF → newline.
         member val internal PendingCRDeferred: bool = false with get, set
+        /// Cycle 47 follow-up (2026-05-13) post-preview.116 —
+        /// logical cursor row, tracked across CSI / ESC cursor-
+        /// positioning events so the renderer can synthesise a
+        /// `Newline` entry between visual rows that cmd's conpty
+        /// translator emits as cursor-positioning sequences
+        /// instead of CRLF (the banner-collapse + output-
+        /// concatenated-with-next-prompt failure mode from
+        /// preview.116). Increments on `Execute 0x0A` (LF),
+        /// updates on CSI `H`/`f`/`A`/`B`/`E`/`F` and ESC
+        /// `D`/`E`/`M`. Pure substrate state — has no semantic
+        /// meaning beyond "did the cursor change row between
+        /// successive events?"
+        member val internal LogicalCursorRow: int = 0 with get, set
 
     /// Construct a fresh ContentHistory bound to the supplied
     /// parameters. Caller binds the result to a `mutable` cell at
@@ -570,6 +583,59 @@ module ContentHistory =
                     state.Entries.Add(entry)
                     [ sealed'; entry ]
 
+    /// Cycle 47 follow-up (2026-05-13) post-preview.116 — compute
+    /// the cursor row AFTER `event` is applied, starting from
+    /// `currentRow`. Used to detect visual-row changes that
+    /// aren't carried by LF (e.g. cmd's conpty translator
+    /// emitting CSI cursor-position sequences between the
+    /// banner's `(c) Microsoft …` line and the first prompt
+    /// instead of CRLF — the bug that mashed the entire banner
+    /// + first prompt into one ContentHistory TextSpan).
+    ///
+    /// Only the row-changing cases are enumerated; column-only
+    /// moves (`CUF` / `CUB`) and unrelated CSI dispatches
+    /// (`SGR`, `DECSET`, etc.) return `currentRow` unchanged.
+    /// Caller's `appendFromEvent` uses the delta as the seal
+    /// trigger.
+    let private cursorRowAfter (event: VtEvent) (currentRow: int) : int =
+        match event with
+        | Execute b when b = 0x0Auy ->
+            currentRow + 1
+        | CsiDispatch (parms, _, 'H', None)
+        | CsiDispatch (parms, _, 'f', None) ->
+            let row1 =
+                if parms.Length >= 1 && parms.[0] > 0 then parms.[0]
+                else 1
+            row1 - 1
+        | CsiDispatch (parms, _, 'A', None) ->
+            let n =
+                if parms.Length >= 1 && parms.[0] > 0 then parms.[0]
+                else 1
+            max 0 (currentRow - n)
+        | CsiDispatch (parms, _, 'B', None) ->
+            let n =
+                if parms.Length >= 1 && parms.[0] > 0 then parms.[0]
+                else 1
+            currentRow + n
+        | CsiDispatch (parms, _, 'E', None) ->
+            let n =
+                if parms.Length >= 1 && parms.[0] > 0 then parms.[0]
+                else 1
+            currentRow + n
+        | CsiDispatch (parms, _, 'F', None) ->
+            let n =
+                if parms.Length >= 1 && parms.[0] > 0 then parms.[0]
+                else 1
+            max 0 (currentRow - n)
+        | EscDispatch (intermediates, 'D') when intermediates.Length = 0 ->
+            currentRow + 1
+        | EscDispatch (intermediates, 'E') when intermediates.Length = 0 ->
+            currentRow + 1
+        | EscDispatch (intermediates, 'M') when intermediates.Length = 0 ->
+            max 0 (currentRow - 1)
+        | _ ->
+            currentRow
+
     /// Append a single VtEvent. Returns the list of entries that
     /// became visible (sealed TextSpans, Newlines, Overwrites)
     /// as a result. Most events return `[]` because the active
@@ -591,7 +657,38 @@ module ContentHistory =
             // new event is.
             let deferredCub = resolveDeferredCUB state now event
             let deferredCr = resolveDeferredCR state now event
-            let preEntries = deferredCub @ deferredCr
+
+            // Cycle 47 follow-up (2026-05-13) post-preview.116 —
+            // cursor-row-change synthetic newline. Compute the
+            // row the cursor will sit on after this event and
+            // compare to the previous tick. If the row changed
+            // AND it wasn't an LF (which has its own seal +
+            // emit-Newline path below) AND the active span has
+            // content, seal the span and emit a synthetic
+            // Newline so the rendered tail reflects the visual
+            // row break that cmd's conpty translator carried
+            // via CSI cursor-positioning instead of CRLF.
+            let isLf =
+                match event with
+                | Execute b when b = 0x0Auy -> true
+                | _ -> false
+            let oldRow = state.LogicalCursorRow
+            let newRow = cursorRowAfter event oldRow
+            state.LogicalCursorRow <- newRow
+            let rowChangeEntries =
+                if not isLf
+                   && newRow <> oldRow
+                   && state.ActiveSpanText.Length > 0 then
+                    match sealActiveSpan state now with
+                    | Some sealed' ->
+                        let nl =
+                            Newline { Seq = nextSeq state; At = now }
+                        state.Entries.Add(nl)
+                        [ sealed'; nl ]
+                    | None -> []
+                else []
+
+            let preEntries = deferredCub @ deferredCr @ rowChangeEntries
 
             state.LastEventAt <- now
 
@@ -705,4 +802,5 @@ module ContentHistory =
             state.ActiveSpanStartedAt <- ValueNone
             state.LastEventAt <- DateTime.MinValue
             state.PendingCUB <- ValueNone
-            state.PendingCRDeferred <- false)
+            state.PendingCRDeferred <- false
+            state.LogicalCursorRow <- 0)

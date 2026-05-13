@@ -15,6 +15,55 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 47 follow-up (2026-05-13, post-preview.116): cursor-row synthetic newline + idle-flush typing gate + per-char earcon revert
+
+preview.116 dogfood surfaced three connected regressions:
+
+1. **Per-character `ReadyForInput` earcon**: each typed character
+   tripped idle-flush, which dispatched a `ReadyForInput` event
+   (PR #302) and beeped. The earcon was right semantically for
+   the `set/p` cue case but wrong for the per-char echo case the
+   gate didn't cover.
+2. **Per-character NVDA announce**: idle-flush sliced single-byte
+   echo chunks (`"e"`, `"ec"`, `"ech"`, ...) and Announced each
+   one — independent of NVDA's keyboard-hook char-speech. The
+   UIA typing-window gate from PR #300 only suppressed
+   `ITextProvider` polling; idle-flush is a separate announce
+   path that didn't share the gate.
+3. **Banner + output runs into next prompt**: rendered tail
+   showed `"(c) Microsoft Corporation. All rights reserved.C:\Users\..."`
+   and `"hiC:\Users\..."` with no newlines. cmd's conpty
+   translator uses CSI cursor-positioning sequences instead of
+   CRLF for some visual-row transitions; ContentHistory's
+   `appendFromEvent` ignored `CsiDispatch` events, so the active
+   span accumulated straight across rows.
+
+Fixes (one PR):
+
+- **`ContentHistory.appendFromEvent` tracks `LogicalCursorRow`**
+  across `CsiDispatch` `H`/`f`/`A`/`B`/`E`/`F` and
+  `EscDispatch` `D`/`E`/`M`. When the computed row changes AND
+  it isn't an LF (LF has its own seal path) AND the active span
+  is non-empty, seal the span and emit a synthetic `Newline`.
+  Renders cmd's CSI-positioned banner rows as separate lines.
+- **`TerminalView.LastKeystrokeAtUtc`** exposes the existing
+  `_lastKeystrokeAtUtc` field publicly. Idle-flush timer reads
+  it; if a keystroke is within the same 350 ms window the UIA
+  materialiser uses (PR #300), the entire idle-flush body
+  early-returns — no Announce, no earcon, no watermark
+  advance. The next tick re-evaluates.
+- **`ReadyForInput` earcon dispatch removed from idle-flush**
+  (the block PR #302 added). The earcon is scoped to the
+  tuple-final boundary only. Mid-evaluation `set/p` / `pause`
+  cases lose the cue; a distinct-from-tuple-final earcon
+  scoped to "cmd emitted a prompt-like line but no shell-
+  prompt fired" is deferred to a future revision.
+
+Matrix rows Cycle 47-24 (mid-eval input earcon) is removed.
+New rows Cycle 47-26 (per-char silence under typing window) +
+47-27 (CSI-row-change synthetic newlines) cover the new
+behaviour.
+
 ### Cycle 47 follow-up batch (2026-05-13, post-preview.114): closure
 
 Five PRs (#299–#303) shipped this session in response to the

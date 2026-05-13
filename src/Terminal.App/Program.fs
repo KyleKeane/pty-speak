@@ -3643,7 +3643,34 @@ module Program =
                 | Some thresholdMs ->
                     let idleMs =
                         (DateTimeOffset.UtcNow - lastReadUtc).TotalMilliseconds
-                    if idleMs >= float thresholdMs then
+                    // Cycle 47 follow-up (2026-05-13) post-preview.116
+                    // — typing-window gate. preview.116 dogfood
+                    // surfaced the per-character idle-flush failure
+                    // mode: user types `e`, cmd echoes `e`, 350 ms
+                    // pause, idle-flush slices the single byte and
+                    // announces "e". Then `c`, then `h` ... NVDA
+                    // reads each char (alongside its own keyboard-
+                    // hook char-speech). Pre-fix this fired the
+                    // `ReadyForInput` earcon too — the user heard a
+                    // beep AND a per-char read on every keystroke.
+                    //
+                    // Gate: if the maintainer has typed within the
+                    // last 350 ms, skip the entire idle-flush body
+                    // — no announce, no earcon, no watermark
+                    // advance. The same window as the UIA
+                    // `materialise` typing suppression (PR #300).
+                    // When the user stops typing for ≥ 350 ms, the
+                    // next tick fires normally and announces the
+                    // accumulated cmd echo + output as one chunk.
+                    let lastKeystroke =
+                        window.TerminalSurface.LastKeystrokeAtUtc
+                    let typingActive =
+                        lastKeystroke <> DateTime.MinValue
+                        && (DateTime.UtcNow - lastKeystroke).TotalMilliseconds < 350.0
+                    if typingActive then
+                        // Silent skip; next tick re-evaluates.
+                        ()
+                    elif idleMs >= float thresholdMs then
                         // Cycle 47 follow-up (2026-05-13, post-preview.113)
                         // — force a `ContentHistory.tick` before
                         // reading `latestSeq`. The active span
@@ -3703,33 +3730,22 @@ module Program =
                                     toSay, ActivityIds.output)
                                 lastAnnouncedText <- toSay
                                 // Cycle 47 follow-up (2026-05-13)
-                                // post-preview.114 — mid-evaluation
-                                // input earcon. When idle-flush
-                                // announces non-empty text mid-
-                                // tuple, the cmd shell has printed
-                                // a prompt-like line and paused
-                                // (the classic `set/p`, `pause`,
-                                // interactive-script case where
-                                // no shell-prompt boundary fires).
-                                // Re-use the existing
-                                // `ReadyForInput` semantic so the
-                                // EarconChannel plays the same
-                                // 3000Hz × 15ms click the tuple-
-                                // final path uses — semantically
-                                // equivalent ("you can type now")
-                                // and avoids needing a new palette
-                                // entry. The earcon plays on a
-                                // separate WASAPI stream so it
-                                // doesn't interrupt NVDA reading
-                                // the just-announced prompt text.
-                                // Honours View → Earcons → Muted.
-                                let inputCueEvent =
-                                    OutputEvent.create
-                                        SemanticCategory.ReadyForInput
-                                        Priority.Background
-                                        "idle-flush"
-                                        ""
-                                OutputDispatcher.dispatch inputCueEvent
+                                // post-preview.116 — the
+                                // `ReadyForInput` earcon dispatch
+                                // that PR #302 added here was
+                                // reverted: it fired on every
+                                // single-character idle-flush
+                                // announce during typing, so the
+                                // user heard a beep per keystroke.
+                                // The earcon is now scoped to the
+                                // tuple-final boundary only (the
+                                // boundary-handler block above).
+                                // If `set/p` / `pause` still feel
+                                // mute, a distinct-from-tuple-
+                                // final earcon scoped to "cmd
+                                // emitted a prompt-like line but
+                                // no shell-prompt fired" is a
+                                // future option.
                             lastAnnouncedSeq <- latest
                 | None -> ()
             with ex ->

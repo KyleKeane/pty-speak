@@ -42,8 +42,14 @@ let private bel = execute 0x07uy
 let private cub (n: int) : VtEvent =
     CsiDispatch ([| n |], [||], 'D', None)
 
+let private cup (row: int) (col: int) : VtEvent =
+    CsiDispatch ([| row; col |], [||], 'H', None)
+
 let private cuu (n: int) : VtEvent =
     CsiDispatch ([| n |], [||], 'A', None)
+
+let private cud (n: int) : VtEvent =
+    CsiDispatch ([| n |], [||], 'B', None)
 
 let private freshHistory () : ContentHistory.T =
     ContentHistory.create ContentHistory.defaultParameters
@@ -567,6 +573,88 @@ let ``sliceText excludes the marker entries themselves`` () =
     Assert.Equal("x\n", result)
     Assert.DoesNotContain("prompt-text", result)
     Assert.DoesNotContain("output-marker-text", result)
+
+// ---------------------------------------------------------------------
+// Cursor-row synthetic newline (Cycle 47 follow-up post-preview.116)
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``CSI CUP to new row seals active span and emits a Newline`` () =
+    // cmd's conpty translator emits CSI [2;1H between visual
+    // rows of the banner instead of CRLF; pre-fix the active
+    // span accumulated straight across rows. Post-fix: row
+    // change triggers seal + synthetic Newline.
+    let state = freshHistory ()
+    feed state t0 [ printRune 'a'; printRune 'b'; printRune 'c' ] |> ignore
+    let emitted = feed state t0 [ cup 2 1 ] |> List.last
+    let entries = ContentHistory.snapshot state
+    // Expect: TextSpan "abc" (sealed by the row change) +
+    // synthetic Newline.
+    Assert.Equal(2, entries.Length)
+    match entries with
+    | [| ContentHistory.TextSpan span; ContentHistory.Newline _ |] ->
+        Assert.Equal("abc", span.Text)
+    | _ ->
+        Assert.Fail(sprintf "Unexpected entries: %A" entries)
+
+[<Fact>]
+let ``CSI CUP to same row does not seal or emit a Newline`` () =
+    // Targeting the same row the cursor is already on must not
+    // produce a synthetic Newline — that would over-segment
+    // SGR-only redraws and spinner-style mid-row updates.
+    let state = freshHistory ()
+    // Position cursor on row 0 explicitly, accumulate "abc",
+    // then re-position to row 0.
+    feed state t0 [ cup 1 1 ] |> ignore
+    feed state t0 [ printRune 'a'; printRune 'b'; printRune 'c' ] |> ignore
+    feed state t0 [ cup 1 5 ] |> ignore
+    let entries = ContentHistory.snapshot state
+    Assert.Equal(0, entries.Length)
+
+[<Fact>]
+let ``LF after CSI cursor move does not double-emit Newline`` () =
+    // The row-change detector and the LF handler must not both
+    // fire for an LF event. Pre-fix verification: confirm only
+    // one Newline lands when CSI CUP is followed by a Print +
+    // LF.
+    let state = freshHistory ()
+    feed state t0 [ cup 2 1; printRune 'x'; lf ] |> ignore
+    let entries = ContentHistory.snapshot state
+    // Expect: TextSpan "x" + Newline. CUP at row 2 from start
+    // (row 0) changed row but active span was empty, so no
+    // synthetic Newline. Print "x" accumulates. LF seals "x"
+    // + emits its own Newline.
+    Assert.Equal(2, entries.Length)
+    match entries with
+    | [| ContentHistory.TextSpan span; ContentHistory.Newline _ |] ->
+        Assert.Equal("x", span.Text)
+    | _ ->
+        Assert.Fail(sprintf "Unexpected entries: %A" entries)
+
+[<Fact>]
+let ``Banner-like CSI-positioned rows render with newlines between them`` () =
+    // Reproducer for the preview.116 failure mode where cmd's
+    // banner used CSI cursor-positioning between visual rows
+    // and the rendered tail collapsed
+    // "Microsoft Windows..." + "(c) Microsoft..." + prompt
+    // into one line with no separators.
+    let state = freshHistory ()
+    // Row 1: "row-one"
+    feed state t0 (List.append [ cup 1 1 ] [ for c in "row-one" -> printRune c ])
+    |> ignore
+    // CUP to row 2.
+    feed state t0 [ cup 2 1 ] |> ignore
+    // Row 2: "row-two"
+    feed state t0 [ for c in "row-two" -> printRune c ] |> ignore
+    // CUP to row 3.
+    feed state t0 [ cup 3 1 ] |> ignore
+    // Row 3: "row-three"
+    feed state t0 [ for c in "row-three" -> printRune c ] |> ignore
+    // Force a final seal so the active span lands in the
+    // rendered tail too.
+    ContentHistory.tick state (t0.AddSeconds(10.0)) |> ignore
+    let result = ContentHistory.tailText state 4096
+    Assert.Equal("row-one\nrow-two\nrow-three", result)
 
 // ---------------------------------------------------------------------
 // tailText / tailTextWithMarkers (Cycle 45c + Cycle 47 follow-up)
