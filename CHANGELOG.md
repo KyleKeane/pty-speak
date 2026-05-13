@@ -15,6 +15,51 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### SpeechCursor delegates to caret + screen-grid cleanup (Cycle 46 PR-D)
+
+Implements PR-D of the four-PR Cycle 46 sequence per
+[`docs/adr/0002-uia-textedit-caret-output.md`](docs/adr/0002-uia-textedit-caret-output.md)
++ [`docs/CYCLE-46-NEXT-STEPS.md`](docs/CYCLE-46-NEXT-STEPS.md) §3.
+Auto-drive narration of streaming output now goes through the
+same caret-move path PR-C introduced, and the legacy
+screen-grid types are gone.
+
+- **Refactored** `Program.fs`'s `speechCursorAnnounce` callback
+  to delegate to a new `raiseCaretMovedToTail` helper. Both the
+  PR-C boundary handler (tuple finalise) and the per-entry
+  `SpeechCursor.onAppend` invocations (reader-loop streaming +
+  boundary-handler marker emit) now route through one shared
+  call site. The `text` / `activityId` arguments to
+  `speechCursorAnnounce` are preserved in the signature but
+  unused — NVDA queries `DocumentRange` to get current content.
+- **Kept** manual review-cursor hotkeys
+  (`Ctrl+Shift+Up/Down/End` →
+  `runSpeechCursorNext/Previous/JumpToLatest`) on the
+  notification path. They emit UI-navigation feedback like
+  "Already at the first entry" / "(no announcement for this
+  entry)" which is non-terminal-content per ADR §"Decision"
+  clause 5 (terminal command I/O uses caret;
+  menus/errors/navigation/diagnostic use notifications).
+- **Deleted** the legacy screen-grid types from
+  `src/Terminal.Accessibility/TerminalAutomationPeer.fs`:
+  `module internal SnapshotText`, `type internal TerminalTextRange`
+  (with its `IsWordSeparator` / `NextWordStart` /
+  `PrevWordStart` / `WordEndFrom` helpers and full
+  `ITextRangeProvider` implementation), and `type internal
+  TerminalTextProvider`. ~680 LOC removed.
+- **Deleted** `tests/Tests.Unit/WordBoundaryTests.fs` (~30
+  tests pinning the now-deleted helpers; equivalent
+  word-boundary semantics are covered by
+  `ContentHistoryTextRangeTests`).
+- **Updated** `TerminalView.cs` and `Tests.Unit.fsproj`
+  comments to reflect the deletion.
+- **NVDA matrix gate Cycle 46-PRD-1** required before merge:
+  `Ctrl+Shift+Up/Down/End` parity — net audible behaviour
+  should match PR-C (NVDA reads via caret pacing, not an
+  independent SAPI utterance) for the streaming auto-drive
+  case; navigation-feedback announces still fire for the
+  manual hotkeys.
+
 ### Caret-move replaces output notification (Cycle 46 PR-C): `TextSelectionChangedEvent` on tuple finalise
 
 Implements PR-C of the four-PR Cycle 46 sequence per

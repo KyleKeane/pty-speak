@@ -884,10 +884,45 @@ module Program =
         // over them. The callback runs on the WPF dispatcher
         // thread — every caller dispatches its
         // `SpeechCursor.onAppend` through `window.Dispatcher.InvokeAsync`,
-        // so `window.TerminalSurface.Announce` can be invoked
-        // directly here without another marshalling hop.
-        let speechCursorAnnounce ((text: string), (activityId: string)) =
-            window.TerminalSurface.Announce(text, activityId)
+        // so the peer lookup below is safe without another
+        // marshalling hop.
+        //
+        // Cycle 46 PR-C / PR-D — caret-move helper. Looks up
+        // `TerminalView`'s UIA peer and raises the
+        // text-selection-changed event so NVDA's native "read
+        // from caret" path picks up the new ContentHistory
+        // tail. Shared between the PR-C boundary handler (tuple
+        // finalise) and the PR-D `speechCursorAnnounce`
+        // delegation (auto-drive + manual review-cursor nav).
+        // Must be called on the WPF dispatcher thread.
+        let raiseCaretMovedToTail () =
+            let peer =
+                UIElementAutomationPeer.FromElement(window.TerminalSurface)
+            match peer with
+            | null ->
+                // No UIA client connected; silent no-op.
+                ()
+            | :? TerminalAutomationPeer as tp ->
+                tp.RaiseCaretMovedToTail()
+            | _ ->
+                // Defensive non-throwing fallback; the only
+                // peer type TerminalView constructs is
+                // `TerminalAutomationPeer` so this branch is
+                // unreachable in practice.
+                ()
+
+        // Cycle 46 PR-D — delegation: instead of firing an
+        // independent `Announce(text, activityId)` notification,
+        // raise the caret-move event so NVDA reads via the
+        // ContentHistory tail with user-tunable pacing. The
+        // `text` and `activityId` arguments are unused —
+        // preserved in the signature so `SpeechCursor.onAppend`
+        // / `speakCurrent` / `speakSince` still satisfy their
+        // callback shape. NVDA queries `DocumentRange` to get
+        // current content, so we don't have to thread the text
+        // through.
+        let speechCursorAnnounce ((_text: string), (_activityId: string)) =
+            raiseCaretMovedToTail ()
 
         // "Wake up" trigger: ContentHistory has appended.
         // SpeechCursor.onAppend reads from history directly
@@ -1645,29 +1680,7 @@ module Program =
                 // already covered the output and we shouldn't
                 // double-fire; under `Off` we want silence.
                 match tupleFinaliseAnnounce with
-                | Some _ ->
-                    let peer =
-                        UIElementAutomationPeer.FromElement(window.TerminalSurface)
-                    match peer with
-                    | null ->
-                        // No UIA client connected yet — peer
-                        // hasn't been lazily constructed. Same
-                        // silent-no-op semantics as the
-                        // previous Announce path
-                        // (TerminalView.cs:344). NVDA will pick
-                        // up the tail on its next
-                        // DocumentRange query when it does
-                        // connect.
-                        ()
-                    | :? TerminalAutomationPeer as tp ->
-                        tp.RaiseCaretMovedToTail()
-                    | _ ->
-                        // Peer exists but isn't the expected
-                        // type — shouldn't happen
-                        // (`TerminalView.OnCreateAutomationPeer`
-                        // returns exactly `TerminalAutomationPeer`).
-                        // Defensive no-op rather than throw.
-                        ()
+                | Some _ -> raiseCaretMovedToTail ()
                 | None -> ()
             window.Dispatcher.InvokeAsync(Action(boundaryAction))
             |> ignore

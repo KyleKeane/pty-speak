@@ -582,9 +582,51 @@ new".
   PR-B (substrate-swap of `ITextProvider` from screen grid
   to `ContentHistory` + `ControlType` flip
   `Document`→`Edit`) starts now.
+- **2026-05-13**: PR-C merged (commit `a5dd320`).
+  Implements §"Decision" clause 4: the tuple-finalise
+  `Announce(text, ActivityIds.output, MostRecent)` call in
+  `Program.fs`'s boundary handler is replaced by a
+  `TerminalAutomationPeer.RaiseCaretMovedToTail()` invocation
+  that raises `AutomationEvents.TextPatternOnTextSelectionChanged`.
+  Adds `InternalsVisibleTo("Terminal.App")` to
+  Terminal.Accessibility so the composition root can call the
+  helper without widening the peer's public surface. NVDA matrix
+  Cycle 46-PRC-1 is the gate.
+- **2026-05-13**: PR-D merged. Implements §"Decision"
+  clauses 6 (`SpeechCursor` delegation, Option β) + the cleanup
+  half of clause 2 (delete legacy screen-grid types):
+  - `Program.fs`'s `speechCursorAnnounce` callback now
+    delegates to the same `RaiseCaretMovedToTail` helper PR-C
+    introduced. Auto-drive `SpeechCursor.onAppend` narration
+    goes through the caret path instead of an independent
+    `Announce`. Manual review-cursor hotkeys
+    (`Ctrl+Shift+Up/Down/End` `runSpeechCursorNext/Previous/JumpToLatest`)
+    kept their notification calls because they emit
+    UI-navigation feedback (e.g. "Already at the first
+    entry") which is non-terminal-content per §"Decision"
+    clause 5.
+  - Deleted the legacy screen-grid `TerminalTextProvider`,
+    `TerminalTextRange`, and `SnapshotText` types from
+    `TerminalAutomationPeer.fs` (~680 LOC). The post-PR-B
+    runtime path doesn't use them; nothing in source
+    referenced them after PR-B. `TerminalView.TextProvider`'s
+    type stays `ITextProvider` (the interface PR-B widened
+    to).
+  - Deleted `tests/Tests.Unit/WordBoundaryTests.fs`: it
+    pinned the deleted helpers'
+    `IsWordSeparator` / `NextWordStart` / `PrevWordStart` /
+    `WordEndFrom` behaviour, which is now covered by
+    `ContentHistoryTextRangeTests` (Move(Word) +
+    ExpandToEnclosingUnit(Word) assertions).
+  - `ActivityIds.output` kept in source — still used by
+    `SpeechCursor.renderEntry` (manual navigation surface)
+    and `NvdaChannel.semanticToActivityId` (streaming
+    routing map). Deletion would require touching those
+    consumers; deferred as a future cleanup if/when it
+    becomes truly unreferenced.
 - **Supersession**: this ADR may be revised if NVDA matrix
-  validation of PR-B (Cycle 46-PRB-1) or PR-C (Cycle
-  46-PRC-1) surfaces NVDA behaviour the resolutions
-  didn't anticipate (most likely candidate: NVDA's
-  text-edit reading path requiring focus when the caret
-  isn't where the user expects).
+  validation of PR-B (Cycle 46-PRB-1), PR-C (Cycle
+  46-PRC-1), or PR-D (Cycle 46-PRD-1) surfaces NVDA
+  behaviour the resolutions didn't anticipate (most likely
+  candidate: NVDA's text-edit reading path requiring focus
+  when the caret isn't where the user expects).
