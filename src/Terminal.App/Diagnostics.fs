@@ -898,6 +898,105 @@ module Diagnostics =
             (sourceTally ContentHistory.EntrySource.BoundaryMarker)
             (sourceTally ContentHistory.EntrySource.Unknown)
 
+    /// PR-P (2026-05-14) — per-entry ContentHistory dump for the
+    /// diagnostic bundle. The aggregate `Stats:` line gives totals
+    /// but a SpeechCursor-style question ("why isn't entry X
+    /// navigable?") needs per-entry visibility. Returns a multi-
+    /// line block — one entry per line — with Seq, Kind, Source,
+    /// the rendered text or payload (truncated for paste-
+    /// friendliness), and the SpeechCursor manual-nav verdict
+    /// (`NavRender=Some/None`). Capped at the last
+    /// `maxEntries` entries so the bundle stays paste-safe;
+    /// pre-cap entries elide via a leading "... (M earlier
+    /// entries omitted)" line.
+    ///
+    /// Format per line (one entry):
+    /// `[Seq=N Kind=X Source=Y Text="..." NavRender=Some/None]`
+    let internal formatContentHistoryEntries
+            (history: ContentHistory.T)
+            (maxEntries: int)
+            : string =
+        let entries = ContentHistory.snapshot history
+        let total = entries.Length
+        let cap = max 0 maxEntries
+        let start =
+            if total <= cap then 0
+            else total - cap
+        let truncate (s: string) (n: int) : string =
+            if s.Length <= n then s
+            else (s.Substring(0, n)) + "..."
+        let escape (s: string) : string =
+            // Replace control chars with their escape forms so
+            // a single-line entry stays single-line in the
+            // bundle. NewLine -> \n literal, etc.
+            let sb = System.Text.StringBuilder(s.Length + 4)
+            for ch in s do
+                let code = int ch
+                if ch = '\n' then sb.Append("\\n") |> ignore
+                elif ch = '\r' then sb.Append("\\r") |> ignore
+                elif ch = '\t' then sb.Append("\\t") |> ignore
+                elif code = 0x1B then sb.Append("\\x1B") |> ignore
+                elif code < 0x20 || code = 0x7F then
+                    sb.AppendFormat("\\x{0:X2}", code) |> ignore
+                elif ch = '"' then sb.Append("\\\"") |> ignore
+                else sb.Append(ch) |> ignore
+            sb.ToString()
+        let describeEntry (e: ContentHistory.Entry) : string =
+            let seq = ContentHistory.entrySeq e
+            let source =
+                match ContentHistory.entrySource e with
+                | ContentHistory.EntrySource.UserInputEcho -> "UserInputEcho"
+                | ContentHistory.EntrySource.CmdOutput -> "CmdOutput"
+                | ContentHistory.EntrySource.CmdSubPrompt -> "CmdSubPrompt"
+                | ContentHistory.EntrySource.ShellPrompt -> "ShellPrompt"
+                | ContentHistory.EntrySource.BoundaryMarker -> "BoundaryMarker"
+                | _ -> "Unknown"
+            let kindAndPayload =
+                match e with
+                | ContentHistory.TextSpan d ->
+                    sprintf "Kind=TextSpan Len=%d Text=\"%s\""
+                        d.Text.Length (escape (truncate d.Text 80))
+                | ContentHistory.Newline _ ->
+                    "Kind=Newline"
+                | ContentHistory.Overwrite d ->
+                    sprintf "Kind=Overwrite ReplacesSeq=%d Text=\"%s\""
+                        d.ReplacesSeq (escape (truncate d.Text 80))
+                | ContentHistory.Marker d ->
+                    let payload =
+                        match d.Payload with
+                        | Some p -> sprintf " Payload=\"%s\"" (escape (truncate p 80))
+                        | None -> ""
+                    sprintf "Kind=Marker MarkerKind=%A%s" d.Kind payload
+                | ContentHistory.Spinner d ->
+                    sprintf "Kind=Spinner Frames=%d LatestText=\"%s\"" d.FrameCount (escape (truncate d.LatestText 40))
+            // SpeechCursor manual-nav verdict (PR-D's
+            // renderEntryForManualNav). Using FinalDirOnly to
+            // match the typical run-time PromptPath; if the
+            // shipped PromptPath differs the verdict for
+            // PromptStart markers may differ in production but
+            // the rest of the entries are PromptPath-invariant.
+            let navVerdict =
+                try
+                    match
+                        SpeechCursor.renderEntryForManualNav
+                            ShellPolicy.FinalDirOnly e
+                    with
+                    | Some (text, activity) ->
+                        sprintf "NavRender=Some(Len=%d Activity=%s Text=\"%s\")"
+                            text.Length activity
+                            (escape (truncate text 60))
+                    | None -> "NavRender=None"
+                with ex ->
+                    sprintf "NavRender=ERROR(%s)" ex.Message
+            sprintf "[Seq=%d Source=%s %s %s]" seq source kindAndPayload navVerdict
+        let lines = ResizeArray<string>()
+        if start > 0 then
+            lines.Add(sprintf "... (%d earlier entries omitted; full reconstruction in the sibling content-history file)" start)
+        for i in start .. (total - 1) do
+            lines.Add(describeEntry entries.[i])
+        if lines.Count = 0 then "(no entries)"
+        else String.concat "\n" lines
+
     // ---------------------------------------------------------------
     // Cycle 25b — diagnostic-dump bundle
     // ---------------------------------------------------------------
@@ -1645,8 +1744,21 @@ module Diagnostics =
                     let statsHeader =
                         try formatContentHistoryStats history
                         with _ -> "(ContentHistory stats unavailable)"
+                    // PR-P (2026-05-14) — per-entry dump for the
+                    // SpeechCursor-verdict question. Capped at
+                    // 200 entries — sufficient for a multi-test
+                    // session and fits comfortably under the
+                    // 60 KB clipboard cap.
+                    let entriesDump =
+                        try formatContentHistoryEntries history 200
+                        with _ -> "(ContentHistory entries unavailable)"
                     let contentHistorySection =
-                        sprintf "(source: %s)\n%s\n%s" historySiblingPath statsHeader tailText
+                        sprintf
+                            "(source: %s)\n%s\n--- ENTRIES (last 200 with SpeechCursor verdict) ---\n%s\n--- TAIL (rendered) ---\n%s"
+                            historySiblingPath
+                            statsHeader
+                            entriesDump
+                            tailText
 
                     let bundle =
                         formatDiagnosticBundle
