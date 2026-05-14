@@ -923,27 +923,24 @@ module Diagnostics =
             if total <= cap then 0
             else total - cap
         let truncate (s: string) (n: int) : string =
-            if isNull s then ""
-            elif s.Length <= n then s
+            if s.Length <= n then s
             else (s.Substring(0, n)) + "..."
         let escape (s: string) : string =
-            if isNull s then ""
-            else
-                // Replace control chars with their escape forms so
-                // a single-line entry stays single-line in the
-                // bundle. NewLine -> \n literal, etc.
-                let sb = System.Text.StringBuilder(s.Length + 4)
-                for ch in s do
-                    let code = int ch
-                    if ch = '\n' then sb.Append("\\n") |> ignore
-                    elif ch = '\r' then sb.Append("\\r") |> ignore
-                    elif ch = '\t' then sb.Append("\\t") |> ignore
-                    elif code = 0x1B then sb.Append("\\x1B") |> ignore
-                    elif code < 0x20 || code = 0x7F then
-                        sb.AppendFormat("\\x{0:X2}", code) |> ignore
-                    elif ch = '"' then sb.Append("\\\"") |> ignore
-                    else sb.Append(ch) |> ignore
-                sb.ToString()
+            // Replace control chars with their escape forms so
+            // a single-line entry stays single-line in the
+            // bundle. NewLine -> \n literal, etc.
+            let sb = System.Text.StringBuilder(s.Length + 4)
+            for ch in s do
+                let code = int ch
+                if ch = '\n' then sb.Append("\\n") |> ignore
+                elif ch = '\r' then sb.Append("\\r") |> ignore
+                elif ch = '\t' then sb.Append("\\t") |> ignore
+                elif code = 0x1B then sb.Append("\\x1B") |> ignore
+                elif code < 0x20 || code = 0x7F then
+                    sb.AppendFormat("\\x{0:X2}", code) |> ignore
+                elif ch = '"' then sb.Append("\\\"") |> ignore
+                else sb.Append(ch) |> ignore
+            sb.ToString()
         let describeEntry (e: ContentHistory.Entry) : string =
             let seq = ContentHistory.entrySeq e
             let source =
@@ -971,7 +968,7 @@ module Diagnostics =
                         | None -> ""
                     sprintf "Kind=Marker MarkerKind=%A%s" d.Kind payload
                 | ContentHistory.Spinner d ->
-                    sprintf "Kind=Spinner Frame=\"%s\"" (escape (truncate d.Frame 40))
+                    sprintf "Kind=Spinner Frames=%d LatestText=\"%s\"" d.FrameCount (escape (truncate d.LatestText 40))
             // SpeechCursor manual-nav verdict (PR-D's
             // renderEntryForManualNav). Using FinalDirOnly to
             // match the typical run-time PromptPath; if the
