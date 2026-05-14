@@ -15,6 +15,39 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Post-Cycle-49 PR-P (2026-05-14): Per-entry ContentHistory dump in diagnostic bundle
+
+Maintainer's Test D (SpeechCursor missing the `Enter your
+name:` chunk) couldn't be localised from the existing
+bundle: the aggregate `Stats:` line gives totals but the
+per-entry view — Seq / Kind / Source / Text — was only in
+the sibling `content-history-<ts>.txt` reconstruction
+file, and even there the SpeechCursor manual-nav verdict
+wasn't computed alongside.
+
+PR-P adds a new `--- ENTRIES (last 200 with SpeechCursor
+verdict) ---` subsection inside the existing `--- CONTENT
+HISTORY (last 64KB) ---` bundle section. One line per
+entry:
+
+```
+[Seq=N Source=X Kind=Y ... NavRender=Some(Len=N Activity=A Text="...")/None]
+```
+
+Control characters are escape-printed (`\n`, `\r`, `\t`,
+`\x1B`, `\xNN`) so a wrapped row stays on one bundle line.
+Text payloads are truncated to 80 chars for paste-
+friendliness; the full reconstruction stays in the sibling
+file. Capped at the last 200 entries; pre-cap entries
+elide with a leading `... (M earlier entries omitted)` line.
+
+The new dump answers "is this entry CmdOutput?", "does
+SpeechCursor's `renderEntryForManualNav` filter return
+None for this entry?", "where exactly does the entry
+chain break for the missing chunk?" — without requiring a
+separate `Ctrl+Shift+Y` SessionModel dump or a debug-level
+log walk.
+
 ### Post-Cycle-49 PR-O (2026-05-14): Cursor-row-based wrap detection for history-recalled commands
 
 Maintainer Test B dogfood 2026-05-14: first run of test-02
