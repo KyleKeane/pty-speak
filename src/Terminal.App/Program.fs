@@ -1040,6 +1040,19 @@ module Program =
         // before the first PromptStart fires).
         let mutable subPromptScreenReader
             : (unit -> string option) = (fun () -> None)
+        // PR-N (2026-05-14) — last-submitted-command length.
+        // Set in the byte-write wrapper at EnterPressed time
+        // (right before recordTransition fires). Used by the
+        // sub-prompt screen-read paths to compute how many
+        // visual rows the prompt + typed command occupy when
+        // the command wraps past `screen.Cols`. Without this,
+        // the wrapped continuation row gets misclassified as
+        // sub-prompt preamble and NVDA narrates the tail of
+        // the file path before the script's actual intro
+        // text. 0 when no command has been submitted yet (or
+        // when the buffer was empty at Enter — e.g. user
+        // pressed Enter at an empty prompt).
+        let mutable lastSubmittedCommandLength : int = 0
 
         // Cycle 45 Commit 2 — SpeechCursor announce callback +
         // "wake up" trigger. Defined here (very early in compose)
@@ -1870,6 +1883,43 @@ module Program =
         // runs on the UI dispatcher thread from
         // recordTransitionImpl, no extra synchronisation
         // beyond the existing actor-model contract needed.
+        // PR-N (2026-05-14) — compute the visual-row span the
+        // prompt + typed command occupies. When the command
+        // wraps past `screen.Cols`, the continuation lands on
+        // row `promptRow + 1` (and further rows). The
+        // sub-prompt screen-read paths used to start at
+        // `promptRow + 1` unconditionally — misclassifying
+        // wrap-continuation rows as script preamble and
+        // narrating the tail of the file path before the
+        // script's actual output. Maintainer 2026-05-14
+        // dogfood: 91-char script path + 47-char prompt =
+        // 138 chars on a 120-col screen → wraps to 2 rows;
+        // row `promptRow + 1` was being announced as
+        // preamble.
+        //
+        // `lastSubmittedCommandLength` is set in the byte-
+        // write wrapper at EnterPressed, so it's available
+        // by the time SubPromptIdle fires (which happens
+        // post-EnterPressed → Executing → SubPromptIdle).
+        // For top-level Composing entries before any Enter,
+        // the length is 0 and the helper returns 1 (no wrap)
+        // — correct since the prompt + nothing doesn't wrap.
+        let computePromptCommandWrapRows (promptRow: int) : int =
+            try
+                let cols = max 1 screen.Cols
+                let promptLen =
+                    match currentSession.Active with
+                    | Some active ->
+                        match active.Tuple.PromptText with
+                        | null -> 0
+                        | t -> t.Length
+                    | None -> 0
+                let cmdLen = max 0 lastSubmittedCommandLength
+                let total = promptLen + cmdLen
+                if total <= 0 then 1
+                else max 1 ((total + cols - 1) / cols)
+            with _ -> 1
+
         subPromptScreenReader <-
             fun () ->
                 try
@@ -1883,12 +1933,17 @@ module Program =
                     | Some promptRow when
                         cursorRow >= promptRow + 1
                         && cursorRow < snapshot.Length ->
+                        let wrapRows = computePromptCommandWrapRows promptRow
+                        let startRow = promptRow + wrapRows
                         let lines = ResizeArray<string>()
-                        for r in (promptRow + 1) .. cursorRow do
+                        for r in startRow .. cursorRow do
                             if r >= 0 && r < snapshot.Length then
                                 let line = CanonicalState.renderRow snapshot r
                                 if not (System.String.IsNullOrEmpty line) then
                                     lines.Add(line)
+                        log.LogDebug(
+                            "PR-N sub-prompt screen-read range. PromptRow={PromptRow} WrapRows={WrapRows} StartRow={StartRow} CursorRow={CursorRow} LineCount={LineCount}",
+                            promptRow, wrapRows, startRow, cursorRow, lines.Count)
                         if lines.Count > 0 then
                             Some (String.concat "\n" lines)
                         else None
@@ -1940,7 +1995,15 @@ module Program =
                         // intro / "Enter your name:kyle"), drop
                         // 3 of 5, "Hello, kyle!" + END marker
                         // narrate.
-                        let startRow = promptRow + 1
+                        // PR-N (2026-05-14) — skip wrap-
+                        // continuation rows. When the
+                        // command wrapped past screen.Cols,
+                        // `promptRow + 1` is the wrapped tail
+                        // of the typed command, not script
+                        // preamble. Same rationale as in
+                        // `subPromptScreenReader`.
+                        let wrapRows = computePromptCommandWrapRows promptRow
+                        let startRow = promptRow + wrapRows
                         let endRow = cursorRow - 1
                         let mutable nonEmptyCount = 0
                         for r in startRow .. endRow do
@@ -1950,8 +2013,8 @@ module Program =
                                     nonEmptyCount <- nonEmptyCount + 1
                         if nonEmptyCount > 0 then
                             log.LogInformation(
-                                "PR-K sub-prompt preamble captured. PromptRow={Pr} CursorRow={Cr} EndRow={Er} LineCount={Lc}",
-                                promptRow, cursorRow, endRow, nonEmptyCount)
+                                "PR-N sub-prompt preamble captured. PromptRow={Pr} WrapRows={Wr} StartRow={Sr} CursorRow={Cr} EndRow={Er} LineCount={Lc}",
+                                promptRow, wrapRows, startRow, cursorRow, endRow, nonEmptyCount)
                             subPromptPreambleLineCount <- nonEmptyCount
                     | _ -> ()
                 with ex ->
@@ -4430,6 +4493,14 @@ module Program =
                             shellInteractionLog.LogDebug(
                                 "UserInputBuffer captured on Enter: Length={Length} Text={Text}",
                                 captured.Length, captured)
+                            // PR-N — record the submitted-command
+                            // length so the sub-prompt screen-read
+                            // paths can compute wrap rows
+                            // (`ceil((promptLen + cmdLen) / cols)`)
+                            // and skip the wrapped-continuation
+                            // row(s) that would otherwise be
+                            // misclassified as script preamble.
+                            lastSubmittedCommandLength <- captured.Length
                             recordTransition
                                 (ShellInteraction.EnterPressed captured)
                     // Cycle 49 PR-I — history-recall announce.

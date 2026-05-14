@@ -15,6 +15,47 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Post-Cycle-49 PR-N (2026-05-14): Command-wrap-aware sub-prompt screen-read
+
+Maintainer dogfood 2026-05-14: when a command (e.g. the
+`test-02-text-input.cmd` invocation, ~91 chars) is long
+enough that `prompt path + typed command` exceeds
+`screen.Cols`, the typed command's continuation wraps onto
+the row right after the prompt row. PR-K's sub-prompt
+screen-read started at `promptRow + 1` unconditionally, so
+the wrapped continuation row was misclassified as script
+preamble and NVDA narrated the tail of the file path
+before the script's intro and prompt text.
+
+PR-N captures `UserInputBuffer.Capture()` result's length
+at EnterPressed (`lastSubmittedCommandLength`) and uses it
+to compute `wrapRows = ceil((PromptText.Length +
+cmdLen) / screen.Cols)`. Both PR-K sub-prompt screen-read
+sites — `subPromptScreenReader` (the announce body) and
+`capturePreambleForSubPromptResponse` (the tuple-final
+line-count) — now start at `promptRow + wrapRows` instead
+of `promptRow + 1`. The wrap-continuation row(s) skip
+correctly regardless of how many visual rows the command
+spans.
+
+Diagnostic logs per the PR-J CLAUDE.md convention:
+`PR-N sub-prompt screen-read range. PromptRow=N
+WrapRows=N StartRow=N CursorRow=N LineCount=N` at Debug
+and the existing `PR-N sub-prompt preamble captured`
+Information log gains `WrapRows={WrapRows} StartRow={StartRow}`
+fields.
+
+Note: the same wrap issue can in principle affect the
+`extractContent` row-walk fallback in `SessionModel.fs`,
+but in practice the `extractContentFromContentHistory`
+linear path is used for cmd (splits on the first `\n` in
+the byte stream — invariant under visual wrap) so
+tuple-final extraction is already wrap-correct. The
+row-walk fallback only fires on shell-switch /
+finalize-incomplete edges where extraction quality is
+less critical; left as a follow-up if a real reproducer
+surfaces.
+
 ### Post-Cycle-49 PR-L (2026-05-14): History-recall settle gate
 
 Maintainer dogfood 2026-05-14 reproduced two related desyncs
