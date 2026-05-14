@@ -755,7 +755,7 @@ points at the cycle headline.
   parallelism. preview.117 dogfood confirmed the patches
   don't compose; root cause is that announce routing is
   byte-stream driven, not semantic.
-- **Cycle 48** (PRs #306–this-PR-F, 2026-05-13) added the
+- **Cycle 48** (PRs #306–#311, 2026-05-13) added the
   semantic state machine on top of the substrate per
   [ADR 0003](docs/adr/0003-shell-interaction-state-machine.md):
   `ShellInteraction` with `Composing` / `Executing` states,
@@ -763,17 +763,33 @@ points at the cycle headline.
   `UserInputBuffer` byte-stream tracking, sub-prompt-announce
   via state-machine transition, SpeechCursor filter for
   `UserInputEcho`. Idle-flush announce body retired.
-- **NVDA matrix walk Cycle 48-B1 → 48-E8** is the
-  immediate validation gate for the Cycle 48 cycle (see
-  [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)).
-  preview.118 is the build cut after PR-F merges.
+- **Cycle 49** (PRs #313–#320 + this-PR-Z, 2026-05-14)
+  refined speech narration on top of Cycle 48's state
+  machine. PR-A SpeechCursor blank-collapse; PR-B post-
+  Enter delta announce (text-prefix-trim, superseded by
+  PR-F); PR-C UIA `TextChanged` review-cursor refresh;
+  PR-D prompts navigable in manual SpeechCursor; PR-F
+  sub-prompt last-line announce + line-count post-Enter
+  slicing; PR-G removed the duplicate-command-silencing
+  prefix-trim relic; PR-H reshaped `test-01-echo.cmd` with
+  explicit `Line 1 of 3` labelling; PR-I Up/Down arrow
+  history-recall announce via new `pty-speak.input-assistant`
+  activity ID. Deferred: `EntrySource.DraftInputRecall`
+  ContentHistory tagging (Cycle 49 E3) — substrate
+  refinement, no audible user-visible bug behind it after
+  PR-I's screen-read approach. Cycle plan archived at
+  [`docs/CYCLE-49-PLAN.md`](docs/CYCLE-49-PLAN.md) (now
+  historical).
+- **Validation gate**: maintainer release-build dogfood of
+  the post-PR-I build. NVDA matrix Cycle 49 row in
+  [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md).
 - **Next-cycle candidates** (none block each other; pick by
-  priority): 45g `ShellPolicy` consolidation, 45d review-
-  cursor focus, spinner/red-tone refinements, Coalescer
-  rename, UIA semantic caret, byte-level echo matching (the
-  full §5.5 history-nav resync deferred from PR-D),
-  LineByLine per-line streaming announces. Sequencing
-  in [`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md).
+  priority): `EntrySource.DraftInputRecall` follow-up, 45g
+  `ShellPolicy` consolidation, 45d review-cursor focus,
+  spinner/red-tone refinements, Coalescer rename, UIA
+  semantic caret, LineByLine per-line streaming announces.
+  Sequencing in
+  [`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md).
 
 ## When in doubt
 

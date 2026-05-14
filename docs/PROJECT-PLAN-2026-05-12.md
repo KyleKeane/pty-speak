@@ -128,32 +128,24 @@ confirm in passing.
 
 ## 4. Candidate next cycles
 
-**Cycle 48 (ShellInteraction state machine)** is the active
-cycle as of 2026-05-13, scoped in
-[`docs/adr/0003-shell-interaction-state-machine.md`](adr/0003-shell-interaction-state-machine.md).
-Five-PR sequence: PR-A (this ADR), PR-B (observe-only state
-machine), PR-C (UserInputBuffer), PR-D (announce routing
-switch), PR-E (cleanup + closure audit). All other Cycle 48
-work is gated on the maintainer accepting ADR 0003 and
-walking each PR's validation row.
+**Cycle 48 (ShellInteraction state machine) and Cycle 49
+(speech-narration refinements) both shipped.** Cycle 48
+introduced the semantic state machine per
+[`docs/adr/0003-shell-interaction-state-machine.md`](adr/0003-shell-interaction-state-machine.md);
+Cycle 49 (eight PRs, 2026-05-14) refined the narration on top:
+SpeechCursor blank-collapse, post-Enter delta announce,
+review-cursor refresh via UIA TextChanged, prompts-visible-in-
+manual-nav, sub-prompt last-line announce, line-count
+post-Enter delta slicing (superseded Cycle 49 PR-B's text-
+prefix-trim), tuple-final prefix-trim removed (silenced
+duplicate commands), test-01 reshape (Line 1 of 3 explicit
+labelling), and Up/Down history-recall announce via a new
+`pty-speak.input-assistant` activity ID. Maintainer dogfood
+2026-05-14 verified each defect resolved; preview.123 build
+is the post-cycle release-build cut.
 
-Motivation: Cycle 47 follow-up PRs (#299–#305) attempted to
-patch the announce path via gates (typing-window, prefix
-trim, sealed-only, cursor-row newlines). preview.117
-dogfood confirmed the patches don't compose — each fix
-revealed or introduced another regression. The root cause
-is that the announce path is driven by byte-stream deltas,
-not by a semantic model of shell interaction. ADR 0003 adds
-the semantic model.
-
-The other Cycle 47 work (preview.114 batch) shipped and
-remains correct: marker labels, sanitiseForBundle,
-synthesised CommandFinished, menu mnemonic fixes,
-diagnostic-bundle closure. Those land into Cycle 48 as
-prerequisites, not as items to revisit.
-
-None of the candidates below block Cycle 48 directly; they
-are independent and pick-by-priority once Cycle 48 closes.
+None of the candidates below block any active cycle; they
+are independent and pick-by-priority.
 
 ### Short-term
 
@@ -161,6 +153,7 @@ are independent and pick-by-priority once Cycle 48 closes.
 |---|---|---|---|
 | **45g** | `ShellPolicy` consolidation: migrate `HeuristicPromptDetector` + `SelectionDetector`'s per-shell gates onto the `ShellPolicy` table (pure refactor) | ~200 | nothing |
 | **45d** | Interactive review-cursor focus: `Enter` on a focused row dispatches per type (copy prompt, select item, etc.) | ~150 | nothing |
+| **`EntrySource.DraftInputRecall`** | Tag history-recall draft rewrites in `ContentHistory` (deferred Cycle 49 E3). PR-I solved the audible problem with a simpler screen-read approach; this is a substrate refinement so the review cursor can distinguish recalled drafts from typed input | ~50 | nothing |
 | **Spinner / red-tone fixes** | Rewrite the Cycle 29b spinner-storm + false-positive red-tone fixes against ContentHistory (originals lived in StreamPathway) | ~100–150 each | nothing |
 
 ### Medium-term (substrate maturity)
@@ -226,3 +219,4 @@ segmentation + spatial audio. `pty-speak-replay` CLI
 | 2026-05-13 | Cycle 47 follow-up batch (PRs #299–#305, preview.114 → preview.117) | Shipped marker-label parallelism, sanitiseForBundle newlines, CommandFinished synthesis, typing-window UIA gate, prefix-trim, mid-eval earcon, menu mnemonic fixes, cursor-row synthetic newlines, idle-flush typing gate. preview.117 dogfood found the gates don't compose: typed chars still announced, set/p replays, review cursor drifts. Diagnosis: announce path is byte-stream-driven, not semantic. |
 | 2026-05-13 | Cycle 48 PR-A (ADR 0003 draft) | Active cycle. Six-PR sequence specified in [`docs/adr/0003-shell-interaction-state-machine.md`](adr/0003-shell-interaction-state-machine.md): ShellInteraction state machine (`Composing` / `Executing`) as the semantic layer above the substrate; ContentHistory.Entry gains `Source : EntrySource` per §9.5 resolution; UserInputBuffer for canonical "what the user typed"; sub-prompt detection via "idle and last-byte-not-LF"; announce routing collapsed from `tuple-final + idle-flush + prefix-trim` to one transition-driven path; SpeechCursor filters `UserInputEcho` entries in both AutoDrive AND Manual nav per §9.6 resolution. Open questions §9.1 → §9.6 resolved 2026-05-13 in-chat; resolutions recorded in the ADR itself. Validation: maintainer reads + approves ADR before PR-B writes any code. |
 | 2026-05-13 | Cycle 48 PR-B → PR-F (closure) | Six-PR Cycle 48 shipped: PR-B (#307, `3c2a372`) ShellInteraction state machine observe-only; PR-C (#308, `5d34369`) `ContentHistory.Entry.Source` substrate change + per-source counts in diagnostic bundle Stats line; PR-D (#309, `96b6e56`) UserInputBuffer byte-stream wiring via writePtyBytes wrapper; PR-E (#310, `459a0b2`) sub-prompt announce via state machine + SpeechCursor filter for UserInputEcho + idle-flush announce body retired; PR-F (this PR) docs sweep. ADR 0003 status flipped to **Accepted / Implemented**. Cycle 47 dead code (tupleFinaliseAnnounce prefix-trim, PR #300 materialiser typing-window gate) preserved as defence-in-depth pending preview.118 dogfood; cleanup is staged for a follow-up PR. Validation: NVDA matrix Cycle 48-B1 → 48-E8 walks the CMD test corpus against the new audible behaviour. |
+| 2026-05-14 | Cycle 49 PR-A → PR-I + PR-Z (closure) | Eight-PR Cycle 49 shipped on top of Cycle 48's state machine, refining speech narration and review-cursor behaviour from maintainer preview.118 → preview.122 dogfood. PR-A (#313, `8242e56`) SpeechCursor manual-nav blank-collapse. PR-B (#314, `36acad6`) post-Enter delta announce via screen-rendered preamble at `EnterPressed` time (text-prefix-trim approach later superseded by PR-F's line-count slice). PR-C (#315, `1579ff7`) `TerminalAutomationPeer.RaiseTextChanged` after every Announce site to invalidate NVDA's review-cursor `DocumentRange` cache. PR-D (#316, `4b315ae`) `SpeechCursor.renderEntryForManualNav` makes `PromptStart` markers with payload navigable regardless of per-shell `PromptPath` policy. PR-F (#317, `2f8a05a`) two refinements: sub-prompt announce narrates only the last non-empty line of the accumulator; post-Enter delta uses line-count slicing for robustness to per-row content drift. PR-G (#318, `335dbb9`) removed tuple-final `lastAnnouncedText` prefix-trim relic (silenced duplicate commands; "unpredictable speech" symptom). PR-H (#319, `b9e250f`) reshaped `test-01-echo.cmd` with explicit `Line 1 of 3` labelling. PR-I (#320, `904051c`) Up/Down arrow history-recall announce via new `pty-speak.input-assistant` activity ID; 100ms debounced screen-read + prompt-path strip. PR-Z (this PR) docs sweep. Cycle 49 plan archived as historical. Maintainer-reported defects all resolved in-cycle: test-01 missing line (PR-H), sub-prompt content (PR-F), post-Enter still full-read (PR-F), duplicate-command silence (PR-G), menu narration regression (downstream of PR-G), history recall (PR-I). Deferred to a future cycle: `EntrySource.DraftInputRecall` (Cycle 49 E3) — ContentHistory substrate refinement for tagging recalled drafts. Validation: post-PR-I release-build dogfood. |

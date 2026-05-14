@@ -11,68 +11,59 @@ previous (multi-thousand-line) handoff is at
 [`docs/archive/pre-cycle-45/SESSION-HANDOFF-pre-cycle-45c-historical.md`](archive/pre-cycle-45/SESSION-HANDOFF-pre-cycle-45c-historical.md)
 and serves the decision-trail role this file used to overload.
 
-## Current state (2026-05-13)
+## Current state (2026-05-14)
 
-**Cycle 48 fully shipped.** Six-PR sequence (PR-A → PR-F)
-implementing the `ShellInteraction` semantic state machine per
-[ADR 0003](adr/0003-shell-interaction-state-machine.md):
+**Cycle 49 fully shipped.** Eight-PR sequence (PR-A → PR-I,
+plus closure audit) refining the speech / review-cursor /
+sub-prompt narration on top of Cycle 48's `ShellInteraction`
+state machine:
 
 | PR   | Commit    | Scope                                                              |
 |------|-----------|--------------------------------------------------------------------|
-| #306 (PR-A)  | `f0fbbe8` | ADR 0003 drafted + §9 open questions resolved in-chat. |
-| #307 (PR-B)  | `3c2a372` | `ShellInteraction` state machine (`Composing` / `Executing`), wired in observe-only mode (logs transitions but doesn't change announce routing). |
-| #308 (PR-C)  | `5d34369` | `ContentHistory.Entry.Source : EntrySource` substrate-schema change. Bundle's `Stats:` line extends with per-source counts. |
-| #309 (PR-D)  | `96b6e56` | `UserInputBuffer` byte-stream wiring via `writePtyBytes` wrapper. `EnterPressed` transition carries the captured command text. |
-| #310 (PR-E)  | `459a0b2` | Sub-prompt announce via state machine (`SubPromptIdle` transition fires `Announce` + earcon). SpeechCursor filters `UserInputEcho` entries in both AutoDrive AND Manual. Idle-flush announce body retired. |
-| (this PR, PR-F) | (closure audit) | Docs sweep: ADR status, SESSION-HANDOFF, CLAUDE.md sequencing, PROJECT-PLAN change log. |
+| #313 (PR-A) | `8242e56` | `SpeechCursor` manual nav (`Ctrl+Shift+Up/Down/End`) skips entries whose render returns `None` (Newline, Overwrite, empty TextSpan, `UserInputEcho`, boundary markers without payload). One stop per audible chunk. |
+| #314 (PR-B) | `36acad6` | Post-Enter delta announce for sub-prompt responses. Captures the on-screen preamble at `EnterPressed` so tuple-finalise only narrates the script's response. (PR-B's text-prefix-trim was later superseded by PR-F's line-count slice.) |
+| #315 (PR-C) | `1579ff7` | `TerminalAutomationPeer.RaiseTextChanged` fires after every Announce site so NVDA's review cursor invalidates its cached `DocumentRange` and re-pulls the latest tail without needing a fresh command. |
+| #316 (PR-D) | `4b315ae` | `SpeechCursor.renderEntryForManualNav` decouples manual-nav rendering from per-shell `PromptPath` policy. `PromptStart` markers with payload always surface as navigable entries (`FinalDirOnly`-trimmed) regardless of auto-drive verbosity. |
+| #317 (PR-F) | `2f8a05a` | Two refinements: (1) sub-prompt announce narrates only the LAST non-empty line of the accumulator (the actual prompt text), not every preamble line. (2) Post-Enter delta uses line-count slicing on `tuple.OutputText` instead of PR-B's text prefix-trim — robust to per-row content drift between EnterPressed and tuple-finalise. |
+| #318 (PR-G) | `335dbb9` | Removed the tuple-final `lastAnnouncedText` prefix-trim relic. Pre-PR-G it silenced duplicate-command output (running `echo hi` twice → second run silent) and produced the "unpredictable" silence pattern over a session. Only sub-prompt line-count slicing remains. |
+| #319 (PR-H) | `b9e250f` | Reshaped `test-01-echo.cmd` with explicit `Line 1 of 3` / `Line 2 of 3` / `Line 3 of 3` labels + framed intro and final messages. Maintainer recognition issue from the pre-Cycle-49 implicit Line 1 / Line 8 labelling. |
+| #320 (PR-I) | `904051c` | Up / Down arrow history-recall announce. Detects arrow byte sequences (`\x1B [ A/B`, `\x1B O A/B`), debounces 100 ms, reads the prompt row, strips the prompt-path prefix, and announces via a new `pty-speak.input-assistant` activity ID. CORE-ABSTRACTION-BOUNDARY.md §"input assistant" reserved peer pane's first concrete user. |
+| (this PR-Z) | (closure audit) | Docs sweep: SESSION-HANDOFF (this section), PROJECT-PLAN change log, CLAUDE.md sequencing, ACCESSIBILITY-TESTING matrix consolidation, CYCLE-49-PLAN HISTORICAL banner. |
 
-Cycle 46 + 47 history retained in the CHANGELOG + the
-ADR-0002 / ADR-0003 records.
+Cycle 48 history retained in the CHANGELOG + ADR-0003.
 
-The architectural mismatch named in
-[ADR 0003](adr/0003-shell-interaction-state-machine.md) —
-"pty-speak models the byte stream; it should model the
-interaction" — is resolved by the two-state machine on top
-of ContentHistory / Screen / SessionModel. Idle-flush
-chatter goes away by construction; sub-prompt detection
-fires only on the explicit "idle + last-byte-not-LF" signal;
-SpeechCursor never replays user-typed echo.
-
-**Validation gate pending.** **NVDA matrix Cycle 48-B1 →
-48-E8** in
-[`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
-covers the cycle. Maintainer dogfood against preview.118
-(the build cut after this PR-F merges) is the gating signal.
-
-## Where we left off
-
-`main` past Cycle 48 PR-E (`459a0b2`), with this PR-F closure
+`main` past Cycle 49 PR-I (`904051c`), with this PR-Z closure
 audit landing on top. Working tree clean; no in-flight
 branches; no pending fixups.
 
-[`docs/adr/0003-shell-interaction-state-machine.md`](adr/0003-shell-interaction-state-machine.md)
-is in **Accepted / Implemented** state with all six PRs
-merged. The Cycle 47 dead code preserved as defence-in-depth
-in PR-E (the `tupleFinaliseAnnounce` prefix-trim path) stays
-in source for one preview cycle; if PR-E's audible behaviour
-holds in preview.118 dogfood, a follow-up PR can delete the
-dead branches.
+**Validation gate**: maintainer dogfood against the post-PR-I
+release build is the gating signal. Live items verified
+2026-05-14 during cycle:
+- Simple echo (`test-01-echo`) narration ✓
+- Sub-prompt (`test-02-text-input`) prompt + post-Enter delta ✓
+- Duplicate command (e.g. `echo hi` twice) ✓
+- Menu narration (was a downstream regression of the
+  duplicate-suppression bug; resolved by PR-G/H) ✓
+- History recall via Up/Down arrow — pending release-build
+  re-test post-PR-I.
 
 ## Next stage
 
-**Cycle 48 done.** The six-PR sequence (PR-A → PR-F) is in
-main. Next live gate: maintainer preview.118 dogfood. Audible
-listening criteria per matrix rows 48-E1 → 48-E8.
+**Cycle 49 done.** All maintainer-reported audible defects
+resolved. Next live gate: release-build dogfood of PR-I's
+history-recall announce.
 
 **Next-cycle candidates** (none block each other; pick by
 priority):
 
+- **`EntrySource.DraftInputRecall`** (deferred from Cycle 49
+  E3) — tag history-recall draft rewrites in `ContentHistory`
+  so the review cursor can distinguish them from typed input.
+  PR-I solved the audible problem with a simpler screen-read
+  approach; this is a substrate refinement.
 - **Cycle 45g** — `ShellPolicy` consolidation (~200 LOC pure
   refactor).
 - **Cycle 45d** — Interactive review-cursor focus (~150 LOC).
-- **Semantic labels** — Add `Source: EntrySource` to every
-  `ContentHistory.Entry`. Foundational for chunk-level
-  navigation + inject-past-input.
 - **Spinner / red-tone fixes** — Rewrite Cycle 29b storm
   fixes against ContentHistory.
 - **Coalescer rename** — Standalone refactor (~25 sites).
