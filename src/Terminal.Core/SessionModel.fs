@@ -875,6 +875,126 @@ module SessionModel =
                     Some (cmd, out)
         | _ -> None
 
+    /// Cycle 51 spike (Phase 0; 2026-05-14) — diagnostic-only
+    /// parallel extractor that classifies ContentHistory entries
+    /// by their `EntrySource` provenance instead of matching the
+    /// `PromptStart` / `OutputStart` marker pair or splitting the
+    /// command/output blob on its first newline.
+    ///
+    /// Behaviour:
+    ///   - Walks entries strictly above the latest `PromptStart`
+    ///     marker's Seq, plus the active (unsealed) span if its
+    ///     implicit Seq is in-range — `ContentHistory.entriesAfter`
+    ///     unifies sealed + active in one array.
+    ///   - Classifies each entry by `EntrySource`:
+    ///       `UserInputEcho`  → command portion (cmd echoes typed
+    ///                          keystrokes back as the user types).
+    ///       `CmdOutput`      → output portion.
+    ///       `CmdSubPrompt`   → output portion (sub-prompts are
+    ///                          inline content of the parent cell
+    ///                          in v1; ADR 0004 may promote later).
+    ///       `ShellPrompt`    → skip (the next cell's prompt bytes
+    ///                          bled into our tail; the NEXT cell
+    ///                          will own them).
+    ///       `BoundaryMarker` → skip (marker entries are metadata).
+    ///       `Unknown`        → conservative fold: into output if
+    ///                          we've already seen output,
+    ///                          otherwise into command.
+    ///   - Drop-on-None: if `tryLatestMarker(PromptStart)` returns
+    ///     `None`, returns `None`. Post-spike Caller (PR-W)
+    ///     treats this as "no announce" — loud silence beats
+    ///     stale-scrollback garbage announce per the maintainer's
+    ///     2026-05-14 directive.
+    ///
+    /// `newPromptText` accepted for API parity with
+    /// `extractContentFromContentHistory` but unused: the
+    /// `ShellPrompt` provenance tag obsoletes the string-trim
+    /// heuristic the existing extractor uses on the
+    /// heuristic-only path.
+    let private extractIOCell
+            (history: ContentHistory.T)
+            (_newPromptText: string option)
+            : (string * string) option
+            =
+        match
+            ContentHistory.tryLatestMarker
+                history ContentHistory.MarkerKind.PromptStart
+        with
+        | None -> None
+        | Some promptStart ->
+            let entries =
+                ContentHistory.entriesAfter
+                    history promptStart.Seq
+            let cmdSb = System.Text.StringBuilder()
+            let outSb = System.Text.StringBuilder()
+            let mutable sawOutput = false
+            let mutable sawAnyContent = false
+            for entry in entries do
+                let source = ContentHistory.entrySource entry
+                let textOpt =
+                    match entry with
+                    | ContentHistory.TextSpan d -> Some d.Text
+                    | ContentHistory.Newline _ -> Some "\n"
+                    | ContentHistory.Overwrite d -> Some d.Text
+                    | ContentHistory.Spinner d -> Some d.LatestText
+                    | ContentHistory.Marker _ -> None
+                match textOpt, source with
+                | None, _ -> ()
+                | Some _, ContentHistory.EntrySource.BoundaryMarker -> ()
+                | Some _, ContentHistory.EntrySource.ShellPrompt -> ()
+                | Some text, ContentHistory.EntrySource.UserInputEcho ->
+                    cmdSb.Append(text) |> ignore
+                    sawAnyContent <- true
+                | Some text, ContentHistory.EntrySource.CmdOutput ->
+                    outSb.Append(text) |> ignore
+                    sawOutput <- true
+                    sawAnyContent <- true
+                | Some text, ContentHistory.EntrySource.CmdSubPrompt ->
+                    outSb.Append(text) |> ignore
+                    sawOutput <- true
+                    sawAnyContent <- true
+                | Some text, ContentHistory.EntrySource.Unknown ->
+                    if sawOutput then
+                        outSb.Append(text) |> ignore
+                    else
+                        cmdSb.Append(text) |> ignore
+                    sawAnyContent <- true
+            if not sawAnyContent then None
+            else
+                let cmd = cmdSb.ToString().TrimEnd('\r', '\n')
+                let out = outSb.ToString().TrimEnd('\r', '\n')
+                Some (cmd, out)
+
+    /// Cycle 51 spike (Phase 0; 2026-05-14) — diagnostic facade
+    /// that runs BOTH `extractContentFromContentHistory` (the
+    /// existing Seq-based + newline-heuristic extractor) AND
+    /// `extractIOCell` (the new classification-by-source spike
+    /// extractor) against identical state so Program.fs can log a
+    /// three-way side-by-side comparison at tuple-seal time
+    /// (existing extractor result, spike extractor result, the
+    /// tuple actually finalised).
+    ///
+    /// Removed when the spike branch is folded back into PR-W
+    /// (which renames `extractIOCell` to the canonical name and
+    /// deletes `extractContentFromContentHistory` along with the
+    /// row-walk `extractContent`).
+    type IOCellSpikeComparison =
+        { Existing: (string * string) option
+          Spike: (string * string) option }
+
+    /// Cycle 51 spike (Phase 0; 2026-05-14) — see
+    /// `IOCellSpikeComparison`. Lock-safe wrt ContentHistory via
+    /// the helpers each extractor uses internally.
+    let extractIOCellSpikeComparison
+            (history: ContentHistory.T)
+            (newPromptText: string option)
+            : IOCellSpikeComparison
+            =
+        { Existing =
+            extractContentFromContentHistory history newPromptText
+          Spike =
+            extractIOCell history newPromptText }
+
     /// Cycle 45c — ContentHistory-driven substrate finalize.
     /// Companion to `applyAndCaptureWithSubstrate`, threaded with
     /// the new ContentHistory substrate instead of LinearTextStream.

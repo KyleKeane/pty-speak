@@ -2285,6 +2285,59 @@ module Program =
             | Some tuple -> dispatchTupleToWriter tuple
             | None -> ()
 
+            // Cycle 51 spike (Phase 0; 2026-05-14) — log a
+            // three-way side-by-side comparison at every
+            // CommandFinished boundary so the maintainer's
+            // dogfood bundle shows whether the new
+            // classification-by-source extractor diverges from
+            // the existing Seq-based extractor and from the
+            // tuple that actually finalised. The
+            // CommandFinished marker has NOT YET been appended
+            // to ContentHistory at this point (the markerKind
+            // block below appends it), so the spike call
+            // observes the same state the existing extractor
+            // saw inside `finalizeAndEnqueue`.
+            //
+            // Removed when PR-W lands (the spike facade is
+            // replaced by the canonical extractor + the
+            // existing extractor is deleted).
+            match augmented.Kind with
+            | BoundaryKind.CommandFinished _ ->
+                let escapeForLog (s: string) =
+                    s
+                        .Replace("\\", "\\\\")
+                        .Replace("\n", "\\n")
+                        .Replace("\r", "\\r")
+                let formatExtractorResult
+                        (p: (string * string) option) =
+                    match p with
+                    | None -> "<None>"
+                    | Some (c, o) ->
+                        sprintf
+                            "cmd[%d]=`%s` out[%d]=`%s`"
+                            c.Length (escapeForLog c)
+                            o.Length (escapeForLog o)
+                let comparison =
+                    SessionModel.extractIOCellSpikeComparison
+                        contentHistory
+                        augmented.MatchedRowText
+                let finalisedFmt =
+                    match finalisedOpt with
+                    | Some t ->
+                        sprintf
+                            "cmd[%d]=`%s` out[%d]=`%s`"
+                            t.CommandText.Length
+                            (escapeForLog t.CommandText)
+                            t.OutputText.Length
+                            (escapeForLog t.OutputText)
+                    | None -> "<no-tuple-finalised>"
+                pumpLog.LogInformation(
+                    "Cycle 51 spike PR-V0. Existing={Existing} Spike={Spike} Finalised={Finalised}",
+                    formatExtractorResult comparison.Existing,
+                    formatExtractorResult comparison.Spike,
+                    finalisedFmt)
+            | _ -> ()
+
             // Cycle 45 Commit 2 — ContentHistory + SpeechCursor
             // boundary handling. Emit a `MarkerKind` matching the
             // SessionModel state-transition kind so SpeechCursor

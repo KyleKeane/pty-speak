@@ -357,6 +357,48 @@ module ContentHistory =
                 i <- i + 1
             found)
 
+    /// Cycle 51 spike (Phase 0) — sealed entries strictly above
+    /// `fromSeqExclusive` in append-time (== Seq-ascending) order,
+    /// plus a synthetic `TextSpan` entry for the unsealed active
+    /// span if its implicit Seq is in-range. The synthetic entry
+    /// uses the captured `ActiveSpanSource` (or `Unknown` if the
+    /// resolver never ran). Lock-safe; returns a fresh array.
+    ///
+    /// Used by `SessionModel.extractIOCell` to classify per-byte
+    /// provenance into command vs output regions without going
+    /// through `sliceText`'s byte-stream flatten — the spike needs
+    /// each entry's `EntrySource` tag, which the flat string
+    /// representation strips.
+    let entriesAfter
+            (state: T)
+            (fromSeqExclusive: int64)
+            : Entry[] =
+        lock state.Gate (fun () ->
+            let result = ResizeArray<Entry>()
+            for entry in state.Entries do
+                if entrySeq entry > fromSeqExclusive then
+                    result.Add(entry)
+            if state.ActiveSpanText.Length > 0 then
+                let activeSeq = state.NextSeq
+                if activeSeq > fromSeqExclusive then
+                    let src =
+                        match state.ActiveSpanSource with
+                        | ValueSome s -> s
+                        | ValueNone -> EntrySource.Unknown
+                    let startedAt =
+                        match state.ActiveSpanStartedAt with
+                        | ValueSome t -> t
+                        | ValueNone -> DateTime.UtcNow
+                    let synthetic =
+                        TextSpan
+                            { Seq = activeSeq
+                              Text = state.ActiveSpanText.ToString()
+                              StartedAt = startedAt
+                              SettledAt = DateTime.UtcNow
+                              Source = src }
+                    result.Add(synthetic)
+            result.ToArray())
+
     /// Cycle 45c — most recent Marker entry of the given Kind, or
     /// `None` if absent. Walks `Entries` from tail. Used by
     /// `SessionModel.extractContentFromContentHistory` at
