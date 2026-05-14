@@ -15,6 +15,38 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Post-Cycle-49 PR-L (2026-05-14): History-recall settle gate
+
+Maintainer dogfood 2026-05-14 reproduced two related desyncs
+under rapid Up/Down arrow tapping:
+
+1. **Spoken text ≠ visually displayed command**: PR-I's 100 ms
+   debounced timer fires 100 ms after the last keystroke, but
+   under rapid tap cmd's response bytes (the line-rewrite for
+   each arrow press) are still arriving from the PTY when the
+   timer fires. The screen-read sees an intermediate state and
+   the announce reflects an earlier state than what's now on
+   screen. PR-L adds a settle gate: on tick, also check
+   `lastReadUtc`; if the reader has emitted bytes within the
+   last 100 ms, restart the timer instead of announcing. Only
+   when keystrokes AND incoming bytes have both been quiet for
+   100 ms does the announce fire.
+
+2. **Visually displayed command ≠ what cmd executes on Enter**:
+   This one is a user-perception race against ConPTY round-
+   trip latency — cmd processes Up/Down bytes in order and
+   atomically updates its history pointer, but the screen
+   reflects each step only after the response byte makes it
+   back through the reader. If Enter is pressed while a
+   line-rewrite is in transit, the visible frame is stale.
+   Not pty-speak's bug to fix, but PR-L's settle gate ensures
+   the SPOKEN text matches what cmd will run if Enter is
+   pressed at the moment the user hears the announce.
+
+Diagnostic log added per the PR-J CLAUDE.md convention: when
+the gate defers, `PR-L history-recall settle-gate: deferring
+(LastReadAgoMs=N)` lands at Debug.
+
 ### Post-Cycle-49 PR-K (2026-05-14): Sub-prompt screen-read + capturePreamble endRow fix
 
 Two coupled bug fixes from preview.125 dogfood of the
