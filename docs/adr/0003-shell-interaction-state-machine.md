@@ -131,7 +131,7 @@ pattern that the announce layer must handle correctly:
 
 | Test | Script behaviour                                        | Pattern                                                 |
 |------|---------------------------------------------------------|---------------------------------------------------------|
-| 01   | `echo Line 1 of 8 ... Line 8 of 8`                      | Simple shell command, multi-line output.                |
+| 01   | `echo Line 1 of 3 ... Line 3 of 3` (plus intro + final) | Simple shell command, multi-line output.                |
 | 02   | `set /p name=Enter your name:` then `echo Hello %name%` | Sub-prompt text input.                                  |
 | 03   | `set /p n=Number? :` then arithmetic on `%n%`           | Sub-prompt with computation.                            |
 | 04   | `set /p ans=Y/N? :` with branching                      | Sub-prompt with constrained answer.                     |
