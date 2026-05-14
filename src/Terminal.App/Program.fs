@@ -4362,8 +4362,41 @@ module Program =
                         "history-recall announce failed: {Message}",
                         ex.Message)
             historyRecallTimer.Tick.Add(fun _ ->
-                historyRecallTimer.Stop()
-                tryAnnounceRecalledDraft ())
+                // PR-L (2026-05-14) — settle gate. The 100 ms
+                // timer is reset by every Up/Down keypress
+                // (debounce); on tick, also check whether PTY
+                // bytes are still flowing in. If the reader has
+                // emitted bytes within the last 100 ms, cmd's
+                // response to the recall is mid-flight; defer
+                // by restarting the timer. Otherwise the
+                // screen-read happens against a settled
+                // display.
+                //
+                // Maintainer 2026-05-14 dogfood: rapid Up/Down
+                // tapping reproduced two symptoms — (1) spoken
+                // text different from visually-displayed
+                // command, (2) visually-displayed command
+                // different from what cmd executes on Enter.
+                // Symptom (1) was my screen-read firing
+                // mid-response (cmd's line-rewrite bytes still
+                // arriving). Symptom (2) is fundamentally a
+                // user-perception race against ConPTY round-
+                // trip and isn't pty-speak's to fix — but
+                // resolving (1) means the spoken text matches
+                // what cmd will actually run if Enter is
+                // pressed at the settled moment.
+                let now = DateTimeOffset.UtcNow
+                let elapsedSinceLastRead =
+                    (now - lastReadUtc).TotalMilliseconds
+                if elapsedSinceLastRead < 100.0 then
+                    log.LogDebug(
+                        "PR-L history-recall settle-gate: deferring (LastReadAgoMs={Ms}).",
+                        elapsedSinceLastRead)
+                    historyRecallTimer.Stop()
+                    historyRecallTimer.Start()
+                else
+                    historyRecallTimer.Stop()
+                    tryAnnounceRecalledDraft ())
             let triggerHistoryRecallDebounce () =
                 // Stop + restart so rapid Up / Down keypresses
                 // coalesce to a single announce of the final state.
