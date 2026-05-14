@@ -4141,6 +4141,93 @@ module Program =
                     (fun _ -> lastReadUtc <- DateTimeOffset.UtcNow)
                     (fun ts b -> ShellInteraction.observeByte shellInteraction ts b)
                     cts.Token
+
+            // Cycle 49 PR-I — history-recall draft announce.
+            //
+            // When the user presses Up / Down arrow during Composing,
+            // the shell (cmd's doskey, PowerShell's PSReadLine, bash
+            // readline) rewrites the on-screen input line to display
+            // the previous / next command from its history. The PTY
+            // bytes the shell sends to perform the rewrite (clear-
+            // line CSI sequences, cursor-position resets, the
+            // recalled-command bytes) flow through the reader thread
+            // into Screen but bypass `UserInputBuffer`'s byte-stream
+            // tracking — `UserInputBuffer` watches OUTGOING bytes
+            // (user keystrokes to PTY) and so doesn't see the shell-
+            // side rewrite.
+            //
+            // The fix here doesn't try to reverse-engineer the shell's
+            // rewrite protocol (CSI 2K, CSI nG, bare `\r`, etc. vary
+            // per shell). Instead: when the byte-write wrapper sees
+            // an Up / Down arrow keystroke going OUT to the PTY,
+            // schedule a debounced read of the current prompt row
+            // (100 ms after the last Up / Down — the typical PTY
+            // round-trip + render budget) and announce whatever the
+            // input line now reads as. Rapid Up / Down spam coalesces
+            // to a single announce of the final state.
+            let historyRecallTimer = DispatcherTimer()
+            historyRecallTimer.Interval <- TimeSpan.FromMilliseconds(100.0)
+            let tryAnnounceRecalledDraft () =
+                try
+                    let _, _, snapshot =
+                        screen.SnapshotRows(0, screen.Rows)
+                    let promptRowOpt =
+                        match currentSession.Active with
+                        | Some active -> active.PromptRowIndex
+                        | None -> None
+                    match promptRowOpt with
+                    | Some promptRow when
+                        promptRow >= 0 && promptRow < snapshot.Length ->
+                        let row = CanonicalState.renderRow snapshot promptRow
+                        // Strip the prompt-path prefix if the state
+                        // machine has one. Without the strip the
+                        // announce reads back the full
+                        // `C:\Users\Kyle\…\current>recalledCmd` row
+                        // every time, which the user has already
+                        // navigated past visually. Inspired by the
+                        // sub-prompt last-line announce (PR-F).
+                        let promptText =
+                            match shellInteraction.Current with
+                            | ShellInteraction.Composing data ->
+                                match data.PromptText with
+                                | ValueSome t -> Some t
+                                | ValueNone -> None
+                            | _ -> None
+                        let draft =
+                            match promptText with
+                            | Some pt
+                                when row.StartsWith(
+                                    pt, StringComparison.Ordinal) ->
+                                row.Substring(pt.Length)
+                            | _ -> row
+                        let trimmed = draft.Trim()
+                        if not (System.String.IsNullOrWhiteSpace trimmed) then
+                            log.LogInformation(
+                                "PR-I history-recall announce. RowLen={RowLen} DraftLen={DraftLen}",
+                                row.Length, trimmed.Length)
+                            window.TerminalSurface.Announce(
+                                trimmed, ActivityIds.inputAssistant)
+                        else
+                            // Empty recall (shell offered no history /
+                            // history exhausted). Stay silent —
+                            // narrating a blank line is noise.
+                            log.LogDebug(
+                                "PR-I history-recall: empty draft, no announce.")
+                    | _ -> ()
+                with ex ->
+                    log.LogWarning(
+                        ex,
+                        "history-recall announce failed: {Message}",
+                        ex.Message)
+            historyRecallTimer.Tick.Add(fun _ ->
+                historyRecallTimer.Stop()
+                tryAnnounceRecalledDraft ())
+            let triggerHistoryRecallDebounce () =
+                // Stop + restart so rapid Up / Down keypresses
+                // coalesce to a single announce of the final state.
+                historyRecallTimer.Stop()
+                historyRecallTimer.Start()
+
             window.TerminalSurface.SetPtyHost(
                 Action<byte[]>(fun bytes ->
                     // Cycle 48 PR-D (ADR 0003) — byte-stream-
@@ -4170,6 +4257,26 @@ module Program =
                                 captured.Length, captured)
                             recordTransition
                                 (ShellInteraction.EnterPressed captured)
+                    // Cycle 49 PR-I — history-recall announce.
+                    // Detect Up/Down arrow keystrokes the user
+                    // is sending to the shell; cmd's doskey /
+                    // PSReadLine / bash readline will replace
+                    // the on-screen input line with the
+                    // recalled command. Schedule a debounced
+                    // read of the prompt row + announce so the
+                    // user hears what was just inserted.
+                    //
+                    // Cursor-key encoding (`KeyEncoding.fs`):
+                    //   Normal mode      `\x1B [ A/B` (3 bytes)
+                    //   App / DECCKM     `\x1B O A/B` (3 bytes)
+                    // Modifier-augmented forms (Shift+Up etc.)
+                    // are 6+ bytes and not history-recall; we
+                    // ignore them.
+                    if bytes.Length = 3
+                       && bytes.[0] = 0x1Buy
+                       && (bytes.[1] = 0x5Buy || bytes.[1] = 0x4Fuy)
+                       && (bytes.[2] = 0x41uy || bytes.[2] = 0x42uy) then
+                        triggerHistoryRecallDebounce ()
                     host.WriteBytes(bytes)),
                 Action<int, int>(fun cols rows ->
                     // Resize is best-effort: a transient failure
