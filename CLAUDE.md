@@ -584,6 +584,46 @@ Reserved (not yet bound):
   REPL, etc.) per Phase 2 plans
 
 
+### `AskUserQuestion` is the maintainer's phone-notification surface
+
+The maintainer often steps away from the desk while a Cycle's PR
+sequence is in flight. **A plain text reply does not generate a
+phone notification — `AskUserQuestion` does.** The harness routes
+`AskUserQuestion` interactions through the maintainer's phone, so a
+question posed via that tool reaches them away from the desk
+whereas regular text output sits silently in the transcript until
+they next look.
+
+Use `AskUserQuestion` when:
+
+- A genuine design decision needs to be made before Claude can
+  proceed (e.g. "preserve vs drop history-recall entries in
+  ContentHistory" — answered 2026-05-14 via this surface).
+- A CI failure log slice is needed (per "CI failures — ask for
+  the log" rule above) and the maintainer may be away from the
+  desk.
+- The MCP server has disconnected and the manual PR-create
+  fallback needs the maintainer to open a compare URL.
+- Anything ambiguous in the user's instructions that genuinely
+  blocks forward progress.
+
+**Don't** use `AskUserQuestion` for:
+
+- Status updates ("PR-A pushed, waiting for CI") — those are
+  plain text.
+- Confirming things the autonomy contract in the current
+  cycle plan already authorises (writing code, pushing fixup
+  commits, merging green PRs, moving to the next PR).
+- Closed-form choices where the autonomy contract or
+  CLAUDE.md picks an obvious default — go with the default
+  and note the choice in the PR body.
+- "Ready to start?" / "should I proceed?" preambles — just
+  proceed.
+
+The rule of thumb: would the maintainer be annoyed if their
+phone buzzed for this? If yes, plain text. If genuinely
+blocked, `AskUserQuestion`.
+
 ### The maintainer is a screen-reader user — no GUI dialog walks
 
 The maintainer uses NVDA. **Never** propose a fix or workflow that
