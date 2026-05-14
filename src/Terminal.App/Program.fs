@@ -1052,7 +1052,28 @@ module Program =
         // text. 0 when no command has been submitted yet (or
         // when the buffer was empty at Enter — e.g. user
         // pressed Enter at an empty prompt).
+        //
+        // PR-O (2026-05-14) — `lastSubmittedCommandLength`
+        // alone is unreliable when the user recalls a command
+        // via Up/Down arrow rather than typing it: the byte-
+        // write wrapper sees `\x1B[A`, treats `[` and `A` as
+        // printable, and `UserInputBuffer.Capture()` returns
+        // `[A` (2 chars) — but cmd's doskey painted the full
+        // recalled command onto the screen. PR-O adds
+        // `lastSubmittedCommandEndCursorRow` captured from
+        // the screen at the same EnterPressed moment, which
+        // reflects where the on-screen content actually
+        // ended regardless of whether the bytes came from
+        // typing or history recall. The wrap-rows helper
+        // prefers the cursor-row signal when available and
+        // falls back to `lastSubmittedCommandLength` when
+        // the cursor wasn't on the prompt's command line at
+        // EnterPressed (defensive — shouldn't happen in
+        // practice but the fallback keeps the heuristic
+        // safe).
         let mutable lastSubmittedCommandLength : int = 0
+        let mutable lastSubmittedCommandEndCursorRow : int = -1
+        let mutable lastSubmittedCommandPromptRow : int = -1
 
         // Cycle 45 Commit 2 — SpeechCursor announce callback +
         // "wake up" trigger. Defined here (very early in compose)
@@ -1905,16 +1926,46 @@ module Program =
         // the length is 0 and the helper returns 1 (no wrap)
         // — correct since the prompt + nothing doesn't wrap.
         let computePromptCommandWrapRows (promptRow: int) : int =
+            // PR-O — prefer the screen-cursor signal captured at
+            // EnterPressed (`lastSubmittedCommandEndCursorRow`)
+            // over the byte-stream `lastSubmittedCommandLength`,
+            // because Up/Down-arrow recall doesn't route through
+            // `UserInputBuffer` and `Capture()` underreports its
+            // length there. The cursor at EnterPressed sits at
+            // the end of the on-screen content regardless of
+            // how it got there. wrapRows = cursor - prompt + 1
+            // because both rows are visible (cursor row is the
+            // last wrap row).
+            //
+            // Cursor signal valid when both captured values are
+            // in-range AND they match the `promptRow` the caller
+            // passed (defends against the rare case where the
+            // active tuple changed between EnterPressed and the
+            // sub-prompt screen-read — e.g. shell switch mid-
+            // flight). Falls back to the length-based estimate
+            // otherwise.
             try
-                let cols = max 1 screen.Cols
-                let promptLen =
-                    match currentSession.Active with
-                    | Some active -> active.Tuple.PromptText.Length
-                    | None -> 0
-                let cmdLen = max 0 lastSubmittedCommandLength
-                let total = promptLen + cmdLen
-                if total <= 0 then 1
-                else max 1 ((total + cols - 1) / cols)
+                let cursorSignalValid =
+                    lastSubmittedCommandEndCursorRow >= 0
+                    && lastSubmittedCommandPromptRow >= 0
+                    && lastSubmittedCommandPromptRow = promptRow
+                    && lastSubmittedCommandEndCursorRow >= lastSubmittedCommandPromptRow
+                if cursorSignalValid then
+                    let rows =
+                        lastSubmittedCommandEndCursorRow
+                        - lastSubmittedCommandPromptRow
+                        + 1
+                    max 1 rows
+                else
+                    let cols = max 1 screen.Cols
+                    let promptLen =
+                        match currentSession.Active with
+                        | Some active -> active.Tuple.PromptText.Length
+                        | None -> 0
+                    let cmdLen = max 0 lastSubmittedCommandLength
+                    let total = promptLen + cmdLen
+                    if total <= 0 then 1
+                    else max 1 ((total + cols - 1) / cols)
             with _ -> 1
 
         subPromptScreenReader <-
@@ -4498,6 +4549,30 @@ module Program =
                             // row(s) that would otherwise be
                             // misclassified as script preamble.
                             lastSubmittedCommandLength <- captured.Length
+                            // PR-O (2026-05-14) — also capture the
+                            // cursor row from the screen at this
+                            // EnterPressed moment, plus the active
+                            // tuple's prompt row. Together they let
+                            // the wrap-rows helper count the actual
+                            // on-screen wrap regardless of whether
+                            // the user typed the command or recalled
+                            // it via Up/Down (Up-arrow recall doesn't
+                            // route through `UserInputBuffer` so
+                            // `Capture()` underreports its length).
+                            try
+                                let _, (curRow, _), _ =
+                                    screen.SnapshotRows(0, screen.Rows)
+                                lastSubmittedCommandEndCursorRow <- curRow
+                                lastSubmittedCommandPromptRow <-
+                                    match currentSession.Active with
+                                    | Some active ->
+                                        match active.PromptRowIndex with
+                                        | Some r -> r
+                                        | None -> -1
+                                    | None -> -1
+                            with _ ->
+                                lastSubmittedCommandEndCursorRow <- -1
+                                lastSubmittedCommandPromptRow <- -1
                             recordTransition
                                 (ShellInteraction.EnterPressed captured)
                     // Cycle 49 PR-I — history-recall announce.

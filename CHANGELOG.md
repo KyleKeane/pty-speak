@@ -15,6 +15,33 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Post-Cycle-49 PR-O (2026-05-14): Cursor-row-based wrap detection for history-recalled commands
+
+Maintainer Test B dogfood 2026-05-14: first run of test-02
+narrated cleanly; SECOND run (after Up-arrow recall)
+narrated the wrapped command-path tail before the script
+intro. Root cause: PR-N's `computePromptCommandWrapRows`
+relied on `UserInputBuffer.Capture().Length` to estimate the
+on-screen wrap, but `UserInputBuffer` watches the user's
+outgoing keystrokes. When the user presses Up arrow, the
+byte stream is `\x1B[A` — `[` and `A` are printable, so
+`Capture()` returns `[A` (2 chars). Cmd's doskey paints the
+full recalled command (e.g. 138 chars) onto the screen, but
+PR-N saw `cmdLen=2`, computed `wrapRows=1`, and started
+the sub-prompt screen-read at `promptRow + 1` — including
+the wrap-continuation row that PR-N was supposed to skip.
+
+PR-O captures the SCREEN CURSOR ROW at EnterPressed
+(`lastSubmittedCommandEndCursorRow`) plus the matching
+`PromptRowIndex` (`lastSubmittedCommandPromptRow`). The
+cursor at EnterPressed sits at the end of the on-screen
+content regardless of whether it got there via typing or
+history recall. `computePromptCommandWrapRows` now prefers
+the cursor-row signal: `wrapRows = cursorRow - promptRow +
+1`. Falls back to PR-N's length-based estimate when the
+cursor signal is unavailable (defensive — shouldn't happen
+in practice).
+
 ### Post-Cycle-49 PR-N (2026-05-14): Command-wrap-aware sub-prompt screen-read
 
 Maintainer dogfood 2026-05-14: when a command (e.g. the
