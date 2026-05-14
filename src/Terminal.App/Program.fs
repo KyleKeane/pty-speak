@@ -3751,10 +3751,22 @@ module Program =
         // (where the binding fires), the same thread the
         // reader-loop dispatcher actions use; serialisation
         // is preserved.
+        // Cycle 49 PR-D — manual nav renders entries via
+        // `renderEntryForManualNav` rather than `renderEntry` so
+        // `PromptStart` markers with payload announce as a
+        // FinalDirOnly-trimmed prompt (e.g. "Local>") regardless
+        // of the per-shell `PromptPath` policy. Auto-drive
+        // narration (in `SpeechCursor.onAppend`) still respects
+        // `PromptPath` so streaming doesn't become chattier.
+        let manualNavRender (entry: ContentHistory.Entry) =
+            let promptPath =
+                (SpeechCursor.getParameters speechCursor).PromptPath
+            SpeechCursor.renderEntryForManualNav promptPath entry
+
         let runSpeechCursorNext () : unit =
             match SpeechCursor.next speechCursor contentHistory with
             | Some entry ->
-                match SpeechCursor.renderEntry entry with
+                match manualNavRender entry with
                 | Some (text, _) ->
                     // Manual-step announce uses a fresh activity
                     // id so users can per-tag-mute live announces
@@ -3773,7 +3785,7 @@ module Program =
         let runSpeechCursorPrevious () : unit =
             match SpeechCursor.previous speechCursor contentHistory with
             | Some entry ->
-                match SpeechCursor.renderEntry entry with
+                match manualNavRender entry with
                 | Some (text, _) ->
                     window.TerminalSurface.Announce(
                         text, ActivityIds.diagnostic)
@@ -3789,7 +3801,7 @@ module Program =
         let runSpeechCursorJumpToLatest () : unit =
             match SpeechCursor.toLatest speechCursor contentHistory with
             | Some entry ->
-                match SpeechCursor.renderEntry entry with
+                match manualNavRender entry with
                 | Some (text, _) ->
                     window.TerminalSurface.Announce(
                         text, ActivityIds.diagnostic)

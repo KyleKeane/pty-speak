@@ -355,11 +355,57 @@ module SpeechCursor =
     let renderEntry (entry: ContentHistory.Entry) : (string * string) option =
         renderEntryWithPolicy ShellPolicy.Suppress entry
 
+    /// Cycle 49 PR-D — render an entry for **manual navigation**
+    /// (Ctrl+Shift+Up/Down/End). Decouples navigation from
+    /// auto-drive narration: `PromptStart` markers with payload
+    /// always render to a `FinalDirOnly`-trimmed announce here
+    /// regardless of the cursor's `PromptPath` policy, so the
+    /// user can navigate prompt-to-prompt in review even when
+    /// auto-drive is silent on prompts (the per-shell default).
+    ///
+    /// Other entry kinds delegate to the policy-aware
+    /// `renderEntryWithPolicy` so navigation and auto-drive
+    /// agree on TextSpans, Newlines, Overwrites, selection
+    /// markers, etc.
+    ///
+    /// Maintainer feedback 2026-05-14: "the speech cursor only
+    /// includes the output of echo and I think it should include
+    /// the prompt as well in the history as a separate item."
+    /// This function is the navigation-side response; the
+    /// auto-drive side keeps the existing PromptPath gating so
+    /// streaming output doesn't become chattier than before.
+    let renderEntryForManualNav
+            (promptPath: ShellPolicy.PromptPathMode)
+            (entry: ContentHistory.Entry)
+            : (string * string) option =
+        match entry with
+        | ContentHistory.Marker m
+            when m.Kind = ContentHistory.MarkerKind.PromptStart ->
+            match m.Payload with
+            | Some text when not (System.String.IsNullOrEmpty text) ->
+                // FinalDirOnly trim keeps the manual-nav announce
+                // short for path-style prompts ("Local>" rather
+                // than the full `C:\Users\Kyle\AppData\Local>`).
+                // If the trim returns None (rare — payload that
+                // doesn't end in `>` and has no path segments),
+                // fall back to the raw payload so the boundary
+                // is still navigable.
+                match
+                    ShellPolicy.trimPromptPath
+                        ShellPolicy.FinalDirOnly text
+                with
+                | Some rendered ->
+                    Some (rendered, ActivityIds.output)
+                | None ->
+                    Some (text, ActivityIds.output)
+            | _ -> None
+        | _ -> renderEntryWithPolicy promptPath entry
+
     /// Cycle 49 PR-A — does this entry actually render to an
     /// audible announcement under the cursor's current policy?
     /// Newline / Overwrite / empty-TextSpan / boundary-Marker /
     /// `UserInputEcho`-sourced entries all return `None` from
-    /// `renderEntryWithPolicy`; manual navigation should skip
+    /// `renderEntryForManualNav`; manual navigation should skip
     /// them rather than parking on Seqs the user can't hear.
     ///
     /// Manual nav pre-PR-A landed on every entry by Seq, so a
@@ -367,6 +413,13 @@ module SpeechCursor =
     /// required 16 Ctrl+Shift+Up presses to step backwards, half
     /// of which announced nothing. PR-A collapses that to 8
     /// presses, one per audible chunk.
+    ///
+    /// PR-D (2026-05-14) — uses `renderEntryForManualNav` rather
+    /// than `renderEntryWithPolicy` so `PromptStart` markers with
+    /// payload count as renderable for navigation regardless of
+    /// the cursor's `PromptPath` policy. Auto-drive (`onAppend`)
+    /// still uses `renderEntryWithPolicy` so streaming narration
+    /// stays gated on the per-shell verbosity setting.
     ///
     /// `toMarker` deliberately does NOT use this filter — a
     /// marker jump is the user explicitly asking for a marker,
@@ -378,7 +431,7 @@ module SpeechCursor =
     /// `next` / `previous` / `toLatest` follow for the same
     /// reason.
     let private renderable (state: T) (entry: ContentHistory.Entry) : bool =
-        (renderEntryWithPolicy state.Parameters.PromptPath entry).IsSome
+        (renderEntryForManualNav state.Parameters.PromptPath entry).IsSome
 
     /// Move the cursor to the next renderable entry in the
     /// supplied history (Seq > Position). Returns the entry, or
