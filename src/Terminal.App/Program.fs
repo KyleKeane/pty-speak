@@ -1027,6 +1027,19 @@ module Program =
         let mutable subPromptPreambleLineCount : int = 0
         let mutable capturePreambleForSubPromptResponse
             : (unit -> unit) = (fun () -> ())
+        // PR-K (2026-05-14) — sub-prompt screen-read callback.
+        // Declared here (early in compose) because
+        // `recordTransitionImpl`'s sub-prompt branch reads it,
+        // but `currentSession` is in scope only further down.
+        // The real body is installed alongside
+        // `capturePreambleForSubPromptResponse` once
+        // `currentSession` enters scope. Returns the screen-
+        // rendered preamble `[Active.PromptRowIndex + 1,
+        // cursorRow]` joined with `\n`, or `None` when
+        // `PromptRowIndex` is unavailable (e.g. PowerShell, or
+        // before the first PromptStart fires).
+        let mutable subPromptScreenReader
+            : (unit -> string option) = (fun () -> None)
 
         // Cycle 45 Commit 2 — SpeechCursor announce callback +
         // "wake up" trigger. Defined here (very early in compose)
@@ -1684,37 +1697,10 @@ module Program =
                         // recognise today, so PromptRowIndex
                         // stays ValueNone there).
                         let raw = outcome.AccumulatedOutput
-                        let screenRowsAnnounce =
-                            try
-                                let _, (cursorRow, _), snapshot =
-                                    screen.SnapshotRows(0, screen.Rows)
-                                let promptRowOpt =
-                                    match currentSession.Active with
-                                    | Some active -> active.PromptRowIndex
-                                    | None -> None
-                                match promptRowOpt with
-                                | Some promptRow when
-                                    cursorRow >= promptRow + 1
-                                    && cursorRow < snapshot.Length ->
-                                    let lines = ResizeArray<string>()
-                                    for r in (promptRow + 1) .. cursorRow do
-                                        if r >= 0 && r < snapshot.Length then
-                                            let line = CanonicalState.renderRow snapshot r
-                                            if not (System.String.IsNullOrEmpty line) then
-                                                lines.Add(line)
-                                    if lines.Count > 0 then
-                                        Some (String.concat "\n" lines, promptRow, cursorRow)
-                                    else None
-                                | _ -> None
-                            with ex ->
-                                log.LogWarning(
-                                    ex,
-                                    "PR-K sub-prompt screen-read failed; falling back to accumulator. {Message}",
-                                    ex.Message)
-                                None
+                        let screenRowsAnnounce = subPromptScreenReader ()
                         let announceBody, source =
                             match screenRowsAnnounce with
-                            | Some (body, _, _) -> body, "screen"
+                            | Some body -> body, "screen"
                             | None ->
                                 // Fallback: accumulator's last
                                 // non-empty line (the pre-PR-K
@@ -1877,6 +1863,43 @@ module Program =
         // is read only here on the dispatcher thread, so no
         // extra synchronisation beyond the existing actor-
         // model contract is needed.
+        // PR-K (2026-05-14) — install the real
+        // `subPromptScreenReader` body now that
+        // `currentSession` is in scope. Same threading
+        // contract as capturePreambleForSubPromptResponse:
+        // runs on the UI dispatcher thread from
+        // recordTransitionImpl, no extra synchronisation
+        // beyond the existing actor-model contract needed.
+        subPromptScreenReader <-
+            fun () ->
+                try
+                    let _, (cursorRow, _), snapshot =
+                        screen.SnapshotRows(0, screen.Rows)
+                    let promptRowOpt =
+                        match currentSession.Active with
+                        | Some active -> active.PromptRowIndex
+                        | None -> None
+                    match promptRowOpt with
+                    | Some promptRow when
+                        cursorRow >= promptRow + 1
+                        && cursorRow < snapshot.Length ->
+                        let lines = ResizeArray<string>()
+                        for r in (promptRow + 1) .. cursorRow do
+                            if r >= 0 && r < snapshot.Length then
+                                let line = CanonicalState.renderRow snapshot r
+                                if not (System.String.IsNullOrEmpty line) then
+                                    lines.Add(line)
+                        if lines.Count > 0 then
+                            Some (String.concat "\n" lines)
+                        else None
+                    | _ -> None
+                with ex ->
+                    log.LogWarning(
+                        ex,
+                        "PR-K sub-prompt screen-read failed; falling back to accumulator. {Message}",
+                        ex.Message)
+                    None
+
         capturePreambleForSubPromptResponse <-
             fun () ->
                 try
