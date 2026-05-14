@@ -990,6 +990,34 @@ module Program =
         // ContentHistory seqs. Resets to "" on shell hot-switch.
         let mutable lastAnnouncedText : string = ""
 
+        // Cycle 49 PR-B — sub-prompt response watermark.
+        //
+        // `awaitingSubPromptEnter` flips true when SubPromptIdle
+        // transitions Executing → Composing (a sub-prompt has
+        // surfaced); flips false on EnterPressed (the user
+        // submitted) OR PromptDetected (a new top-level prompt
+        // arrived without the user ever responding to the sub-
+        // prompt — script bailed, shell crashed, etc.).
+        //
+        // `capturePreambleForSubPromptResponse` is installed
+        // further down (after `currentSession` enters scope) and
+        // overwrites `lastAnnouncedText` with the full on-screen
+        // content rendered from the active tuple's prompt row
+        // through the cursor row at EnterPressed time. The
+        // existing tuple-finalise prefix-trim (search for
+        // `lastAnnouncedText.Length > 0` below) then slices that
+        // preamble off `tuple.OutputText` so only the post-Enter
+        // delta gets announced. Test 02 (`set /p name=`) used to
+        // narrate the entire output from "This is the input
+        // test." down because `lastAnnouncedText` only carried
+        // the sub-prompt's own announce text (`"Enter your
+        // name:"`); the screen-rendered preamble captured here
+        // matches `tuple.OutputText`'s prefix and the
+        // existing trim fires.
+        let mutable awaitingSubPromptEnter : bool = false
+        let mutable capturePreambleForSubPromptResponse
+            : (unit -> unit) = (fun () -> ())
+
         // Cycle 45 Commit 2 — SpeechCursor announce callback +
         // "wake up" trigger. Defined here (very early in compose)
         // so the prompt-boundary handler and the selection-
@@ -1616,6 +1644,25 @@ module Program =
                                 "shell-interaction-sub-prompt"
                                 ""
                         OutputDispatcher.dispatch readyEvent
+                    // Cycle 49 PR-B — sub-prompt response
+                    // watermark bookkeeping. Track whether the
+                    // most recent state change parked us in
+                    // Composing-via-SubPromptIdle so the upcoming
+                    // EnterPressed can overwrite `lastAnnouncedText`
+                    // with the full on-screen preamble and the
+                    // tuple-finalise prefix-trim downstream slices
+                    // the post-Enter delta cleanly. PromptDetected
+                    // resets the flag in case the user never
+                    // responded (script bailed mid sub-prompt).
+                    match outcome.Trigger with
+                    | ShellInteraction.SubPromptIdle _ when isSubPromptTransition ->
+                        awaitingSubPromptEnter <- true
+                    | ShellInteraction.PromptDetected _ ->
+                        awaitingSubPromptEnter <- false
+                    | ShellInteraction.EnterPressed _ when awaitingSubPromptEnter ->
+                        capturePreambleForSubPromptResponse ()
+                        awaitingSubPromptEnter <- false
+                    | _ -> ()
                 | None ->
                     shellInteractionLog.LogDebug(
                         "ShellInteraction trigger no-op for current state: {State} --[{Trigger}]--",
@@ -1669,6 +1716,57 @@ module Program =
         // Cycle 24c — initial sink for the first shell's
         // SessionId. None when persistence is MemoryOnly.
         sessionLogWriter <- sessionLogWriterFactory currentSession.SessionId
+
+        // Cycle 49 PR-B — install the real
+        // `capturePreambleForSubPromptResponse` body now that
+        // `currentSession` is in scope. recordTransitionImpl
+        // (declared earlier) invokes this whenever the user
+        // presses Enter on a sub-prompt response so the
+        // tuple-finalise prefix-trim sees the full on-screen
+        // preamble in `lastAnnouncedText` and only announces the
+        // post-Enter delta.
+        //
+        // Runs on the UI thread (same thread the keyboard write
+        // callback and the dispatcher-timer SubPromptIdle tick
+        // run on). `screen.SnapshotRows` is thread-safe (the
+        // parser dispatches its mutations through the same
+        // dispatcher), and `currentSession` is read only here on
+        // the dispatcher thread, so no extra synchronisation
+        // beyond the existing actor-model contract is needed.
+        capturePreambleForSubPromptResponse <-
+            fun () ->
+                try
+                    let _, (cursorRow, _), snapshot =
+                        screen.SnapshotRows(0, screen.Rows)
+                    let promptRowOpt =
+                        match currentSession.Active with
+                        | Some active -> active.PromptRowIndex
+                        | None -> None
+                    match promptRowOpt with
+                    | Some promptRow when
+                        cursorRow > promptRow
+                        && promptRow >= 0
+                        && cursorRow < snapshot.Length ->
+                        let lines = ResizeArray<string>()
+                        let startRow = promptRow + 1
+                        let endRow = cursorRow
+                        for r in startRow .. endRow do
+                            if r >= 0 && r < snapshot.Length then
+                                let line = CanonicalState.renderRow snapshot r
+                                if not (System.String.IsNullOrEmpty line) then
+                                    lines.Add(line)
+                        let preamble = String.concat "\n" lines
+                        if preamble.Length > 0 then
+                            log.LogInformation(
+                                "PR-B sub-prompt preamble captured. PromptRow={Pr} CursorRow={Cr} Length={Len}",
+                                promptRow, cursorRow, preamble.Length)
+                            lastAnnouncedText <- preamble
+                    | _ -> ()
+                with ex ->
+                    log.LogWarning(
+                        ex,
+                        "capturePreambleForSubPromptResponse failed: {Message}",
+                        ex.Message)
 
         // SessionModel Tier 1.D — heuristic prompt-boundary
         // detector. Per-shell regex + stability window
@@ -2003,6 +2101,22 @@ module Program =
                 // audible text — keep the cap silent at the
                 // channel layer and trust the hotkey + log to
                 // surface the cap when needed.
+                //
+                // Cycle 49 PR-B (2026-05-14) — post-Enter delta
+                // announce: when the user responds to a sub-prompt
+                // (`set /p`, `pause`, `choice`, etc.) `lastAnnouncedText`
+                // has been overwritten at EnterPressed time by
+                // `capturePreambleForSubPromptResponse` with the
+                // full on-screen content from the active tuple's
+                // prompt row through the cursor row. The prefix-trim
+                // below then slices that preamble off
+                // `tuple.OutputText` so only the post-Enter delta
+                // (the bytes the script produced AFTER the user
+                // submitted their response) gets announced. The
+                // sub-prompt's own prompt text + the user's typed
+                // response are reachable via SpeechCursor manual
+                // navigation; auto-narration covers only what's
+                // new since the user last engaged.
                 // Cycle 47 follow-up (2026-05-13, post-preview.113)
                 // — revert from the watermark-slice approach back
                 // to announcing `tuple.OutputText` directly. The

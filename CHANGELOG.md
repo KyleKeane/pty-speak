@@ -15,6 +15,28 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 49 PR-B (2026-05-14): post-Enter delta announce for sub-prompts
+
+When the user responds to a sub-prompt (`set /p`, `pause`,
+`choice`, etc.) and presses Enter, the tuple-finalise announce
+now narrates **only the post-Enter content** instead of replaying
+the entire `OutputText` from the top of the command. The
+sub-prompt's prompt text and the user's typed response remain
+reachable via `Ctrl+Shift+Up/Down` SpeechCursor manual review.
+
+Mechanism: at `EnterPressed` after a `SubPromptIdle`, the
+composition root snapshots the screen and renders the active
+tuple's output rows from the prompt row through the cursor row
+into `lastAnnouncedText`. The existing tuple-finalise prefix-trim
+(introduced in the Cycle 48 post-PR-F batch) then slices that
+preamble off `tuple.OutputText` so only the bytes the script
+produced **after** the user submitted their response get
+announced. Test 02 (`02-input.cmd`) used to re-narrate "This is
+the input test." through "Hello, John!" verbatim each time the
+user hit Enter; now it speaks just the post-Enter delta.
+
+Cycle 49 plan: [`docs/CYCLE-49-PLAN.md`](docs/CYCLE-49-PLAN.md).
+
 ### Cycle 49 PR-A (2026-05-14): SpeechCursor manual nav collapses blanks
 
 `Ctrl+Shift+Up/Down/End` now skip entries that produce no audible
