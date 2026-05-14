@@ -1909,10 +1909,7 @@ module Program =
                 let cols = max 1 screen.Cols
                 let promptLen =
                     match currentSession.Active with
-                    | Some active ->
-                        match active.Tuple.PromptText with
-                        | null -> 0
-                        | t -> t.Length
+                    | Some active -> active.Tuple.PromptText.Length
                     | None -> 0
                 let cmdLen = max 0 lastSubmittedCommandLength
                 let total = promptLen + cmdLen
