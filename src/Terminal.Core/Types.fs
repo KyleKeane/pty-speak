@@ -441,6 +441,15 @@ module ActivityIds =
     /// processing for shell-switch announcements separately
     /// from streaming output.
     let shellSwitch = "pty-speak.shell-switch"
+    /// Input-assistant pane (CORE-ABSTRACTION-BOUNDARY.md §
+    /// "input assistant" reserved peer pane). Cycle 49 PR-I
+    /// announces history-recall draft rewrites here — when the
+    /// user presses Up or Down arrow and cmd's doskey / shell's
+    /// history feature replaces the on-screen input line, the
+    /// new draft contents narrate via this activity ID. Tagged
+    /// separately so users can mute / per-tag-configure draft
+    /// announcements without affecting command output.
+    let inputAssistant = "pty-speak.input-assistant"
 
     /// Debug-logging toggle announcements (Stage 7-followup
     /// PR-E `Ctrl+Shift+G`). Emits "Debug logging on." /

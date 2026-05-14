@@ -15,6 +15,36 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 49 PR-I (2026-05-14): History-recall draft announce
+
+When the user presses Up / Down arrow during `Composing`, the
+shell (cmd's doskey, PowerShell's PSReadLine, bash readline)
+rewrites the on-screen input line to display the previous /
+next command from its history. Before PR-I, pty-speak's
+`UserInputBuffer` only tracked OUTGOING keystrokes — the
+shell-side rewrite bypassed it silently and NVDA never heard
+what was now sitting in the input line.
+
+PR-I detects the Up / Down arrow byte sequences in the byte-
+write wrapper (`\x1B [ A/B` normal mode, `\x1B O A/B`
+application / DECCKM mode), starts a 100 ms debounced
+`DispatcherTimer`, and on tick reads the current prompt row
+from `screen.SnapshotRows`. The row content is stripped of
+the `Composing.PromptText` prefix where present (so the
+announce is just the recalled draft, not the path) and
+narrated through a new `pty-speak.input-assistant` activity
+ID — separate from `pty-speak.output` so users can mute /
+per-tag-configure draft announces independently of command
+output.
+
+Rapid Up / Down keypresses (the user scrolling through
+history) coalesce: the timer restart drops the prior pending
+announce, so only the FINAL state narrates.
+
+CORE-ABSTRACTION-BOUNDARY.md §"input assistant" reserved
+peer pane is the conceptual home for this channel; PR-I is
+the first concrete user of it.
+
 ### Cycle 49 PR-H (2026-05-14): Reshape test-01-echo for explicit line counting
 
 `scripts/cmd-tests/test-01-echo.cmd` reshaped per maintainer
