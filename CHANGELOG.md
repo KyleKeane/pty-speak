@@ -15,6 +15,50 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Post-Cycle-49 PR-K (2026-05-14): Sub-prompt screen-read + capturePreamble endRow fix
+
+Two coupled bug fixes from preview.125 dogfood of the
+Cycle-49 sub-prompt narration:
+
+1. **Sub-prompt announce now reads the screen, not the raw
+   accumulator.** PR-F's "last non-empty line of the
+   accumulator" approach failed on the FIRST run of a `.cmd`
+   script because cmd emits an OSC title-set sequence
+   (`\x1B]0;cmd.exe - "..."\x07`) AFTER the script's prompt
+   text in the byte stream; that escape sequence ends up on
+   a line of its own in the accumulator and the
+   `Array.rev |> tryFind` reverse-scan picked it as the
+   "last" line, narrating
+   `]0;C:\WINDOWS\SYSTEM32\cmd.exe - ...` — the maintainer's
+   "show CMD"-style mishearing on first-run-only sub-prompts.
+   PR-K reads the screen rows `[Active.PromptRowIndex + 1,
+   cursorRow]` at `SubPromptIdle` instead. `Screen` already
+   absorbs OSC sequences as state changes (window-title,
+   palette, etc.) and `CanonicalState.renderRow` returns
+   only printable cell content. Side-effect win: the
+   announce now includes the full preamble — start marker,
+   intro text, prompt line — restoring the script context
+   PR-F had stripped down to just the prompt.
+
+2. **`capturePreambleForSubPromptResponse` uses
+   `endRow = cursorRow - 1`** to exclude the cursor row
+   from the non-empty-line count. The cursor row at
+   `EnterPressed` is racy — cmd can start echoing back
+   content before the recordTransition callback fires —
+   so counting it produces a too-high `LineCount` that
+   drops the user's actual post-Enter response from the
+   tuple-final announce. Maintainer dogfood log
+   2026-05-14: `LineCount=4`, dropped 4 of 5 lines,
+   leaving only the `PTYSPEAK-TEST-END` marker. With the
+   endRow fix the count is 3 and the `Hello, NAME!`
+   response line narrates correctly.
+
+Fallback: when `Active.PromptRowIndex` is `ValueNone` (e.g.
+PowerShell — the heuristic prompt detector doesn't match PS
+prompts today), the sub-prompt announce path falls back to
+the PR-F accumulator-last-line approach. PowerShell
+support stays as a separate backlog item.
+
 ### Post-Cycle-49 PR-J (2026-05-14): History-recall diagnostic logging + new-feature diagnostic convention
 
 Maintainer reported a non-deterministic "show CMD" mis-announce
