@@ -49,30 +49,86 @@ release build is the gating signal. Live items verified
 
 ## Next stage
 
-**Cycle 49 done.** All maintainer-reported audible defects
-resolved. Next live gate: release-build dogfood of PR-I's
-history-recall announce.
+**Cycle 51 in flight.** Maintainer's 2026-05-14 dogfood at
+preview.134 (commit `ae33bc9`) surfaced catastrophic
+substrate failure when running `test-04-yes-no.cmd` four
+times in sequence ("things go completely haywire... not
+reading the beginning half... not reading the end... reading
+a bunch of stuff well after I've moved on"). Root cause is
+structural: Cycle 49's PR-K → PR-U all bolted screen-row-
+based extraction logic on top of a substrate
+(`ContentHistory`) that is already Seq-based and
+notebook-shaped. The fix is a pivot, not another patch.
 
-**Next-cycle candidates** (none block each other; pick by
-priority):
+[ADR 0004](adr/0004-iocell-model-for-shell-interaction.md)
+locks four decisions for the pivot:
+
+1. **IOCell** is the unit of shell interaction (rename of
+   `SessionModel.SessionTuple`).
+2. Sub-prompts are inline state inside the parent IOCell
+   in v1 — not nested cells.
+3. **ContentHistory** is the sole extraction substrate.
+   Screen-row coordinates are display-only post-pivot.
+   `tryLatestMarker(PromptStart) = None` → drop-the-cell.
+4. **OutputDispatcher** is the sole non-emergency channel.
+   Tier 1 (substrate-driven) flows through
+   `OutputDispatcher.dispatch`; Tier 2 (~50 app-affordance
+   call sites) is a narrow named bypass
+   (`AnnounceEmergency`).
+
+**Cycle 51 sequencing** (each PR independently CI-gated +
+NVDA-validated):
+
+- **Phase 0** spike branch
+  `spike/cycle51-iocell-substrate-exploration` (commit
+  `de8bf81`) — diagnostic-only parallel `extractIOCell`
+  + `ContentHistory.entriesAfter` + side-by-side
+  comparison log (`Cycle 51 spike PR-V0.`). Validates the
+  classification-by-`EntrySource` approach before
+  migration PRs commit.
+- **PR-V** — this ADR 0004 + CLAUDE.md reading-order +
+  this SESSION-HANDOFF.md update. Docs-only fast-merge.
+- **PR-W** — IOCell type rename + `Phase` / `CellSequence`
+  fields + `extractIOCell` wired as primary +
+  `formatIOCellAsJsonl` (schemaVersion 1 → 2) +
+  SessionLogWriter swap + delete `extractContent`.
+- **PR-W2** — `IOCell.parseFromJsonl` round-trip reader
+  (maintainer-only; no UI surface) + FsCheck property
+  tests.
+- **PR-X** — SubPromptIdle / SubPromptResponse Seq-based
+  (delete `subPromptScreenReader`,
+  `computePromptCommandWrapRows`, cursor-row capture).
+- **PR-Y** — Tier 1 channel routing audit (refactor ~3-5
+  substrate-driven Announce sites to `OutputDispatcher`;
+  rename ~50 Tier 2 sites to `AnnounceEmergency`).
+- **PR-Z** — Closure audit.
+
+**Validation gate**: maintainer release-build dogfood of
+each PR's post-merge build. Cycle 51 NVDA matrix row in
+[`ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
+covers 4-run test-04 + test-01 + test-02 + history-recall
++ menu narration + Tier 2 emergency announce.
+
+**Next-cycle candidates** (after Cycle 51 ships; none block
+each other):
 
 - **`EntrySource.DraftInputRecall`** (deferred from Cycle 49
-  E3) — tag history-recall draft rewrites in `ContentHistory`
-  so the review cursor can distinguish them from typed input.
-  PR-I solved the audible problem with a simpler screen-read
-  approach; this is a substrate refinement.
-- **Cycle 45g** — `ShellPolicy` consolidation (~200 LOC pure
-  refactor).
-- **Cycle 45d** — Interactive review-cursor focus (~150 LOC).
-- **Spinner / red-tone fixes** — Rewrite Cycle 29b storm
-  fixes against ContentHistory.
-- **Coalescer rename** — Standalone refactor (~25 sites).
-- **`ActivityIds.output` retirement** — kept in source after
-  Cycle 46 PR-D; still used by `SpeechCursor.renderEntry`
-  (manual `Ctrl+Shift+Up/Down/End` review-cursor path, which
-  stays on notifications per ADR §4) + `NvdaChannel.semanticToActivityId`.
-  If both consumers move off it in a future cycle, the
-  constant becomes truly unreferenced and can be deleted.
+  E3) — substrate refinement; no audible bug behind it
+  after PR-I's screen-read approach.
+- **Sub-prompts as nested IOCells** (ADR 0006; only if
+  Cycle 51 dogfood surfaces the need).
+- **Cell-navigation hotkeys** (`h`, `o`, `Alt+Up/Down`) per
+  CANONICAL-DISPLAY-CATALOG §1.6.
+- **User-facing replay UI** — leverages the
+  `parseFromJsonl` reader shipped in PR-W2.
+- **PowerShell support** — depends on PS-side heuristic
+  emission emitting reliable PromptStart markers.
+- **Cycle 45g** — `ShellPolicy` consolidation (~200 LOC
+  pure refactor).
+- **Spatial audio channel** + **custom TTS channel** —
+  Cycle 51 proves the extensibility surface; the actual
+  sink impls are their own projects.
+- **Velopack staleness investigation** (PR-M).
 
 See [`docs/PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md)
 for sequencing rationale + risks.

@@ -13544,6 +13544,70 @@ mid-sentence since `AnnounceSanitiser.sanitise` strips `\n`
 from the announce body. Worth a follow-up if it persists
 post-PR-U.)
 
+### Cycle 51 PR-V (2026-05-14): ADR 0004 — IOCell model for shell interaction
+
+Lock the architectural pivot from "screen-row-based
+extraction on top of ContentHistory" to "IOCell as the
+unit of shell interaction; ContentHistory as the sole
+extraction substrate; OutputDispatcher as the sole non-
+emergency channel". Triggered by the maintainer's
+2026-05-14 dogfood at preview.134 (commit `ae33bc9`)
+where running `test-04-yes-no.cmd` four times in sequence
+produced catastrophic narration failure ("things go
+completely haywire... not reading the beginning half...
+not reading the end... reading a bunch of stuff well
+after I've moved on"). Root cause is structural — Cycle
+49's PR-K through PR-U all bolt screen-row coordinates on
+top of a Seq-based substrate that doesn't need them.
+
+ADR 0004 locks four decisions:
+
+1. **IOCell** is the unit of shell interaction (rename of
+   `SessionModel.SessionTuple`). The active IOCell is the
+   in-flight cell; the IOCell history is the bounded
+   queue of sealed past cells.
+2. **Sub-prompts** are inline state inside the parent
+   IOCell in v1, not nested cells. (Future cycle may
+   promote per ADR 0006 if dogfood demands.)
+3. **ContentHistory** is the sole extraction substrate.
+   Screen-row coordinates become display-only post-
+   pivot; `tryLatestMarker(PromptStart) = None` →
+   drop-the-cell ("loud silence beats stale-scrollback
+   garbage announce").
+4. **OutputDispatcher** is the sole non-emergency
+   channel. Tier 1 (substrate-driven announces) flows
+   through `OutputDispatcher.dispatch`; Tier 2 (~50
+   app-affordance call sites) uses a narrow named bypass
+   `AnnounceEmergency` on a dedicated
+   `pty-speak.app-affordance` activity ID.
+
+Also locks the v1 IOCell canonical data structure: F#
+records + DUs in memory, hand-rolled JSONL on disk with
+`schemaVersion=2` (bumping from Cycle 24b's
+`schemaVersion=1` SessionTuple format), `IOCell.parseFromJsonl`
+round-trip reader shipped maintainer-only in PR-W2,
+`Id`/`CellSequence` assigned at cell creation (not at seal).
+
+Cycle 51 migration sequence (each PR independently CI-
+gated): PR-V (this PR; docs-only) → PR-W (IOCell type +
+extraction + formatter) → PR-W2 (round-trip reader) →
+PR-X (Seq-based sub-prompt narration) → PR-Y (Tier 1
+channel routing) → PR-Z (closure audit).
+
+Phase 0 spike branch
+`spike/cycle51-iocell-substrate-exploration` (commit
+`de8bf81`, not for merge) ships a diagnostic-only
+parallel `extractIOCell` + `ContentHistory.entriesAfter`
+helper + side-by-side comparison log
+(`Cycle 51 spike PR-V0.`) so the maintainer's dogfood
+can validate the classification-by-`EntrySource` approach
+before migration PRs commit to it.
+
+Updates: new file
+`docs/adr/0004-iocell-model-for-shell-interaction.md`,
+`CLAUDE.md` reading-order index, `docs/SESSION-HANDOFF.md`
+current-state + next-stage sections.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
