@@ -244,6 +244,17 @@ module ContentHistory =
         /// newline / marker / idle / overwrite.
         member val internal ActiveSpanText: StringBuilder = StringBuilder() with get
         member val internal ActiveSpanStartedAt: DateTime voption = ValueNone with get, set
+        /// PR-Q (2026-05-14) — `EntrySource` captured at the
+        /// first byte of the active TextSpan. The seal-time
+        /// resolver was racy for sub-prompts: the script's
+        /// `set /p` prompt text (no trailing newline) idle-
+        /// sealed AFTER `SubPromptIdle` flipped
+        /// `ShellInteraction` to `Composing`, so the resolver
+        /// returned `UserInputEcho` even though the bytes
+        /// arrived during `Executing`. Sealing now uses this
+        /// first-byte snapshot instead. Reset to `ValueNone`
+        /// on seal/clear.
+        member val internal ActiveSpanSource: EntrySource voption = ValueNone with get, set
         member val internal LastEventAt: DateTime = DateTime.MinValue with get, set
         /// CUB deferred-resolution: same shape as Cycle 44's bare-
         /// CR + CUB fixes in `LinearTextStream`. When a `CSI N D`
@@ -582,15 +593,30 @@ module ContentHistory =
                 match state.ActiveSpanStartedAt with
                 | ValueSome t -> t
                 | ValueNone -> at
+            // PR-Q (2026-05-14) — use the source captured at the
+            // active span's FIRST byte, not the current
+            // resolver. Seal-time resolution mis-tagged
+            // `set /p` prompts as `UserInputEcho` because the
+            // idle-seal fired AFTER `SubPromptIdle` flipped
+            // `ShellInteraction` to `Composing`. Fall back to
+            // the resolver only if no first-byte source was
+            // recorded (defensive — shouldn't happen in
+            // practice since `appendFromEvent`'s first-byte
+            // branch sets it alongside `ActiveSpanStartedAt`).
+            let resolvedSource =
+                match state.ActiveSpanSource with
+                | ValueSome s -> s
+                | ValueNone -> resolveSource state
             let entry =
                 TextSpan
                     { Seq = nextSeq state
                       Text = state.ActiveSpanText.ToString()
                       StartedAt = startedAt
                       SettledAt = at
-                      Source = resolveSource state }
+                      Source = resolvedSource }
             state.ActiveSpanText.Clear() |> ignore
             state.ActiveSpanStartedAt <- ValueNone
+            state.ActiveSpanSource <- ValueNone
             state.Entries.Add(entry)
             Some entry
 
@@ -787,6 +813,13 @@ module ContentHistory =
                     // emitted until the span seals.
                     if state.ActiveSpanStartedAt.IsNone then
                         state.ActiveSpanStartedAt <- ValueSome now
+                        // PR-Q (2026-05-14) — capture the source
+                        // at the first byte. `sealActiveSpan`
+                        // consumes this snapshot, avoiding the
+                        // sub-prompt mis-tag race where idle-
+                        // seal fired AFTER `SubPromptIdle`
+                        // flipped state to `Composing`.
+                        state.ActiveSpanSource <- ValueSome (resolveSource state)
                     state.ActiveSpanText.Append(rune.ToString())
                     |> ignore
                     []
@@ -890,6 +923,7 @@ module ContentHistory =
             state.NextSeq <- 0L
             state.ActiveSpanText.Clear() |> ignore
             state.ActiveSpanStartedAt <- ValueNone
+            state.ActiveSpanSource <- ValueNone
             state.LastEventAt <- DateTime.MinValue
             state.PendingCUB <- ValueNone
             state.PendingCRDeferred <- false
