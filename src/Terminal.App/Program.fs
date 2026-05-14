@@ -4559,20 +4559,38 @@ module Program =
                             // it via Up/Down (Up-arrow recall doesn't
                             // route through `UserInputBuffer` so
                             // `Capture()` underreports its length).
-                            try
-                                let _, (curRow, _), _ =
-                                    screen.SnapshotRows(0, screen.Rows)
-                                lastSubmittedCommandEndCursorRow <- curRow
-                                lastSubmittedCommandPromptRow <-
-                                    match currentSession.Active with
-                                    | Some active ->
-                                        match active.PromptRowIndex with
-                                        | Some r -> r
+                            // PR-Q follow-up (2026-05-14) — only
+                            // capture the cursor/prompt row when
+                            // this Enter is the TOP-LEVEL submit
+                            // (state Composing with the path
+                            // prompt). For a sub-prompt-response
+                            // Enter (`awaitingSubPromptEnter =
+                            // true`) the cursor row reflects the
+                            // sub-prompt input position, not the
+                            // script-invocation end — overwriting
+                            // here mis-computes wrapRows for the
+                            // tuple-final preamble capture and
+                            // silences the line-count slice
+                            // (`startRow > endRow → empty range
+                            // → preamble count stays 0 → tuple-
+                            // final falls through to no-trim`).
+                            // Maintainer bundle 2026-05-14 confirmed
+                            // this regression.
+                            if not awaitingSubPromptEnter then
+                                try
+                                    let _, (curRow, _), _ =
+                                        screen.SnapshotRows(0, screen.Rows)
+                                    lastSubmittedCommandEndCursorRow <- curRow
+                                    lastSubmittedCommandPromptRow <-
+                                        match currentSession.Active with
+                                        | Some active ->
+                                            match active.PromptRowIndex with
+                                            | Some r -> r
+                                            | None -> -1
                                         | None -> -1
-                                    | None -> -1
-                            with _ ->
-                                lastSubmittedCommandEndCursorRow <- -1
-                                lastSubmittedCommandPromptRow <- -1
+                                with _ ->
+                                    lastSubmittedCommandEndCursorRow <- -1
+                                    lastSubmittedCommandPromptRow <- -1
                             recordTransition
                                 (ShellInteraction.EnterPressed captured)
                     // Cycle 49 PR-I — history-recall announce.

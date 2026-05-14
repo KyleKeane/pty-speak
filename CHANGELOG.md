@@ -15,6 +15,51 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Post-Cycle-49 PR-Q (2026-05-14): ContentHistory source captured at first byte + cursor-capture gated to top-level Enter
+
+Maintainer's post-PR-P bundle (preview.128) localised two
+distinct bugs:
+
+1. **`Enter your name:` mis-tagged as `UserInputEcho`.**
+   `Source = resolveSource state` ran at TextSpan SEAL time
+   inside `sealActiveSpan`. The script's `set /p` prompt
+   (no trailing newline) accumulated bytes into the active
+   TextSpan during `Executing`, but the TextSpan didn't
+   seal until cmd went idle — by which point
+   `SubPromptIdle` had already flipped `ShellInteraction`
+   to `Composing`. The seal-time resolver returned
+   `EntrySource.UserInputEcho`. SpeechCursor's
+   `renderEntryForManualNav` filter correctly skipped the
+   entry per the tag — but the tag itself was wrong.
+   PR-Q captures the source at the FIRST byte of the
+   active TextSpan (alongside `ActiveSpanStartedAt`),
+   stores it in a new `ActiveSpanSource` field, and uses
+   it at seal. Falls back to `resolveSource` if the field
+   is unset (defensive — shouldn't happen since
+   first-byte initialises both fields atomically). Net:
+   `Enter your name:` now tags `CmdOutput` correctly and
+   becomes navigable in SpeechCursor.
+
+2. **Tuple-final no-trim regression from PR-O.** PR-O's
+   cursor-row capture in the byte-write wrapper fired on
+   EVERY Enter, including the sub-prompt-response Enter.
+   For test-02's "love" + Enter, that overwrote
+   `lastSubmittedCommandEndCursorRow` with the sub-prompt
+   input row (7) instead of the script-invocation end
+   row (4). `computePromptCommandWrapRows` then returned
+   `wrapRows = 7 - 3 + 1 = 5`, `capturePreambleForSubPromptResponse`
+   computed `startRow = 8`, range `[8, 6]` was empty,
+   `nonEmptyCount` stayed 0, no preamble-captured log
+   fired, and tuple-final fell through to no-trim —
+   narrating the ENTIRE script output from the start
+   instead of just the response delta.
+   PR-Q gates the cursor capture on `not
+   awaitingSubPromptEnter` so only top-level Enter
+   updates the saved cursor signal. Sub-prompt-response
+   Enter leaves it alone — the previously-captured
+   script-invocation cursor row stays valid for the
+   wrap-rows computation.
+
 ### Post-Cycle-49 PR-P (2026-05-14): Per-entry ContentHistory dump in diagnostic bundle
 
 Maintainer's Test D (SpeechCursor missing the `Enter your
