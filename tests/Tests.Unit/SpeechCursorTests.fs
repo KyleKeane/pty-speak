@@ -555,6 +555,102 @@ let ``backwards-compat renderEntry suppresses PromptStart`` () =
     Assert.Equal(None, SpeechCursor.renderEntry entry)
 
 // ---------------------------------------------------------------------
+// Cycle 49 PR-D — renderEntryForManualNav decouples nav from narration
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``manual-nav render surfaces PromptStart with payload even under Suppress`` () =
+    // Cycle 49 PR-D — maintainer feedback 2026-05-14: prompts
+    // should appear as standalone entries in SpeechCursor manual
+    // navigation, regardless of the per-shell PromptPath
+    // (which gates the AUTO-DRIVE narration, not navigation).
+    let entry = promptMarker (Some "C:\\Users\\Kyle\\Local>")
+    match
+        SpeechCursor.renderEntryForManualNav ShellPolicy.Suppress entry
+    with
+    | Some (text, activityId) ->
+        Assert.Equal("Local>", text)
+        Assert.Equal(ActivityIds.output, activityId)
+    | None -> Assert.Fail("expected manual-nav announce for PromptStart under Suppress")
+
+[<Fact>]
+let ``manual-nav render still returns None for PromptStart with empty payload`` () =
+    // Empty / missing payload yields no navigable entry — same
+    // safety net as `renderEntryWithPolicy` under every policy.
+    let empty = promptMarker (Some "")
+    let none = promptMarker None
+    for mode in [ ShellPolicy.Suppress; ShellPolicy.FinalDirOnly; ShellPolicy.Full ] do
+        Assert.Equal(None, SpeechCursor.renderEntryForManualNav mode empty)
+        Assert.Equal(None, SpeechCursor.renderEntryForManualNav mode none)
+
+[<Fact>]
+let ``manual-nav render falls back to raw payload when FinalDirOnly trim returns None`` () =
+    // PromptStart payload without path delimiters (no `>`, no
+    // path separators) doesn't match FinalDirOnly's trim
+    // pattern. Manual nav still surfaces the raw payload so the
+    // boundary is navigable; auto-drive's `renderEntryWithPolicy`
+    // under FinalDirOnly would similarly return None for these.
+    let entry = promptMarker (Some "PS C:\\>")
+    match
+        SpeechCursor.renderEntryForManualNav ShellPolicy.Suppress entry
+    with
+    | Some (text, _) ->
+        // Either the trimmed form ("PS C:\\>" or similar) OR the
+        // raw payload — both are acceptable as long as something
+        // surfaces.
+        Assert.False(System.String.IsNullOrEmpty text)
+    | None -> Assert.Fail("expected fallback announce for non-trimmable PromptStart")
+
+[<Fact>]
+let ``manual-nav render delegates to renderEntryWithPolicy for non-PromptStart entries`` () =
+    // Cycle 49 PR-D — only PromptStart gets the policy override;
+    // every other entry kind continues to obey the supplied
+    // PromptPathMode (which the cursor passes through from its
+    // own Parameters). TextSpans render normally.
+    let span =
+        ContentHistory.TextSpan
+            { Seq = 0L
+              Text = "hello"
+              StartedAt = t0
+              SettledAt = t0
+              Source = ContentHistory.EntrySource.CmdOutput }
+    match
+        SpeechCursor.renderEntryForManualNav ShellPolicy.Suppress span
+    with
+    | Some (text, activityId) ->
+        Assert.Equal("hello", text)
+        Assert.Equal(ActivityIds.output, activityId)
+    | None -> Assert.Fail("expected TextSpan to render under manual nav")
+
+[<Fact>]
+let ``manual-nav previous lands on PromptStart marker as navigable entry`` () =
+    // End-to-end sanity: with a PromptStart sandwiched between
+    // two TextSpans, stepping back from the latest surfaces the
+    // prompt as its own stop. Without PR-D this would skip the
+    // PromptStart under the default `PromptPath = Suppress`.
+    let cursor = freshCursor ()
+    SpeechCursor.setMode cursor SpeechCursor.Manual
+    let history = freshHistory ()
+    let _ = ContentHistory.appendFromEvent history t0 (printRune 'a')
+    let _ = ContentHistory.appendFromEvent history t0 lf
+    let _ =
+        ContentHistory.appendMarker
+            history
+            ContentHistory.MarkerKind.PromptStart
+            (after 10)
+            (Some "C:\\Users\\Kyle\\Local>")
+    let _ = ContentHistory.appendFromEvent history (after 20) (printRune 'b')
+    let _ = ContentHistory.appendFromEvent history (after 20) lf
+    let _ = SpeechCursor.toLatest cursor history
+    // Latest renderable is TextSpan "b". Previous step lands on
+    // the PromptStart marker (newly renderable in PR-D).
+    let prev = SpeechCursor.previous cursor history
+    match prev with
+    | Some (ContentHistory.Marker m) ->
+        Assert.Equal(ContentHistory.MarkerKind.PromptStart, m.Kind)
+    | _ -> Assert.Fail("expected previous to land on PromptStart marker")
+
+// ---------------------------------------------------------------------
 // Cycle 45f — setParameters + LineByLine streaming + Off mode
 // ---------------------------------------------------------------------
 

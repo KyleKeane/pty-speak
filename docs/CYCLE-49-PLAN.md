@@ -33,10 +33,10 @@ that landed in Cycles 45–48 so the existing tests
 
 | #  | Branch                                                           | Status   | Scope |
 |----|------------------------------------------------------------------|----------|-------|
-| A  | `claude/cycle49-speech-cursor-blank-collapse`                    | drafting | SpeechCursor manual nav skips entries whose `renderEntryWithPolicy` returns `None` (Newline, Overwrite, empty TextSpan, `UserInputEcho`-sourced, boundary markers without payload). `toMarker` deliberately preserves the unfiltered jump (marker jumps are explicit). Lands this plan doc. |
-| B  | `claude/cycle49-post-enter-delta-announce`                       | pending  | `ShellInteraction` records `ContentHistory.Length` as a per-tuple watermark on `Composing→Executing` transition that follows a sub-prompt announce. `handlePromptBoundary` tuple-final announce slices `OutputText` from the watermark (or 0 if no sub-prompt occurred). Silently skips when the post-Enter body is empty. |
-| C  | `claude/cycle49-review-cursor-refresh`                           | pending  | Investigate why `TerminalAutomationPeer.RaiseCaretMovedToTail` (Cycle 46 PR-C) does not invalidate the UIA `TextEdit` cache so the review cursor needs an extra command to pick up the latest content. Likely missing `TextChanged` / `AutomationEvents.StructureChanged` raise. Scope sizing to follow investigation. |
-| D  | `claude/cycle49-line-1-of-8`                                     | pending  | Verify whether test 01's "Line 1 of 8 missing" reproduces after PR-A + PR-B (which may resolve it — the missing "Line 1" is likely a leading blank entry being numbered, or a watermark issue). If still reproducing, separate fix. |
+| A  | `claude/cycle49-speech-cursor-blank-collapse`                    | merged 2026-05-14 (PR #313) | SpeechCursor manual nav skips entries whose `renderEntryForManualNav` returns `None` (Newline, Overwrite, empty TextSpan, `UserInputEcho`-sourced, boundary markers without payload). `toMarker` deliberately preserves the unfiltered jump (marker jumps are explicit). Lands this plan doc. |
+| B  | `claude/cycle49-post-enter-delta-announce`                       | merged 2026-05-14 (PR #314) | `recordTransitionImpl` captures the on-screen preamble (active tuple's prompt row through cursor row) at `EnterPressed` time after a `SubPromptIdle` and writes it to `lastAnnouncedText`; tuple-finalise prefix-trim then slices the post-Enter delta from `tuple.OutputText`. |
+| C  | `claude/cycle49-review-cursor-refresh`                           | merged 2026-05-14 (PR #315) | `TerminalAutomationPeer.RaiseTextChanged()` fires `AutomationEvents.TextPatternOnTextChanged` after every Announce site so NVDA's review cursor invalidates its cached `DocumentRange` and re-pulls the latest tail. |
+| D  | `claude/cycle49-prompt-in-speechcursor-nav`                      | drafting | **Re-cut 2026-05-14** from the original "test-01 line-1" scope (which needs diagnostic-bundle data after A/B/C and stays open as the §"Open follow-ups" item below). New D scope: maintainer feedback "speech cursor should include the prompt as a separate item." Adds `SpeechCursor.renderEntryForManualNav` which decouples manual-nav rendering from `PromptPath` narration policy: `PromptStart` markers with payload always render to a `FinalDirOnly`-trimmed announce for navigation regardless of the per-shell PromptPath, so the user can navigate prompt-to-prompt in review even when auto-drive is silent on prompts. Auto-drive narration unchanged. |
 | E1 | `claude/cycle49-csi-aware-userinputbuffer`                       | pending  | `UserInputBuffer` parses `CSI 2K` / `CSI nG` / bare `\r` clear-line + cursor-position sequences arriving during `Composing` so the buffer reflects the actual on-screen draft after a shell-side history recall (cmd's doskey, PSReadLine's history-search, bash readline). |
 | E2 | `claude/cycle49-history-recall-announce`                         | pending  | On `UserInputBuffer` rewrite mid-`Composing`, announce the new buffer contents via a dedicated activity ID (probably new — `pty-speak.input-assistant` per CORE-ABSTRACTION-BOUNDARY.md §"input assistant" reserved peer pane). NVDA's `MostRecent` processing supersedes prior recall announces. |
 | E3 | `claude/cycle49-draft-input-recall-entry-source`                 | pending  | Add `EntrySource.DraftInputRecall`. Recalled-buffer rewrites produce a `ContentHistory.Entry` tagged with this source, so manual nav can optionally include them but live announce + SpeechCursor AutoDrive filter them like `UserInputEcho`. Symmetric with how typed input is recorded today. Decided 2026-05-14 per maintainer answer in chat. |
@@ -64,6 +64,40 @@ per usual. NVDA-matrix walk is the cycle-level gate:
 
 Consolidate to a single Cycle-49-1 row in the closure-audit
 (PR-Z) per the cycle-closure-audit discipline.
+
+## Open follow-ups (need diagnostic data)
+
+Maintainer dogfood on the post-PR-A/B/C build (2026-05-14) surfaced
+three issues that need diagnostic data before they can be sized as
+PRs. Bundle paste pending.
+
+1. **Test 01 missing first line.** "This is a simple echo test."
+   (script line 15) is absent from BOTH the speech narration AND
+   the review-cursor document. Substrate-level issue —
+   `ContentHistoryTextProvider.DocumentRange` materialises from
+   `state.Entries` unfiltered, so if the line isn't visible to the
+   review cursor, the bytes either didn't reach `ContentHistory`
+   or got displaced. Need grep on the bundle for "This is a
+   simple echo test" + the surrounding `ContentHistory` append
+   log to identify which.
+2. **Test 02 sub-prompt content wrong.** Maintainer hears
+   "zero c windows system…" as the first audible chunk instead of
+   "Enter your name:". The Cycle 48 post-PR-F echo-strip drops
+   content up to the first `\n` in the accumulator; this symptom
+   suggests the accumulator contains multiple preamble lines (or
+   the cmd version banner / script path) that survive the
+   single-line strip. Bundle grep "PR-E sub-prompt announce.
+   Length=" reveals what was actually narrated.
+3. **Post-Enter still narrates full output.** PR-B's
+   `capturePreambleForSubPromptResponse` should overwrite
+   `lastAnnouncedText` with the on-screen preamble at
+   EnterPressed time so the tuple-final prefix-trim slices the
+   delta. Either the capture isn't firing
+   (`awaitingSubPromptEnter` never set), the captured preamble
+   doesn't match `tuple.OutputText`'s prefix (screen-render
+   divergence), or the capture throws (logged at Warning).
+   Bundle greps "PR-B sub-prompt preamble captured" and
+   "Tuple-final prefix trim" disambiguate.
 
 ## Decisions already made
 

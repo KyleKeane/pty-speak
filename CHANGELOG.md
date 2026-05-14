@@ -15,6 +15,26 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 49 PR-D (2026-05-14): Prompts visible in SpeechCursor manual navigation
+
+`Ctrl+Shift+Up/Down/End` now surface `PromptStart` markers with
+payload as standalone navigable entries — regardless of the
+per-shell `PromptPath` setting that gates auto-drive narration.
+A new `SpeechCursor.renderEntryForManualNav` function decouples
+the navigation rendering from the auto-drive rendering:
+manual nav uses `FinalDirOnly`-trimmed prompt text (e.g.
+"Local>") for every `PromptStart`-with-payload, while
+`onAppend`'s streaming narration continues to honor the
+per-shell `PromptPath` so the live cmd / PowerShell experience
+doesn't become chattier.
+
+Maintainer feedback 2026-05-14: "the speech cursor only
+includes the output of echo and I think it should include the
+prompt as well in the history as a separate item." Cycle 49
+PR-D is the navigation-side response.
+
+Cycle 49 plan: [`docs/CYCLE-49-PLAN.md`](docs/CYCLE-49-PLAN.md).
+
 ### Cycle 49 PR-C (2026-05-14): Review cursor refresh via UIA TextChanged
 
 The NVDA review cursor now reflects the latest `ContentHistory`
