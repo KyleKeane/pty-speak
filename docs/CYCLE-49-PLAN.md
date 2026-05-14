@@ -1,3 +1,39 @@
+# Cycle 49 — Plan (HISTORICAL)
+
+> **HISTORICAL — Cycle 49 shipped 2026-05-14.** Eight feature
+> PRs (A → I, no E1/E2/E3 — replaced in scope by PR-I) plus a
+> closure-audit PR (this doc's final edit). Kept for the
+> decision trail: scope re-cuts (D, E1/E2/E3 → PR-I, F's
+> supersession of B's text-prefix-trim), open-follow-ups
+> resolved in-cycle, deferred items handed off to future
+> cycles. The live forward-looking documents are
+> [`docs/SESSION-HANDOFF.md`](SESSION-HANDOFF.md) and
+> [`docs/PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md).
+>
+> Things this doc says that are now untrue or stale:
+>
+> - The "drafting" status column entries are stale; all
+>   feature PRs merged 2026-05-14. Final commits on `main`:
+>   PR-A `8242e56`, PR-B `36acad6`, PR-C `1579ff7`, PR-D
+>   `4b315ae`, PR-F `2f8a05a`, PR-G `335dbb9` (added
+>   mid-cycle to fix duplicate-command silence), PR-H
+>   `b9e250f` (added mid-cycle for test-fixture rename),
+>   PR-I `904051c` (replaced E1/E2/E3 with the simpler
+>   "byte-detect + screen-read" approach).
+> - "Decisions already made" section refers to E3
+>   (`EntrySource.DraftInputRecall`) as a decided next step.
+>   PR-I rendered E1/E2/E3 unnecessary for audible behaviour;
+>   E3's substrate-tagging role is now a deferred follow-up
+>   (`docs/PROJECT-PLAN-2026-05-12.md` §4 short-term).
+> - "Open follow-ups (need diagnostic data)" — all three
+>   diagnosed from the 2026-05-14 bundle: #1 (test-01 Line 1
+>   missing) resolved by PR-H fixture rename; #2 (sub-prompt
+>   "zero c windows system") and #3 (post-Enter full-read)
+>   resolved by PR-F.
+> - "Validation gates" section refers to per-PR gates;
+>   consolidated post-cycle to a single Cycle 49 matrix row
+>   in `ACCESSIBILITY-TESTING.md`.
+
 # Cycle 49 — Plan (in-flight scoping)
 
 **Snapshot**: 2026-05-14 (post-Cycle-48 closure, post-PR-#312 merge).
@@ -5,10 +41,8 @@
 **Audience**: the next session — human or Claude. Self-contained;
 nothing in this doc requires reading prior chat history.
 
-**Status**: in flight. Update the "Status" column on each row
-when a PR ships; flip this whole doc to *HISTORICAL* once the
-closure-audit PR lands per the Cycle-closure-audit discipline
-in [`CLAUDE.md`](../CLAUDE.md) §"Cycle closure audit".
+**Status**: HISTORICAL — see banner at top of file. Cycle
+shipped 2026-05-14.
 
 ## Cycle goal
 
@@ -37,11 +71,11 @@ that landed in Cycles 45–48 so the existing tests
 | B  | `claude/cycle49-post-enter-delta-announce`                       | merged 2026-05-14 (PR #314) | `recordTransitionImpl` captures the on-screen preamble (active tuple's prompt row through cursor row) at `EnterPressed` time after a `SubPromptIdle` and writes it to `lastAnnouncedText`; tuple-finalise prefix-trim then slices the post-Enter delta from `tuple.OutputText`. |
 | C  | `claude/cycle49-review-cursor-refresh`                           | merged 2026-05-14 (PR #315) | `TerminalAutomationPeer.RaiseTextChanged()` fires `AutomationEvents.TextPatternOnTextChanged` after every Announce site so NVDA's review cursor invalidates its cached `DocumentRange` and re-pulls the latest tail. |
 | D  | `claude/cycle49-prompt-in-speechcursor-nav`                      | merged 2026-05-14 (PR #316) | **Re-cut 2026-05-14** from the original "test-01 line-1" scope (which needs diagnostic-bundle data after A/B/C and stays open as the §"Open follow-ups" item below). New D scope: maintainer feedback "speech cursor should include the prompt as a separate item." Adds `SpeechCursor.renderEntryForManualNav` which decouples manual-nav rendering from `PromptPath` narration policy: `PromptStart` markers with payload always render to a `FinalDirOnly`-trimmed announce for navigation regardless of the per-shell PromptPath, so the user can navigate prompt-to-prompt in review even when auto-drive is silent on prompts. Auto-drive narration unchanged. |
-| F  | `claude/cycle49-subprompt-last-line-and-line-count-delta`        | drafting | Maintainer dogfood 2026-05-14 surfaced two sub-prompt-announce defects on top of the post-A/B/C build. (1) The sub-prompt announce narrated every preamble line the script printed before the prompt; NVDA reading "test-02-text-input" as "test zero two text input" mis-confused the listener. PR-F narrows the announce to the LAST non-empty line of the post-echo-strip accumulator. (2) PR-B's text-prefix-trim for the post-Enter delta failed to fire (the cursor row's content drifted between EnterPressed and tuple-finalise). PR-F replaces the prefix-trim with a line-count signal: count non-empty rows at EnterPressed; drop that many `\n`-delimited lines from `tuple.OutputText` at tuple-finalise. Robust to per-row drift. |
-| E1 | `claude/cycle49-csi-aware-userinputbuffer`                       | pending  | `UserInputBuffer` parses `CSI 2K` / `CSI nG` / bare `\r` clear-line + cursor-position sequences arriving during `Composing` so the buffer reflects the actual on-screen draft after a shell-side history recall (cmd's doskey, PSReadLine's history-search, bash readline). |
-| E2 | `claude/cycle49-history-recall-announce`                         | pending  | On `UserInputBuffer` rewrite mid-`Composing`, announce the new buffer contents via a dedicated activity ID (probably new — `pty-speak.input-assistant` per CORE-ABSTRACTION-BOUNDARY.md §"input assistant" reserved peer pane). NVDA's `MostRecent` processing supersedes prior recall announces. |
-| E3 | `claude/cycle49-draft-input-recall-entry-source`                 | pending  | Add `EntrySource.DraftInputRecall`. Recalled-buffer rewrites produce a `ContentHistory.Entry` tagged with this source, so manual nav can optionally include them but live announce + SpeechCursor AutoDrive filter them like `UserInputEcho`. Symmetric with how typed input is recorded today. Decided 2026-05-14 per maintainer answer in chat. |
-| Z  | `claude/cycle49-closure-audit`                                   | pending  | Cycle closure audit per [`CLAUDE.md`](../CLAUDE.md) §"Cycle closure audit". Updates SESSION-HANDOFF, PROJECT-PLAN, ACCESSIBILITY-TESTING matrix, ADR Status notes, this doc's *HISTORICAL* banner. |
+| F  | `claude/cycle49-subprompt-last-line-and-line-count-delta`        | merged 2026-05-14 (PR #317) | Maintainer dogfood 2026-05-14 surfaced two sub-prompt-announce defects on top of the post-A/B/C build. (1) The sub-prompt announce narrated every preamble line the script printed before the prompt; NVDA reading "test-02-text-input" as "test zero two text input" mis-confused the listener. PR-F narrows the announce to the LAST non-empty line of the post-echo-strip accumulator. (2) PR-B's text-prefix-trim for the post-Enter delta failed to fire (the cursor row's content drifted between EnterPressed and tuple-finalise). PR-F replaces the prefix-trim with a line-count signal: count non-empty rows at EnterPressed; drop that many `\n`-delimited lines from `tuple.OutputText` at tuple-finalise. Robust to per-row drift. |
+| G  | `claude/cycle49-remove-duplicate-output-suppression-prefix-trim` | merged 2026-05-14 (PR #318) | **Added mid-cycle 2026-05-14** after preview.122 dogfood showed "speech is unreliable and unpredictable" with `echo hi` twice in a row silencing the second announce. Root cause: tuple-final still carried `lastAnnouncedText` prefix-trim from pre-PR-B; PR-F made it useless for sub-prompt cleanup and actively wrong for duplicate commands. PR-G deletes the prefix-trim branch entirely. As a downstream effect, also resolved a menu-narration regression NVDA exhibited under the same announce-queue conditions. |
+| H  | `claude/cycle49-test-01-script-clearer-labels`                   | merged 2026-05-14 (PR #319) | **Added mid-cycle 2026-05-14** for the "Line 1 of 8 missing" follow-up: bundle review confirmed `This is a simple echo test.` was in the substrate verbatim, so the issue was script-fixture labelling (Line 1 unlabelled, only Lines 2–7 labelled). PR-H reshapes the script with explicit `Line 1 of 3` → `Line 3 of 3` labels + framed intro/final messages so every audible line is countable. |
+| I  | `claude/cycle49-history-recall-announce`                         | merged 2026-05-14 (PR #320) | **Replaces the original E1/E2/E3 sequence** with a single simpler implementation. Detects Up/Down arrow byte sequences (`\x1B [ A/B`, `\x1B O A/B`) in the byte-write wrapper, 100 ms debounced `DispatcherTimer` reads the prompt row, strips the `Composing.PromptText` prefix, and announces via the new `pty-speak.input-assistant` activity ID. The E1/E2/E3 CSI-aware-UserInputBuffer + dedicated rewrite pathway approach was deferred — PR-I's screen-read approach addresses the audible user need without substrate changes. E3 (`EntrySource.DraftInputRecall` tagging) deferred to a future cycle as a substrate refinement. |
+| Z  | `claude/cycle49-closure-audit`                                   | this PR | Cycle closure audit per [`CLAUDE.md`](../CLAUDE.md) §"Cycle closure audit". Updates SESSION-HANDOFF, PROJECT-PLAN, ACCESSIBILITY-TESTING matrix, ADR Status notes, this doc's *HISTORICAL* banner. |
 
 ## Validation gates
 
