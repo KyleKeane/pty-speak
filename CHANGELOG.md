@@ -13471,6 +13471,37 @@ What changes:
   + cross-references). The full plan is in
   `/root/.claude/plans/replicated-riding-sketch.md`.
 
+### Post-Cycle-49 PR-S+T (2026-05-14): CI-testing future-improvements doc + CLAUDE.md PR-workflow conventions
+
+Two coupled docs/process changes (combined into one PR
+since both are about "how we ship PRs going forward"):
+
+1. **`docs/CI-TESTING-FUTURE.md`** — scoping document
+   capturing the gap between what CI catches today vs.
+   what dogfood catches, plus two practical wins
+   (orchestration unit tests; ConPTY + Announce-capture
+   integration). Pick up when "Cycle N closes with no
+   dogfood-only regressions". Not a plan to execute now.
+
+2. **`CLAUDE.md` §"Branching and PRs"** — two new rules:
+   *(a)* `git checkout main && git pull origin main`
+   BEFORE creating each new branch — Cycle 50 surfaced
+   the cost of skipping this (every PR after the first
+   in a multi-PR session got a `CHANGELOG.md` merge
+   conflict because the branch was cut from a stale
+   `main`); *(b)* CHANGELOG `[Unreleased]` entries
+   append at the BOTTOM, not the top — eliminates the
+   "every PR conflicts with every other PR's anchor"
+   pattern. This entry IS the first append-bottom
+   demonstrator.
+
+Note for future readers: the existing top-newest entry
+order in `[Unreleased]` is preserved as-is — re-ordering
+historical entries is more disruption than benefit.
+Going forward, new entries land at the bottom; the
+per-entry `### Cycle N PR-X (date):` header gives the
+chronological order regardless of file position.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

@@ -97,13 +97,27 @@ requests". Quick reminders:
 
 - Develop on the branch assigned in the system instructions; create
   it from `main` if it doesn't exist.
+- **`git checkout main && git pull origin main` BEFORE creating
+  the new branch.** Cycle 50 surfaced the cost of skipping this:
+  every PR after the first in a multi-PR session got a
+  `CHANGELOG.md` merge conflict because the branch was cut
+  from a stale `main`. The conflict-resolution + force-push
+  cycle wastes a full CI round-trip per occurrence (~3 min).
+  Always rebase the local main first.
 - **One concern per PR.** Multi-PR sequences are preferred over
   bundles (Stage 7 ran 11 sequenced PRs A → K).
 - Conventional Commits for branch names (`claude/<slug>`,
   `feat/<slug>`, `fix/<slug>`, ...) and PR titles.
 - Squash-merge default. Delete the source branch (local + remote) after.
 - Update [`CHANGELOG.md`](CHANGELOG.md) `[Unreleased]` for any
-  user-visible change.
+  user-visible change. **Append at the BOTTOM of the
+  `[Unreleased]` section, not the top.** Reverse-chronological
+  reading order is given by the per-entry `### Cycle N PR-X
+  (date):` headers, not by file position. Bottom-append means
+  two simultaneous PRs only conflict when they both touch the
+  exact same trailing line — much rarer than top-insert, where
+  every PR conflicts with every other PR's anchor by
+  construction.
 
 ### CI failures — ask for the log, don't guess
 
