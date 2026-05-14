@@ -485,6 +485,51 @@ Quick rule: **never log secrets**, even names — env-var names like
 announcement-bound exception messages through
 `Terminal.Core.AnnounceSanitiser.sanitise`.
 
+### New features ship with their diagnostic triggers
+
+Established 2026-05-14 after PR-I (history-recall announce)
+shipped with a thin `RowLen={RowLen} DraftLen={DraftLen}` log
+and the maintainer reported a non-deterministic mis-announce
+that the lean log couldn't localise. Required a follow-up
+PR-J just to add the diagnostic args.
+
+**Rule**: when a feature introduces a new announce site,
+state-machine transition, screen-read, or any other path
+whose behaviour the maintainer would need to triage from a
+`Ctrl+Shift+D` bundle, ship the diagnostic args **in the
+same PR**, not as a follow-up.
+
+Minimum signal for an announce site:
+
+- The **announce body** (logged at Debug if it contains user
+  data; at Information if structural). PR-I logs the
+  recalled draft text at Debug, matching the existing
+  `UserInputBuffer captured on Enter: ... Text=...` log
+  precedent — both go to NVDA out loud so no new
+  sensitivity boundary is crossed.
+- The **decision inputs** that determined the announce —
+  for PR-I the prompt row, `PromptText`, and whether the
+  prefix-strip matched. For sub-prompt announces, the
+  accumulator length + last-line vs full-body choice.
+- Counts (lengths, indices, line counts) at Information so
+  the always-on bundle has enough to confirm the path fired
+  even when Debug logging is off.
+
+Bundle-friendly format:
+
+- Use templated args (`{Foo}={Foo} {Bar}={Bar}`), not
+  interpolated strings, so the FileLogger can index them.
+- Prefix with the PR ID (`PR-I history-recall details.`)
+  so a grep on a noisy bundle quickly finds your log lines.
+- Keep templates **single-line** — multi-line bodies break
+  the grep tooling on the bundle.
+
+Test fixtures (the canonical-interactions corpus + the
+`Diagnostics → Test ...` menu items) also count as
+diagnostic triggers; if a new feature has a deterministic
+shell-side reproducer, add a test-corpus entry so the
+maintainer doesn't have to script it ad-hoc.
+
 ### App-reserved hotkey contract
 
 Canonical: [`spec/tech-plan.md`](spec/tech-plan.md) section 6 +
