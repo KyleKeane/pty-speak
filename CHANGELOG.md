@@ -15,6 +15,32 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 49 PR-G (2026-05-14): Remove tuple-final prefix-trim against lastAnnouncedText
+
+Maintainer dogfood of preview.122 (post-PR-F) surfaced a
+"speech is unreliable and unpredictable" regression and a
+specific reproducer: running the same command twice in a row
+(e.g. `echo hi` then `echo hi`) silenced the second tuple-final
+announce. Root cause: the tuple-final code still carried a
+prefix-trim against `lastAnnouncedText` from the pre-PR-B
+sub-prompt cleanup era. Once PR-F replaced that mechanism with
+line-count slicing, the prefix-trim was a relic that ONLY
+suppressed duplicate-command output (because the new
+`tuple.OutputText` happened to start with the previous
+announce body, so the trim emptied the announce). The
+"unpredictable" pattern of silences was the same logic firing
+non-deterministically as session output accumulated matching
+prefixes.
+
+PR-G deletes the prefix-trim branch entirely; the only
+trim path for tuple-final is now PR-F's sub-prompt line-count
+slice.
+
+(An unresolved menu-right-arrow narration silence reported in
+the same dogfood is NOT addressed by PR-G — pty-speak doesn't
+touch WPF menu accessibility; that issue stays open pending
+re-test on the post-PR-G build with a log if it persists.)
+
 ### Cycle 49 PR-F (2026-05-14): sub-prompt last-line announce + line-count post-Enter slicing
 
 Two connected refinements from preview.121 dogfood:

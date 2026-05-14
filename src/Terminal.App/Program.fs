@@ -2235,11 +2235,24 @@ module Program =
                 // user explicitly wants to inspect markers.
                 match tupleFinaliseAnnounce with
                 | Some text ->
-                    // Cycle 49 PR-F (2026-05-14) — pick the
-                    // trimming strategy based on whether this
-                    // tuple-final follows a sub-prompt response
-                    // (the EnterPressed-from-Composing case PR-B
-                    // wires).
+                    // Cycle 49 PR-G (2026-05-14) — the only
+                    // trim path for tuple-final is the sub-prompt
+                    // line-count slice (PR-F). The legacy text
+                    // prefix-trim against `lastAnnouncedText`
+                    // was removed: it was a relic of the pre-PR-B
+                    // sub-prompt cleanup story (superseded by
+                    // PR-F's line-count), and in dogfood
+                    // 2026-05-14 it silently suppressed the
+                    // announce whenever a user ran the same
+                    // command twice in a row (the new
+                    // `tuple.OutputText` happened to start with
+                    // the previous announce body, so the trim
+                    // emptied the announce and the "no audible
+                    // output" branch fired). Removing the trim
+                    // restores correct duplicate-command behaviour
+                    // and removes the "unpredictable" silence the
+                    // maintainer reported as outputs accumulated
+                    // matching prefixes over a session.
                     //
                     // Sub-prompt path (`subPromptPreambleLineCount > 0`):
                     //   line-count slice — split `text` on `\n`,
@@ -2249,16 +2262,6 @@ module Program =
                     //   join the remainder. Robust to per-row
                     //   content drift between EnterPressed and
                     //   tuple-finalise.
-                    //
-                    // Otherwise (top-level tuple after a plain
-                    // command run): fall back to the existing
-                    // text prefix-trim against `lastAnnouncedText`
-                    // — it's a no-op in practice for these
-                    // tuples (`lastAnnouncedText` carries the
-                    // prior tuple's announce body, which won't
-                    // be a prefix of the new tuple's output) but
-                    // preserves the legacy code path so PR-F's
-                    // scope stays focused on the sub-prompt fix.
                     let trimmed, trimStrategy =
                         if subPromptPreambleLineCount > 0 then
                             // Honour CR / CRLF / bare-LF row
@@ -2271,17 +2274,13 @@ module Program =
                             let drop = min subPromptPreambleLineCount lines.Length
                             let remainder = lines |> Array.skip drop
                             String.concat "\n" remainder, "line-count"
-                        elif lastAnnouncedText.Length > 0
-                             && text.StartsWith(
-                                 lastAnnouncedText, StringComparison.Ordinal) then
-                            text.Substring(lastAnnouncedText.Length), "prefix-trim"
                         else
                             text, "none"
                     if System.String.IsNullOrWhiteSpace trimmed then
                         log.LogInformation(
-                            "Tuple-final announce suppressed (prefix already announced). OriginalLen={Orig} Strategy={Strategy} SubPromptLines={Lines} LastAnnouncedLen={Last}",
+                            "Tuple-final announce suppressed (empty after slice). OriginalLen={Orig} Strategy={Strategy} SubPromptLines={Lines}",
                             text.Length, trimStrategy,
-                            subPromptPreambleLineCount, lastAnnouncedText.Length)
+                            subPromptPreambleLineCount)
                     else
                         let toSay =
                             if trimmed.Length <= OutputAnnounceCapChars then trimmed
@@ -2292,9 +2291,9 @@ module Program =
                                 trimmed.Length, toSay.Length, OutputAnnounceCapChars)
                         if trimmed.Length < text.Length then
                             log.LogInformation(
-                                "Tuple-final trim. OriginalLen={Orig} TrimmedLen={Trim} Strategy={Strategy} SubPromptLines={Lines} LastAnnouncedLen={Last}",
+                                "Tuple-final trim. OriginalLen={Orig} TrimmedLen={Trim} Strategy={Strategy} SubPromptLines={Lines}",
                                 text.Length, trimmed.Length, trimStrategy,
-                                subPromptPreambleLineCount, lastAnnouncedText.Length)
+                                subPromptPreambleLineCount)
                         log.LogInformation(
                             "Tuple-final announce. Length={Len}", toSay.Length)
                         window.TerminalSurface.Announce(toSay, ActivityIds.output)
