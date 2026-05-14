@@ -1775,6 +1775,59 @@ module Program =
                                 "PR-K sub-prompt announce body. Source={Source} Announce={Announce}",
                                 source, toSay)
                             window.TerminalSurface.Announce(toSay, ActivityIds.output)
+                            // PR-U (2026-05-14) — for single-key
+                            // sub-prompts (`choice` / `pause`)
+                            // there's no EnterPressed transition
+                            // when the user submits the response
+                            // (the byte is consumed by cmd
+                            // directly without `\r`), so
+                            // `capturePreambleForSubPromptResponse`
+                            // never fires and
+                            // `subPromptPreambleLineCount`
+                            // stays at 0 — tuple-final falls
+                            // through to no-trim and the whole
+                            // script output gets re-narrated.
+                            // Maintainer's test-04 dogfood
+                            // 2026-05-14 reproduced this:
+                            // pressed `Y` to `Continue? [Y,N]?`,
+                            // tuple-final spoke the full
+                            // 184-char output.
+                            //
+                            // Fix: at SubPromptIdle (here),
+                            // count the non-empty lines in the
+                            // screen-read announce body and
+                            // seed `subPromptPreambleLineCount`.
+                            // For typed-input sub-prompts
+                            // (test-02),
+                            // `capturePreambleForSubPromptResponse`
+                            // will OVERRIDE this count on
+                            // EnterPressed using its cursor-row
+                            // signal — which is finer-grained
+                            // and accounts for the user's
+                            // typed response on the prompt
+                            // row. For single-key sub-prompts,
+                            // no EnterPressed → the seed
+                            // count drives tuple-final
+                            // correctly.
+                            //
+                            // Only seed when `source = "screen"`;
+                            // the accumulator-fallback path's
+                            // line layout may not match
+                            // tuple.OutputText's line shape
+                            // (the accumulator has raw bytes
+                            // including OSC sequences and
+                            // partial wraps).
+                            if source = "screen" then
+                                let lineCount =
+                                    announceBody.Split([| '\n' |], System.StringSplitOptions.None)
+                                    |> Array.filter (fun l ->
+                                        not (System.String.IsNullOrWhiteSpace l))
+                                    |> Array.length
+                                if lineCount > 0 then
+                                    subPromptPreambleLineCount <- lineCount
+                                    log.LogInformation(
+                                        "PR-U sub-prompt preamble line count seeded at SubPromptIdle. LineCount={Lc} Source={Source}",
+                                        lineCount, source)
                             // Cycle 49 PR-C — invalidate UIA
                             // Text-pattern cache so the review
                             // cursor picks up the sub-prompt

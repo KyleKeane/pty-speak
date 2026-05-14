@@ -13502,6 +13502,48 @@ Going forward, new entries land at the bottom; the
 per-entry `### Cycle N PR-X (date):` header gives the
 chronological order regardless of file position.
 
+### Post-Cycle-49 PR-U (2026-05-14): Seed sub-prompt preamble line count at SubPromptIdle for single-key sub-prompts
+
+Maintainer test-04 (yes/no via `choice`) dogfood 2026-05-14:
+after pressing `Y`, NVDA narrated the entire 184-char script
+output (START + intro + `Continue? [Y,N]?Y` + `You chose Yes.`
++ END) instead of just `You chose Yes.` + END.
+
+Root cause: `choice` is a single-key sub-prompt — cmd
+consumes the `Y` byte directly without requiring `Enter`.
+The byte-write wrapper never sees `0x0D`, so no EnterPressed
+transition fires, so `capturePreambleForSubPromptResponse`
+never runs, so `subPromptPreambleLineCount` stays at 0, so
+tuple-final's line-count strategy falls through to "no
+trim". The state-machine log confirms:
+`Composing(prompt=..., single-key=true)` — the state-
+machine knows it's single-key but the line-count signal
+isn't wired into that path.
+
+PR-U also seeds `subPromptPreambleLineCount` at SubPromptIdle
+time using the count of non-empty lines in the screen-read
+announce body. For typed-input sub-prompts (test-02),
+`capturePreambleForSubPromptResponse` continues to OVERRIDE
+this seed on EnterPressed with the cursor-row count (finer
+grained, accounts for typed response on the prompt row).
+For single-key sub-prompts where no EnterPressed fires, the
+SubPromptIdle seed drives tuple-final correctly. Only
+seeds when `source = "screen"`; the accumulator-fallback
+path's line layout may not match `tuple.OutputText`'s.
+
+Diagnostic log per the PR-J convention: new Information-
+level `PR-U sub-prompt preamble line count seeded at
+SubPromptIdle. LineCount=N Source=screen` confirms the seed
+fired.
+
+(Adjacent maintainer complaint about `Continue? [Y,N]?` not
+being heard — bundle disagrees: the sub-prompt announce
+body at 13:17:52 includes "Continue? [Y,N]?" in the
+124-char announce. Likely NVDA's TTS dropped or cut off
+mid-sentence since `AnnounceSanitiser.sanitise` strips `\n`
+from the announce body. Worth a follow-up if it persists
+post-PR-U.)
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
