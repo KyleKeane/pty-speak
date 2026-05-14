@@ -428,6 +428,30 @@ type internal TerminalAutomationPeer
         this.RaiseAutomationEvent(
             AutomationEvents.TextPatternOnTextSelectionChanged)
 
+    /// Cycle 49 PR-C — invalidate NVDA's UIA Text-pattern cache
+    /// so the review cursor (NVDA + arrow keys, Insert+End read-
+    /// to-end, etc.) picks up the latest `ContentHistory` tail
+    /// without the user having to run an extra command to nudge
+    /// the cache.
+    ///
+    /// Raises `AutomationEvents.TextPatternOnTextChanged` (the
+    /// UIA Text-pattern's "text changed" event, distinct from
+    /// the selection-changed event used by `RaiseCaretMovedToTail`).
+    /// Where `TextSelectionChanged` is documented in ADR 0002 as
+    /// being silently dropped by NVDA when `GetSelection()` is
+    /// empty (which ours is), `TextChanged` is the canonical
+    /// signal that the document's underlying text has been
+    /// replaced — NVDA invalidates its cached `DocumentRange`
+    /// and re-pulls on the next review-cursor query.
+    ///
+    /// Must be called on the WPF dispatcher thread. The existing
+    /// announce callers (`speechCursorAnnounce`,
+    /// `boundaryAction`, the sub-prompt recordTransitionImpl
+    /// branch) are all on the dispatcher already.
+    member this.RaiseTextChanged() =
+        this.RaiseAutomationEvent(
+            AutomationEvents.TextPatternOnTextChanged)
+
     /// Add the Text pattern to this peer. For every other
     /// pattern interface we defer to the base implementation
     /// so the inherited behaviour (LegacyIAccessible, Window,
