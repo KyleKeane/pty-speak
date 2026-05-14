@@ -15,6 +15,29 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 49 PR-C (2026-05-14): Review cursor refresh via UIA TextChanged
+
+The NVDA review cursor now reflects the latest `ContentHistory`
+tail immediately, instead of needing the user to run an extra
+command to nudge the UIA cache.
+
+Mechanism: `TerminalAutomationPeer` gains a `RaiseTextChanged()`
+method that fires `AutomationEvents.TextPatternOnTextChanged`
+— the canonical UIA signal that the document's underlying text
+has been replaced. Where the prior
+`TextPatternOnTextSelectionChanged` event is silently dropped by
+NVDA when `GetSelection()` is empty (which ours is, per ADR 0002
+Status notes 2026-05-13), `TextChanged` invalidates NVDA's
+cached `DocumentRange` and triggers a re-pull on the next
+review-cursor query.
+
+Wired from every Announce site: SpeechCursor auto-drive narration,
+sub-prompt announce in `recordTransitionImpl`, tuple-finalise
+announce in `boundaryAction`. Each fires a paired
+`raiseTextChanged()` after the existing `Announce(...)` call.
+
+Cycle 49 plan: [`docs/CYCLE-49-PLAN.md`](docs/CYCLE-49-PLAN.md).
+
 ### Cycle 49 PR-B (2026-05-14): post-Enter delta announce for sub-prompts
 
 When the user responds to a sub-prompt (`set /p`, `pause`,

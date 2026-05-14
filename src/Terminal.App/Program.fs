@@ -1052,6 +1052,32 @@ module Program =
                 // unreachable in practice.
                 ()
 
+        // Cycle 49 PR-C — invalidate NVDA's UIA Text-pattern
+        // cache so the review cursor picks up new content
+        // without the user having to run an extra command to
+        // nudge the cache. `TextPatternOnTextChanged` is the
+        // canonical "the document's text has been replaced"
+        // signal (whereas `TextPatternOnTextSelectionChanged`,
+        // raised by `raiseCaretMovedToTail` above, is dropped by
+        // NVDA when `GetSelection()` returns empty — see ADR
+        // 0002 §"Status notes" 2026-05-13 post-PR-D entry).
+        //
+        // Called alongside each `Announce(...)` at every point
+        // where ContentHistory has just grown: the SpeechCursor
+        // announce callback (auto-drive narration), the
+        // tuple-finalise Announce in `boundaryAction`, and the
+        // sub-prompt Announce in `recordTransitionImpl`. The
+        // peer-NULL case (no UIA client connected yet) silent
+        // no-ops, mirroring `raiseCaretMovedToTail`'s pattern.
+        let raiseTextChanged () =
+            let peer =
+                UIElementAutomationPeer.FromElement(window.TerminalSurface)
+            match peer with
+            | null -> ()
+            | :? TerminalAutomationPeer as tp ->
+                tp.RaiseTextChanged()
+            | _ -> ()
+
         // Cycle 46 PR-D + post-PR-D audit (2026-05-13) — emit
         // BOTH the announce AND the caret-move event.
         //
@@ -1109,6 +1135,12 @@ module Program =
         // the user wants to inspect boundary structure.
         let speechCursorAnnounce ((text: string), (activityId: string)) =
             window.TerminalSurface.Announce(text, activityId)
+            // Cycle 49 PR-C — pair every auto-drive announce
+            // with a UIA TextChanged raise so NVDA's review
+            // cursor picks up the appended ContentHistory tail
+            // without the user needing to run another command
+            // to nudge the cache.
+            raiseTextChanged ()
 
         // "Wake up" trigger: ContentHistory has appended.
         // SpeechCursor.onAppend reads from history directly
@@ -1635,6 +1667,12 @@ module Program =
                             log.LogInformation(
                                 "PR-E sub-prompt announce. Length={Len}", toSay.Length)
                             window.TerminalSurface.Announce(toSay, ActivityIds.output)
+                            // Cycle 49 PR-C — invalidate UIA
+                            // Text-pattern cache so the review
+                            // cursor picks up the sub-prompt
+                            // bytes immediately rather than
+                            // waiting for the next command.
+                            raiseTextChanged ()
                             lastAnnouncedText <- toSay
                             lastAnnouncedSeq <- ContentHistory.latestSeq contentHistory
                         let readyEvent =
@@ -2175,6 +2213,11 @@ module Program =
                         log.LogInformation(
                             "Tuple-final announce. Length={Len}", toSay.Length)
                         window.TerminalSurface.Announce(toSay, ActivityIds.output)
+                        // Cycle 49 PR-C — invalidate UIA Text-
+                        // pattern cache so the review cursor
+                        // picks up the freshly-finalised tuple
+                        // content immediately.
+                        raiseTextChanged ()
                         lastAnnouncedText <- toSay
                     lastAnnouncedSeq <- ContentHistory.latestSeq contentHistory
                 | None -> ()
