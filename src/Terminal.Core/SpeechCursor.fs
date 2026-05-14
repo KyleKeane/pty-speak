@@ -202,29 +202,51 @@ module SpeechCursor =
         else
             true
 
-    /// Move the cursor to the next entry in the supplied
-    /// history (Seq > Position). Returns the entry, or `None` if
-    /// already at the latest.
+    /// Cycle 49 PR-A — does this entry actually render to an
+    /// audible announcement under the cursor's current policy?
+    /// Newline / Overwrite / empty-TextSpan / boundary-Marker /
+    /// `UserInputEcho`-sourced entries all return `None` from
+    /// `renderEntryWithPolicy`; manual navigation should skip
+    /// them rather than parking on Seqs the user can't hear.
+    ///
+    /// Manual nav pre-PR-A landed on every entry by Seq, so a
+    /// `dir`-shaped output (8 lines = 8 TextSpans + 8 Newlines)
+    /// required 16 Ctrl+Shift+Up presses to step backwards, half
+    /// of which announced nothing. PR-A collapses that to 8
+    /// presses, one per audible chunk.
+    ///
+    /// `toMarker` deliberately does NOT use this filter — a
+    /// marker jump is the user explicitly asking for a marker,
+    /// even if its `renderEntry` returns `None` (e.g.
+    /// `CommandStart` boundary markers).
+    let private renderable (state: T) (entry: ContentHistory.Entry) : bool =
+        (renderEntryWithPolicy state.Parameters.PromptPath entry).IsSome
+
+    /// Move the cursor to the next renderable entry in the
+    /// supplied history (Seq > Position). Returns the entry, or
+    /// `None` if no later renderable entry exists.
     let next (state: T) (history: ContentHistory.T) : ContentHistory.Entry option =
         let entries = ContentHistory.snapshot history
         let target =
             entries
             |> Array.tryFind (fun e ->
-                ContentHistory.entrySeq e > state.Position)
+                ContentHistory.entrySeq e > state.Position
+                && renderable state e)
         match target with
         | Some e ->
             state.Position <- ContentHistory.entrySeq e
             Some e
         | None -> None
 
-    /// Move the cursor to the previous entry. Returns the entry,
-    /// or `None` if already at the start.
+    /// Move the cursor to the previous renderable entry. Returns
+    /// the entry, or `None` if no earlier renderable entry exists.
     let previous (state: T) (history: ContentHistory.T) : ContentHistory.Entry option =
         let entries = ContentHistory.snapshot history
         let target =
             entries
             |> Array.filter (fun e ->
-                ContentHistory.entrySeq e < state.Position)
+                ContentHistory.entrySeq e < state.Position
+                && renderable state e)
             |> Array.tryLast
         match target with
         | Some e ->
@@ -232,15 +254,20 @@ module SpeechCursor =
             Some e
         | None -> None
 
-    /// Jump the cursor to the most recently appended entry.
-    /// Returns the entry, or `None` if history is empty.
+    /// Jump the cursor to the latest renderable entry. Returns
+    /// the entry, or `None` if history contains no renderable
+    /// entries (only Newlines / Overwrites / etc.).
     let toLatest (state: T) (history: ContentHistory.T) : ContentHistory.Entry option =
         let entries = ContentHistory.snapshot history
-        if entries.Length = 0 then None
-        else
-            let last = entries.[entries.Length - 1]
-            state.Position <- ContentHistory.entrySeq last
-            Some last
+        let target =
+            entries
+            |> Array.filter (renderable state)
+            |> Array.tryLast
+        match target with
+        | Some e ->
+            state.Position <- ContentHistory.entrySeq e
+            Some e
+        | None -> None
 
     /// Move the cursor to the next/previous Marker of the given
     /// kind. Returns the marker entry, or `None` if no match.

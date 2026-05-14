@@ -15,6 +15,19 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 49 PR-A (2026-05-14): SpeechCursor manual nav collapses blanks
+
+`Ctrl+Shift+Up/Down/End` now skip entries that produce no audible
+announcement (Newline, Overwrite, empty TextSpan, boundary markers
+without payload, `UserInputEcho`-sourced entries). Manual review
+of a `dir`-shaped output (8 lines = 16 entries with interleaved
+Newlines) now requires 8 Up presses instead of 16; half the prior
+presses produced no narration. `toMarker` deliberately retains
+the unfiltered jump — a marker jump is the user explicitly
+asking for a marker even if its `renderEntry` returns `None`.
+
+Cycle 49 plan: [`docs/CYCLE-49-PLAN.md`](docs/CYCLE-49-PLAN.md).
+
 ### Cycle 48 post-PR-F (2026-05-13): SpeechCursor hotkeys + menu reorg + sub-prompt echo strip
 
 Three connected fixes from preview.118 dogfood:
