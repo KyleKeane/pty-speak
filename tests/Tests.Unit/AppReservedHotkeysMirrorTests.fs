@@ -64,6 +64,9 @@ let private translateKey (k: HotkeyRegistry.HotkeyKey) : Key =
         | 7 -> Key.D7 | 8 -> Key.D8 | 9 -> Key.D9
         | other -> failwithf "translateKey: unmapped digit %d" other
     | HotkeyRegistry.Semicolon -> Key.OemSemicolon
+    | HotkeyRegistry.Up -> Key.Up
+    | HotkeyRegistry.Down -> Key.Down
+    | HotkeyRegistry.End -> Key.End
 
 let private translateMods (mods: Set<HotkeyRegistry.Modifier>) : ModifierKeys =
     let mutable result = ModifierKeys.None

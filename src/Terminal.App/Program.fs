@@ -367,6 +367,9 @@ module Program =
         | HotkeyRegistry.Digit 7 -> Key.D7
         | HotkeyRegistry.Digit 8 -> Key.D8
         | HotkeyRegistry.Digit 9 -> Key.D9
+        | HotkeyRegistry.Up -> Key.Up
+        | HotkeyRegistry.Down -> Key.Down
+        | HotkeyRegistry.End -> Key.End
         | HotkeyRegistry.Digit n ->
             failwithf
                 "HotkeyRegistry.Digit %d out of supported range 1-9 \
@@ -1570,8 +1573,28 @@ module Program =
                             | ShellPolicy.LineByLine -> false
                             | ShellPolicy.Off -> false)
                     if shouldAnnounce then
+                        // Cycle 48 post-PR-F (2026-05-13) —
+                        // strip the user's submitted-command
+                        // echo from the accumulator before
+                        // announcing. After EnterPressed, cmd
+                        // echoes the typed line + `\r\n`
+                        // before emitting the sub-prompt text.
+                        // Including that echo in the announce
+                        // produces the "garbled" output the
+                        // maintainer reported on test 02
+                        // (cmd echoes "set /p name=Enter your
+                        // name:\r\nEnter your name:"; we want
+                        // to announce just the second half).
+                        // Drop everything up to and including
+                        // the first `\n` in the accumulator.
                         let raw = outcome.AccumulatedOutput
-                        let sanitised = AnnounceSanitiser.sanitise raw
+                        let firstLf = raw.IndexOf('\n')
+                        let postEchoRaw =
+                            if firstLf >= 0 && firstLf + 1 < raw.Length then
+                                raw.Substring(firstLf + 1)
+                            else
+                                raw
+                        let sanitised = AnnounceSanitiser.sanitise postEchoRaw
                         let trimmed = sanitised.Trim()
                         if not (System.String.IsNullOrWhiteSpace trimmed) then
                             let toSay =

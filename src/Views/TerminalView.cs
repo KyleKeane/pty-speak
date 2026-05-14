@@ -689,6 +689,17 @@ public class TerminalView : FrameworkElement
             // binding for Ctrl+Shift+A.
             (Key.A, ModifierKeys.Control | ModifierKeys.Shift, "Re-narrate last command output (capped)"),
 
+            // Cycle 48 post-PR-F (2026-05-13) — SpeechCursor
+            // navigation accelerators. Per maintainer dogfood
+            // of preview.118: menu-only routing felt buried.
+            // Bound to Ctrl+Shift+Up/Down/End. NVDA collision
+            // check: default NVDA review-cursor commands are
+            // NVDA+Numpad-cluster gestures; Ctrl+Shift+arrows
+            // are free.
+            (Key.Up, ModifierKeys.Control | ModifierKeys.Shift, "Speech Cursor: previous entry"),
+            (Key.Down, ModifierKeys.Control | ModifierKeys.Shift, "Speech Cursor: next entry"),
+            (Key.End, ModifierKeys.Control | ModifierKeys.Shift, "Speech Cursor: jump to latest"),
+
             // Future entries (NOT yet bound; commented for
             // forward-planning):
             //   (Key.R, ModifierKeys.Alt | ModifierKeys.Shift,

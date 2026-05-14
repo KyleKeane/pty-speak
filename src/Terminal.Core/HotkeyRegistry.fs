@@ -60,6 +60,14 @@ module HotkeyRegistry =
         /// `;` / `:` key (`OemSemicolon` in WPF). Used by
         /// `Ctrl+Shift+;` log-copy hotkey.
         | Semicolon
+        /// Arrow / navigation keys. Cycle 48 post-PR-F binds
+        /// `Ctrl+Shift+Up/Down/End` to SpeechCursor Previous /
+        /// Next / JumpToLatest. NVDA collision check: default
+        /// NVDA review-cursor gestures use the Numpad cluster,
+        /// not Ctrl+Shift+arrow.
+        | Up
+        | Down
+        | End
 
     /// Identity of every app-reserved hotkey command. New
     /// hotkeys append a case here and add a corresponding
@@ -496,21 +504,21 @@ module HotkeyRegistry =
           // (NVDA's default review-cursor commands are
           // `NVDA+Up/Down`).
           { Command = SpeechCursorNext
-            Key = None
-            Modifiers = None
-            Description = "Speech Cursor: move to the next entry (Cycle 45 Commit 2)" }
+            Key = Some Down
+            Modifiers = Some ctrlShift
+            Description = "Speech Cursor: move to the next entry" }
           { Command = SpeechCursorPrevious
-            Key = None
-            Modifiers = None
-            Description = "Speech Cursor: move to the previous entry (Cycle 45 Commit 2)" }
+            Key = Some Up
+            Modifiers = Some ctrlShift
+            Description = "Speech Cursor: move to the previous entry" }
           { Command = SpeechCursorJumpToLatest
-            Key = None
-            Modifiers = None
-            Description = "Speech Cursor: jump to the latest entry (Cycle 45 Commit 2)" }
+            Key = Some End
+            Modifiers = Some ctrlShift
+            Description = "Speech Cursor: jump to the latest entry" }
           { Command = SpeechCursorToggleMode
             Key = None
             Modifiers = None
-            Description = "Speech Cursor: toggle AutoDrive / Manual mode (Cycle 45 Commit 2)" } ]
+            Description = "Speech Cursor: toggle AutoDrive / Manual mode (menu-only)" } ]
 
     /// Look up the default Hotkey for a command. Throws
     /// `KeyNotFoundException` if the registry is incomplete —
@@ -565,6 +573,9 @@ module HotkeyRegistry =
                 | Letter c -> string (System.Char.ToUpperInvariant c)
                 | Digit n -> string n
                 | Semicolon -> ";"
+                | Up -> "Up"
+                | Down -> "Down"
+                | End -> "End"
             Some (System.String.Join("+", modParts @ [ keyText ]))
         | _ -> None
 
