@@ -990,7 +990,7 @@ module Program =
         // ContentHistory seqs. Resets to "" on shell hot-switch.
         let mutable lastAnnouncedText : string = ""
 
-        // Cycle 49 PR-B — sub-prompt response watermark.
+        // Cycle 49 PR-B / PR-F — sub-prompt response watermark.
         //
         // `awaitingSubPromptEnter` flips true when SubPromptIdle
         // transitions Executing → Composing (a sub-prompt has
@@ -1001,20 +1001,30 @@ module Program =
         //
         // `capturePreambleForSubPromptResponse` is installed
         // further down (after `currentSession` enters scope) and
-        // overwrites `lastAnnouncedText` with the full on-screen
-        // content rendered from the active tuple's prompt row
-        // through the cursor row at EnterPressed time. The
-        // existing tuple-finalise prefix-trim (search for
-        // `lastAnnouncedText.Length > 0` below) then slices that
-        // preamble off `tuple.OutputText` so only the post-Enter
-        // delta gets announced. Test 02 (`set /p name=`) used to
-        // narrate the entire output from "This is the input
-        // test." down because `lastAnnouncedText` only carried
-        // the sub-prompt's own announce text (`"Enter your
-        // name:"`); the screen-rendered preamble captured here
-        // matches `tuple.OutputText`'s prefix and the
-        // existing trim fires.
+        // records the **count of non-empty rendered rows** in
+        // the active tuple's output region at EnterPressed time
+        // (sub-prompt response). The tuple-finalise announce
+        // (search for `subPromptPreambleLineCount` below) then
+        // splits `tuple.OutputText` on `\n`, drops that many
+        // leading lines, and announces only the remainder — the
+        // post-Enter delta.
+        //
+        // PR-B originally captured the preamble as a TEXT
+        // string and relied on `text.StartsWith(lastAnnouncedText)`
+        // prefix-trim. Maintainer dogfood 2026-05-14 surfaced
+        // the failure mode: the captured text and
+        // `tuple.OutputText`'s prefix could diverge by a row's
+        // worth of bytes (the cursor row's content at
+        // EnterPressed time differs from the same row's content
+        // 175 ms later at tuple-finalise time), so the
+        // StartsWith returned false and the entire output got
+        // re-announced. PR-F switches to a line-count signal,
+        // which is robust to per-row drift as long as the
+        // empty-row-filtering semantics agree (and they do —
+        // both this capture and `SessionModel.extractContent`
+        // use `String.IsNullOrEmpty` as the filter).
         let mutable awaitingSubPromptEnter : bool = false
+        let mutable subPromptPreambleLineCount : int = 0
         let mutable capturePreambleForSubPromptResponse
             : (unit -> unit) = (fun () -> ())
 
@@ -1633,20 +1643,31 @@ module Program =
                             | ShellPolicy.LineByLine -> false
                             | ShellPolicy.Off -> false)
                     if shouldAnnounce then
-                        // Cycle 48 post-PR-F (2026-05-13) —
-                        // strip the user's submitted-command
-                        // echo from the accumulator before
-                        // announcing. After EnterPressed, cmd
-                        // echoes the typed line + `\r\n`
-                        // before emitting the sub-prompt text.
-                        // Including that echo in the announce
-                        // produces the "garbled" output the
-                        // maintainer reported on test 02
-                        // (cmd echoes "set /p name=Enter your
-                        // name:\r\nEnter your name:"; we want
-                        // to announce just the second half).
-                        // Drop everything up to and including
-                        // the first `\n` in the accumulator.
+                        // Cycle 49 PR-F (2026-05-14) — announce
+                        // ONLY the last non-empty line of the
+                        // sub-prompt accumulator. The pre-PR-F
+                        // approach announced every preamble line
+                        // the script printed before the prompt:
+                        // test 02's accumulator
+                        // "=== PTYSPEAK-TEST-START... ===\n
+                        // This test prompts for a text string
+                        // and echoes it back.\nEnter your name:"
+                        // narrated all three lines, and NVDA's
+                        // word-by-word read made the embedded
+                        // "test-02" sound like "test zero two"
+                        // (the maintainer's "zero c windows
+                        // system" dogfood report). The actual
+                        // useful sub-prompt content is the LAST
+                        // line, where the cursor is parked
+                        // waiting for input. The preamble lines
+                        // remain reachable via SpeechCursor
+                        // manual review.
+                        //
+                        // The leading echo-strip (drop up to and
+                        // including the first `\n`) stays — it
+                        // removes the cmd-side echo of the user's
+                        // submitted command line that always
+                        // precedes the script's first byte.
                         let raw = outcome.AccumulatedOutput
                         let firstLf = raw.IndexOf('\n')
                         let postEchoRaw =
@@ -1654,7 +1675,15 @@ module Program =
                                 raw.Substring(firstLf + 1)
                             else
                                 raw
-                        let sanitised = AnnounceSanitiser.sanitise postEchoRaw
+                        let lastLine =
+                            let lines =
+                                postEchoRaw.Split([| '\n' |], System.StringSplitOptions.None)
+                            lines
+                            |> Array.rev
+                            |> Array.tryFind (fun line ->
+                                not (System.String.IsNullOrWhiteSpace line))
+                            |> Option.defaultValue postEchoRaw
+                        let sanitised = AnnounceSanitiser.sanitise lastLine
                         let trimmed = sanitised.Trim()
                         if not (System.String.IsNullOrWhiteSpace trimmed) then
                             let toSay =
@@ -1662,10 +1691,11 @@ module Program =
                                 else trimmed.Substring(trimmed.Length - OutputAnnounceCapChars)
                             if toSay.Length < trimmed.Length then
                                 log.LogInformation(
-                                    "PR-E sub-prompt announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
+                                    "PR-F sub-prompt announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
                                     trimmed.Length, toSay.Length, OutputAnnounceCapChars)
                             log.LogInformation(
-                                "PR-E sub-prompt announce. Length={Len}", toSay.Length)
+                                "PR-F sub-prompt announce (last line). Length={Len} AccumulatorLen={Acc}",
+                                toSay.Length, raw.Length)
                             window.TerminalSurface.Announce(toSay, ActivityIds.output)
                             // Cycle 49 PR-C — invalidate UIA
                             // Text-pattern cache so the review
@@ -1682,14 +1712,16 @@ module Program =
                                 "shell-interaction-sub-prompt"
                                 ""
                         OutputDispatcher.dispatch readyEvent
-                    // Cycle 49 PR-B — sub-prompt response
+                    // Cycle 49 PR-B / PR-F — sub-prompt response
                     // watermark bookkeeping. Track whether the
                     // most recent state change parked us in
                     // Composing-via-SubPromptIdle so the upcoming
-                    // EnterPressed can overwrite `lastAnnouncedText`
-                    // with the full on-screen preamble and the
-                    // tuple-finalise prefix-trim downstream slices
-                    // the post-Enter delta cleanly. PromptDetected
+                    // EnterPressed can record the preamble line
+                    // count (PR-F line-count slice) for the
+                    // downstream tuple-finalise to drop. PR-B's
+                    // text-prefix-trim approach was superseded
+                    // 2026-05-14 by the line-count slice (more
+                    // robust to per-row drift). PromptDetected
                     // resets the flag in case the user never
                     // responded (script bailed mid sub-prompt).
                     match outcome.Trigger with
@@ -1755,22 +1787,38 @@ module Program =
         // SessionId. None when persistence is MemoryOnly.
         sessionLogWriter <- sessionLogWriterFactory currentSession.SessionId
 
-        // Cycle 49 PR-B — install the real
+        // Cycle 49 PR-B / PR-F — install the real
         // `capturePreambleForSubPromptResponse` body now that
         // `currentSession` is in scope. recordTransitionImpl
         // (declared earlier) invokes this whenever the user
-        // presses Enter on a sub-prompt response so the
-        // tuple-finalise prefix-trim sees the full on-screen
-        // preamble in `lastAnnouncedText` and only announces the
-        // post-Enter delta.
+        // presses Enter on a sub-prompt response.
         //
-        // Runs on the UI thread (same thread the keyboard write
-        // callback and the dispatcher-timer SubPromptIdle tick
-        // run on). `screen.SnapshotRows` is thread-safe (the
-        // parser dispatches its mutations through the same
-        // dispatcher), and `currentSession` is read only here on
-        // the dispatcher thread, so no extra synchronisation
-        // beyond the existing actor-model contract is needed.
+        // PR-F (2026-05-14) — captures the **count** of
+        // non-empty rendered rows in the active tuple's output
+        // region, not the rendered preamble text. The
+        // tuple-finalise announce path then splits
+        // `tuple.OutputText` on `\n` and drops that many
+        // leading lines so only the post-Enter delta gets
+        // announced. PR-B's text-based prefix-trim approach
+        // diverged in the maintainer's 2026-05-14 dogfood:
+        // the cursor row's content at EnterPressed time
+        // differed from the same row's content at
+        // tuple-finalise 175ms later, so the StartsWith check
+        // returned false and the entire output was re-spoken.
+        // Line-count is robust to per-row content drift as
+        // long as both this capture and
+        // `SessionModel.extractContent` apply the same
+        // empty-row filter (and they do — both use
+        // `String.IsNullOrEmpty`).
+        //
+        // Runs on the UI thread (same thread the keyboard
+        // write callback and the dispatcher-timer
+        // SubPromptIdle tick run on). `screen.SnapshotRows`
+        // is thread-safe (the parser dispatches its mutations
+        // through the same dispatcher), and `currentSession`
+        // is read only here on the dispatcher thread, so no
+        // extra synchronisation beyond the existing actor-
+        // model contract is needed.
         capturePreambleForSubPromptResponse <-
             fun () ->
                 try
@@ -1785,20 +1833,19 @@ module Program =
                         cursorRow > promptRow
                         && promptRow >= 0
                         && cursorRow < snapshot.Length ->
-                        let lines = ResizeArray<string>()
                         let startRow = promptRow + 1
                         let endRow = cursorRow
+                        let mutable nonEmptyCount = 0
                         for r in startRow .. endRow do
                             if r >= 0 && r < snapshot.Length then
                                 let line = CanonicalState.renderRow snapshot r
                                 if not (System.String.IsNullOrEmpty line) then
-                                    lines.Add(line)
-                        let preamble = String.concat "\n" lines
-                        if preamble.Length > 0 then
+                                    nonEmptyCount <- nonEmptyCount + 1
+                        if nonEmptyCount > 0 then
                             log.LogInformation(
-                                "PR-B sub-prompt preamble captured. PromptRow={Pr} CursorRow={Cr} Length={Len}",
-                                promptRow, cursorRow, preamble.Length)
-                            lastAnnouncedText <- preamble
+                                "PR-F sub-prompt preamble captured. PromptRow={Pr} CursorRow={Cr} LineCount={Lc}",
+                                promptRow, cursorRow, nonEmptyCount)
+                            subPromptPreambleLineCount <- nonEmptyCount
                     | _ -> ()
                 with ex ->
                     log.LogWarning(
@@ -2140,17 +2187,17 @@ module Program =
                 // channel layer and trust the hotkey + log to
                 // surface the cap when needed.
                 //
-                // Cycle 49 PR-B (2026-05-14) — post-Enter delta
-                // announce: when the user responds to a sub-prompt
-                // (`set /p`, `pause`, `choice`, etc.) `lastAnnouncedText`
-                // has been overwritten at EnterPressed time by
-                // `capturePreambleForSubPromptResponse` with the
-                // full on-screen content from the active tuple's
-                // prompt row through the cursor row. The prefix-trim
-                // below then slices that preamble off
-                // `tuple.OutputText` so only the post-Enter delta
-                // (the bytes the script produced AFTER the user
-                // submitted their response) gets announced. The
+                // Cycle 49 PR-F (2026-05-14, supersedes PR-B's
+                // text-prefix-trim) — post-Enter delta announce.
+                // When the user responds to a sub-prompt (`set /p`,
+                // `pause`, `choice`, etc.) the EnterPressed
+                // handler set `subPromptPreambleLineCount` to the
+                // count of non-empty rows in the active tuple's
+                // output region at that moment. The slicing logic
+                // below splits `tuple.OutputText` on `\n`, drops
+                // that many leading lines, and announces only the
+                // remainder — the bytes the script produced
+                // AFTER the user submitted their response. The
                 // sub-prompt's own prompt text + the user's typed
                 // response are reachable via SpeechCursor manual
                 // navigation; auto-narration covers only what's
@@ -2188,16 +2235,53 @@ module Program =
                 // user explicitly wants to inspect markers.
                 match tupleFinaliseAnnounce with
                 | Some text ->
-                    let trimmed =
-                        if lastAnnouncedText.Length > 0
-                           && text.StartsWith(lastAnnouncedText, StringComparison.Ordinal) then
-                            text.Substring(lastAnnouncedText.Length)
+                    // Cycle 49 PR-F (2026-05-14) — pick the
+                    // trimming strategy based on whether this
+                    // tuple-final follows a sub-prompt response
+                    // (the EnterPressed-from-Composing case PR-B
+                    // wires).
+                    //
+                    // Sub-prompt path (`subPromptPreambleLineCount > 0`):
+                    //   line-count slice — split `text` on `\n`,
+                    //   drop the leading `n` lines (the
+                    //   preamble + sub-prompt + typed-response
+                    //   that the user has already engaged with),
+                    //   join the remainder. Robust to per-row
+                    //   content drift between EnterPressed and
+                    //   tuple-finalise.
+                    //
+                    // Otherwise (top-level tuple after a plain
+                    // command run): fall back to the existing
+                    // text prefix-trim against `lastAnnouncedText`
+                    // — it's a no-op in practice for these
+                    // tuples (`lastAnnouncedText` carries the
+                    // prior tuple's announce body, which won't
+                    // be a prefix of the new tuple's output) but
+                    // preserves the legacy code path so PR-F's
+                    // scope stays focused on the sub-prompt fix.
+                    let trimmed, trimStrategy =
+                        if subPromptPreambleLineCount > 0 then
+                            // Honour CR / CRLF / bare-LF row
+                            // separators uniformly. SessionModel's
+                            // extractContent joins with `\n`, so
+                            // a Split-on-'\n' here picks up its
+                            // line groupings 1:1.
+                            let lines =
+                                text.Split([| '\n' |], System.StringSplitOptions.None)
+                            let drop = min subPromptPreambleLineCount lines.Length
+                            let remainder = lines |> Array.skip drop
+                            String.concat "\n" remainder, "line-count"
+                        elif lastAnnouncedText.Length > 0
+                             && text.StartsWith(
+                                 lastAnnouncedText, StringComparison.Ordinal) then
+                            text.Substring(lastAnnouncedText.Length), "prefix-trim"
                         else
-                            text
+                            text, "none"
                     if System.String.IsNullOrWhiteSpace trimmed then
                         log.LogInformation(
-                            "Tuple-final announce suppressed (prefix already announced). OriginalLen={Orig} LastAnnouncedLen={Last}",
-                            text.Length, lastAnnouncedText.Length)
+                            "Tuple-final announce suppressed (prefix already announced). OriginalLen={Orig} Strategy={Strategy} SubPromptLines={Lines} LastAnnouncedLen={Last}",
+                            text.Length, trimStrategy,
+                            subPromptPreambleLineCount, lastAnnouncedText.Length)
                     else
                         let toSay =
                             if trimmed.Length <= OutputAnnounceCapChars then trimmed
@@ -2208,8 +2292,9 @@ module Program =
                                 trimmed.Length, toSay.Length, OutputAnnounceCapChars)
                         if trimmed.Length < text.Length then
                             log.LogInformation(
-                                "Tuple-final prefix trim. OriginalLen={Orig} TrimmedLen={Trim} LastAnnouncedLen={Last}",
-                                text.Length, trimmed.Length, lastAnnouncedText.Length)
+                                "Tuple-final trim. OriginalLen={Orig} TrimmedLen={Trim} Strategy={Strategy} SubPromptLines={Lines} LastAnnouncedLen={Last}",
+                                text.Length, trimmed.Length, trimStrategy,
+                                subPromptPreambleLineCount, lastAnnouncedText.Length)
                         log.LogInformation(
                             "Tuple-final announce. Length={Len}", toSay.Length)
                         window.TerminalSurface.Announce(toSay, ActivityIds.output)
@@ -2219,8 +2304,13 @@ module Program =
                         // content immediately.
                         raiseTextChanged ()
                         lastAnnouncedText <- toSay
+                    // Reset the sub-prompt line-count regardless
+                    // of trim outcome — this tuple is finalised
+                    // and the next tuple starts fresh.
+                    subPromptPreambleLineCount <- 0
                     lastAnnouncedSeq <- ContentHistory.latestSeq contentHistory
-                | None -> ()
+                | None ->
+                    subPromptPreambleLineCount <- 0
             window.Dispatcher.InvokeAsync(Action(boundaryAction))
             |> ignore
 

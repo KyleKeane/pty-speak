@@ -15,6 +15,38 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 49 PR-F (2026-05-14): sub-prompt last-line announce + line-count post-Enter slicing
+
+Two connected refinements from preview.121 dogfood:
+
+1. **Sub-prompt announce: just the last line.** Pre-PR-F, the
+   sub-prompt accumulator was narrated wholesale after a
+   leading-echo strip. For `test-02-text-input.cmd` the
+   accumulator carried three lines —
+   `=== PTYSPEAK-TEST-START: test-02-text-input ===`,
+   `This test prompts for a text string and echoes it back.`,
+   and `Enter your name:` — and NVDA's word-by-word read of the
+   embedded `02` ("test-**zero two**-text-input") confused the
+   listener. PR-F narrows the announce to the LAST non-empty
+   line, where the cursor is parked waiting for input. The
+   preceding preamble lines remain reachable via SpeechCursor
+   manual review.
+2. **Post-Enter delta via line-count slicing.** PR-B's text
+   prefix-trim approach (overwrite `lastAnnouncedText` with the
+   screen-rendered preamble; `tuple.OutputText.StartsWith` trim)
+   diverged in dogfood — the cursor row's content at
+   EnterPressed time differed from the same row's content at
+   tuple-finalise 175 ms later (PTY echo arriving in between),
+   so the prefix match returned false and the whole tuple
+   re-narrated. PR-F switches to a line-count signal: the
+   EnterPressed handler counts non-empty rendered rows in the
+   active tuple's output region; tuple-finalise splits
+   `tuple.OutputText` on `\n` and drops that many leading
+   lines. Robust to per-row drift because it relies on the
+   empty-row filter both sides apply uniformly.
+
+Cycle 49 plan: [`docs/CYCLE-49-PLAN.md`](docs/CYCLE-49-PLAN.md).
+
 ### Cycle 49 PR-D (2026-05-14): Prompts visible in SpeechCursor manual navigation
 
 `Ctrl+Shift+Up/Down/End` now surface `PromptStart` markers with
