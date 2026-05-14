@@ -15,6 +15,30 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Cycle 49 PR-H (2026-05-14): Reshape test-01-echo for explicit line counting
+
+`scripts/cmd-tests/test-01-echo.cmd` reshaped per maintainer
+feedback 2026-05-14: pre-Cycle-49 the script printed lines 2-7
+with `Line N of 8` labels but Line 1 (the implicit intro
+`This is a simple echo test.`) and Line 8 (the implicit
+`Last line. ...` final message) carried no numeric label,
+making "did I hear Line 1 of 8?" hard to verify by review
+cursor. PR-H drops to three explicitly-numbered lines
+(`Line 1 of 3.` → `Line 3 of 3.`) with the intro and final
+messages explicitly framed as such ("Echo test follows: three
+numbered lines then a final message." / "If you heard the
+intro, all three numbered lines, and this final message,
+output narration is healthy.").
+
+Closes the test-01-line-1-missing follow-up from preview.121
+dogfood — root cause was script-fixture labelling, not
+substrate.
+
+Updated references: `tests/Tests.Unit/DiagnosticExtractsTests.fs`
+synthetic-content test, `docs/ACCESSIBILITY-TESTING.md` 47-2 +
+47-17 expectations, `docs/adr/0003-shell-interaction-state-machine.md`
+test-table summary.
+
 ### Cycle 49 PR-G (2026-05-14): Remove tuple-final prefix-trim against lastAnnouncedText
 
 Maintainer dogfood of preview.122 (post-PR-F) surfaced a

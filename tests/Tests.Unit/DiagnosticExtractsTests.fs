@@ -278,13 +278,13 @@ let ``extractByTest returns body between matching START and END markers`` () =
         String.concat "\n"
             [ "C:\\Users\\dev> test-01-echo.cmd"
               "=== PTYSPEAK-TEST-START: test-01-echo ==="
-              "This is a simple echo test."
-              "Line 2 of 8."
+              "Echo test follows: three numbered lines then a final message."
+              "Line 1 of 3."
               "=== PTYSPEAK-TEST-END: test-01-echo ==="
               "C:\\Users\\dev>" ]
     let extracted = DiagnosticExtracts.extractByTest "test-01-echo" content
-    Assert.Contains("This is a simple echo test.", extracted)
-    Assert.Contains("Line 2 of 8.", extracted)
+    Assert.Contains("Echo test follows", extracted)
+    Assert.Contains("Line 1 of 3.", extracted)
     Assert.DoesNotContain("PTYSPEAK-TEST-START", extracted)
     Assert.DoesNotContain("PTYSPEAK-TEST-END", extracted)
     Assert.DoesNotContain("C:\\Users\\dev>", extracted)
