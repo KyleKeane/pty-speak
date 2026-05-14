@@ -15,6 +15,32 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Post-Cycle-49 PR-R (2026-05-14): Include cursor row in sub-prompt preamble count
+
+Maintainer post-PR-Q dogfood: after typing the sub-prompt
+response + Enter, NVDA narrates `Enter your name:love`
+followed by the script's post-Enter response, instead of
+JUST the post-Enter response. The user has already engaged
+with the prompt+response line (heard the prompt
+pre-Enter, typed the response themselves) and shouldn't
+hear it again.
+
+Root cause: PR-K's `endRow = cursorRow - 1` in
+`capturePreambleForSubPromptResponse`. PR-K added the
+`-1` in 2026-05-14 to compensate for an over-count that
+was actually a wrap-row miscount (PR-N has since fixed
+that properly via the `wrapRows` skip at `startRow`). Now
+the `-1` excludes the cursor row, which IS the row
+carrying the sub-prompt prompt + user's typed response —
+the line that should be counted as preamble.
+
+PR-R reverts to `endRow = cursorRow`. With PR-N's
+`wrapRows` skip in `startRow`, the count comes out to 3
+for the canonical test-02 case (START + intro +
+prompt:response), which drops 3 of the 5 OutputText
+lines, leaving the post-Enter response + END marker —
+exactly what the user wants to hear.
+
 ### Post-Cycle-49 PR-Q (2026-05-14): ContentHistory source captured at first byte + cursor-capture gated to top-level Enter
 
 Maintainer's post-PR-P bundle (preview.128) localised two

@@ -2050,9 +2050,31 @@ module Program =
                         // of the typed command, not script
                         // preamble. Same rationale as in
                         // `subPromptScreenReader`.
+                        //
+                        // PR-R (2026-05-14) — endRow = cursorRow,
+                        // not cursorRow - 1. PR-K's `cursorRow -
+                        // 1` was patching what was actually a
+                        // wrap-row miscount, fixed properly in
+                        // PR-N. With wrap rows correctly skipped
+                        // by `startRow = promptRow + wrapRows`,
+                        // the cursor row IS the row carrying
+                        // the sub-prompt + user's typed response
+                        // (e.g. "Enter your name:love"). The
+                        // user has already engaged with that
+                        // line — sub-prompt announce read it
+                        // pre-Enter, user typed the response —
+                        // so the line should count as preamble
+                        // and drop from tuple-final. Pre-PR-R,
+                        // the line wasn't counted, so tuple-
+                        // final re-narrated "Enter your
+                        // name:love" before the script's
+                        // post-Enter response. Maintainer
+                        // 2026-05-14: "I hear the prompt for
+                        // the input along with the value that
+                        // I input."
                         let wrapRows = computePromptCommandWrapRows promptRow
                         let startRow = promptRow + wrapRows
-                        let endRow = cursorRow - 1
+                        let endRow = cursorRow
                         let mutable nonEmptyCount = 0
                         for r in startRow .. endRow do
                             if r >= 0 && r < snapshot.Length then
