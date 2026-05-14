@@ -1027,6 +1027,19 @@ module Program =
         let mutable subPromptPreambleLineCount : int = 0
         let mutable capturePreambleForSubPromptResponse
             : (unit -> unit) = (fun () -> ())
+        // PR-K (2026-05-14) — sub-prompt screen-read callback.
+        // Declared here (early in compose) because
+        // `recordTransitionImpl`'s sub-prompt branch reads it,
+        // but `currentSession` is in scope only further down.
+        // The real body is installed alongside
+        // `capturePreambleForSubPromptResponse` once
+        // `currentSession` enters scope. Returns the screen-
+        // rendered preamble `[Active.PromptRowIndex + 1,
+        // cursorRow]` joined with `\n`, or `None` when
+        // `PromptRowIndex` is unavailable (e.g. PowerShell, or
+        // before the first PromptStart fires).
+        let mutable subPromptScreenReader
+            : (unit -> string option) = (fun () -> None)
 
         // Cycle 45 Commit 2 — SpeechCursor announce callback +
         // "wake up" trigger. Defined here (very early in compose)
@@ -1643,47 +1656,75 @@ module Program =
                             | ShellPolicy.LineByLine -> false
                             | ShellPolicy.Off -> false)
                     if shouldAnnounce then
-                        // Cycle 49 PR-F (2026-05-14) — announce
-                        // ONLY the last non-empty line of the
-                        // sub-prompt accumulator. The pre-PR-F
-                        // approach announced every preamble line
-                        // the script printed before the prompt:
-                        // test 02's accumulator
-                        // "=== PTYSPEAK-TEST-START... ===\n
-                        // This test prompts for a text string
-                        // and echoes it back.\nEnter your name:"
-                        // narrated all three lines, and NVDA's
-                        // word-by-word read made the embedded
-                        // "test-02" sound like "test zero two"
-                        // (the maintainer's "zero c windows
-                        // system" dogfood report). The actual
-                        // useful sub-prompt content is the LAST
-                        // line, where the cursor is parked
-                        // waiting for input. The preamble lines
-                        // remain reachable via SpeechCursor
-                        // manual review.
+                        // PR-K (2026-05-14, post-Cycle-49) —
+                        // sub-prompt announce reads the SCREEN
+                        // (rows [Active.PromptRowIndex + 1,
+                        // cursorRow]) rather than the raw
+                        // accumulator's last line.
                         //
-                        // The leading echo-strip (drop up to and
-                        // including the first `\n`) stays — it
-                        // removes the cmd-side echo of the user's
-                        // submitted command line that always
-                        // precedes the script's first byte.
+                        // PR-F's accumulator-last-line approach
+                        // failed on the first run of a `.cmd`
+                        // script because cmd emits an OSC title-
+                        // set sequence (`\x1B]0;...\x07`) AFTER
+                        // the script's `Enter your name:`
+                        // prompt; that escape sequence is on a
+                        // line of its own in the byte stream and
+                        // the reverse-scan picked it as "last
+                        // non-empty line", so NVDA narrated
+                        // "]0;C:\WINDOWS\SYSTEM32\cmd.exe — ..."
+                        // (the maintainer's 2026-05-14 dogfood
+                        // "show CMD"-style mishearing). On a
+                        // second run the OSC is suppressed by
+                        // cmd (title already set) and PR-F
+                        // worked.
+                        //
+                        // The screen approach is robust: Screen
+                        // already absorbs OSC sequences as state
+                        // changes (window title, palette, etc.)
+                        // and `renderRow` returns only printable
+                        // cell content. The rendered rows from
+                        // the prompt onward give the user the
+                        // full sub-prompt preamble — start
+                        // marker, intro text, prompt line — in
+                        // the same order they appeared on
+                        // screen.
+                        //
+                        // Falls back to the PR-F accumulator
+                        // last-line approach when
+                        // `currentSession.Active.PromptRowIndex`
+                        // is unavailable (e.g. PowerShell which
+                        // the heuristic prompt detector doesn't
+                        // recognise today, so PromptRowIndex
+                        // stays ValueNone there).
                         let raw = outcome.AccumulatedOutput
-                        let firstLf = raw.IndexOf('\n')
-                        let postEchoRaw =
-                            if firstLf >= 0 && firstLf + 1 < raw.Length then
-                                raw.Substring(firstLf + 1)
-                            else
-                                raw
-                        let lastLine =
-                            let lines =
-                                postEchoRaw.Split([| '\n' |], System.StringSplitOptions.None)
-                            lines
-                            |> Array.rev
-                            |> Array.tryFind (fun line ->
-                                not (System.String.IsNullOrWhiteSpace line))
-                            |> Option.defaultValue postEchoRaw
-                        let sanitised = AnnounceSanitiser.sanitise lastLine
+                        let screenRowsAnnounce = subPromptScreenReader ()
+                        let announceBody, source =
+                            match screenRowsAnnounce with
+                            | Some body -> body, "screen"
+                            | None ->
+                                // Fallback: accumulator's last
+                                // non-empty line (the pre-PR-K
+                                // behaviour). The leading echo-
+                                // strip drops the user's
+                                // submitted-command echo that
+                                // precedes the script's first
+                                // byte.
+                                let firstLf = raw.IndexOf('\n')
+                                let postEchoRaw =
+                                    if firstLf >= 0 && firstLf + 1 < raw.Length then
+                                        raw.Substring(firstLf + 1)
+                                    else
+                                        raw
+                                let lastLine =
+                                    let lines =
+                                        postEchoRaw.Split([| '\n' |], System.StringSplitOptions.None)
+                                    lines
+                                    |> Array.rev
+                                    |> Array.tryFind (fun line ->
+                                        not (System.String.IsNullOrWhiteSpace line))
+                                    |> Option.defaultValue postEchoRaw
+                                lastLine, "accumulator-fallback"
+                        let sanitised = AnnounceSanitiser.sanitise announceBody
                         let trimmed = sanitised.Trim()
                         if not (System.String.IsNullOrWhiteSpace trimmed) then
                             let toSay =
@@ -1691,11 +1732,14 @@ module Program =
                                 else trimmed.Substring(trimmed.Length - OutputAnnounceCapChars)
                             if toSay.Length < trimmed.Length then
                                 log.LogInformation(
-                                    "PR-F sub-prompt announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
-                                    trimmed.Length, toSay.Length, OutputAnnounceCapChars)
+                                    "PR-K sub-prompt announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap} Source={Source}",
+                                    trimmed.Length, toSay.Length, OutputAnnounceCapChars, source)
                             log.LogInformation(
-                                "PR-F sub-prompt announce (last line). Length={Len} AccumulatorLen={Acc}",
-                                toSay.Length, raw.Length)
+                                "PR-K sub-prompt announce. Length={Len} AccumulatorLen={Acc} Source={Source}",
+                                toSay.Length, raw.Length, source)
+                            log.LogDebug(
+                                "PR-K sub-prompt announce body. Source={Source} Announce={Announce}",
+                                source, toSay)
                             window.TerminalSurface.Announce(toSay, ActivityIds.output)
                             // Cycle 49 PR-C — invalidate UIA
                             // Text-pattern cache so the review
@@ -1819,6 +1863,43 @@ module Program =
         // is read only here on the dispatcher thread, so no
         // extra synchronisation beyond the existing actor-
         // model contract is needed.
+        // PR-K (2026-05-14) — install the real
+        // `subPromptScreenReader` body now that
+        // `currentSession` is in scope. Same threading
+        // contract as capturePreambleForSubPromptResponse:
+        // runs on the UI dispatcher thread from
+        // recordTransitionImpl, no extra synchronisation
+        // beyond the existing actor-model contract needed.
+        subPromptScreenReader <-
+            fun () ->
+                try
+                    let _, (cursorRow, _), snapshot =
+                        screen.SnapshotRows(0, screen.Rows)
+                    let promptRowOpt =
+                        match currentSession.Active with
+                        | Some active -> active.PromptRowIndex
+                        | None -> None
+                    match promptRowOpt with
+                    | Some promptRow when
+                        cursorRow >= promptRow + 1
+                        && cursorRow < snapshot.Length ->
+                        let lines = ResizeArray<string>()
+                        for r in (promptRow + 1) .. cursorRow do
+                            if r >= 0 && r < snapshot.Length then
+                                let line = CanonicalState.renderRow snapshot r
+                                if not (System.String.IsNullOrEmpty line) then
+                                    lines.Add(line)
+                        if lines.Count > 0 then
+                            Some (String.concat "\n" lines)
+                        else None
+                    | _ -> None
+                with ex ->
+                    log.LogWarning(
+                        ex,
+                        "PR-K sub-prompt screen-read failed; falling back to accumulator. {Message}",
+                        ex.Message)
+                    None
+
         capturePreambleForSubPromptResponse <-
             fun () ->
                 try
@@ -1832,9 +1913,35 @@ module Program =
                     | Some promptRow when
                         cursorRow > promptRow
                         && promptRow >= 0
-                        && cursorRow < snapshot.Length ->
+                        && cursorRow <= snapshot.Length ->
+                        // PR-K (2026-05-14) — endRow = cursorRow
+                        // - 1, not cursorRow. The cursor row at
+                        // EnterPressed is racy: cmd may have
+                        // already started echoing back the next
+                        // line by the time recordTransition
+                        // fires (175 ms of drift between
+                        // EnterPressed and tuple-finalise is
+                        // typical), so the cursor row's content
+                        // can include partial script output the
+                        // user hasn't heard yet. Counting it
+                        // produces a too-high LineCount that
+                        // drops the user's actual post-Enter
+                        // response from the tuple-final
+                        // announce.
+                        //
+                        // Maintainer 2026-05-14 dogfood: test
+                        // 02 captured PromptRow=3 CursorRow=7
+                        // LineCount=4; tuple-final dropped 4 of
+                        // 5 lines, leaving only the
+                        // PTYSPEAK-TEST-END marker — the
+                        // "Hello, kyle!" response line was
+                        // skipped. With endRow = cursorRow - 1
+                        // = 6, range [4,6] counts 3 (START /
+                        // intro / "Enter your name:kyle"), drop
+                        // 3 of 5, "Hello, kyle!" + END marker
+                        // narrate.
                         let startRow = promptRow + 1
-                        let endRow = cursorRow
+                        let endRow = cursorRow - 1
                         let mutable nonEmptyCount = 0
                         for r in startRow .. endRow do
                             if r >= 0 && r < snapshot.Length then
@@ -1843,8 +1950,8 @@ module Program =
                                     nonEmptyCount <- nonEmptyCount + 1
                         if nonEmptyCount > 0 then
                             log.LogInformation(
-                                "PR-F sub-prompt preamble captured. PromptRow={Pr} CursorRow={Cr} LineCount={Lc}",
-                                promptRow, cursorRow, nonEmptyCount)
+                                "PR-K sub-prompt preamble captured. PromptRow={Pr} CursorRow={Cr} EndRow={Er} LineCount={Lc}",
+                                promptRow, cursorRow, endRow, nonEmptyCount)
                             subPromptPreambleLineCount <- nonEmptyCount
                     | _ -> ()
                 with ex ->
