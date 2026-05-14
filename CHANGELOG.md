@@ -15,6 +15,36 @@ title, body, and Velopack `Setup.exe` + nupkg + `RELEASES` files.
 
 ## [Unreleased]
 
+### Post-Cycle-49 PR-J (2026-05-14): History-recall diagnostic logging + new-feature diagnostic convention
+
+Maintainer reported a non-deterministic "show CMD" mis-announce
+after a few cmd evaluations in the post-Cycle-49 release build.
+The leading hypothesis is that PR-I's prompt-prefix strip
+occasionally fails to match (so the full prompt-path row gets
+announced, and NVDA's TTS of `C:\path\to\current>recalledCmd`
+produces the phonemes the maintainer is hearing as "show CMD").
+PR-J adds the diagnostic signal needed to confirm or refute the
+hypothesis from a `Ctrl+Shift+D` bundle without requiring an
+on-demand repro:
+
+- Information-level log gains `Stripped={Stripped}` so an
+  always-on bundle confirms whether the prefix-strip matched.
+- New Debug-level "PR-I history-recall details" log captures
+  `PromptRow`, `Row` (full prompt row content), `PromptText`
+  (the `Composing.PromptText` the strip checked against),
+  `Stripped`, and `Announce` (the text NVDA spoke). Debug
+  level matches the existing `UserInputBuffer captured on
+  Enter: ... Text={Text}` precedent — both go to NVDA out
+  loud so no new sensitivity boundary is crossed.
+- Empty-recall branch also gets the same details log so a
+  silent recall is distinguishable from a missed code path.
+
+Also adds a new CLAUDE.md project convention: **new features
+ship with their diagnostic triggers in the same PR**, not as
+a follow-up. The convention names the minimum signal an
+announce site / state transition / screen-read should emit
+so the maintainer can triage from a bundle.
+
 ### Cycle 49 PR-I (2026-05-14): History-recall draft announce
 
 When the user presses Up / Down arrow during `Composing`, the

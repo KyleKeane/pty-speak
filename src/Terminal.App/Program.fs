@@ -4193,18 +4193,52 @@ module Program =
                                 | ValueSome t -> Some t
                                 | ValueNone -> None
                             | _ -> None
-                        let draft =
+                        let stripped =
                             match promptText with
                             | Some pt
                                 when row.StartsWith(
                                     pt, StringComparison.Ordinal) ->
-                                row.Substring(pt.Length)
-                            | _ -> row
+                                true
+                            | _ -> false
+                        let draft =
+                            if stripped then
+                                match promptText with
+                                | Some pt -> row.Substring(pt.Length)
+                                | None -> row
+                            else
+                                row
                         let trimmed = draft.Trim()
+                        // PR-J (2026-05-14) — diagnostic
+                        // logging. Maintainer reported a non-
+                        // deterministic "show CMD" mis-announce
+                        // after a few evaluations in cmd. Most
+                        // likely the prompt-prefix strip
+                        // mis-matched and the full row (path +
+                        // command) got narrated. The Debug-
+                        // level Row / PromptText / Stripped /
+                        // Announce arguments let the next
+                        // diagnostic bundle confirm which case
+                        // hit and what text NVDA spoke.
+                        //
+                        // Debug-level (not Information) so
+                        // these don't flood the bundle when
+                        // FileLogger is at Information.
+                        // Announce text is logged for parity
+                        // with `UserInputBuffer captured` —
+                        // both go to NVDA out loud so no new
+                        // sensitivity boundary is crossed.
+                        let promptTextDesc =
+                            match promptText with
+                            | Some pt -> pt
+                            | None -> "<none>"
                         if not (System.String.IsNullOrWhiteSpace trimmed) then
                             log.LogInformation(
-                                "PR-I history-recall announce. RowLen={RowLen} DraftLen={DraftLen}",
-                                row.Length, trimmed.Length)
+                                "PR-I history-recall announce. RowLen={RowLen} DraftLen={DraftLen} Stripped={Stripped}",
+                                row.Length, trimmed.Length, stripped)
+                            log.LogDebug(
+                                "PR-I history-recall details. PromptRow={PromptRow} Row={Row} PromptText={PromptText} Stripped={Stripped} Announce={Announce}",
+                                promptRow, row, promptTextDesc,
+                                stripped, trimmed)
                             window.TerminalSurface.Announce(
                                 trimmed, ActivityIds.inputAssistant)
                         else
@@ -4212,7 +4246,8 @@ module Program =
                             // history exhausted). Stay silent —
                             // narrating a blank line is noise.
                             log.LogDebug(
-                                "PR-I history-recall: empty draft, no announce.")
+                                "PR-I history-recall: empty draft, no announce. PromptRow={PromptRow} Row={Row} PromptText={PromptText} Stripped={Stripped}",
+                                promptRow, row, promptTextDesc, stripped)
                     | _ -> ()
                 with ex ->
                     log.LogWarning(
