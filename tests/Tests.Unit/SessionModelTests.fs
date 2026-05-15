@@ -194,19 +194,19 @@ let private runCellThroughCH
         SessionModel.applyWithContentHistory
             state
             (boundaryWithText BoundaryKind.PromptStart (after startMs) promptText)
-            [||] history true
+            [||] history true (-1L)
     let s2 =
         SessionModel.applyWithContentHistory
             s1
             (boundary BoundaryKind.CommandStart (after (startMs + 100)))
-            [||] history true
+            [||] history true (-1L)
     SessionModel.applyAndCaptureWithContentHistory
         s2
         (boundaryWithText
             (BoundaryKind.CommandFinished exitCode)
             (after (startMs + 200))
             newPrompt)
-        [||] history true
+        [||] history true (-1L)
 
 /// Hand-construct a sealed IOCell for the clipboard formatter
 /// tests (which need a populated History without driving the
@@ -785,14 +785,14 @@ let ``CH path — OSC 133 PromptStart+OutputStart splits command vs output`` () 
     let s1 =
         SessionModel.applyWithContentHistory
             initial (boundaryWithText BoundaryKind.PromptStart t0 "$ ") [||]
-            history true
+            history true (-1L)
     let s2 =
         SessionModel.applyWithContentHistory
-            s1 (boundary BoundaryKind.CommandStart (after 100)) [||] history true
+            s1 (boundary BoundaryKind.CommandStart (after 100)) [||] history true (-1L)
     let _s3, finalisedOpt =
         SessionModel.applyAndCaptureWithContentHistory
             s2 (boundary (BoundaryKind.CommandFinished (Some 0)) (after 200)) [||]
-            history true
+            history true (-1L)
     Assert.True(finalisedOpt.IsSome)
     let cell = finalisedOpt.Value
     Assert.Contains("echo hello", cell.CommandText)
@@ -838,14 +838,14 @@ let ``CH path — OSC 133 split wins when both markers present`` () =
     let s1 =
         SessionModel.applyWithContentHistory
             initial (boundaryWithText BoundaryKind.PromptStart t0 "$ ") [||]
-            history true
+            history true (-1L)
     let s2 =
         SessionModel.applyWithContentHistory
-            s1 (boundary BoundaryKind.CommandStart (after 100)) [||] history true
+            s1 (boundary BoundaryKind.CommandStart (after 100)) [||] history true (-1L)
     let _s3, finalisedOpt =
         SessionModel.applyAndCaptureWithContentHistory
             s2 (boundary (BoundaryKind.CommandFinished (Some 0)) (after 200)) [||]
-            history true
+            history true (-1L)
     Assert.True(finalisedOpt.IsSome)
     let cell = finalisedOpt.Value
     Assert.Contains("explain this", cell.CommandText)
@@ -862,14 +862,14 @@ let ``CH path — useContentHistory=true but no PromptStart marker drops`` () =
     let s1 =
         SessionModel.applyWithContentHistory
             initial (boundaryWithText BoundaryKind.PromptStart t0 "C:\\>") [||]
-            history true
+            history true (-1L)
     let s2 =
         SessionModel.applyWithContentHistory
-            s1 (boundary BoundaryKind.CommandStart (after 100)) [||] history true
+            s1 (boundary BoundaryKind.CommandStart (after 100)) [||] history true (-1L)
     let s3, finalisedOpt =
         SessionModel.applyAndCaptureWithContentHistory
             s2 (boundary (BoundaryKind.CommandFinished (Some 0)) (after 200)) [||]
-            history true
+            history true (-1L)
     Assert.True(finalisedOpt.IsNone)
     Assert.True(s3.Active.IsNone)
     Assert.Equal(0, s3.History.Count)
@@ -888,14 +888,14 @@ let ``CH path — useContentHistory=false drops on finalize`` () =
     let s1 =
         SessionModel.applyWithContentHistory
             initial (boundaryWithText BoundaryKind.PromptStart t0 "$ ") [||]
-            history false
+            history false (-1L)
     let s2 =
         SessionModel.applyWithContentHistory
-            s1 (boundary BoundaryKind.CommandStart (after 100)) [||] history false
+            s1 (boundary BoundaryKind.CommandStart (after 100)) [||] history false (-1L)
     let s3, finalisedOpt =
         SessionModel.applyAndCaptureWithContentHistory
             s2 (boundary (BoundaryKind.CommandFinished (Some 0)) (after 200)) [||]
-            history false
+            history false (-1L)
     Assert.True(finalisedOpt.IsNone)
     Assert.True(s3.Active.IsNone)
     Assert.Equal(0, s3.History.Count)
@@ -906,16 +906,16 @@ let ``CH path — useContentHistory=false leaves non-finalize state intact`` () 
     let history = freshHistory ()
     let s1 =
         SessionModel.applyWithContentHistory
-            initial (boundary BoundaryKind.PromptStart t0) [||] history false
+            initial (boundary BoundaryKind.PromptStart t0) [||] history false (-1L)
     Assert.True(s1.Active.IsSome)
     let s2 =
         SessionModel.applyWithContentHistory
-            s1 (boundary BoundaryKind.CommandStart (after 100)) [||] history false
+            s1 (boundary BoundaryKind.CommandStart (after 100)) [||] history false (-1L)
     Assert.Equal(
         SessionModel.ActiveTupleState.EditingCommand, s2.Active.Value.State)
     let s3 =
         SessionModel.applyWithContentHistory
-            s2 (boundary BoundaryKind.OutputStart (after 200)) [||] history false
+            s2 (boundary BoundaryKind.OutputStart (after 200)) [||] history false (-1L)
     Assert.Equal(
         SessionModel.ActiveTupleState.OutputStreaming, s3.Active.Value.State)
 
@@ -936,12 +936,12 @@ let ``CH path — CommandId hoists + ExtraParams merge (later wins)`` () =
         SessionModel.applyWithContentHistory
             initial
             (boundaryWith BoundaryKind.PromptStart t0 (Some "id-1") [ "k1", "v1" ])
-            [||] history true
+            [||] history true (-1L)
     let s2 =
         SessionModel.applyWithContentHistory
             s1
             (boundaryWith BoundaryKind.CommandStart (after 100) None [ "k2", "v2" ])
-            [||] history true
+            [||] history true (-1L)
     let _s3, finalisedOpt =
         SessionModel.applyAndCaptureWithContentHistory
             s2
@@ -952,7 +952,7 @@ let ``CH path — CommandId hoists + ExtraParams merge (later wins)`` () =
               ExtraParams = Map.ofList [ "k1", "overwrite" ]
               MatchedRowText = Some "C:\\>"
               MatchedRowIndex = None }
-            [||] history true
+            [||] history true (-1L)
     Assert.True(finalisedOpt.IsSome)
     let cell = finalisedOpt.Value
     Assert.Equal(Some "id-1", cell.CommandId)
@@ -972,18 +972,18 @@ let ``CH path — CommandId conflict preserves earlier value`` () =
         SessionModel.applyWithContentHistory
             initial
             (boundaryWith BoundaryKind.PromptStart t0 (Some "first") [])
-            [||] history true
+            [||] history true (-1L)
     let s2 =
         SessionModel.applyWithContentHistory
             s1
             (boundaryWith BoundaryKind.CommandStart (after 100) (Some "second") [])
-            [||] history true
+            [||] history true (-1L)
     let _s3, finalisedOpt =
         SessionModel.applyAndCaptureWithContentHistory
             s2
             (boundaryWithText
                 (BoundaryKind.CommandFinished (Some 0)) (after 200) "C:\\>")
-            [||] history true
+            [||] history true (-1L)
     Assert.True(finalisedOpt.IsSome)
     Assert.Equal(Some "first", finalisedOpt.Value.CommandId)
 
@@ -1006,7 +1006,7 @@ let ``CH path — Sources map records (Kind, Source) per boundary`` () =
               ExtraParams = Map.empty
               MatchedRowText = Some "$ "
               MatchedRowIndex = None }
-            [||] history true
+            [||] history true (-1L)
     let s2 =
         SessionModel.applyWithContentHistory
             s1
@@ -1017,7 +1017,7 @@ let ``CH path — Sources map records (Kind, Source) per boundary`` () =
               ExtraParams = Map.empty
               MatchedRowText = None
               MatchedRowIndex = None }
-            [||] history true
+            [||] history true (-1L)
     let _s3, finalisedOpt =
         SessionModel.applyAndCaptureWithContentHistory
             s2
@@ -1028,7 +1028,7 @@ let ``CH path — Sources map records (Kind, Source) per boundary`` () =
               ExtraParams = Map.empty
               MatchedRowText = Some "C:\\>"
               MatchedRowIndex = None }
-            [||] history true
+            [||] history true (-1L)
     Assert.True(finalisedOpt.IsSome)
     let cell = finalisedOpt.Value
     Assert.Equal(
@@ -1104,6 +1104,117 @@ let ``CH path — MaxHistorySize=0 keeps no history but doesn't crash`` () =
     Assert.Equal(0, s1.History.Count)
     Assert.True(finalisedOpt.IsNone)
     Assert.Equal(None, s1.Active)
+
+// =====================================================================
+// Cycle 51 PR-X — Seq-watermark command/output split (the
+// history-scroll fix). When a valid command-Enter watermark is
+// supplied, the redraws cmd reprints on every Up/Down history
+// recall (which accumulate linearly in ContentHistory between
+// PromptStart and the executed command) must NOT leak into
+// OutputText — the watermark is the exact command/output
+// boundary.
+// =====================================================================
+
+[<Fact>]
+let ``CH path — Seq watermark excludes history-scroll redraws from output`` () =
+    let initial = SessionModel.create "cmd" 100
+    let history = freshHistory ()
+    let history =
+        appendHistoryMarker history t0 ContentHistory.MarkerKind.PromptStart
+    // Up/Down history scroll: the prompt line redrawn several
+    // times with different recalled commands, then the final one.
+    let history =
+        feedHistoryBytes
+            history (after 1)
+            (System.Text.Encoding.ASCII.GetBytes "recalled-one\n")
+    let history =
+        feedHistoryBytes
+            history (after 2)
+            (System.Text.Encoding.ASCII.GetBytes "recalled-two\n")
+    let history =
+        feedHistoryBytes
+            history (after 3)
+            (System.Text.Encoding.ASCII.GetBytes "echo final\n")
+    // The user presses Enter HERE — Program.fs captures
+    // ContentHistory.latestSeq as the command-Enter watermark.
+    let enterSeq = ContentHistory.latestSeq history
+    // The command then runs, producing output, then the next
+    // prompt is painted.
+    let history =
+        feedHistoryBytes
+            history (after 4)
+            (System.Text.Encoding.ASCII.GetBytes "real-output-line\nC:\\>")
+    let s1 =
+        SessionModel.applyWithContentHistory
+            initial (boundaryWithText BoundaryKind.PromptStart t0 "$ ") [||]
+            history true (-1L)
+    let s2 =
+        SessionModel.applyWithContentHistory
+            s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
+            history true (-1L)
+    let _s3, finalisedOpt =
+        SessionModel.applyAndCaptureWithContentHistory
+            s2
+            (boundaryWithText
+                (BoundaryKind.CommandFinished (Some 0)) (after 200) "C:\\>")
+            [||] history true enterSeq
+    Assert.True(finalisedOpt.IsSome)
+    let cell = finalisedOpt.Value
+    Assert.Equal("echo final", cell.CommandText)
+    Assert.Equal("real-output-line", cell.OutputText)
+    // The loud history-scroll regression: recalled redraws must
+    // NOT appear anywhere in the sealed cell.
+    Assert.DoesNotContain("recalled-one", cell.OutputText)
+    Assert.DoesNotContain("recalled-two", cell.OutputText)
+    Assert.DoesNotContain("recalled-one", cell.CommandText)
+
+[<Fact>]
+let ``CH path — watermark <= PromptStart Seq falls back to first-newline`` () =
+    // The legacy heuristic must still hold for callers that pass
+    // -1L (no usable watermark) — every pre-PR-X test relies on
+    // this fallback.
+    let initial = SessionModel.create "cmd" 100
+    let _s, finalisedOpt =
+        runCellThroughCH initial 0 "$ " "echo hi" "hi" "C:\\>" (Some 0)
+    Assert.True(finalisedOpt.IsSome)
+    let cell = finalisedOpt.Value
+    Assert.Equal("echo hi", cell.CommandText)
+    Assert.Equal("hi", cell.OutputText)
+
+[<Fact>]
+let ``CH path — watermark split keeps multi-line output intact`` () =
+    let initial = SessionModel.create "cmd" 100
+    let history = freshHistory ()
+    let history =
+        appendHistoryMarker history t0 ContentHistory.MarkerKind.PromptStart
+    let history =
+        feedHistoryBytes
+            history (after 1)
+            (System.Text.Encoding.ASCII.GetBytes "dir\n")
+    let enterSeq = ContentHistory.latestSeq history
+    let history =
+        feedHistoryBytes
+            history (after 2)
+            (System.Text.Encoding.ASCII.GetBytes "file1\nfile2\nfile3\nC:\\>")
+    let s1 =
+        SessionModel.applyWithContentHistory
+            initial (boundaryWithText BoundaryKind.PromptStart t0 "$ ") [||]
+            history true (-1L)
+    let s2 =
+        SessionModel.applyWithContentHistory
+            s1 (boundary BoundaryKind.CommandStart (after 100)) [||]
+            history true (-1L)
+    let _s3, finalisedOpt =
+        SessionModel.applyAndCaptureWithContentHistory
+            s2
+            (boundaryWithText
+                (BoundaryKind.CommandFinished (Some 0)) (after 200) "C:\\>")
+            [||] history true enterSeq
+    Assert.True(finalisedOpt.IsSome)
+    let cell = finalisedOpt.Value
+    Assert.Equal("dir", cell.CommandText)
+    Assert.Contains("file1", cell.OutputText)
+    Assert.Contains("file3", cell.OutputText)
 
 // =====================================================================
 // IOCellPhase + schemaVersion-2 JSONL serialization (PR-W)
