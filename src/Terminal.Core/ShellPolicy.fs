@@ -33,7 +33,7 @@ module ShellPolicy =
     ///
     /// `TupleFinalOnly` (default for cmd / PowerShell) suppresses
     /// per-`TextSpan` auto-announce during streaming and emits a
-    /// single `SessionTuple.OutputText` announce when the tuple
+    /// single `IOCell.OutputText` announce when the tuple
     /// seals. Matches the Cycle 45 fixup (PR #268) behaviour that
     /// solved cmd's edit-conflation regression — the screen-grid-
     /// derived OutputText is authoritative.

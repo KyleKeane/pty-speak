@@ -33,9 +33,11 @@ open Terminal.Core
 // Test fixtures
 // ---------------------------------------------------------------------
 
-let private fixedTuple () : SessionModel.SessionTuple =
+let private fixedTuple () : SessionModel.IOCell =
     { Id = Guid.Parse("11111111-2222-3333-4444-555555555555")
+      CellSequence = 0L
       CommandId = None
+      Phase = SessionModel.IOCellPhase.Sealed
       ShellId = "powershell"
       PromptStartedAt = DateTime(2026, 5, 9, 12, 0, 0, DateTimeKind.Utc)
       CommandStartedAt = None

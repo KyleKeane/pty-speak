@@ -103,7 +103,7 @@ let ``AutoDrive default suppresses TextSpan announces but advances cursor`` () =
     // doesn't produce inflated narrations. The cursor still
     // advances (Position + LastSpokenSeq) so Manual review
     // can revisit the entry. Authoritative output-narration
-    // happens at tuple-finalise via `SessionTuple.OutputText`
+    // happens at tuple-finalise via `IOCell.OutputText`
     // (see `Program.fs handlePromptBoundary`).
     let cursor = freshCursor ()
     let history = freshHistory ()

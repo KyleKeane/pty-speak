@@ -1598,7 +1598,7 @@ module Program =
         // degradation). Both `handlePromptBoundary` and the
         // shell-switch path call this helper for consistency.
         let dispatchTupleToWriter
-                (tuple: SessionModel.SessionTuple) : unit =
+                (tuple: SessionModel.IOCell) : unit =
             match sessionLogWriter, persistenceConfig.Mode with
             | None, _ -> ()
             | Some sink, SessionPersistence.Always ->
@@ -2269,13 +2269,13 @@ module Program =
             // through `EnqueueSync` (blocking) via
             // `dispatchTupleToWriter`.
             // Cycle 45c PR-3b — SubstrateMode dispatch collapsed.
-            // ContentHistory is the universal substrate; the
-            // boolean is always `true`. The fallback to
-            // `extractContent`'s row-walk happens organically
-            // inside `extractContentFromContentHistory` when no
-            // OSC 133 markers are present (the marker-less shell
-            // case). SessionModel.IsAltScreenActive separately
-            // gates boundary processing during alt-screen.
+            // Cycle 51 PR-W — ContentHistory is the SOLE
+            // substrate; the boolean is always `true`. There is
+            // no row-walk fallback: when no PromptStart Seq is
+            // present `extractIOCell` returns None and the cell
+            // is dropped (ADR 0004 drop-on-None).
+            // SessionModel.IsAltScreenActive separately gates
+            // boundary processing during alt-screen.
             let nextSession, finalisedOpt =
                 SessionModel.applyAndCaptureWithContentHistory
                     currentSession augmented snapshotForApply
@@ -2332,7 +2332,7 @@ module Program =
             // bytes whose Print events accumulate into the active
             // TextSpan, so auto-announcing TextSpans on seal produces
             // inflated narrations that don't match what the user
-            // actually ran. SessionModel's `SessionTuple` captures
+            // actually ran. SessionModel's `IOCell` captures
             // CommandText + OutputText from the screen grid at
             // finalise time (authoritative) — announce OutputText
             // here on tuple seal as the user-facing "what did the

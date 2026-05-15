@@ -226,7 +226,7 @@ type BoundaryKind =
     | CommandFinished of exitCode: int option
 
 /// How a `PromptBoundary` event was detected. Recorded on the
-/// `SessionTuple.Sources` map so consumers can distinguish
+/// `IOCell.Sources` map so consumers can distinguish
 /// "the shell told us via OSC 133" from "we inferred this
 /// via a heuristic" — useful for diagnostics + future
 /// confidence-aware pathway logic.
@@ -257,7 +257,7 @@ type PromptBoundaryData =
       /// How the boundary was detected.
       Source: BoundarySource
       /// When the boundary was detected (UTC). Used by
-      /// `SessionTuple` to populate `PromptStartedAt` /
+      /// `IOCell` to populate `PromptStartedAt` /
       /// `CommandStartedAt` / `OutputStartedAt` /
       /// `CommandFinishedAt` per the kind.
       DetectedAt: DateTime

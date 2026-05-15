@@ -49,7 +49,7 @@ module SessionPersistence =
     type PersistenceMode =
         /// Default. History stays in RAM; nothing written to disk.
         | MemoryOnly
-        /// Each completed `SessionTuple` is flushed to disk on
+        /// Each completed `IOCell` is flushed to disk on
         /// Active→History transition (asynchronous, bounded
         /// channel; Cycle 24c).
         | SessionLog

@@ -5,7 +5,7 @@ open System.Collections.Generic
 open System.Text
 open Microsoft.Extensions.Logging
 
-/// Cycle 24d-2 — env-var VALUE-based sanitiser for SessionTuple
+/// Cycle 24d-2 — env-var VALUE-based sanitiser for IOCell
 /// persistence. Captures the values of deny-listed env vars at
 /// startup, then redacts those values wherever they appear in
 /// persisted tuple text fields.
@@ -49,7 +49,7 @@ open Microsoft.Extensions.Logging
 /// substring of another, the longer one is redacted first.
 ///
 /// **Where applied**: `SessionLogWriter.writeOne` calls
-/// `sanitiseTuple` on every tuple before formatTupleAsJsonl.
+/// `sanitiseTuple` on every cell before formatIOCellAsJsonl.
 /// The substrate's in-memory History keeps unsanitised text
 /// (the user can recover their own commands via Ctrl+Shift+Y);
 /// only the persistence layer redacts. This is the layered
@@ -174,7 +174,7 @@ module SessionSanitiser =
                 sb.ToString()
 
     /// Apply redactions to all text-bearing fields of a
-    /// SessionTuple. Returns a new tuple with `CommandText`,
+    /// IOCell. Returns a new tuple with `CommandText`,
     /// `OutputText`, `PromptText`, and every `ExtraParams`
     /// value sanitised. Conservative: anything that could
     /// carry expanded env-var values gets the treatment.
@@ -182,8 +182,8 @@ module SessionSanitiser =
     /// and `Sources` are passed through unchanged (they
     /// can't carry user-controlled content).
     let sanitiseTuple
-            (tuple: SessionModel.SessionTuple)
-            : SessionModel.SessionTuple
+            (tuple: SessionModel.IOCell)
+            : SessionModel.IOCell
             =
         { tuple with
             PromptText = sanitise tuple.PromptText

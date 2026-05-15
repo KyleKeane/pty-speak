@@ -16,7 +16,7 @@ open Terminal.Core
 //   * Single-tuple enqueue → exactly one JSONL line on disk.
 //   * Multi-tuple enqueue → lines preserved in enqueue order.
 //   * Each line ends with the literal `\n` (not `\r\n` even on
-//     Windows; the sink uses formatTupleAsJsonl's `\n` terminator
+//     Windows; the sink uses formatIOCellAsJsonl's `\n` terminator
 //     directly).
 //   * Disposal flushes pending writes before returning.
 //   * Disposal is idempotent.
@@ -42,9 +42,11 @@ let private freshTempDir () : string =
 let private fixedSessionId =
     Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 
-let private fixedTuple () : SessionModel.SessionTuple =
+let private fixedTuple () : SessionModel.IOCell =
     { Id = Guid.Parse("11111111-2222-3333-4444-555555555555")
+      CellSequence = 0L
       CommandId = None
+      Phase = SessionModel.IOCellPhase.Sealed
       ShellId = "powershell"
       PromptStartedAt = DateTime(2026, 5, 9, 12, 0, 0, DateTimeKind.Utc)
       CommandStartedAt = None
@@ -130,7 +132,7 @@ let ``enqueueing one tuple writes exactly one JSONL line`` () =
     Assert.Equal("", parts.[1])
     // Round-trip the JSON line through System.Text.Json as an
     // oracle — proves the file content matches the
-    // formatTupleAsJsonl output verbatim.
+    // formatIOCellAsJsonl output verbatim.
     use doc = System.Text.Json.JsonDocument.Parse(parts.[0])
     Assert.Equal(
         "11111111-2222-3333-4444-555555555555",
