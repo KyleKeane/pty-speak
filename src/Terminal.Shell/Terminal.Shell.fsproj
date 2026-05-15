@@ -10,10 +10,23 @@
     <Compile Include="ShellEvent.fs" />
     <Compile Include="ShellAdapter.fs" />
     <Compile Include="SessionHost.fs" />
+    <!--
+      R1.2: HeuristicPromptDetector relocated here from
+      Terminal.Core (ADR 0006 — the detector leaves the core
+      assembly). Pure relocation: the file still declares
+      `namespace Terminal.Core` so no caller `open` changes;
+      the namespace rename to `Terminal.Shell` is deferred to
+      R3 when it becomes the cmd adapter's fallback and call
+      sites change anyway. It has no intra-assembly
+      dependency on the adapter skeleton above.
+    -->
+    <Compile Include="HeuristicPromptDetector.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="FSharp.Core" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <ProjectReference Include="..\Terminal.Core\Terminal.Core.fsproj" />
   </ItemGroup>
 
 </Project>

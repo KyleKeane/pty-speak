@@ -102,6 +102,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Velopack" />
     <ProjectReference Include="..\Terminal.Core\Terminal.Core.fsproj" />
+    <ProjectReference Include="..\Terminal.Shell\Terminal.Shell.fsproj" />
     <ProjectReference Include="..\Terminal.Pty\Terminal.Pty.fsproj" />
     <ProjectReference Include="..\Terminal.Parser\Terminal.Parser.fsproj" />
     <ProjectReference Include="..\Terminal.Audio\Terminal.Audio.fsproj" />

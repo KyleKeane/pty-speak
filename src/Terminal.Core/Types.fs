@@ -9,6 +9,10 @@ open System.Text
 // without polluting the public API. Mirrors the precedent in
 // `src/Terminal.Accessibility/TerminalAutomationPeer.fs:22-23`.
 [<assembly: System.Runtime.CompilerServices.InternalsVisibleTo("PtySpeak.Tests.Unit")>]
+// R1.2 (ADR 0006): Terminal.Shell is the first-party transport
+// layer; HeuristicPromptDetector relocated there still consumes
+// Terminal.Core. Mirrors the test-assembly grant above.
+[<assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Terminal.Shell")>]
 do ()
 
 /// Marker type used by smoke tests to verify the assembly loads.

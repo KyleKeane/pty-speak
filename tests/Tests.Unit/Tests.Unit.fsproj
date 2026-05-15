@@ -108,6 +108,10 @@
     <!-- Logging-PR — FileLoggerTests use ILogger / LogLevel directly. -->
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <ProjectReference Include="..\..\src\Terminal.Core\Terminal.Core.fsproj" />
+    <!-- R1.2 (ADR 0006): HeuristicPromptDetectorTests reach the
+         relocated detector (still `namespace Terminal.Core`,
+         now in the Terminal.Shell assembly). -->
+    <ProjectReference Include="..\..\src\Terminal.Shell\Terminal.Shell.fsproj" />
     <ProjectReference Include="..\..\src\Terminal.Pty\Terminal.Pty.fsproj" />
     <ProjectReference Include="..\..\src\Terminal.Parser\Terminal.Parser.fsproj" />
     <!--
