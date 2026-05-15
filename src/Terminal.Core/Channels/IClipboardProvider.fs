@@ -9,7 +9,7 @@ namespace Terminal.Core.Channels
 /// Terminal.Core MUST NOT import host-specific types per
 /// `docs/CORE-ABSTRACTION-BOUNDARY.md` §1 + ADR 0001. This
 /// interface is the formal seam: substrate consumers (e.g., a
-/// future "copy SessionTuple" feature originating in
+/// future "copy IOCell" feature originating in
 /// Terminal.Core) accept an `IClipboardProvider` parameter; the
 /// composition root (`Terminal.App/Program.fs`) provides a WPF-
 /// backed implementation.

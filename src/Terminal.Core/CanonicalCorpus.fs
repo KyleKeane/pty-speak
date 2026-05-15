@@ -44,7 +44,7 @@ module CanonicalCorpus =
     /// so a scenario can pin only the parts it cares about (e.g.
     /// `cmd.exit.failure` pins `ExitCode = Some 1` and leaves the
     /// text fields unbound).
-    type SessionTupleExpectation =
+    type IOCellExpectation =
         { CommandText: string option
           OutputText: string option
           ExitCode: int option }
@@ -62,7 +62,7 @@ module CanonicalCorpus =
           TimeoutMs: int
           SetupCommand: string option
           ExpectedPayloadRegex: string[]
-          ExpectedSessionTuple: SessionTupleExpectation option
+          ExpectedIOCell: IOCellExpectation option
           ExpectedPaneRouting: PaneRouting option
           Notes: string option }
 
@@ -191,10 +191,10 @@ module CanonicalCorpus =
             | Some e -> Error e
             | None -> Ok mapped
 
-    let private parseSessionTuple
+    let private parseIOCell
             (scenarioId: string)
             (table: TomlTable)
-            : Result<SessionTupleExpectation option, string> =
+            : Result<IOCellExpectation option, string> =
         match tryGetTable table "expected_session_tuple" with
         | None -> Ok None
         | Some t ->
@@ -247,7 +247,7 @@ module CanonicalCorpus =
             (mustInclude: SemanticCategory[])
             (mustNotInclude: SemanticCategory[])
             (expectedPayloadRegex: string[])
-            (expectedSessionTuple: SessionTupleExpectation option)
+            (expectedIOCell: IOCellExpectation option)
             (expectedPaneRouting: PaneRouting option)
             (table: TomlTable)
             : Scenario =
@@ -274,7 +274,7 @@ module CanonicalCorpus =
           TimeoutMs = timeoutMs
           SetupCommand = setupCommand
           ExpectedPayloadRegex = expectedPayloadRegex
-          ExpectedSessionTuple = expectedSessionTuple
+          ExpectedIOCell = expectedIOCell
           ExpectedPaneRouting = expectedPaneRouting
           Notes = notes }
 
@@ -314,7 +314,7 @@ module CanonicalCorpus =
                         |> Result.bind (fun mustNotInclude ->
                             parseExpectedPayloadRegex id table
                             |> Result.bind (fun regex ->
-                                parseSessionTuple id table
+                                parseIOCell id table
                                 |> Result.bind (fun tuple ->
                                     parseExpectedPaneRouting id table
                                     |> Result.map (fun pane ->

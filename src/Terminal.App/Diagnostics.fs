@@ -89,7 +89,7 @@ module Diagnostics =
     /// **F# 9 nullness**: parameter is `string` (non-nullable);
     /// no defensive `isNull` check needed (FS3261 would fire
     /// under TreatWarningsAsErrors). Callers pass values
-    /// sourced from `SessionTuple.PromptText` (record field —
+    /// sourced from `IOCell.PromptText` (record field —
     /// always non-null) or `string option` unwrapped via
     /// pattern match — both paths guarantee non-null input.
     let internal truncate (maxLen: int) (text: string) : string =

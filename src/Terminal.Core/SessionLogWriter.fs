@@ -8,8 +8,8 @@ open System.Threading.Channels
 open System.Threading.Tasks
 open Microsoft.Extensions.Logging
 
-/// Cycle 24c — bounded-channel async file writer for SessionTuple
-/// JSONL persistence. Consumes `SessionModel.formatTupleAsJsonl`
+/// Cycle 24c — bounded-channel async file writer for IOCell
+/// JSONL persistence. Consumes `SessionModel.formatIOCellAsJsonl`
 /// (Cycle 24b) and appends each finalised tuple as one JSONL line
 /// to a per-shell-session file.
 ///
@@ -50,7 +50,7 @@ open Microsoft.Extensions.Logging
 ///     uses a screen reader; throwing into the NVDA path is
 ///     unacceptable.
 ///   * **No UTF-8 BOM.** `UTF8Encoding(false)` per the
-///     `formatTupleAsJsonl` design doc — adding a BOM would
+///     `formatIOCellAsJsonl` design doc — adding a BOM would
 ///     break the byte-for-byte stability the wire format
 ///     promises.
 ///
@@ -98,7 +98,7 @@ type SessionLogWriterOptions =
 /// need to construct one directly. Today's tests interact via
 /// the public `Enqueue` / `EnqueueSync` surface.
 type internal SessionLogWriteRequest =
-    { Tuple: SessionModel.SessionTuple
+    { Tuple: SessionModel.IOCell
       CompletionSignal: TaskCompletionSource<unit> option }
 
 module SessionLogWriterOptions =
@@ -228,12 +228,12 @@ type SessionLogWriterSink
                         // a file handle. Sync caller (if any)
                         // gets the exception via the TCS so they
                         // learn the write failed.
-                        let line = SessionModel.formatTupleAsJsonl sanitised
+                        let line = SessionModel.formatIOCellAsJsonl sanitised
                         ensureWriter ()
                         match writer with
                         | null -> ()
                         | w ->
-                            // formatTupleAsJsonl already includes
+                            // formatIOCellAsJsonl already includes
                             // the trailing '\n'; use Write (NOT
                             // WriteLine) to avoid an extra
                             // platform-dependent line terminator.
@@ -325,7 +325,7 @@ type SessionLogWriterSink
                 with _ -> ()
             } :> Task)
 
-    /// Enqueue a finalised SessionTuple. Returns when the tuple
+    /// Enqueue a finalised IOCell. Returns when the tuple
     /// is queued (NOT when it's written to disk; that happens on
     /// the drain task). Under normal load returns synchronously
     /// in <100µs. Under a sustained disk stall the call
@@ -336,7 +336,7 @@ type SessionLogWriterSink
     /// post-`Dispose` calls (silently dropped). Used by
     /// `SessionLog` mode in the composition root; pairs with
     /// `EnqueueSync` for `Always` mode.
-    member _.Enqueue (tuple: SessionModel.SessionTuple) : unit =
+    member _.Enqueue (tuple: SessionModel.IOCell) : unit =
         let request =
             { Tuple = tuple; CompletionSignal = None }
         try
@@ -384,7 +384,7 @@ type SessionLogWriterSink
     /// is invoked; either way the caller unblocks.
     ///
     /// Safe to call from any thread.
-    member _.EnqueueSync (tuple: SessionModel.SessionTuple) : unit =
+    member _.EnqueueSync (tuple: SessionModel.IOCell) : unit =
         let tcs =
             TaskCompletionSource<unit>(
                 TaskCreationOptions.RunContinuationsAsynchronously)

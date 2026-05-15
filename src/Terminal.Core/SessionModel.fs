@@ -42,7 +42,7 @@ open Microsoft.Extensions.Logging
 [<RequireQualifiedAccess>]
 module SessionModel =
 
-    /// State of the active SessionTuple. Mirrors the
+    /// State of the active IOCell. Mirrors the
     /// boundary-kind progression but as a state machine: the
     /// active tuple advances through these states as
     /// `BoundaryKind` events arrive. After
@@ -81,15 +81,47 @@ module SessionModel =
     /// one). Pathways interpret semantically (e.g. "exit 0
     /// = success" mapping happens in pathway code, not
     /// substrate).
-    type SessionTuple =
-        { /// Unique tuple identifier; survives serialisation.
+    /// Lifecycle phase of an IOCell. The active cell carries
+    /// one of {Composing, Executing, AwaitingSubPromptResponse};
+    /// every cell in `History` carries Sealed.
+    ///
+    /// v1 (Cycle 51 PR-W) populates `Composing` for the active
+    /// cell and `Sealed` for cells in `History`. `Executing` and
+    /// `AwaitingSubPromptResponse` are reserved — the DU shape
+    /// is locked now (ADR 0004) so the on-disk wire format
+    /// (schemaVersion 2) is forward-stable; a later PR drives
+    /// the intermediate transitions.
+    [<RequireQualifiedAccess>]
+    type IOCellPhase =
+        | Composing
+        | Executing
+        | AwaitingSubPromptResponse of subPromptText: string
+        | Sealed
+
+    type IOCell =
+        { /// Unique cell identifier; survives serialisation.
+          /// Assigned at CELL CREATION (the PromptStart-driven
+          /// transition that opens the cell), never at seal —
+          /// the active cell IS the same identity it'll have
+          /// once sealed (ADR 0004 Decision 1).
           Id: Guid
+          /// Monotonic per-shell-session cell index, starting
+          /// at 0. Assigned at cell creation alongside `Id`.
+          /// Resets to 0 on shell hot-switch: a fresh
+          /// `SessionModel.T` is constructed per shell session
+          /// (per Q5 resolution 2026-05-07), so the counter
+          /// resets naturally. NEW in v1 (ADR 0004).
+          CellSequence: int64
           /// OSC 133 `aid=<command-id>` parameter, if shell
           /// supplied one. Lets cross-session correlation
           /// happen without timing-window heuristics. None
           /// when not supplied (most cases today).
           CommandId: string option
-          /// Which shell produced this tuple. String-keyed
+          /// Lifecycle phase. `Composing` while active;
+          /// `Sealed` once moved to `History`. NEW in v1
+          /// (ADR 0004).
+          Phase: IOCellPhase
+          /// Which shell produced this cell. String-keyed
           /// per assembly-boundary discipline (see module
           /// docstring).
           ShellId: string
@@ -132,14 +164,14 @@ module SessionModel =
           /// stores but doesn't interpret.
           ExtraParams: Map<string, string> }
 
-    /// Active (in-flight) SessionTuple. Mutable view: the
+    /// Active (in-flight) IOCell. Mutable view: the
     /// tuple's fields are populated incrementally as
     /// `BoundaryKind` events arrive. When `CommandFinished`
     /// arrives the tuple is finalised + moved to History.
-    type ActiveSessionTuple =
+    type ActiveIOCell =
         { /// The tuple data (in-progress; some fields may
           /// be unset).
-          Tuple: SessionTuple
+          Tuple: IOCell
           /// State machine cursor.
           State: ActiveTupleState
           /// **Tier 1.E2.B (Cycle 20b)** — row index where
@@ -179,7 +211,7 @@ module SessionModel =
           /// tuples evicted when the queue exceeds
           /// `MaxHistorySize`. Tier 1.C populates via
           /// `apply`'s state machine.
-          History: Queue<SessionTuple>
+          History: Queue<IOCell>
           /// Maximum tuples retained in History. Default
           /// 100 per SESSION-MODEL.md §4. Tier 1.C enforces
           /// the bound during `apply`'s tuple-finalisation
@@ -187,7 +219,7 @@ module SessionModel =
           MaxHistorySize: int
           /// In-flight tuple, if any. `None` between
           /// `CommandFinished` and the next `PromptStart`.
-          Active: ActiveSessionTuple option
+          Active: ActiveIOCell option
           /// **Tier 1.C — Q3 partial**: when `true`, `apply`
           /// returns state unchanged (boundary events are
           /// ignored during alt-screen / TUI sessions per Q3
@@ -196,7 +228,14 @@ module SessionModel =
           /// PathwayPump's `ScreenNotification.ModeChanged`
           /// arm; Tier 1.C ships the field + helpers but does
           /// not yet toggle them from composition root.
-          IsAltScreenActive: bool }
+          IsAltScreenActive: bool
+          /// Next `CellSequence` to assign when a new cell is
+          /// created. Monotonic from 0; incremented each time
+          /// the PromptStart transition opens a cell. Resets
+          /// implicitly to 0 on shell hot-switch (a fresh `T`
+          /// is constructed per shell session). NEW in v1
+          /// (ADR 0004).
+          NextCellSequence: int64 }
 
     /// Default history size. Per SESSION-MODEL.md §4
     /// recommendation. Tier 1.C enforces the bound during
@@ -213,10 +252,11 @@ module SessionModel =
         { ShellId = shellId
           SessionId = Guid.NewGuid()
           SessionStartedAt = DateTime.UtcNow
-          History = Queue<SessionTuple>()
+          History = Queue<IOCell>()
           MaxHistorySize = maxHistorySize
           Active = None
-          IsAltScreenActive = false }
+          IsAltScreenActive = false
+          NextCellSequence = 0L }
 
     /// Convenience overload: construct with the default
     /// max-history-size (100).
@@ -244,7 +284,7 @@ module SessionModel =
     /// the call-site context for diagnostics.
     let private logger = Logger.get "Terminal.Core.SessionModel"
 
-    /// Build a brand-new SessionTuple with `PromptStartedAt`
+    /// Build a brand-new IOCell with `PromptStartedAt`
     /// set + the supplied boundary's CommandId / ExtraParams /
     /// Sources captured. Other timestamps are `None` until
     /// later boundaries advance the active tuple.
@@ -259,11 +299,14 @@ module SessionModel =
     /// snapshot context).
     let private newTuple
             (shellId: string)
+            (cellSequence: int64)
             (boundary: PromptBoundaryData)
-            : SessionTuple
+            : IOCell
             =
         { Id = Guid.NewGuid()
+          CellSequence = cellSequence
           CommandId = boundary.CommandId
+          Phase = IOCellPhase.Composing
           ShellId = shellId
           PromptStartedAt = boundary.DetectedAt
           CommandStartedAt = None
@@ -284,9 +327,9 @@ module SessionModel =
     /// (boundaries are ordered; later wins). Sources
     /// accumulate the (Kind, Source) pair.
     let private mergeBoundary
-            (active: ActiveSessionTuple)
+            (active: ActiveIOCell)
             (boundary: PromptBoundaryData)
-            : ActiveSessionTuple
+            : ActiveIOCell
             =
         let tuple = active.Tuple
         let commandId =
@@ -310,194 +353,89 @@ module SessionModel =
                     ExtraParams = extraParams
                     Sources = sources } }
 
-    /// Move an active tuple to the History ring buffer with
-    /// the supplied finalisation timestamp. Enforces
-    /// **Tier 1.E2.B (Cycle 20b)** — extract `CommandText` +
-    /// `OutputText` from screen state at finalize time.
+    /// Finalise the active cell and move it to the History
+    /// ring buffer. Enforces `MaxHistorySize` by dequeueing
+    /// the oldest cell before enqueueing the new one; when
+    /// `MaxHistorySize` is `0` the cell is dropped silently
+    /// (no history retained).
     ///
-    /// **CommandText**: the row at `oldPromptRowIndex` in
-    /// the current snapshot likely contains the prompt + the
-    /// user's typed command (e.g. `C:\> echo hi`). Strip the
-    /// captured `oldPromptText` prefix; what remains is the
-    /// command. Defensive: returns `""` when the row index
-    /// is missing / out of bounds, the captured PromptText
-    /// is empty, or the rendered row doesn't start with the
-    /// captured prompt (scroll happened mid-cycle).
+    /// **ADR 0004 Decision 3 — ContentHistory is the sole
+    /// extraction substrate; drop-on-None.** The
+    /// `linearOverride` THUNK, when invoked, returns
+    /// `Some (commandText, outputText)` if ContentHistory has
+    /// an authoritative slice for this cell, or `None`. There
+    /// is **no row-walk fallback** post-pivot (Cycle 51 PR-W
+    /// deleted the screen-row extractor): a `None` result —
+    /// whether from a present-but-empty thunk or from the legacy
+    /// no-ContentHistory callers (`apply` / `applyAndCapture`
+    /// / `finalizeIncomplete`, all of which pass `None`) —
+    /// means the cell does NOT finalize. It is dropped (no
+    /// History enqueue, `None` returned) and logged at
+    /// Information. Loud silence beats a stale-scrollback
+    /// garbage announce (maintainer 2026-05-14).
     ///
-    /// **OutputText**: rows between `oldPromptRowIndex + 1`
-    /// and `newPromptRowIndex - 1` (inclusive) joined with
-    /// newlines. Empty rows filtered out (typical shell
-    /// output has trailing-blank rows that aren't
-    /// meaningful). Defensive: returns `""` when row indices
-    /// are missing, when newRow ≤ oldRow + 1 (no rows
-    /// between), or when row indices are out of snapshot
-    /// bounds.
+    /// The thunk is evaluated lazily here (not at
+    /// `applyAndCaptureWithContentHistory` entry) so the
+    /// substrate is read exactly when a cell finalises, not
+    /// on intermediate CommandStart / OutputStart boundaries.
     ///
-    /// Returns `(commandText, outputText)`. Pure function;
-    /// no side effects.
+    /// Return: `Some finalised` only when the cell actually
+    /// landed in History; `None` when dropped (no
+    /// ContentHistory slice) or `MaxHistorySize <= 0`. The
+    /// SessionLogWriter dispatches off the `Some` branch.
     ///
-    /// TODO(Cycle 39): screen-diff-substrate legacy. Cycle 35b's
-    /// `applyAndCaptureWithSubstrate` routes around this row-
-    /// walk when the LinearTextStream substrate has OSC 133
-    /// markers; this helper survives only as the fallback for
-    /// OSC-133-less shells (vanilla cmd, vanilla PowerShell).
-    /// Removable when Cycle 39's preconditions are met (broad
-    /// OSC 133 coverage OR an OSC-133-injecting shim cycle
-    /// ships). See Section 13 of `we-do-not-need-fluffy-simon.md`.
-    let private extractContent
-            (oldPromptText: string)
-            (oldPromptRowIndex: int option)
-            (newPromptRowIndex: int option)
-            (snapshot: Cell[][])
-            : string * string
-            =
-        let commandText =
-            match oldPromptText, oldPromptRowIndex with
-            | "", _ -> ""
-            | _, None -> ""
-            | _, Some rowIdx when rowIdx < 0 || rowIdx >= snapshot.Length ->
-                ""
-            | promptText, Some rowIdx ->
-                let rendered = CanonicalState.renderRow snapshot rowIdx
-                if rendered.StartsWith(promptText) then
-                    rendered.Substring(promptText.Length).TrimStart()
-                else
-                    // Row content doesn't start with the prompt
-                    // we captured (scroll happened mid-cycle);
-                    // skip rather than producing garbage.
-                    ""
-        let outputText =
-            match oldPromptRowIndex, newPromptRowIndex with
-            | Some oldRow, Some newRow when
-                oldRow >= 0
-                && newRow > oldRow + 1
-                && newRow <= snapshot.Length
-                ->
-                let lines = ResizeArray<string>()
-                for rowIdx in oldRow + 1 .. newRow - 1 do
-                    if rowIdx < snapshot.Length then
-                        let line = CanonicalState.renderRow snapshot rowIdx
-                        if not (System.String.IsNullOrEmpty line) then
-                            lines.Add(line)
-                String.concat "\n" lines
-            | _ -> ""
-        commandText, outputText
-
-    /// `MaxHistorySize` by dequeueing the oldest tuple
-    /// before enqueueing the new one. When `MaxHistorySize`
-    /// is `0`, the tuple is dropped silently (no history
-    /// retained).
-    ///
-    /// **Tier 1.E2.B (Cycle 20b)** — extracts `CommandText`
-    /// + `OutputText` from snapshot when the extraction
-    /// context is supplied (heuristic interrupt-arm or OSC
-    /// 133 CommandFinished arm):
-    ///   * `oldPromptRowIndex`: row where the active
-    ///     tuple's prompt was emitted (from
-    ///     `ActiveSessionTuple.PromptRowIndex`).
-    ///   * `newPromptRowIndex`: row where the NEW prompt is
-    ///     (from the incoming boundary's `MatchedRowIndex`;
-    ///     `None` for `CommandFinished` arms).
-    ///   * `snapshot`: current screen state at finalize
-    ///     time.
-    /// `finalizeIncomplete` (shell-switch) passes `None /
-    /// None / [||]` so extraction gracefully returns empty
-    /// strings.
-    /// Cycle 24c — return type extended from `T` to
-    /// `T * SessionTuple option`. The option is `Some
-    /// finalised` whenever the tuple actually landed in
-    /// History (i.e. the normal case); it's `None` only when
-    /// `MaxHistorySize <= 0` — a degenerate config in which
-    /// the tuple is discarded entirely. Cycle 24c's writer
-    /// dispatches off the `Some` branch; persisting tuples
-    /// the user explicitly opted out of tracking would be a
-    /// surprise.
-    /// Cycle 35b — `linearOverride`: a THUNK that, when invoked,
-    /// returns `Some (commandText, outputText)` if the linear
-    /// substrate has authoritative content (OSC 133 markers
-    /// observed since the last finalize) OR `None` if the caller
-    /// should fall back to the legacy `extractContent` row-walk
-    /// for OSC-133-less shells (vanilla cmd, vanilla PowerShell).
-    ///
-    /// The thunk is essential because `LinearTextStream.finalizeHighWaterMark`
-    /// has the SIDE EFFECT of resetting per-tuple state (offsets
-    /// + the OSC 133 marker flag). If the override were eagerly
-    /// constructed at `applyAndCaptureWithSubstrate` entry, every
-    /// call (including non-finalize boundaries like CommandStart
-    /// and OutputStart) would drain the stream and lose the
-    /// markers before the actual CommandFinished arm fires.
-    /// Deferring evaluation to inside `finalizeAndEnqueue` means
-    /// the stream is finalized exactly when the SessionTuple is
-    /// finalized — semantically aligned, no premature drain.
-    ///
-    /// `applyAndCapture` (legacy) passes `None` (always uses
-    /// `extractContent`). `applyAndCaptureWithSubstrate` (Cycle
-    /// 35b) passes `Some thunk`.
-    ///
-    /// TODO(Cycle 39): remove the linearOverride None branch +
-    /// `extractContent` itself once OSC 133 coverage is broad
-    /// enough (or an OSC-133-injecting shim ships) per
-    /// Section 13 of the strategic plan.
+    /// `oldPromptRowIndex` / `newPromptRowIndex` / `snapshot`
+    /// are vestigial screen-row plumbing — no longer read
+    /// post-pivot; PR-X removes the surrounding screen-row
+    /// machinery per the Cycle 51 playbook §6.
     let private finalizeAndEnqueue
             (state: T)
-            (tuple: SessionTuple)
+            (tuple: IOCell)
             (finishedAt: DateTime)
             (exitCode: int option)
             (oldPromptRowIndex: int option)
             (newPromptRowIndex: int option)
             (snapshot: Cell[][])
             (linearOverride: (unit -> (string * string) option) option)
-            : T * SessionTuple option
+            : T * IOCell option
             =
-        let commandText, outputText, extractionPath =
-            let fromLinear =
-                match linearOverride with
-                | Some thunk -> thunk ()
-                | None -> None
-            match fromLinear with
-            | Some (cmd, out) -> cmd, out, "content-history"
-            | None ->
-                let cmd, out =
-                    extractContent
-                        tuple.PromptText
-                        oldPromptRowIndex
-                        newPromptRowIndex
-                        snapshot
-                let label =
-                    match linearOverride with
-                    | Some _ -> "row-walk-after-content-history-miss"
-                    | None -> "row-walk-only"
-                cmd, out, label
-        // Cycle 45c follow-up — make the extraction path visible
-        // in the diagnostic bundle. The silent-third-echo bug
-        // (PR #280) hid behind an empty CommandText / OutputText
-        // pair that looked identical regardless of which path
-        // produced it. With this line, a paste of
-        // `--- FILELOGGER ACTIVE LOG ---` immediately shows
-        // whether the row-walk got hit (and therefore whether
-        // the ContentHistory thunk returned None unexpectedly).
-        logger.LogDebug(
-            "SessionModel finalize extraction Path={Path} CmdLen={CmdLen} OutLen={OutLen} OldRow={OldRow} NewRow={NewRow}",
-            extractionPath,
-            commandText.Length,
-            outputText.Length,
-            (match oldPromptRowIndex with Some r -> r | None -> -1),
-            (match newPromptRowIndex with Some r -> r | None -> -1))
-        let finalised =
-            { tuple with
-                CommandFinishedAt = Some finishedAt
-                ExitCode = exitCode
-                CommandText = commandText
-                OutputText = outputText }
-        if state.MaxHistorySize <= 0 then
+        let extracted =
+            match linearOverride with
+            | Some thunk -> thunk ()
+            | None -> None
+        match extracted with
+        | None ->
+            // ADR 0004 Decision 3 — drop-on-None. No
+            // ContentHistory slice (no PromptStart Seq, or a
+            // legacy no-ContentHistory caller); the cell does
+            // NOT finalize. Loud silence beats a
+            // stale-scrollback garbage announce.
+            logger.LogInformation(
+                "IOCell dropped: no PromptStart Seq in ContentHistory. CellSequence={CellSequence} ShellId={ShellId}",
+                tuple.CellSequence,
+                tuple.ShellId)
             { state with Active = None }, None
-        else
-            // Ring-buffer eviction: drop oldest until under
-            // the cap, then enqueue.
-            while state.History.Count >= state.MaxHistorySize do
-                state.History.Dequeue() |> ignore
-            state.History.Enqueue(finalised)
-            { state with Active = None }, Some finalised
+        | Some (commandText, outputText) ->
+            logger.LogDebug(
+                "SessionModel finalize extraction Path=content-history CmdLen={CmdLen} OutLen={OutLen}",
+                commandText.Length,
+                outputText.Length)
+            let finalised =
+                { tuple with
+                    CommandFinishedAt = Some finishedAt
+                    ExitCode = exitCode
+                    CommandText = commandText
+                    OutputText = outputText
+                    Phase = IOCellPhase.Sealed }
+            if state.MaxHistorySize <= 0 then
+                { state with Active = None }, None
+            else
+                // Ring-buffer eviction: drop oldest until under
+                // the cap, then enqueue.
+                while state.History.Count >= state.MaxHistorySize do
+                    state.History.Dequeue() |> ignore
+                state.History.Enqueue(finalised)
+                { state with Active = None }, Some finalised
 
     /// **Tier 1.C — Q5 helper**: finalise any in-flight
     /// active tuple as incomplete (`CommandFinishedAt =
@@ -525,7 +463,7 @@ module SessionModel =
     and finalizeIncompleteAndCapture
             (state: T)
             (finishedAt: DateTime)
-            : T * SessionTuple option
+            : T * IOCell option
             =
         match state.Active with
         | None -> state, None
@@ -574,7 +512,7 @@ module SessionModel =
         applyAndCapture state boundary snapshot |> fst
 
     /// Cycle 24c — capture variant of `apply`. Returns both the
-    /// new state and the freshly-finalised SessionTuple (when
+    /// new state and the freshly-finalised IOCell (when
     /// this call resulted in an Active→History transition) so
     /// the composition root can dispatch to the
     /// SessionLogWriterSink. The state-only `apply` wrapper
@@ -600,25 +538,25 @@ module SessionModel =
             (state: T)
             (boundary: PromptBoundaryData)
             (snapshot: Cell[][])
-            : T * SessionTuple option
+            : T * IOCell option
             =
         applyAndCaptureCore state boundary snapshot None
 
     /// Cycle 35b — the shared body. Takes an optional
     /// `linearOverride` THUNK that, when invoked, returns
-    /// `Some (cmd, out)` (linear path authoritative) or `None`
-    /// (fall back to `extractContent`). The thunk is
-    /// evaluated lazily inside `finalizeAndEnqueue` so the
-    /// linear stream is only drained when an actual
-    /// SessionTuple finalize occurs (NOT on intermediate
-    /// PromptStart / CommandStart / OutputStart boundaries
-    /// that don't enqueue a tuple).
+    /// `Some (cmd, out)` (ContentHistory slice authoritative)
+    /// or `None` (drop-on-None per ADR 0004 Decision 3; no
+    /// row-walk fallback post-pivot). The thunk is evaluated
+    /// lazily inside `finalizeAndEnqueue` so ContentHistory is
+    /// only read when an actual IOCell finalize occurs (NOT on
+    /// intermediate PromptStart / CommandStart / OutputStart
+    /// boundaries that don't enqueue a cell).
     and private applyAndCaptureCore
             (state: T)
             (boundary: PromptBoundaryData)
             (snapshot: Cell[][])
             (linearOverride: (unit -> (string * string) option) option)
-            : T * SessionTuple option
+            : T * IOCell option
             =
         if state.IsAltScreenActive then
             // Q3 — boundaries ignored during alt-screen.
@@ -629,14 +567,19 @@ module SessionModel =
             match state.Active, kind with
             // === AwaitingPromptStart ===
             | None, BoundaryKind.PromptStart ->
-                let tuple = newTuple state.ShellId boundary
+                // ADR 0004 — Id + CellSequence assigned at cell
+                // creation (here), not at seal.
+                let tuple =
+                    newTuple state.ShellId state.NextCellSequence boundary
                 let active =
                     { Tuple = tuple
                       State = ActiveTupleState.AwaitingCommandStart
                       // Tier 1.E2.B: capture the row index for
                       // future finalize-time output extraction.
                       PromptRowIndex = boundary.MatchedRowIndex }
-                { state with Active = Some active }, None
+                { state with
+                    Active = Some active
+                    NextCellSequence = state.NextCellSequence + 1L }, None
             | None, BoundaryKind.CommandStart ->
                 logger.LogWarning(
                     "SessionModel CommandStart with no Active tuple; ignored.")
@@ -669,12 +612,18 @@ module SessionModel =
                         boundary.MatchedRowIndex
                         snapshot
                         linearOverride
-                let tuple = newTuple state.ShellId boundary
+                // ADR 0004 — the interrupting prompt opens a new
+                // cell; assign Id + CellSequence at creation.
+                let tuple =
+                    newTuple
+                        state.ShellId withPrior.NextCellSequence boundary
                 let nextActive =
                     { Tuple = tuple
                       State = ActiveTupleState.AwaitingCommandStart
                       PromptRowIndex = boundary.MatchedRowIndex }
-                { withPrior with Active = Some nextActive }, finalisedOpt
+                { withPrior with
+                    Active = Some nextActive
+                    NextCellSequence = withPrior.NextCellSequence + 1L }, finalisedOpt
             | Some active, BoundaryKind.CommandStart ->
                 let merged = mergeBoundary active boundary
                 match active.State with
@@ -765,33 +714,40 @@ module SessionModel =
     // used by the composition root's `handlePromptBoundary`. It
     // queries the ContentHistory substrate for the latest PromptStart
     // + OutputStart markers and slices the bracketed text via
-    // `ContentHistory.sliceText` to produce an authoritative
-    // `(commandText, outputText)` override; falling back to the
-    // legacy `extractContent` row-walk when no OSC 133 markers are
-    // present (vanilla cmd / vanilla PowerShell).
+    // `ContentHistory.sliceText` to produce the authoritative
+    // `(commandText, outputText)` for the IOCell. Per ADR 0004
+    // Decision 3 there is no row-walk fallback: when no PromptStart
+    // Seq is present the thunk returns `None` and the cell drops.
     //
     // The legacy `apply` / `applyAndCapture` surface is preserved
     // with original signatures for the 80+ existing test callers
     // and for consumers that don't have a ContentHistory in scope.
+    // Post-pivot those callers (passing `None` for the override)
+    // never finalise a cell — drop-on-None applies (ADR 0004).
 
-    /// Cycle 35b — peek the linear stream's per-tuple OSC 133
-    /// Cycle 45c — ContentHistory text extraction at tuple-seal
-    /// time. Locates the latest PromptStart + OutputStart markers
-    /// in the current tuple's ContentHistory and slices the
-    /// bracketed text.
+    /// Cycle 45c / 51 — ContentHistory text extraction at
+    /// IOCell-seal time (the sole extractor post-pivot, ADR
+    /// 0004). Locates the latest PromptStart (+ OutputStart if
+    /// the shell emits OSC 133) marker in ContentHistory and
+    /// slices the bracketed text.
     ///
-    /// Returns `Some (commandText, outputText)` when both
-    /// markers are present (ContentHistory path is authoritative);
-    /// else `None` so the caller falls back to `extractContent`'s
-    /// row-walk (vanilla cmd / vanilla PowerShell with no OSC 133
-    /// shim).
+    /// Returns `Some (commandText, outputText)` when a
+    /// PromptStart Seq is present; `None` otherwise — the
+    /// drop-on-None signal (the cell does NOT finalize; loud
+    /// silence beats stale-scrollback garbage). There is no
+    /// row-walk fallback.
     ///
-    /// PromptStart-only (no OutputStart yet) is treated as
-    /// "fallback" because we can't reconstruct the output region.
-    /// In practice CommandFinished always follows OutputStart when
-    /// any OSC 133 marker is emitted; PromptStart-only is the
-    /// degenerate case of a shell that emits A but not C / D.
-    let private extractContentFromContentHistory
+    /// Two arms:
+    ///   * PromptStart + OutputStart present (OSC 133 shell):
+    ///     clean Seq-slice split.
+    ///   * PromptStart only (heuristic-only cmd / PowerShell):
+    ///     slice PromptStart→tail, trim the trailing
+    ///     new-prompt text, split on the first newline (cmd
+    ///     echoes the typed command, then `\r\n`, then
+    ///     output). `EntrySource` is NOT consulted — the
+    ///     2026-05-14 bundle showed it mis-tags post-response
+    ///     output in heuristic-only cmd (ADR 0004 Context).
+    let private extractIOCell
             (history: ContentHistory.T)
             (newPromptText: string option)
             : (string * string) option
@@ -824,10 +780,11 @@ module SessionModel =
             // and the tail. That blob is the just-finalising
             // tuple's combined (command + output) text.
             //
-            // Why this exists: the prior `extractContent` row-walk
-            // against the screen snapshot fails when the output
-            // scrolls enough that the prior prompt and the new
-            // prompt land on the same `rowIdx`. The maintainer's
+            // Why this is the sole path: the deleted
+            // screen-row-walk extractor against the screen
+            // snapshot failed when the output scrolled enough
+            // that the prior prompt and the new prompt landed
+            // on the same `rowIdx`. The maintainer's
             // 2026-05-12 dogfood after `dir` + second `echo hi`
             // reproduced this: tuple finalised with empty
             // CmdText/OutText, NVDA went silent. ContentHistory's
@@ -875,37 +832,36 @@ module SessionModel =
                     Some (cmd, out)
         | _ -> None
 
-    /// Cycle 45c — ContentHistory-driven substrate finalize.
-    /// Companion to `applyAndCaptureWithSubstrate`, threaded with
-    /// the new ContentHistory substrate instead of LinearTextStream.
+    /// Cycle 45c / 51 — ContentHistory-driven finalize. The
+    /// runtime entry point `handlePromptBoundary` calls.
     ///
-    /// `useContentHistory = true` → invoke the
-    /// `extractContentFromContentHistory` thunk inside
-    /// `finalizeAndEnqueue`; `false` → row-walk fallback. The
-    /// boolean exists for future shells that might opt out of
-    /// the substrate; current shells (cmd / PowerShell / claude)
-    /// all default to `true`.
+    /// `useContentHistory = true` → invoke the `extractIOCell`
+    /// thunk inside `finalizeAndEnqueue`. `false` → no override
+    /// (the thunk is `None`); post-pivot that means drop-on-None
+    /// at finalize (ADR 0004 — there is no row-walk fallback).
+    /// The boolean is retained for future shells that might opt
+    /// out of the substrate; current shells (cmd / PowerShell /
+    /// claude) all pass `true`.
     let applyAndCaptureWithContentHistory
             (state: T)
             (boundary: PromptBoundaryData)
             (snapshot: Cell[][])
             (history: ContentHistory.T)
             (useContentHistory: bool)
-            : T * SessionTuple option
+            : T * IOCell option
             =
-        // Mirror `applyAndCaptureWithSubstrate`'s thunk-lazy
-        // pattern: the override only invokes
-        // `extractContentFromContentHistory` when
-        // `finalizeAndEnqueue` actually fires (CommandFinished
-        // boundary). Other boundary kinds skip the thunk.
+        // Thunk-lazy: the override only invokes `extractIOCell`
+        // when `finalizeAndEnqueue` actually fires (the
+        // CommandFinished / interrupt-PromptStart boundary).
+        // Other boundary kinds skip the thunk.
         let contentOverride : (unit -> (string * string) option) option =
             if useContentHistory then
                 // Pass the new boundary's MatchedRowText so the
                 // heuristic-only path can trim it off the blob's
-                // tail (see comment in extractContentFromContentHistory).
+                // tail (see comment in extractIOCell).
                 let newPromptText = boundary.MatchedRowText
                 Some (fun () ->
-                    extractContentFromContentHistory history newPromptText)
+                    extractIOCell history newPromptText)
             else
                 None
         applyAndCaptureCore state boundary snapshot contentOverride
@@ -1002,7 +958,7 @@ module SessionModel =
     let private appendTuple
             (sb: System.Text.StringBuilder)
             (index: int)
-            (tuple: SessionTuple)
+            (tuple: IOCell)
             : unit
             =
         sb.AppendFormat("--- Entry {0} ---\n", index) |> ignore
@@ -1041,7 +997,7 @@ module SessionModel =
 
     let private appendActive
             (sb: System.Text.StringBuilder)
-            (active: ActiveSessionTuple)
+            (active: ActiveIOCell)
             : unit
             =
         let tuple = active.Tuple
@@ -1131,25 +1087,33 @@ module SessionModel =
         sb.ToString()
 
     // -----------------------------------------------------------------
-    // Cycle 24b — JSONL serializer for SessionTuple.
+    // Cycle 24b / 51 — JSONL serializer for IOCell.
     // -----------------------------------------------------------------
     //
-    // Pure function `formatTupleAsJsonl : SessionTuple -> string`
+    // Pure function `formatIOCellAsJsonl : IOCell -> string`
     // that emits one JSONL line (a JSON object followed by a literal
     // `\n` terminator). No I/O — Cycle 24c wires the file writer
     // against the Active→History transition seam in
     // `Terminal.App.Program`.
     //
-    // **Wire format pinned in `docs/SESSION-MODEL.md` §"On-disk
-    // wire format (Cycle 24b)" — needs to remain stable for
-    // decades.** Locked decisions:
+    // **Wire format pinned in `docs/IOCELL-SCHEMA.md` §"On-disk
+    // wire format" — needs to remain stable for decades.**
+    // Locked decisions:
     //
-    // 1. Per-record `"schemaVersion":1` as the first key. Future
-    //    schema changes increment the value; old files always
-    //    remain readable; replay tools branch on it.
+    // 1. Per-record `"schemaVersion":2` as the first key
+    //    (Cycle 51 PR-W bumped 1 → 2 for the IOCell rename +
+    //    the `cellSequence` + `phase` fields). Future schema
+    //    changes increment further; replay tools branch on it.
+    //    schemaVersion=1 and =2 are mutually unreadable — the
+    //    migration is one-way per ADR 0004.
     // 2. `BoundarySource` always serialises as a tagged object
     //    `{"kind":"<case>", ...payload}` — uniform shape across
     //    all DU cases; future cases land cleanly.
+    // 2b. `phase` serialises as a tagged DU object by the same
+    //    rule: `{"kind":"composing"}`, `{"kind":"executing"}`,
+    //    `{"kind":"awaitingSubPromptResponse","subPromptText":"…"}`,
+    //    `{"kind":"sealed"}`. `cellSequence` is a JSON number
+    //    (int64).
     // 3. `Sources` serialises as a JSON ARRAY of records, not as
     //    a JSON object keyed by `BoundaryKind`. Avoids the latent
     //    collision bug where `BoundaryKind.CommandFinished _`
@@ -1176,9 +1140,11 @@ module SessionModel =
 
     /// Schema version emitted on every JSONL record. Increment
     /// when the on-disk shape changes; replay tools branch on
-    /// the value to apply per-version deserializers.
+    /// the value to apply per-version deserializers. Cycle 51
+    /// PR-W bumped 1 → 2 (IOCell rename + `cellSequence` +
+    /// `phase`).
     [<Literal>]
-    let JsonlSchemaVersion : int = 1
+    let JsonlSchemaVersion : int = 2
 
     let private jsonInvariant : System.Globalization.CultureInfo =
         System.Globalization.CultureInfo.InvariantCulture
@@ -1295,6 +1261,21 @@ module SessionModel =
         | BoundarySource.HeuristicClaudeInkBox ->
             "{\"kind\":\"HeuristicClaudeInkBox\"}"
 
+    /// `IOCellPhase` as a tagged DU object (same rule as
+    /// `formatBoundarySourceTaggedObject`). Cycle 51 PR-W.
+    let private formatPhaseTaggedObject (phase: IOCellPhase) : string =
+        match phase with
+        | IOCellPhase.Composing -> "{\"kind\":\"composing\"}"
+        | IOCellPhase.Executing -> "{\"kind\":\"executing\"}"
+        | IOCellPhase.AwaitingSubPromptResponse subPromptText ->
+            let sb = System.Text.StringBuilder()
+            sb.Append("{\"kind\":\"awaitingSubPromptResponse\",\"subPromptText\":\"")
+              |> ignore
+            sb.Append(escapeJsonString subPromptText) |> ignore
+            sb.Append("\"}") |> ignore
+            sb.ToString()
+        | IOCellPhase.Sealed -> "{\"kind\":\"sealed\"}"
+
     let private formatSourcesArray
             (sources: Map<BoundaryKind, BoundarySource>)
             : string
@@ -1338,7 +1319,7 @@ module SessionModel =
         sb.Append('}') |> ignore
         sb.ToString()
 
-    /// Serialize one `SessionTuple` as one JSONL line — a JSON
+    /// Serialize one `IOCell` as one JSONL line — a JSON
     /// object followed by a single literal `\n` terminator.
     /// Pure (no I/O); safe to call from any thread; total (never
     /// returns null; throws only on lone UTF-16 surrogates per
@@ -1346,7 +1327,7 @@ module SessionModel =
     ///
     /// **Wire format is decades-stable** — see the section
     /// docstring above for locked decisions and
-    /// `docs/SESSION-MODEL.md` §"On-disk wire format (Cycle 24b)"
+    /// `docs/IOCELL-SCHEMA.md` §"On-disk wire format"
     /// for the canonical reference.
     ///
     /// Trailing terminator is the literal string `"\n"`, never
@@ -1354,7 +1335,7 @@ module SessionModel =
     /// Windows and silently break byte-for-byte stability across
     /// platforms. Cycle 24c writer concatenates lines without
     /// further processing.
-    let formatTupleAsJsonl (tuple: SessionTuple) : string =
+    let formatIOCellAsJsonl (tuple: IOCell) : string =
         let sb = System.Text.StringBuilder()
         sb.Append('{') |> ignore
         sb.Append("\"schemaVersion\":") |> ignore
@@ -1362,11 +1343,16 @@ module SessionModel =
             jsonInvariant, "{0}", JsonlSchemaVersion)) |> ignore
         sb.Append(",\"id\":\"") |> ignore
         sb.Append(tuple.Id.ToString("D")) |> ignore
-        sb.Append("\",\"commandId\":") |> ignore
+        sb.Append("\",\"cellSequence\":") |> ignore
+        sb.Append(System.String.Format(
+            jsonInvariant, "{0}", tuple.CellSequence)) |> ignore
+        sb.Append(",\"commandId\":") |> ignore
         sb.Append(formatJsonOptionString tuple.CommandId) |> ignore
         sb.Append(",\"shellId\":\"") |> ignore
         sb.Append(escapeJsonString tuple.ShellId) |> ignore
-        sb.Append("\",\"promptStartedAt\":\"") |> ignore
+        sb.Append("\",\"phase\":") |> ignore
+        sb.Append(formatPhaseTaggedObject tuple.Phase) |> ignore
+        sb.Append(",\"promptStartedAt\":\"") |> ignore
         sb.Append(formatJsonTimestamp tuple.PromptStartedAt) |> ignore
         sb.Append("\",\"commandStartedAt\":") |> ignore
         sb.Append(formatJsonOptionTimestamp tuple.CommandStartedAt) |> ignore

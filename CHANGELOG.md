@@ -13621,6 +13621,52 @@ Updates: new file
 `CLAUDE.md` reading-order index, `docs/SESSION-HANDOFF.md`
 current-state + next-stage sections.
 
+### Cycle 51 PR-W (2026-05-15): IOCell type + sole-substrate extraction + schemaVersion 2
+
+Execute the first code PR of the Cycle 51 pivot (ADR 0004).
+`SessionModel.SessionTuple` → `SessionModel.IOCell`
+(`ActiveSessionTuple` → `ActiveIOCell`) across the codebase;
+add the `IOCellPhase` DU (`Composing` / `Executing` /
+`AwaitingSubPromptResponse` / `Sealed`) and two record fields
+`CellSequence: int64` + `Phase: IOCellPhase`. Identity
+contract: `Id` and `CellSequence` are assigned at cell
+creation (the PromptStart transition), not at seal;
+`CellSequence` is monotonic per shell session and resets
+implicitly on shell hot-switch (a fresh `SessionModel.T` is
+constructed per session). v1 populates `Composing` (active)
+and `Sealed` (history); `Executing` /
+`AwaitingSubPromptResponse` are reserved.
+
+ContentHistory is now the **sole** extraction substrate
+(ADR 0004 Decision 3): the screen-row-walk `extractContent`
+fallback is deleted, `extractContentFromContentHistory` is
+promoted to the sole extractor and renamed `extractIOCell`,
+and `finalizeAndEnqueue` enforces the **drop-on-None**
+contract — when ContentHistory has no authoritative slice
+(no PromptStart Seq, or a legacy no-ContentHistory caller)
+the cell does NOT finalize; it is dropped and logged at
+Information (`IOCell dropped: no PromptStart Seq in
+ContentHistory.`). Loud silence beats a stale-scrollback
+garbage announce. Consequence: the legacy
+`apply` / `applyAndCapture` / `finalizeIncomplete` surface
+(no ContentHistory) no longer enqueues a cell — the
+production path is `applyAndCaptureWithContentHistory`.
+
+On-disk wire format bumped `schemaVersion 1 → 2`:
+`formatTupleAsJsonl` → `formatIOCellAsJsonl`, serialising
+`cellSequence` (int64 JSON number) and `phase` (tagged DU
+object, same rule as `BoundarySource`). The migration is
+one-way (v1/v2 mutually unreadable); the hand-rolled
+byte-stable discipline is preserved. New canonical doc
+`docs/IOCELL-SCHEMA.md`; `docs/SESSION-MODEL.md` reduced to
+a pointer stub (pre-pivot research design preserved in git
+history); `docs/DOC-MAP.md` updated. `SessionModelTests.fs`
+rewritten for the drop-on-None contract + ContentHistory-path
+finalize coverage (metadata accumulation, ring-buffer
+eviction, `CellSequence` monotonicity + shell-switch reset,
+`Phase`), plus `IOCellPhase` + schemaVersion-2 serialization
+unit tests. Round-trip reader is PR-W2.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

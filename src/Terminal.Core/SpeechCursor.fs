@@ -77,8 +77,8 @@ module SpeechCursor =
           /// match the actual `CommandText` / `OutputText`
           /// SessionModel captures from the screen grid. The
           /// authoritative source for "what did the user run +
-          /// what did the shell print" is `SessionTuple` (see
-          /// `SessionModel.SessionTuple.{CommandText,OutputText}`);
+          /// what did the shell print" is `IOCell` (see
+          /// `SessionModel.IOCell.{CommandText,OutputText}`);
           /// `Program.fs handlePromptBoundary` announces that
           /// on tuple finalise.
           ///

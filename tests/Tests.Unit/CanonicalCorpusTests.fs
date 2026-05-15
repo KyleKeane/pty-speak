@@ -87,7 +87,7 @@ let ``parseFromString preserves all optional v2 extension fields`` () =
             Some CanonicalCorpus.CurrentOutput,
             s.ExpectedPaneRouting)
         Assert.Equal(Some "captures every optional field", s.Notes)
-        match s.ExpectedSessionTuple with
+        match s.ExpectedIOCell with
         | None -> Assert.Fail("expected expected_session_tuple to parse")
         | Some t ->
             Assert.Equal(Some "Write-Host hi", t.CommandText)
@@ -256,7 +256,7 @@ let ``formatScenarioResult renders PASS scenario with id, elapsed ms, and observ
           TimeoutMs = 1500
           SetupCommand = None
           ExpectedPayloadRegex = [||]
-          ExpectedSessionTuple = None
+          ExpectedIOCell = None
           ExpectedPaneRouting = None
           Notes = None }
     let result : CanonicalCorpus.ScenarioResult =
@@ -284,7 +284,7 @@ let ``formatCorpusResultsForBundle includes the pass-fail summary header`` () =
           TimeoutMs = 1500
           SetupCommand = None
           ExpectedPayloadRegex = [||]
-          ExpectedSessionTuple = None
+          ExpectedIOCell = None
           ExpectedPaneRouting = None
           Notes = None }
     let pass : CanonicalCorpus.ScenarioResult =

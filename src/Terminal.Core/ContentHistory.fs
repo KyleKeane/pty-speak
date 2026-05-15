@@ -19,7 +19,7 @@ open System.Text
 /// Scope: a single ContentHistory instance covers the **active
 /// tuple** — from the prompt boundary that opened it to the prompt
 /// boundary that seals it. On seal, the entries are archived into
-/// `SessionModel`'s `SessionTuple.History` queue, and a fresh
+/// `SessionModel`'s `IOCell.History` queue, and a fresh
 /// ContentHistory begins. The substrate is therefore bounded in
 /// memory by tuple size, not session lifetime.
 ///
