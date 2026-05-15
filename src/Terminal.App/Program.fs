@@ -2012,7 +2012,17 @@ module Program =
                     contentHistory true commandEnterSeq
             currentSession <- nextSession
             match finalisedOpt with
-            | Some tuple -> dispatchTupleToWriter tuple
+            | Some tuple ->
+                dispatchTupleToWriter tuple
+                // Cycle 51 PR-AD (ADR 0004) — feed the sealed
+                // cell's authoritative command + output into the
+                // SpeechCursor transcript so Manual navigation
+                // (Ctrl+Shift+Up/Down/End) can review the command
+                // line itself and post-single-key-response output
+                // (both filtered from the raw ContentHistory-Seq
+                // path as `UserInputEcho`; ADR 0004 §4a).
+                SpeechCursor.appendCell
+                    speechCursor tuple.CommandText tuple.OutputText
             | None -> ()
 
             // Cycle 45 Commit 2 — ContentHistory + SpeechCursor
@@ -3942,64 +3952,41 @@ module Program =
         // (where the binding fires), the same thread the
         // reader-loop dispatcher actions use; serialisation
         // is preserved.
-        // Cycle 49 PR-D — manual nav renders entries via
-        // `renderEntryForManualNav` rather than `renderEntry` so
-        // `PromptStart` markers with payload announce as a
-        // FinalDirOnly-trimmed prompt (e.g. "Local>") regardless
-        // of the per-shell `PromptPath` policy. Auto-drive
-        // narration (in `SpeechCursor.onAppend`) still respects
-        // `PromptPath` so streaming doesn't become chattier.
-        let manualNavRender (entry: ContentHistory.Entry) =
-            let promptPath =
-                (SpeechCursor.getParameters speechCursor).PromptPath
-            SpeechCursor.renderEntryForManualNav promptPath entry
-
+        //
+        // Cycle 51 PR-AD (ADR 0004) — Manual navigation walks the
+        // sealed-IOCell transcript (command + output per cell),
+        // not raw ContentHistory entries. This is what lets the
+        // user review the command line itself and post-single-key
+        // -response output, both of which the legacy Seq path
+        // filtered as `UserInputEcho`. The manual-step announce
+        // keeps the `diagnostic` activity id so users can
+        // per-tag-mute explicit navigation separately from live
+        // output.
         let runSpeechCursorNext () : unit =
-            match SpeechCursor.next speechCursor contentHistory with
-            | Some entry ->
-                match manualNavRender entry with
-                | Some (text, _) ->
-                    // Manual-step announce uses a fresh activity
-                    // id so users can per-tag-mute live announces
-                    // separately from explicit navigation.
-                    window.TerminalSurface.Announce(
-                        text, ActivityIds.diagnostic)
-                | None ->
-                    window.TerminalSurface.Announce(
-                        "(no announcement for this entry)",
-                        ActivityIds.diagnostic)
+            match SpeechCursor.cellNext speechCursor with
+            | Some (text, _) ->
+                window.TerminalSurface.Announce(
+                    text, ActivityIds.diagnostic)
             | None ->
                 window.TerminalSurface.Announce(
                     "Already at the latest entry.",
                     ActivityIds.diagnostic)
 
         let runSpeechCursorPrevious () : unit =
-            match SpeechCursor.previous speechCursor contentHistory with
-            | Some entry ->
-                match manualNavRender entry with
-                | Some (text, _) ->
-                    window.TerminalSurface.Announce(
-                        text, ActivityIds.diagnostic)
-                | None ->
-                    window.TerminalSurface.Announce(
-                        "(no announcement for this entry)",
-                        ActivityIds.diagnostic)
+            match SpeechCursor.cellPrevious speechCursor with
+            | Some (text, _) ->
+                window.TerminalSurface.Announce(
+                    text, ActivityIds.diagnostic)
             | None ->
                 window.TerminalSurface.Announce(
                     "Already at the first entry.",
                     ActivityIds.diagnostic)
 
         let runSpeechCursorJumpToLatest () : unit =
-            match SpeechCursor.toLatest speechCursor contentHistory with
-            | Some entry ->
-                match manualNavRender entry with
-                | Some (text, _) ->
-                    window.TerminalSurface.Announce(
-                        text, ActivityIds.diagnostic)
-                | None ->
-                    window.TerminalSurface.Announce(
-                        "Jumped to latest entry.",
-                        ActivityIds.diagnostic)
+            match SpeechCursor.cellToLatest speechCursor with
+            | Some (text, _) ->
+                window.TerminalSurface.Announce(
+                    text, ActivityIds.diagnostic)
             | None ->
                 window.TerminalSurface.Announce(
                     "History is empty.", ActivityIds.diagnostic)
@@ -4831,6 +4818,11 @@ module Program =
                                         // dispatcher thread.
                                         ContentHistory.reset contentHistory
                                         SpeechCursor.reset speechCursor
+                                        // Cycle 51 PR-AD — the
+                                        // previous shell's cell
+                                        // transcript is no longer
+                                        // relevant after a switch.
+                                        SpeechCursor.cellReset speechCursor
                                         // Cycle 47 follow-up —
                                         // reset the idle-flush
                                         // watermark when

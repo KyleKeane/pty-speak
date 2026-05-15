@@ -134,6 +134,30 @@ module SpeechCursor =
         /// arrives. Distinct from `Mode = Manual` (which is a
         /// user-driven switch and survives the suspension).
         member val internal SelectionSuspend: bool = false with get, set
+        /// Cycle 51 PR-AD (ADR 0004) — the sealed-IOCell
+        /// transcript that **Manual** navigation
+        /// (Ctrl+Shift+Up/Down/End) walks. Each finalised cell
+        /// contributes its authoritative `CommandText` and
+        /// `OutputText` (from `SessionModel.extractIOCell`, which
+        /// post-PR-X already excludes history-scroll redraws and
+        /// includes post-single-key-response output) as separate
+        /// navigable `(text, activityId)` items — fixing the
+        /// "speech cursor has no record of the command, nor of
+        /// the output after a single-key sub-prompt response"
+        /// reports (the raw ContentHistory entries are tagged
+        /// `UserInputEcho` and filtered by `renderEntryWithPolicy`;
+        /// ADR 0004 §4a). The legacy ContentHistory-Seq engine
+        /// (`Position`/`LastSpokenSeq`/`onAppend`/`next`/`previous`
+        /// /`toLatest`/`toMarker`) is retained unchanged for
+        /// AutoDrive bookkeeping, the Diagnostics navigability
+        /// dump, and selection-suspend — only the user-facing
+        /// Manual gestures move to this cell model.
+        member val internal CellTranscript
+            : ResizeArray<string * string> = ResizeArray() with get
+        /// Index into `CellTranscript` the Manual cursor is parked
+        /// on. -1 = before the first item (fresh / after
+        /// `cellReset`).
+        member val internal CellPos: int = -1 with get, set
 
     /// Construct a fresh cursor.
     let create (parameters: Parameters) : T =
@@ -625,3 +649,86 @@ module SpeechCursor =
         state.SelectionSuspend <- false
         // Mode is preserved across resets — the user's choice of
         // AutoDrive vs Manual survives tuple boundaries.
+
+    // -----------------------------------------------------------------
+    // Cycle 51 PR-AD (ADR 0004) — sealed-IOCell transcript: the
+    // model the user-facing Manual gestures navigate. Additive;
+    // the legacy ContentHistory-Seq engine above is untouched.
+    // -----------------------------------------------------------------
+
+    /// Append a finalised cell's authoritative command + output as
+    /// separate navigable items. Whitespace-only parts are
+    /// skipped (an empty-command Enter, or a command that printed
+    /// nothing). In AutoDrive the cursor follows the latest item;
+    /// in Manual it stays put so an in-progress review isn't
+    /// disturbed by new output (mirrors the legacy AutoDrive /
+    /// Manual append semantics).
+    let appendCell
+            (state: T)
+            (commandText: string)
+            (outputText: string)
+            : unit =
+        if not (String.IsNullOrWhiteSpace commandText) then
+            state.CellTranscript.Add(
+                (commandText.Trim(), ActivityIds.output))
+        if not (String.IsNullOrWhiteSpace outputText) then
+            state.CellTranscript.Add(
+                (outputText, ActivityIds.output))
+        if state.Mode = AutoDrive then
+            state.CellPos <- state.CellTranscript.Count - 1
+
+    /// The transcript item the Manual cursor is parked on, if any.
+    let cellCurrent (state: T) : (string * string) option =
+        if state.CellPos >= 0
+           && state.CellPos < state.CellTranscript.Count then
+            Some state.CellTranscript.[state.CellPos]
+        else
+            None
+
+    /// Step the Manual cursor to the previous (older) transcript
+    /// item. From the unparked state (-1) the first press lands on
+    /// the latest item. Returns the item, or `None` if already at
+    /// the first item / the transcript is empty.
+    let cellPrevious (state: T) : (string * string) option =
+        let count = state.CellTranscript.Count
+        if count = 0 then None
+        else
+            let target =
+                if state.CellPos < 0 then count - 1
+                else state.CellPos - 1
+            if target < 0 then None
+            else
+                state.CellPos <- target
+                Some state.CellTranscript.[target]
+
+    /// Step the Manual cursor to the next (newer) transcript item.
+    /// From the unparked state (-1) the first press lands on the
+    /// latest item. Returns the item, or `None` if already at the
+    /// latest item / the transcript is empty.
+    let cellNext (state: T) : (string * string) option =
+        let count = state.CellTranscript.Count
+        if count = 0 then None
+        else
+            let target =
+                if state.CellPos < 0 then count - 1
+                else state.CellPos + 1
+            if target >= count then None
+            else
+                state.CellPos <- target
+                Some state.CellTranscript.[target]
+
+    /// Jump the Manual cursor to the latest transcript item.
+    /// Returns it, or `None` if the transcript is empty.
+    let cellToLatest (state: T) : (string * string) option =
+        let count = state.CellTranscript.Count
+        if count = 0 then None
+        else
+            state.CellPos <- count - 1
+            Some state.CellTranscript.[count - 1]
+
+    /// Clear the cell transcript. Called on shell hot-switch
+    /// alongside `reset` (the previous shell's transcript is no
+    /// longer relevant).
+    let cellReset (state: T) : unit =
+        state.CellTranscript.Clear()
+        state.CellPos <- -1
