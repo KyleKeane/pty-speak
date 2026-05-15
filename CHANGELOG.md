@@ -13775,6 +13775,28 @@ command-Enter watermark unchanged. New `PR-AA sub-prompt
 announce` Information diagnostic (replaces `PR-X sub-prompt
 announce`).
 
+### Cycle 51 PR-AB (2026-05-15): strip fast-type command echo from the tuple-final delta
+
+Post-PR-AA dogfood: typing a command (e.g. `echo hi`) fast and
+hitting Enter without a pause occasionally narrated extra
+content — fragments of the command word or a repeated argument
+— with no corresponding record in the review/speech cursor.
+Root cause: `lastEnterSeq` is captured synchronously at the CR
+keystroke, but a fast-typed command's echo round-trips through
+the PTY and lands in ContentHistory at Seq > lastEnterSeq, so
+the tuple-final slice `[lastEnterSeq, tail]` begins with the
+command-echo line instead of the output (typing slowly lets the
+echo settle below the watermark first, so it never reproduced
+before). Fix: capture the submitted command text
+(`UserInputBuffer.Capture()`) at the CR keystroke and, at
+tuple-final, strip that exact already-on-screen command line off
+the front of the delta through the first newline after it — the
+same shape as PR-Y's sub-prompt-question strip, applied after
+it. No-op when the user typed slowly, for sub-prompt deltas, and
+for the startup banner. New `PR-AB stripped fast-type command
+echo` Information diagnostic. Cleared on every top-level command
+Enter and shell hot-switch.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
