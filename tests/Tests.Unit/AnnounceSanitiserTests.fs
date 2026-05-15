@@ -184,7 +184,11 @@ let ``stripSequences removes ST-terminated OSC`` () =
 
 [<Fact>]
 let ``stripSequences removes two-char ESC sequence`` () =
-    let input = "a\x1B(Bb"
+    // `ESC =` (DECKPAM) is a genuine two-char sequence: the
+    // stripper drops `ESC` + the single following byte. (A
+    // 3-byte form like `ESC ( B` correctly leaves its 3rd byte —
+    // by design; see the stripSequences docstring.)
+    let input = "a\x1B=b"
     Assert.Equal("ab", AnnounceSanitiser.stripSequences input)
 
 [<Fact>]
