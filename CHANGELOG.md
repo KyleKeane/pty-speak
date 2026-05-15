@@ -13819,6 +13819,38 @@ prompt). Switch-only — first launch keeps NVDA's focus-read, so
 no double-announce. New `PR-AC shell-switch banner` Information
 diagnostic.
 
+### Cycle 51 PR-AD (2026-05-15): SpeechCursor manual navigation fed from sealed IOCells
+
+Post-PR-AC dogfood found the Speech Cursor (Ctrl+Shift+Up/Down/
+End manual review) had no record of (3) the input command line,
+nor (1) the output produced after a single-key sub-prompt
+response — both confirmed via the review cursor, which showed
+them. Root cause (ADR 0004 §4a): SpeechCursor navigated raw
+ContentHistory entries through `renderEntryWithPolicy`, which
+unconditionally drops every `UserInputEcho`-tagged entry; the
+command echo is `UserInputEcho`, and post-single-key-response
+output is mis-tagged `UserInputEcho` because the state machine
+is `Composing` after `SubPromptIdle` with no `EnterPressed`.
+
+Per the maintainer's decision, Manual navigation is now fed from
+**sealed IOCells**: at tuple-finalize, the cell's authoritative
+`CommandText` + `OutputText` (from `SessionModel.extractIOCell`
+— post-PR-X this already excludes history-scroll redraws and
+includes post-response output) are appended to a new
+SpeechCursor cell-transcript as separate navigable items (the
+command line is its own item, per the maintainer's standing
+request). `Ctrl+Shift+Up/Down/End` now walk this transcript
+(`cellPrevious`/`cellNext`/`cellToLatest`); AutoDrive follows
+the latest, Manual mode stays put on append. The legacy
+ContentHistory-Seq engine (`Position`/`onAppend`/`next`/
+`previous`/`toLatest`/`toMarker`/`renderEntryForManualNav`) is
+**retained unchanged** for AutoDrive bookkeeping, selection-
+suspend, and the Diagnostics navigability dump — only the
+user-facing Manual gestures moved. Cleared on shell hot-switch
+alongside the ContentHistory reset. New `SpeechCursor` cell-API
+unit tests (additive; the existing 25 Seq-engine tests are
+untouched).
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
