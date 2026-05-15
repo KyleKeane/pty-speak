@@ -2811,82 +2811,14 @@ module Program =
         // Setting `[startup] default_shell = "cmd"` in the TOML
         // wins over the env var.
         let resolveStartupShell () : ShellRegistry.Shell * string =
-            let envVar = Environment.GetEnvironmentVariable("PTYSPEAK_SHELL")
-            // Distinguish "unset" from "set to garbage" so the
-            // log line is actionable. `null` / empty / whitespace
-            // is the common case (no env var set); a non-empty
-            // unrecognised value is a typo or stale config and
-            // earns a warning. Extracted to a helper so the
-            // arm body of `parseEnvVar`'s `None` case stays a
-            // single expression — F# 9 + `TreatWarningsAsErrors`
-            // can be brittle about sequence-in-match-arm
-            // shapes, and the helper sidesteps that risk.
-            let logIfUnrecognised () : unit =
-                match envVar with
-                | null -> ()
-                | v when System.String.IsNullOrWhiteSpace(v) -> ()
-                | v ->
-                    log.LogWarning(
-                        "PTYSPEAK_SHELL=\"{Value}\" not recognised; falling back to cmd.exe. Recognised values: cmd, claude, powershell, pwsh.",
-                        v)
-            // Cycle 19 — TOML config takes precedence. When set,
-            // we use it directly without consulting the env
-            // var. The Config-side parser already validated the
-            // value against `knownShellKeys`; here we just map
-            // `string → ShellId` via `parseEnvVar`.
-            let configShell =
-                match Config.resolveDefaultShell config with
-                | Some shellKey ->
-                    match ShellRegistry.parseEnvVar shellKey with
-                    | Some id ->
-                        log.LogInformation(
-                            "Startup shell resolved from [startup] default_shell = \"{Shell}\" (overriding PTYSPEAK_SHELL).",
-                            shellKey)
-                        Some id
-                    | None ->
-                        // Defensive — Config-side parser already
-                        // filtered against `knownShellKeys`, so this
-                        // arm shouldn't fire. Log + fall through.
-                        log.LogWarning(
-                            "Config: [startup] default_shell = \"{Shell}\" passed schema validation but parseEnvVar rejected it; falling through to PTYSPEAK_SHELL.",
-                            shellKey)
-                        None
-                | None -> None
-            let requested =
-                match configShell with
-                | Some id -> id
-                | None ->
-                    match ShellRegistry.parseEnvVar envVar with
-                    | Some id -> id
-                    | None ->
-                        logIfUnrecognised ()
-                        ShellRegistry.Cmd
-            // `tryFind` only returns None for ids not registered in
-            // `builtIns`; both Cmd and Claude are registered, so this
-            // is unreachable for the requested id, but the cmd-fallback
-            // is shared with the resolution-failure branch below.
-            let cmdShell =
-                match ShellRegistry.tryFind ShellRegistry.Cmd with
-                | Some s -> s
-                | None -> failwith "Cmd not registered in ShellRegistry.builtIns"
-            match ShellRegistry.tryFind requested with
-            | None ->
-                cmdShell, "cmd.exe"
-            | Some shell ->
-                match shell.Resolve() with
-                | Ok cmdLine ->
-                    shell, cmdLine
-                | Error reason ->
-                    log.LogWarning(
-                        "Shell {Shell} unavailable: {Reason}. Falling back to {Fallback}.",
-                        shell.DisplayName,
-                        reason,
-                        cmdShell.DisplayName)
-                    let fallbackCmd =
-                        match cmdShell.Resolve() with
-                        | Ok c -> c
-                        | Error _ -> "cmd.exe"
-                    cmdShell, fallbackCmd
+            // R1.3 (ADR 0006): the shell-resolution decision now
+            // lives in the single orchestration point. This is a
+            // behaviour-identical delegation — same precedence
+            // (TOML → env → cmd), same log templates (emitted via
+            // the same `log` instance, so category + structured
+            // args are byte-identical), same fallback semantics.
+            // See src/Terminal.Shell/SessionHost.fs.
+            Terminal.Shell.SessionHost.ResolveStartupShell(config, log)
 
         let chosenShell, commandLine = resolveStartupShell ()
         log.LogInformation(

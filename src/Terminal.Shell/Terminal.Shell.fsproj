@@ -27,6 +27,13 @@
     <PackageReference Include="FSharp.Core" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <ProjectReference Include="..\Terminal.Core\Terminal.Core.fsproj" />
+    <!--
+      R1.3 (ADR 0006): SessionHost.ResolveStartupShell consumes
+      ShellRegistry (Terminal.Pty). Dependency direction stays
+      acyclic: Terminal.Shell → Terminal.Pty → Terminal.Core;
+      neither Pty nor Core references Shell.
+    -->
+    <ProjectReference Include="..\Terminal.Pty\Terminal.Pty.fsproj" />
   </ItemGroup>
 
 </Project>
