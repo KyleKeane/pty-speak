@@ -15,10 +15,11 @@ and serves the decision-trail role this file used to overload.
 
 > **NEW SESSION START HERE →
 > [`adr/0006-three-layer-refoundation.md`](adr/0006-three-layer-refoundation.md)**
-> (Proposed — the Cycle 52 re-foundation; reads ADR 0005 as
-> its mechanism spec). Cycle 51 is shipped; the
-> CYCLE-51-PLAYBOOK is now historical. Do NOT implement
-> Cycle 52 until the maintainer accepts ADR 0006.
+> (**Accepted 2026-05-15**; reads ADR 0005 as its mechanism
+> spec). Cycle 51 is shipped; the CYCLE-51-PLAYBOOK is now
+> historical. **Cycle 52 R1 in progress** — architecture map
+> then behaviour-identical extraction; each R-stage stays
+> independently CI- + dogfood-gated.
 
 - **`main` HEAD = `fa8885c`** (Cycle 51 PR-AE, #344).
 - **Cycle 51 (IOCell pivot) — SHIPPED.** PR-V (ADR 0004) →
@@ -57,9 +58,10 @@ and serves the decision-trail role this file used to overload.
   **F# kept, WPF kept, MAUI explicitly out of scope**
   (maintainer decision 2026-05-15 — channel stays an
   interface for design hygiene only). ADR 0006's R0–R7
-  supersedes ADR 0005's A–F. **Not yet accepted — no
-  implementation until the maintainer signs off on
-  ADR 0006.**
+  supersedes ADR 0005's A–F. **Accepted 2026-05-15;
+  R1 in progress** (architecture map → behaviour-identical
+  extraction; each R-stage independently CI- + dogfood-
+  gated).
 - **Cycle 49 + post-49 hotfixes (PRs #313–#331)** shipped
   earlier; detail in [`CHANGELOG.md`](../CHANGELOG.md) /
   `git log` per the
@@ -70,7 +72,7 @@ and serves the decision-trail role this file used to overload.
 
 **Cycle 52 — three-layer re-foundation.** Design + decision
 in [ADR 0006](adr/0006-three-layer-refoundation.md)
-(**Proposed**; do not implement until accepted), with
+(**Accepted 2026-05-15; R1 in progress**), with
 [ADR 0005](adr/0005-osc133-shell-integration.md) as the
 OSC-133 mechanism spec. Stages, once accepted: **R0** ADR
 (this) → **R1** extract `ShellAdapter` + `SessionHost`,
@@ -145,6 +147,7 @@ Things a new session needs that aren't in
 | If you need… | Open |
 |---|---|
 | **Cycle 52 re-foundation (START HERE)** | [`docs/adr/0006-three-layer-refoundation.md`](adr/0006-three-layer-refoundation.md) |
+| Cycle 52 R1 architecture/dependency map | [`docs/CYCLE-52-R1-ARCHITECTURE-MAP.md`](CYCLE-52-R1-ARCHITECTURE-MAP.md) |
 | Cycle 52 OSC-133 mechanism spec | [`docs/adr/0005-osc133-shell-integration.md`](adr/0005-osc133-shell-integration.md) |
 | Cycle 51 (shipped) locked decisions | [`docs/adr/0004-iocell-model-for-shell-interaction.md`](adr/0004-iocell-model-for-shell-interaction.md) |
 | Cycle 51 execution map (HISTORICAL) | [`docs/CYCLE-51-PLAYBOOK.md`](CYCLE-51-PLAYBOOK.md) |

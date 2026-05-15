@@ -83,8 +83,8 @@ before deviating.
    subtractive — retires the PR-AB / PR-X/Y announce-path
    scaffolding. Read before working on prompt-boundary
    detection, the shell-spawn seam, or the announce path.
-   **Proposed, not yet accepted — no implementation until the
-   maintainer signs off on the ADR.** Its A–F stage list is
+   **Accepted 2026-05-15 (maintainer approved 0005+0006
+   together).** Its A–F stage list is
    superseded by ADR 0006's R0–R7; 0005 stays the canonical
    *mechanism* spec.
 9. **[`docs/adr/0006-three-layer-refoundation.md`](docs/adr/0006-three-layer-refoundation.md)**
@@ -101,8 +101,10 @@ before deviating.
    ADR 0005's stage list** with R0–R7 (folds OSC-133 in).
    F# kept, WPF kept, **MAUI explicitly out of scope**
    (maintainer decision 2026-05-15). Read before any
-   transport / core / channel / spawn work. **Proposed —
-   no implementation until the maintainer signs off.**
+   transport / core / channel / spawn work. **Accepted
+   2026-05-15; R1 in progress (architecture map →
+   behaviour-identical extraction). Each R-stage stays
+   independently CI- + dogfood-gated.**
 10. **RFC 0001 (archived)** — Cycle 33 pivot-gate RFC, formalised
    the `LinearTextStream` substrate + streaming-emission protocol.
    The substrate it specified was replaced by `ContentHistory` +

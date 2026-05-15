@@ -1,8 +1,10 @@
 # ADR 0005 — OSC 133 shell integration (the heuristic-screen-scrape exit)
 
-- **Status:** Proposed (2026-05-15). Supersedes the heuristic
+- **Status:** Accepted (2026-05-15; maintainer approved
+  ADR 0005 + ADR 0006 together). Supersedes the heuristic
   prompt-detection model as the *primary* boundary source;
   does not delete it (it becomes the fallback).
+  Implementation proceeds via ADR 0006's R0–R7 stages.
 - **Status note (2026-05-15):** the "Walking-skeleton stages"
   A–F list below is **superseded by the R0–R7 stage list in
   [ADR 0006](0006-three-layer-refoundation.md)**, which folds
