@@ -81,23 +81,38 @@ NVDA-validated):
 
 - **Phase 0** spike branch
   `spike/cycle51-iocell-substrate-exploration` (commit
-  `de8bf81`) — diagnostic-only parallel `extractIOCell`
-  + `ContentHistory.entriesAfter` + side-by-side
-  comparison log (`Cycle 51 spike PR-V0.`). Validates the
-  classification-by-`EntrySource` approach before
-  migration PRs commit.
+  `de8bf81`, throwaway) — diagnostic-only parallel
+  `extractIOCell` + `ContentHistory.entriesAfter` +
+  side-by-side comparison log (`Cycle 51 spike PR-V0.`).
+  **Outcome: the maintainer's preview.135 dogfood bundle
+  was analysed instead of building the spike, and it
+  falsified the classification-by-`EntrySource` thesis**
+  (no CommandStart marker in heuristic-only cmd → state
+  stays `Composing` → cmd's own output tagged
+  `UserInputEcho`; `CmdSubPrompt=0` all session). The
+  spike's classifier is rejected; spike helpers are NOT
+  carried into PR-W. See ADR 0004 §"Status notes"
+  2026-05-14 revised entry.
 - **PR-V** — this ADR 0004 + CLAUDE.md reading-order +
   this SESSION-HANDOFF.md update. Docs-only fast-merge.
-- **PR-W** — IOCell type rename + `Phase` / `CellSequence`
-  fields + `extractIOCell` wired as primary +
-  `formatIOCellAsJsonl` (schemaVersion 1 → 2) +
-  SessionLogWriter swap + delete `extractContent`.
+- **PR-W** (smaller than first drafted) — IOCell type
+  rename + `Phase` / `CellSequence` fields; promote the
+  existing `extractContentFromContentHistory`
+  heuristic-only arm (marker-slice + first-newline split)
+  to the sole `extractIOCell`; delete `extractContent`
+  + the row-walk fallback; `formatIOCellAsJsonl`
+  (schemaVersion 1 → 2); SessionLogWriter swap.
 - **PR-W2** — `IOCell.parseFromJsonl` round-trip reader
   (maintainer-only; no UI surface) + FsCheck property
   tests.
-- **PR-X** — SubPromptIdle / SubPromptResponse Seq-based
-  (delete `subPromptScreenReader`,
-  `computePromptCommandWrapRows`, cursor-row capture).
+- **PR-X** (now the load-bearing PR — fixes the actual
+  haywire) — sub-prompt narration goes Seq-slice +
+  Seq-watermark delta, NO `Source=screen` gate (the
+  run-4 wrapped-command failure was the screen-read
+  source falling back without seeding the preamble
+  count). Delete `subPromptScreenReader`,
+  `computePromptCommandWrapRows`, cursor-row capture,
+  PR-N/PR-O/PR-U screen blocks.
 - **PR-Y** — Tier 1 channel routing audit (refactor ~3-5
   substrate-driven Announce sites to `OutputDispatcher`;
   rename ~50 Tier 2 sites to `AnnounceEmergency`).

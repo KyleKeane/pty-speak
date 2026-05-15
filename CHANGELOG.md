@@ -13596,12 +13596,25 @@ channel routing) → PR-Z (closure audit).
 
 Phase 0 spike branch
 `spike/cycle51-iocell-substrate-exploration` (commit
-`de8bf81`, not for merge) ships a diagnostic-only
-parallel `extractIOCell` + `ContentHistory.entriesAfter`
-helper + side-by-side comparison log
-(`Cycle 51 spike PR-V0.`) so the maintainer's dogfood
-can validate the classification-by-`EntrySource` approach
-before migration PRs commit to it.
+`de8bf81`, throwaway) shipped a diagnostic-only parallel
+`extractIOCell` + `ContentHistory.entriesAfter` helper +
+side-by-side comparison log. The maintainer's preview.135
+dogfood bundle was then analysed **instead of** building
+the spike, and it falsified the
+classification-by-`EntrySource` thesis: in heuristic-only
+cmd there is no CommandStart marker, so `ShellInteraction`
+stays `Composing` and cmd's own output is tagged
+`UserInputEcho` (`CmdSubPrompt=0` across an entire 4-run
+test-04 session). The classifier is rejected; the ADR was
+revised before PR-V opened — PR-W now promotes the
+existing heuristic-only marker-slice + first-newline
+split to the sole extractor (no `EntrySource`
+classification, no row-walk fallback), and PR-X becomes
+the load-bearing PR that removes the screen-row
+dependence from sub-prompt narration (the actual cause of
+the run-4 haywire: wrapped command echo → screen-read
+fallback → `Source=screen`-gated preamble seed never
+fired → full output announced).
 
 Updates: new file
 `docs/adr/0004-iocell-model-for-shell-interaction.md`,

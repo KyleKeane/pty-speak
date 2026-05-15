@@ -38,10 +38,15 @@
     audio, custom TTS) compose alongside it.
   - [`0003-shell-interaction-state-machine.md`](0003-shell-interaction-state-machine.md)
     — `ShellInteraction` two-state machine (Composing /
-    Executing). ADR 0004 keeps that machine. It also keeps
-    `EntrySource` provenance tagging (the PR-C
-    contribution) — the IOCell extractor reads
-    `EntrySource` per-byte instead of walking screen rows.
+    Executing). ADR 0004 keeps that machine and the
+    `EntrySource` provenance tag (still useful for
+    SpeechCursor filtering and diagnostics). It does NOT
+    use `EntrySource` for IOCell command-vs-output
+    extraction — the 2026-05-14 bundle showed the tag is
+    too coarse in heuristic-only cmd (see Context
+    §"What the substrate reliably provides"). The IOCell
+    extractor slices by Seq-keyed boundary markers and
+    splits on the first newline.
   - [`../CORE-ABSTRACTION-BOUNDARY.md`](../CORE-ABSTRACTION-BOUNDARY.md)
     — names the three sub-panes (input / current-output /
     history) and three reserved peers (notifications,
@@ -132,10 +137,52 @@ test-04 dogfood demonstrated that the symptoms COMPOSE
 catastrophically — the user described it as "things go
 completely haywire". The diagnosis is structural, not
 incremental: **the bytes the user cares about all flow
-through ContentHistory with EntrySource provenance
+through ContentHistory with monotonic Seq identity and
+Seq-keyed boundary markers (PromptStart / CommandFinished)
 attached; the screen grid is a finite VISUAL projection of
-the same bytes, and using it as the source-of-truth for
-"what cell is this byte part of?" is a category error.**
+the same bytes, and using screen-row coordinates as the
+source-of-truth for "where does this cell begin and end?"
+is a category error.**
+
+**What the substrate reliably provides — and what it does
+NOT.** A 2026-05-14 dogfood-bundle analysis (the
+`--- ENTRIES ---` per-entry dump from preview.135)
+clarified the boundary of what ContentHistory can be
+trusted for:
+
+- **Reliable: Seq-keyed boundary markers.** Every
+  PromptStart and CommandFinished marker has a stable Seq.
+  Slicing the cell's byte region as "text between the
+  latest PromptStart Seq and the tail" is sound and
+  scroll-immune. This is the substrate's load-bearing
+  guarantee.
+- **NOT reliable: per-byte `EntrySource` provenance for
+  command-vs-output classification.** `EntrySource` is
+  resolved from the `ShellInteraction` state at byte-
+  arrival time. In heuristic-only cmd there is no
+  CommandStart marker, so the state stays `Composing` for
+  almost the whole session: cmd's own command OUTPUT
+  bytes (e.g. `echo hi` → `hi`) get tagged
+  `UserInputEcho`. And after a single-key sub-prompt
+  response, cmd's post-response output (`You chose Yes.`,
+  the test-end banner) also tags `UserInputEcho` because
+  the state machine has not yet observed the next
+  PromptStart. The dump showed `CmdSubPrompt=0` across an
+  entire 4-run test-04 session — the tag that was
+  supposed to mark sub-prompt output never fired.
+
+The original draft of this ADR proposed classifying cell
+content by walking `EntrySource` per entry. **That thesis
+is rejected** on the strength of the bundle evidence: the
+tags are too coarse to split command from output in
+heuristic-only shells. The corrected design slices by
+boundary markers and splits command-vs-output on the
+first newline (cmd echoes the typed command followed by
+`\r\n`, then the shell's output) — the same proven split
+the existing `extractContentFromContentHistory`
+heuristic-only path already uses. The pivot's value is
+**removing the screen-row code paths**, not introducing
+semantic per-byte classification.
 
 The maintainer's framing reframes the pivot in terms
 already familiar from the project's strategic docs:
@@ -239,8 +286,9 @@ output region.
 
 **Future cycle may promote sub-prompts to nested IOCells**
 if dogfood surfaces a need for per-sub-prompt review-
-cursor navigation. The substrate already supports it via
-`EntrySource`. v1's choice is "inline" because:
+cursor navigation. The boundary-marker substrate already
+supports it (a sub-prompt is bracketable by its own
+Seq watermarks). v1's choice is "inline" because:
 
 - The screen-reader user's mental model is "one command,
   one cell" — interactive prompts are a sub-detail of the
@@ -264,9 +312,17 @@ cell begin or end?".
 Anything that needs "where did the cell begin" gets a Seq
 ID via `ContentHistory.tryLatestMarker`. Anything that
 needs "what is the text since point X" gets it via
-`ContentHistory.sliceText` (or the new
-`ContentHistory.entriesAfter` helper for cases needing
-per-entry provenance).
+`ContentHistory.sliceText`. The command-vs-output split
+within a cell is the **first-newline rule**: cmd echoes
+the typed command, then `\r\n`, then the shell's output.
+Everything up to the first newline is `CommandText`;
+everything after is `OutputText`. This is the same split
+the existing `extractContentFromContentHistory`
+heuristic-only path already uses and ships today; the
+pivot keeps it and makes it the ONLY path (no row-walk
+fallback). `EntrySource` is NOT consulted for the split
+(see Context §"What the substrate reliably provides" —
+the tag is too coarse in heuristic-only cmd).
 
 **Drop-on-None contract**: when
 `ContentHistory.tryLatestMarker(PromptStart)` returns
@@ -618,12 +674,37 @@ the maintainer's release-build dogfood loop (per
   mechanical via `Edit replace_all=true`). Add `Phase`
   and `CellSequence` fields. Add the `IOCellPhase` DU.
   Apply the assign-at-creation rule per Decision 1.
-- **Extraction path swap**: add the spike's
-  `extractIOCell` function. Wire as PRIMARY in
-  `applyAndCaptureWithContentHistory`. **Delete
-  `extractContent`** (row-walk path). When the new
-  extractor returns `None`, the cell drops silently
-  (logged at Information).
+- **Extraction path simplification (NOT the spike's
+  EntrySource classifier).** The spike's `extractIOCell`
+  (classification-by-`EntrySource`) is **rejected** per
+  the 2026-05-14 bundle finding (Context §"What the
+  substrate reliably provides"). Instead:
+  - Promote the existing
+    `extractContentFromContentHistory` **heuristic-only
+    arm** (latest-PromptStart-Seq slice + first-newline
+    command/output split + `newPromptText` tail-trim) to
+    be the SOLE extraction path. Rename it to the
+    canonical `extractIOCell`.
+  - **Delete `extractContent`** (the screen-row-walk
+    fallback) entirely.
+  - **Delete the row-walk fallback wiring** in
+    `finalizeAndEnqueue` / `applyAndCaptureCore` — the
+    `linearOverride` thunk's `None` branch no longer
+    has a fallback; `None` means drop-the-cell.
+  - When `tryLatestMarker(PromptStart)` returns `None`,
+    the cell drops silently (logged at Information).
+  - The OSC-133 arm (PromptStart + OutputStart marker
+    pair → Seq-slice split) stays as-is — it's already
+    Seq-based and correct; it's just not exercised by
+    cmd today.
+- **Spike teardown**: the spike branch's
+  `ContentHistory.entriesAfter` helper, the spike
+  `IOCellSpikeComparison` / `extractIOCellSpikeComparison`
+  facade, and the `Cycle 51 spike PR-V0.` diagnostic log
+  in `Program.fs` are NOT carried into PR-W (they live
+  only on the throwaway spike branch). `entriesAfter`
+  may be cherry-picked later if a future per-entry
+  consumer needs it, but v1 extraction does not.
 - **On-disk formatter**: rename `formatTupleAsJsonl`
   → `formatIOCellAsJsonl`. Bump `schemaVersion` 1 → 2.
   Serialize the two new fields per the on-disk shape
@@ -657,25 +738,76 @@ the maintainer's release-build dogfood loop (per
   as malformed). `<Compile Include="...">` entry per
   CONTRIBUTING test-fixture rule.
 
-### PR-X (SubPromptIdle / SubPromptResponse Seq-based)
+### PR-X (SubPromptIdle / SubPromptResponse Seq-based) — the load-bearing PR
 
-- Replace `subPromptScreenReader` body with a Seq-based
-  reader: slice ContentHistory from latest PromptStart
-  Seq through current `latestSeq`, classify per
-  EntrySource, return concatenated text.
-- Replace `capturePreambleForSubPromptResponse` body
-  with `subPromptPreambleSeq <- ContentHistory.latestSeq`.
-- Replace `subPromptPreambleLineCount` consumer with
-  `ContentHistory.sliceText (subPromptPreambleSeq,
-  Int64.MaxValue)`.
-- **Delete** `computePromptCommandWrapRows`,
+**This is the PR that actually fixes the haywire.** The
+2026-05-14 bundle localised the failure precisely: on
+run 4 of test-04, the command echo wrapped (the long
+script path exceeded 80 cols), the screen-read source
+failed and fell back to `accumulator-fallback` (correct
+text), **but `PR-U`'s preamble-line-count seed is gated
+on `Source=screen`** so it never fired, `subPromptPreambleLineCount`
+stayed at its default, the tuple-final trim (gated on
+line-count > 0) never activated, and the full 196-char
+output was announced instead of the ~14-char post-Enter
+delta. Removing the screen-row dependence makes this
+class of failure impossible by construction.
+
+- **Sub-prompt announce — Seq-slice, no screen-read.**
+  Replace `subPromptScreenReader` with a reader that
+  `ContentHistory.sliceText`s from the latest
+  `PromptStart` Seq through `latestSeq` and returns the
+  text (sanitised). No `screen.SnapshotRows`, no
+  `PromptRow` / `WrapRows` / `StartRow` / `CursorRow`
+  math, no `Source=screen` vs `accumulator-fallback`
+  fork — there is one path and it is Seq-driven. (Do
+  NOT classify per `EntrySource` — the bundle showed it
+  mis-tags post-response output as `UserInputEcho`; the
+  raw slice is what the existing accumulator path already
+  announces correctly.)
+- **Preamble watermark — a Seq, not a line count.**
+  Replace `capturePreambleForSubPromptResponse` /
+  `subPromptPreambleLineCount` with a single
+  `subPromptPreambleSeq <- ContentHistory.latestSeq`
+  captured at the `EnterPressed` (user submits the
+  sub-prompt response) transition. Unconditional — no
+  `Source=screen` gate, so the wrapped-command case
+  that broke run 4 cannot suppress the seed.
+- **Tuple-final delta — Seq slice, not line slice.**
+  At cell-seal, the post-Enter delta to announce is
+  `ContentHistory.sliceText(subPromptPreambleSeq,
+  Int64.MaxValue)` minus the trailing next-prompt text.
+  No `OriginalLen` / `TrimmedLen` / `Strategy=line-count`
+  / `SubPromptLines=N` arithmetic.
+- **Delete the screen-row machinery**:
+  `computePromptCommandWrapRows`,
   `lastSubmittedCommandLength`,
   `lastSubmittedCommandEndCursorRow`,
   `lastSubmittedCommandPromptRow`, the byte-write
-  wrapper's CR-branch cursor-row capture.
-- Tests: add unit tests for the new Seq-based handlers
-  (pure F# functions; substrate fakes are easy per
-  PR-S's CI-TESTING-FUTURE.md Win 1).
+  wrapper's CR-branch `Screen.Cursor.Row` capture, and
+  the PR-N / PR-O / PR-U screen-read+line-count blocks
+  in `Program.fs`.
+- **Diagnostic triggers (ship in this PR per CLAUDE.md
+  §"New features ship with their diagnostic triggers")**:
+  - `PR-X sub-prompt Seq-slice. PromptStartSeq={Seq}
+    LatestSeq={Seq} AnnounceLen={Len}` at Information.
+  - `PR-X preamble watermark. PreambleSeq={Seq}` at
+    Information (the EnterPressed seed).
+  - `PR-X tuple-final delta. PreambleSeq={Seq}
+    DeltaLen={Len} TailTrimmed={Bool}` at Information.
+  - The announce body at Debug (matches the existing
+    `PR-K sub-prompt announce body` precedent — already
+    goes to NVDA so no new sensitivity boundary).
+  These replace the now-deleted `PR-N sub-prompt
+  screen-read range` / `PR-U sub-prompt preamble line
+  count seeded` / `Tuple-final trim` logs.
+- **Tests**: add unit tests for the new Seq-based
+  handlers (pure F# over a ContentHistory fake; easy per
+  PR-S's CI-TESTING-FUTURE.md Win 1). Add a regression
+  test reproducing the run-4 wrapped-command scenario:
+  a cell whose typed-command echo spans a wrap boundary
+  must still produce the correct post-Enter delta
+  (asserts the bug the screen-row path had).
 
 ### PR-Y (Tier 1 channel routing)
 
@@ -755,16 +887,58 @@ the maintainer's release-build dogfood loop (per
 
 ## Status notes
 
-### 2026-05-14 — Proposed
+### 2026-05-14 — Proposed (initial draft)
 
-ADR 0004 drafted on PR-V branch.
-Cycle 51 spike (Phase 0) running in parallel on branch
+ADR 0004 drafted on PR-V branch. Cycle 51 spike (Phase 0)
+pushed on branch
 `spike/cycle51-iocell-substrate-exploration` (commit
-`de8bf81`) to validate the
-classification-by-`EntrySource` extractor against the
-maintainer's 4-run test-04 reproducer. ADR contents
-locked from the plan; spike dogfood will inform any
-edits before PR-V opens for review.
+`de8bf81`) with a diagnostic-only
+classification-by-`EntrySource` extractor + side-by-side
+comparison log, to be validated against the maintainer's
+4-run test-04 reproducer.
+
+### 2026-05-14 — Revised after dogfood-bundle analysis
+
+The maintainer's preview.135 dogfood bundle (the
+`--- ENTRIES ---` per-entry dump) was analysed **instead
+of** building the spike, and it falsified the
+classification-by-`EntrySource` thesis directly:
+
+- In heuristic-only cmd there is no CommandStart marker,
+  so `ShellInteraction` stays `Composing` for nearly the
+  whole session. cmd's own command OUTPUT (`echo hi` →
+  `hi`) is tagged `UserInputEcho`. Post-sub-prompt-
+  response output (`You chose Yes.`, the test-end
+  banner) is also `UserInputEcho`. `CmdSubPrompt=0`
+  across the entire 4-run session.
+- An `EntrySource`-classifying extractor would
+  mis-attribute most of every cell's output to the
+  command field. **Thesis rejected.**
+
+The bundle ALSO localised the real haywire: run 4's
+wrapped command echo broke the screen-read source →
+`accumulator-fallback` → `PR-U` preamble-line-count seed
+(gated on `Source=screen`) never fired → tuple-final
+trim never activated → full 196-char output announced.
+
+ADR revised accordingly:
+
+- **Decision / Context**: `EntrySource` is NOT used for
+  command/output classification. The first-newline rule
+  on a marker-bounded slice is the split — the same
+  proven heuristic the existing extractor's heuristic-
+  only arm already ships.
+- **PR-W** shrinks: promote the existing heuristic-only
+  arm to the sole `extractIOCell`; delete `extractContent`
+  + the row-walk fallback; spike helpers are NOT carried
+  forward (spike branch is throwaway).
+- **PR-X** is now the load-bearing PR: it removes the
+  screen-row dependence from sub-prompt narration that
+  actually caused the haywire (Seq-slice + Seq-watermark
+  delta, no `Source=screen` gate).
+
+This revision is content-only (still Proposed); no code
+shipped yet. PR-V (this ADR) opens for review next.
 
 ## References
 
