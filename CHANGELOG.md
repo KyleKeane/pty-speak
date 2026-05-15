@@ -13667,6 +13667,47 @@ eviction, `CellSequence` monotonicity + shell-switch reset,
 `Phase`), plus `IOCellPhase` + schemaVersion-2 serialization
 unit tests. Round-trip reader is PR-W2.
 
+### Cycle 51 PR-X (2026-05-15): Seq-watermark narration (the load-bearing fix)
+
+Replace the entire screen-row / line-count sub-prompt
+machinery (the screen-reader callback, the wrap-rows helper,
+the preamble-capture callback, the preamble line-count, and
+the submitted-command screen captures — ~230 lines deleted
+from `Program.fs`) with two monotonic `ContentHistory` Seq
+watermarks (ADR 0004). Fixes BOTH dogfood symptoms from the
+post-PR-W2 regression run:
+
+- **History-scroll garbage** — pressing Enter after Up/Down
+  history recall announced (and persisted) the entire scrolled
+  list. cmd reprints the prompt line in place with CR on each
+  recall; `ContentHistory` accumulates every redraw linearly,
+  and the old `PromptStart→tail` + first-newline split dumped
+  the whole pile into `OutputText`. `SessionModel.extractIOCell`
+  now takes a `commandEnterSeq` watermark (captured at the
+  byte-level command Enter) and splits there: command = last
+  non-empty line up to the watermark, output = everything
+  after — immune to the accumulation, in BOTH the audible
+  announce and the persisted session-log JSONL.
+- **test-04 §4b haywire** — single-key Y/N sub-prompts
+  announced the whole command output instead of just the
+  post-keypress delta. The audible tuple-final announce now
+  slices `ContentHistory` from `lastEnterSeq` (advanced at
+  every command Enter, every sub-prompt-response Enter, AND
+  every SubPromptIdle — the last covers single-key prompts
+  that have no response Enter) to the tail, minus the trailing
+  next-prompt; the user never re-hears the command echo /
+  preamble / question.
+
+Sub-prompt question announce keeps the proven accumulator
+last-line text (the screen-row reader is deleted). New PR-X
+diagnostics at Information (`PR-X preamble watermark`, `PR-X
+sub-prompt announce`, `PR-X tuple-final delta`). New
+`SessionModelTests` watermark coverage (history-scroll
+exclusion, multi-line output, `-1L` legacy fallback); all
+pre-PR-X CH-path tests thread `-1L` (legacy first-newline
+path preserved). Acceptance gate: the maintainer's 4-run
+test-04 + history-scroll dogfood.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

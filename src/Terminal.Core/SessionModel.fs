@@ -750,6 +750,7 @@ module SessionModel =
     let private extractIOCell
             (history: ContentHistory.T)
             (newPromptText: string option)
+            (commandEnterSeq: int64)
             : (string * string) option
             =
         match
@@ -770,66 +771,78 @@ module SessionModel =
                     history outputStart.Seq System.Int64.MaxValue
             Some (commandText, outputText)
         | Some promptStart, None ->
-            // Cycle 45c fixup (2026-05-12) — heuristic-only path
-            // (cmd / vanilla PowerShell). No OSC 133 markers, so
-            // we slice the entire blob between the prior
-            // PromptStart marker (the only one in ContentHistory
-            // at extraction time — the new boundary's marker is
-            // appended *after* this function returns, by the
-            // dispatcher-scheduled boundaryAction in Program.fs)
-            // and the tail. That blob is the just-finalising
-            // tuple's combined (command + output) text.
-            //
-            // Why this is the sole path: the deleted
-            // screen-row-walk extractor against the screen
-            // snapshot failed when the output scrolled enough
-            // that the prior prompt and the new prompt landed
-            // on the same `rowIdx`. The maintainer's
-            // 2026-05-12 dogfood after `dir` + second `echo hi`
-            // reproduced this: tuple finalised with empty
-            // CmdText/OutText, NVDA went silent. ContentHistory's
-            // sequenced typed-entry log doesn't have the
-            // same-rowIdx ambiguity.
-            //
-            // The trailing portion of the blob carries the *new*
-            // prompt's rendered text (it arrived in
-            // ContentHistory before the heuristic detector
-            // declared "stable PromptStart"). Trim it via
-            // `newPromptText` if present.
-            //
-            // Split on first newline: cmd's wire format is
-            // "echo hi\r\nhi\r\n<new-prompt>". First line is the
-            // typed command (cmd echoes the keystrokes back);
-            // the rest is shell output.
-            let raw =
-                ContentHistory.sliceText
-                    history promptStart.Seq System.Int64.MaxValue
-            let withoutNewPrompt =
+            // Heuristic-only path (cmd / vanilla PowerShell). No
+            // OSC 133 markers.
+            let stripNextPrompt (s: string) : string =
                 match newPromptText with
                 | Some p when not (System.String.IsNullOrEmpty p)
-                              && raw.EndsWith(p) ->
-                    raw.Substring(0, raw.Length - p.Length)
-                | _ -> raw
-            let trimmed =
-                (withoutNewPrompt.TrimStart('\r', '\n')).TrimEnd('\r', '\n')
-            if System.String.IsNullOrWhiteSpace trimmed then None
-            else
-                let nlIdx = trimmed.IndexOf('\n')
-                if nlIdx < 0 then
-                    // No newline in the blob — the user typed
-                    // something that the shell didn't echo a
-                    // separate output line for (rare in cmd; can
-                    // happen for `cd` etc. that print nothing).
-                    // Attribute it to CommandText so OutputText
-                    // stays empty (avoids announcing the typed
-                    // command at NVDA when there was no output).
-                    Some (trimmed, "")
+                              && s.EndsWith(p) ->
+                    s.Substring(0, s.Length - p.Length)
+                | _ -> s
+            if commandEnterSeq > promptStart.Seq then
+                // Cycle 51 PR-X — Seq-watermark split. The
+                // command-Enter watermark (captured at the
+                // byte-level Enter in Program.fs) is the exact
+                // boundary between "what the user composed at the
+                // prompt" (incl. every history-scroll redraw —
+                // cmd reprints the line in place with CR on each
+                // Up/Down, and ContentHistory accumulates them
+                // linearly) and "what the command produced". The
+                // command is the LAST non-empty line up to the
+                // watermark (the line that actually executed);
+                // the output is everything after it, minus the
+                // trailing next-prompt. This is immune to the
+                // history-scroll accumulation that the
+                // first-newline split (fallback below) mis-attributes
+                // wholesale into OutputText.
+                let cmdRegion =
+                    ContentHistory.sliceText
+                        history promptStart.Seq commandEnterSeq
+                let outRegion =
+                    ContentHistory.sliceText
+                        history commandEnterSeq System.Int64.MaxValue
+                let cmd =
+                    cmdRegion.Replace("\r", "\n").Split('\n')
+                    |> Array.map (fun l -> l.Trim())
+                    |> Array.filter (fun l -> l.Length > 0)
+                    |> Array.tryLast
+                    |> Option.defaultValue ""
+                let out =
+                    let tail = stripNextPrompt outRegion
+                    (tail.TrimStart('\r', '\n')).TrimEnd('\r', '\n')
+                if System.String.IsNullOrWhiteSpace cmd
+                   && System.String.IsNullOrWhiteSpace out then
+                    None
                 else
-                    let cmd =
-                        trimmed.Substring(0, nlIdx).TrimEnd('\r')
-                    let out =
-                        trimmed.Substring(nlIdx + 1)
                     Some (cmd, out)
+            else
+                // Fallback (legacy callers / no usable watermark,
+                // e.g. before the first command Enter): the
+                // original first-newline heuristic. cmd's wire
+                // format is "echo hi\r\nhi\r\n<new-prompt>" — first
+                // line is the typed command (cmd echoes the
+                // keystrokes back); the rest is shell output.
+                let raw =
+                    ContentHistory.sliceText
+                        history promptStart.Seq System.Int64.MaxValue
+                let withoutNewPrompt = stripNextPrompt raw
+                let trimmed =
+                    (withoutNewPrompt.TrimStart('\r', '\n'))
+                        .TrimEnd('\r', '\n')
+                if System.String.IsNullOrWhiteSpace trimmed then None
+                else
+                    let nlIdx = trimmed.IndexOf('\n')
+                    if nlIdx < 0 then
+                        // No newline — `cd` etc. that print
+                        // nothing. Attribute to CommandText so
+                        // OutputText stays empty.
+                        Some (trimmed, "")
+                    else
+                        let cmd =
+                            trimmed.Substring(0, nlIdx).TrimEnd('\r')
+                        let out =
+                            trimmed.Substring(nlIdx + 1)
+                        Some (cmd, out)
         | _ -> None
 
     /// Cycle 45c / 51 — ContentHistory-driven finalize. The
@@ -842,12 +855,22 @@ module SessionModel =
     /// The boolean is retained for future shells that might opt
     /// out of the substrate; current shells (cmd / PowerShell /
     /// claude) all pass `true`.
+    ///
+    /// Cycle 51 PR-X — `commandEnterSeq` is the ContentHistory
+    /// Seq captured at the byte-level command Enter (Program.fs).
+    /// `extractIOCell`'s heuristic-only arm uses it as the
+    /// command/output boundary so history-scroll redraws (which
+    /// accumulate linearly between PromptStart and the executed
+    /// command) are excluded from OutputText. Pass `-1L` (or any
+    /// value ≤ the cell's PromptStart Seq) to get the legacy
+    /// first-newline heuristic instead.
     let applyAndCaptureWithContentHistory
             (state: T)
             (boundary: PromptBoundaryData)
             (snapshot: Cell[][])
             (history: ContentHistory.T)
             (useContentHistory: bool)
+            (commandEnterSeq: int64)
             : T * IOCell option
             =
         // Thunk-lazy: the override only invokes `extractIOCell`
@@ -861,7 +884,7 @@ module SessionModel =
                 // tail (see comment in extractIOCell).
                 let newPromptText = boundary.MatchedRowText
                 Some (fun () ->
-                    extractIOCell history newPromptText)
+                    extractIOCell history newPromptText commandEnterSeq)
             else
                 None
         applyAndCaptureCore state boundary snapshot contentOverride
@@ -874,10 +897,12 @@ module SessionModel =
             (snapshot: Cell[][])
             (history: ContentHistory.T)
             (useContentHistory: bool)
+            (commandEnterSeq: int64)
             : T
             =
         applyAndCaptureWithContentHistory
             state boundary snapshot history useContentHistory
+            commandEnterSeq
         |> fst
 
     // -----------------------------------------------------------------
