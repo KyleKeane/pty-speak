@@ -1375,3 +1375,332 @@ module SessionModel =
         sb.Append('}') |> ignore
         sb.Append('\n') |> ignore
         sb.ToString()
+
+    // -----------------------------------------------------------------
+    // Cycle 51 PR-W2 — round-trip reader. Hand-rolled (no JSON
+    // library; matches the Cycle 24b serializer discipline). The
+    // exact inverse of `formatIOCellAsJsonl`. No user-facing
+    // surface — exercised only by the FsCheck round-trip property
+    // + deterministic edge tests. ADR 0004 §"Round-trip
+    // discipline": branches on `schemaVersion` (only 2 in v1;
+    // `Error` for anything else); any future schema change that
+    // isn't round-trip-faithful fails CI immediately.
+    // -----------------------------------------------------------------
+
+    /// Why a JSONL line could not be parsed back into an `IOCell`.
+    type IOCellParseError =
+        /// `schemaVersion` was present but not the supported value
+        /// (2 in v1). One-way migration per ADR 0004 — v1 and v2
+        /// are mutually unreadable.
+        | UnsupportedSchemaVersion of int
+        /// The line was not a well-formed v2 IOCell record
+        /// (structural error, missing/!typed field, bad timestamp
+        /// / guid / number, or a lone UTF-16 surrogate — the
+        /// reader rejects the same payload the serializer refuses
+        /// to emit).
+        | Malformed of string
+
+    exception JsonParseException of string
+
+    type private JsonValue =
+        | JNull
+        | JStr of string
+        | JNum of string
+        | JObj of (string * JsonValue) list
+        | JArr of JsonValue list
+
+    /// Minimal recursive-descent JSON value parser. Only the
+    /// productions `formatIOCellAsJsonl` emits (object, array,
+    /// string, integer number, `null`) are recognised — booleans
+    /// and floats are intentionally absent. Raises
+    /// `JsonParseException` on any structural problem.
+    let private parseJson (s: string) : JsonValue =
+        let n = s.Length
+        let mutable i = 0
+        let fail (msg: string) : 'a = raise (JsonParseException msg)
+        let peek () = if i < n then s.[i] else ' '
+        let skipWs () =
+            while i < n
+                  && (s.[i] = ' ' || s.[i] = '\t'
+                      || s.[i] = '\n' || s.[i] = '\r') do
+                i <- i + 1
+        let expect (c: char) : unit =
+            if i < n && s.[i] = c then i <- i + 1
+            else fail (sprintf "expected '%c' at index %d" c i)
+        let hasLoneSurrogate (str: string) : bool =
+            let mutable k = 0
+            let mutable bad = false
+            while k < str.Length && not bad do
+                let ch = str.[k]
+                if System.Char.IsHighSurrogate ch then
+                    if k + 1 < str.Length
+                       && System.Char.IsLowSurrogate str.[k + 1]
+                    then k <- k + 2
+                    else bad <- true
+                elif System.Char.IsLowSurrogate ch then bad <- true
+                else k <- k + 1
+            bad
+        let parseStr () : string =
+            expect '"'
+            let sb = System.Text.StringBuilder()
+            let mutable fin = false
+            while not fin do
+                if i >= n then fail "unterminated string"
+                let c = s.[i]
+                if c = '"' then
+                    i <- i + 1
+                    fin <- true
+                elif c = '\\' then
+                    i <- i + 1
+                    if i >= n then fail "dangling escape"
+                    let e = s.[i]
+                    i <- i + 1
+                    match e with
+                    | '"' -> sb.Append('"') |> ignore
+                    | '\\' -> sb.Append('\\') |> ignore
+                    | '/' -> sb.Append('/') |> ignore
+                    | 'b' -> sb.Append('\b') |> ignore
+                    | 'f' -> sb.Append('\f') |> ignore
+                    | 'n' -> sb.Append('\n') |> ignore
+                    | 'r' -> sb.Append('\r') |> ignore
+                    | 't' -> sb.Append('\t') |> ignore
+                    | 'u' ->
+                        if i + 4 > n then fail "truncated \\u escape"
+                        let hex = s.Substring(i, 4)
+                        i <- i + 4
+                        let mutable code = 0
+                        if System.Int32.TryParse(
+                            hex,
+                            System.Globalization.NumberStyles.HexNumber,
+                            jsonInvariant,
+                            &code)
+                        then sb.Append(char code) |> ignore
+                        else fail "invalid \\u hex"
+                    | _ -> fail "unknown string escape"
+                else
+                    sb.Append(c) |> ignore
+                    i <- i + 1
+            let result = sb.ToString()
+            if hasLoneSurrogate result then
+                fail "lone UTF-16 surrogate in string"
+            result
+        let rec parseValue () : JsonValue =
+            skipWs ()
+            if i >= n then fail "unexpected end of input"
+            else
+                match s.[i] with
+                | '"' -> JStr (parseStr ())
+                | '{' -> parseObj ()
+                | '[' -> parseArr ()
+                | 'n' ->
+                    if i + 4 <= n && s.Substring(i, 4) = "null" then
+                        i <- i + 4
+                        JNull
+                    else fail "expected null"
+                | c when c = '-' || (c >= '0' && c <= '9') ->
+                    let start = i
+                    if s.[i] = '-' then i <- i + 1
+                    while i < n && s.[i] >= '0' && s.[i] <= '9' do
+                        i <- i + 1
+                    if i = start || (i = start + 1 && s.[start] = '-') then
+                        fail "malformed number"
+                    JNum (s.Substring(start, i - start))
+                | _ -> fail (sprintf "unexpected char at index %d" i)
+        and parseObj () : JsonValue =
+            expect '{'
+            skipWs ()
+            let items = ResizeArray<string * JsonValue>()
+            if peek () = '}' then
+                i <- i + 1
+            else
+                let mutable go = true
+                while go do
+                    skipWs ()
+                    let k = parseStr ()
+                    skipWs ()
+                    expect ':'
+                    let v = parseValue ()
+                    items.Add((k, v))
+                    skipWs ()
+                    if peek () = ',' then i <- i + 1
+                    elif peek () = '}' then
+                        i <- i + 1
+                        go <- false
+                    else fail "expected ',' or '}' in object"
+            JObj (List.ofSeq items)
+        and parseArr () : JsonValue =
+            expect '['
+            skipWs ()
+            let items = ResizeArray<JsonValue>()
+            if peek () = ']' then
+                i <- i + 1
+            else
+                let mutable go = true
+                while go do
+                    let v = parseValue ()
+                    items.Add(v)
+                    skipWs ()
+                    if peek () = ',' then i <- i + 1
+                    elif peek () = ']' then
+                        i <- i + 1
+                        go <- false
+                    else fail "expected ',' or ']' in array"
+            JArr (List.ofSeq items)
+        let v = parseValue ()
+        skipWs ()
+        if i <> n then fail "trailing content after JSON value"
+        v
+
+    /// Parse one JSONL line (the exact output of
+    /// `formatIOCellAsJsonl`, with or without its trailing `\n`)
+    /// back into an `IOCell`. Hand-rolled inverse; total (never
+    /// throws — all failures surface as `Result.Error`).
+    let parseFromJsonl (line: string) : Result<IOCell, IOCellParseError> =
+        try
+            let trimmed =
+                if line.EndsWith("\n") then
+                    line.Substring(0, line.Length - 1)
+                else line
+            match parseJson trimmed with
+            | JObj fields ->
+                let get (k: string) : JsonValue =
+                    match
+                        List.tryFind (fun (kk, _) -> kk = k) fields
+                    with
+                    | Some (_, v) -> v
+                    | None ->
+                        raise (JsonParseException (sprintf "missing field '%s'" k))
+                let field (obj: (string * JsonValue) list) (k: string) : JsonValue =
+                    match List.tryFind (fun (kk, _) -> kk = k) obj with
+                    | Some (_, v) -> v
+                    | None ->
+                        raise (JsonParseException (sprintf "missing field '%s'" k))
+                let asStr (j: JsonValue) : string =
+                    match j with
+                    | JStr x -> x
+                    | _ -> raise (JsonParseException "expected a string")
+                let asInt (j: JsonValue) : int =
+                    match j with
+                    | JNum x ->
+                        (try System.Int32.Parse(x, jsonInvariant)
+                         with _ -> raise (JsonParseException "expected int32"))
+                    | _ -> raise (JsonParseException "expected a number")
+                let asInt64 (j: JsonValue) : int64 =
+                    match j with
+                    | JNum x ->
+                        (try System.Int64.Parse(x, jsonInvariant)
+                         with _ -> raise (JsonParseException "expected int64"))
+                    | _ -> raise (JsonParseException "expected a number")
+                let sv = asInt (get "schemaVersion")
+                if sv <> JsonlSchemaVersion then
+                    Error (UnsupportedSchemaVersion sv)
+                else
+                    let parseTs (str: string) : DateTime =
+                        DateTime.ParseExact(
+                            str,
+                            "yyyy-MM-ddTHH:mm:ss.fffffffZ",
+                            jsonInvariant,
+                            System.Globalization.DateTimeStyles.AssumeUniversal
+                            ||| System.Globalization.DateTimeStyles.AdjustToUniversal)
+                    let optTs (j: JsonValue) : DateTime option =
+                        match j with
+                        | JNull -> None
+                        | JStr x -> Some (parseTs x)
+                        | _ -> raise (JsonParseException "expected timestamp|null")
+                    let optStr (j: JsonValue) : string option =
+                        match j with
+                        | JNull -> None
+                        | JStr x -> Some x
+                        | _ -> raise (JsonParseException "expected string|null")
+                    let optInt (j: JsonValue) : int option =
+                        match j with
+                        | JNull -> None
+                        | JNum _ -> Some (asInt j)
+                        | _ -> raise (JsonParseException "expected int|null")
+                    let phase =
+                        match get "phase" with
+                        | JObj pf ->
+                            (match asStr (field pf "kind") with
+                             | "composing" -> IOCellPhase.Composing
+                             | "executing" -> IOCellPhase.Executing
+                             | "sealed" -> IOCellPhase.Sealed
+                             | "awaitingSubPromptResponse" ->
+                                 IOCellPhase.AwaitingSubPromptResponse
+                                     (asStr (field pf "subPromptText"))
+                             | other ->
+                                 raise (JsonParseException
+                                     (sprintf "unknown phase kind '%s'" other)))
+                        | _ -> raise (JsonParseException "phase is not an object")
+                    let boundaryOf (name: string) : BoundaryKind =
+                        match name with
+                        | "PromptStart" -> BoundaryKind.PromptStart
+                        | "CommandStart" -> BoundaryKind.CommandStart
+                        | "OutputStart" -> BoundaryKind.OutputStart
+                        // The serializer emits the payload-less
+                        // name; the exit code lives on ExitCode,
+                        // not here. Canonical reconstruction.
+                        | "CommandFinished" -> BoundaryKind.CommandFinished None
+                        | other ->
+                            raise (JsonParseException
+                                (sprintf "unknown boundary '%s'" other))
+                    let sourceOf (j: JsonValue) : BoundarySource =
+                        match j with
+                        | JObj sf ->
+                            (match asStr (field sf "kind") with
+                             | "Osc133" -> BoundarySource.Osc133
+                             | "HeuristicClaudeInkBox" ->
+                                 BoundarySource.HeuristicClaudeInkBox
+                             | "HeuristicPromptRegex" ->
+                                 BoundarySource.HeuristicPromptRegex
+                                     (asInt (field sf "stabilityMs"))
+                             | other ->
+                                 raise (JsonParseException
+                                     (sprintf "unknown source kind '%s'" other)))
+                        | _ -> raise (JsonParseException "source is not an object")
+                    let sources =
+                        match get "sources" with
+                        | JArr arr ->
+                            arr
+                            |> List.map (fun e ->
+                                match e with
+                                | JObj ef ->
+                                    boundaryOf (asStr (field ef "boundary")),
+                                    sourceOf (field ef "source")
+                                | _ ->
+                                    raise (JsonParseException
+                                        "sources entry is not an object"))
+                            |> Map.ofList
+                        | _ -> raise (JsonParseException "sources is not an array")
+                    let extraParams =
+                        match get "extraParams" with
+                        | JObj ef ->
+                            ef
+                            |> List.map (fun (k, v) -> k, asStr v)
+                            |> Map.ofList
+                        | _ ->
+                            raise (JsonParseException
+                                "extraParams is not an object")
+                    let cell : IOCell =
+                        { Id = System.Guid.Parse(asStr (get "id"))
+                          CellSequence = asInt64 (get "cellSequence")
+                          CommandId = optStr (get "commandId")
+                          Phase = phase
+                          ShellId = asStr (get "shellId")
+                          PromptStartedAt =
+                              parseTs (asStr (get "promptStartedAt"))
+                          CommandStartedAt = optTs (get "commandStartedAt")
+                          OutputStartedAt = optTs (get "outputStartedAt")
+                          CommandFinishedAt = optTs (get "commandFinishedAt")
+                          PromptText = asStr (get "promptText")
+                          CommandText = asStr (get "commandText")
+                          OutputText = asStr (get "outputText")
+                          ExitCode = optInt (get "exitCode")
+                          Sources = sources
+                          ExtraParams = extraParams }
+                    Ok cell
+            | _ ->
+                Error (Malformed "top-level value is not a JSON object")
+        with
+        | JsonParseException msg -> Error (Malformed msg)
+        | :? System.FormatException as ex -> Error (Malformed ex.Message)
+        | :? System.OverflowException as ex -> Error (Malformed ex.Message)

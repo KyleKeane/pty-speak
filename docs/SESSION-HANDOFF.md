@@ -19,16 +19,33 @@ and serves the decision-trail role this file used to overload.
 > re-introduce, the bundle evidence). This section is just
 > the bird's-eye; the playbook is the map.
 
-- **`main` HEAD = `6b3ff6a`.** Working tree clean; no
-  in-flight code branches; no pending fixups. The spike
-  branch `spike/cycle51-iocell-substrate-exploration`
+- **`main` HEAD = `87f3773`** (Cycle 51 PR-W, #334). The
+  spike branch `spike/cycle51-iocell-substrate-exploration`
   (`de8bf81`) is on remote as a **graveyard** — do not
   cherry-pick from it (playbook §0).
 - **Cycle 51 (IOCell pivot) in flight.** Phase 0 spike ✅
   (superseded by dogfood-bundle analysis). **PR-V (ADR
-  0004) ✅ merged** (#332, `6b3ff6a`). **PR-W is next**,
-  then PR-W2 → PR-X → PR-Y → PR-Z. Decision record:
+  0004) ✅ merged** (#332). **PR-W ✅ merged** (#334,
+  `87f3773`) — IOCell rename + `IOCellPhase`/`CellSequence`,
+  ContentHistory as the sole extractor with drop-on-None,
+  schemaVersion-2 wire format, `IOCELL-SCHEMA.md`. **PR-W2
+  in flight** (`IOCell.parseFromJsonl` round-trip reader).
+  Then PR-X → PR-Y → PR-Z. Decision record:
   [`adr/0004-iocell-model-for-shell-interaction.md`](adr/0004-iocell-model-for-shell-interaction.md).
+- **⚠ PR-W NOT dogfood-validated.** The walking-skeleton
+  release-build NVDA dogfood gate (playbook §8) was **not
+  performed** — the maintainer was unavailable for manual
+  testing and explicitly authorised carrying forward to
+  PR-W2 without it (2026-05-15). PR-W is a type/extraction/
+  schema change with no new announce site, so the
+  outstanding check is a *regression* dogfood (cmd
+  `echo hi` / test-01 still narrate via the now-sole
+  ContentHistory path; "loud silence" not garbage when a
+  cell lacks a PromptStart Seq). **This gate, plus the
+  per-PR gates for W2 onward, must be swept before PR-X's
+  4-run test-04 acceptance gate is meaningful.** Track in
+  the Cycle 51 [`ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
+  row at PR-Z.
 - **Cycle 49 + post-49 hotfixes (PRs #313–#331) shipped**
   through `ae33bc9`. Per-PR detail lives in
   [`CHANGELOG.md`](../CHANGELOG.md) + `git log` +
@@ -54,12 +71,16 @@ decisions are in
 [ADR 0004](adr/0004-iocell-model-for-shell-interaction.md).
 Do not re-narrate them here (DOC-MAP archiving discipline).
 
-One-line state: PR-V ✅ merged → **PR-W next** → PR-W2 →
-**PR-X (the load-bearing fix)** → PR-Y → PR-Z. Each PR is
-independently CI-gated and ships through the maintainer's
-release-build NVDA dogfood; the acceptance gate for PR-X is
-the 4-run test-04 reproducer no longer going haywire. Cycle
-51 NVDA matrix row lives in
+One-line state: PR-V ✅ → PR-W ✅ (merged, **dogfood
+deferred**) → **PR-W2 in flight** → **PR-X (the
+load-bearing fix)** → PR-Y → PR-Z. Each PR is independently
+CI-gated and is *supposed* to ship through the maintainer's
+release-build NVDA dogfood before the next; PR-W's was
+deferred per maintainer instruction (see ⚠ above). The
+acceptance gate for PR-X is the 4-run test-04 reproducer no
+longer going haywire — that gate presumes the deferred
+PR-W/W2 dogfoods get swept first. Cycle 51 NVDA matrix row
+lives in
 [`ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md).
 
 **Next-cycle candidates** (after Cycle 51 ships; none block
