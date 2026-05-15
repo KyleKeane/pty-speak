@@ -1031,6 +1031,17 @@ module Program =
         let mutable awaitingSubPromptEnter : bool = false
         let mutable lastEnterSeq : int64 = -1L
         let mutable commandEnterSeq : int64 = -1L
+        // Cycle 51 PR-Y — the sub-prompt question we last spoke at
+        // SubPromptIdle. For a single-key prompt (test-04 — no
+        // response Enter) the question row has no terminating
+        // newline when SubPromptIdle fires, so ContentHistory
+        // hasn't sealed it into an entry yet; `lastEnterSeq`
+        // captured then lands on the newline *before* the question
+        // and the tuple-final slice re-includes it. We strip this
+        // exact already-spoken prefix off the front of the delta.
+        // Empty when no sub-prompt is outstanding; cleared on every
+        // top-level command Enter + shell hot-switch.
+        let mutable lastSubPromptAnnounce : string = ""
 
         // Cycle 45 Commit 2 — SpeechCursor announce callback +
         // "wake up" trigger. Defined here (very early in compose)
@@ -1738,6 +1749,12 @@ module Program =
                             raiseTextChanged ()
                             lastAnnouncedText <- toSay
                             lastAnnouncedSeq <- ContentHistory.latestSeq contentHistory
+                            // Cycle 51 PR-Y — remember the exact
+                            // question text (pre-cap `trimmed`, so
+                            // the full prefix is available to
+                            // match) for the tuple-final
+                            // strip-already-spoken-question step.
+                            lastSubPromptAnnounce <- trimmed
                         let readyEvent =
                             OutputEvent.create
                                 SemanticCategory.ReadyForInput
@@ -2048,8 +2065,36 @@ module Program =
                             raw.Substring(0, raw.Length - p.Length)
                         | _ -> raw
                     let delta =
-                        (withoutNextPrompt.TrimStart('\r', '\n'))
-                            .TrimEnd('\r', '\n')
+                        let d =
+                            (withoutNextPrompt.TrimStart('\r', '\n'))
+                                .TrimEnd('\r', '\n')
+                        // Cycle 51 PR-Y — for a single-key
+                        // sub-prompt the watermark is stuck before
+                        // the question (the question row hadn't
+                        // sealed into a ContentHistory entry when
+                        // SubPromptIdle fired, so latestSeq pointed
+                        // at the newline before it), so the slice
+                        // re-includes the question the user already
+                        // heard. Drop the exact already-spoken
+                        // question + the inline single-key response
+                        // char, through the first newline after it.
+                        // No-op for typed-Enter sub-prompts
+                        // (test-02 — the response Enter re-captured
+                        // the watermark past the question) and for
+                        // plain commands (no outstanding question).
+                        if not (System.String.IsNullOrEmpty lastSubPromptAnnounce)
+                           && d.StartsWith(lastSubPromptAnnounce) then
+                            let nl =
+                                d.IndexOf('\n', lastSubPromptAnnounce.Length)
+                            let stripped =
+                                if nl >= 0 then
+                                    (d.Substring(nl + 1)).TrimStart('\r', '\n')
+                                else ""
+                            log.LogInformation(
+                                "PR-Y stripped already-spoken sub-prompt question. QuestionLen={QLen} RawDeltaLen={RawLen} StrippedLen={StrLen}",
+                                lastSubPromptAnnounce.Length, d.Length, stripped.Length)
+                            stripped
+                        else d
                     if System.String.IsNullOrWhiteSpace delta then None
                     else Some delta
                 | _ -> None
@@ -4266,6 +4311,10 @@ module Program =
                             if not awaitingSubPromptEnter then
                                 commandEnterSeq <-
                                     ContentHistory.latestSeq contentHistory
+                                // Cycle 51 PR-Y — a fresh top-level
+                                // command starts: any outstanding
+                                // sub-prompt question is stale.
+                                lastSubPromptAnnounce <- ""
                             shellInteractionLog.LogInformation(
                                 "PR-X preamble watermark. PreambleSeq={PreambleSeq} CommandEnterSeq={CommandEnterSeq} SubPromptResponse={SubPromptResponse}",
                                 lastEnterSeq,
@@ -4614,6 +4663,7 @@ module Program =
                                         // shell's history).
                                         lastEnterSeq <- -1L
                                         commandEnterSeq <- -1L
+                                        lastSubPromptAnnounce <- ""
                                         // Cycle 48 PR-B —
                                         // ShellInteraction state
                                         // resets on shell switch

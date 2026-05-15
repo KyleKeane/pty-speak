@@ -13708,6 +13708,28 @@ pre-PR-X CH-path tests thread `-1L` (legacy first-newline
 path preserved). Acceptance gate: the maintainer's 4-run
 test-04 + history-scroll dogfood.
 
+### Cycle 51 PR-Y (2026-05-15): single-key sub-prompt no longer re-announces the question
+
+Post-PR-X dogfood (preview.137) found single-key Y/N
+sub-prompts (test-04) re-announce the question in the
+post-response tuple-final delta: NVDA spoke "Continue?
+[Y,N]?" at SubPromptIdle, then again as the lead of "Continue?
+[Y,N]?Y / You chose Yes. / === END ===". Root cause: a
+single-key prompt's question row has no terminating newline
+when SubPromptIdle fires, so ContentHistory hasn't sealed it
+into an entry yet — `lastEnterSeq` captured then lands on the
+newline *before* the question and the slice re-includes it
+(typed-Enter sub-prompts like test-02 escape this because the
+response Enter re-captures the watermark past the sealed
+question). Fix: remember the exact question text spoken at
+SubPromptIdle and, if the tuple-final delta begins with it,
+drop it through the first newline after it (also strips the
+inline single-key response char). Exact-match against the
+literally-spoken string — a no-op for test-02 and plain
+commands; cleared on every top-level command Enter +
+shell hot-switch. New `PR-Y stripped already-spoken
+sub-prompt question` Information diagnostic.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
