@@ -147,6 +147,7 @@ Things a new session needs that aren't in
 | If you need… | Open |
 |---|---|
 | **Cycle 52 re-foundation (START HERE)** | [`docs/adr/0006-three-layer-refoundation.md`](adr/0006-three-layer-refoundation.md) |
+| Cycle 52 R1 architecture/dependency map | [`docs/CYCLE-52-R1-ARCHITECTURE-MAP.md`](CYCLE-52-R1-ARCHITECTURE-MAP.md) |
 | Cycle 52 OSC-133 mechanism spec | [`docs/adr/0005-osc133-shell-integration.md`](adr/0005-osc133-shell-integration.md) |
 | Cycle 51 (shipped) locked decisions | [`docs/adr/0004-iocell-model-for-shell-interaction.md`](adr/0004-iocell-model-for-shell-interaction.md) |
 | Cycle 51 execution map (HISTORICAL) | [`docs/CYCLE-51-PLAYBOOK.md`](CYCLE-51-PLAYBOOK.md) |
