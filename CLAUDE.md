@@ -84,8 +84,26 @@ before deviating.
    scaffolding. Read before working on prompt-boundary
    detection, the shell-spawn seam, or the announce path.
    **Proposed, not yet accepted — no implementation until the
-   maintainer signs off on the ADR.**
-9. **RFC 0001 (archived)** — Cycle 33 pivot-gate RFC, formalised
+   maintainer signs off on the ADR.** Its A–F stage list is
+   superseded by ADR 0006's R0–R7; 0005 stays the canonical
+   *mechanism* spec.
+9. **[`docs/adr/0006-three-layer-refoundation.md`](docs/adr/0006-three-layer-refoundation.md)**
+   — Cycle 52 architectural re-foundation (Proposed
+   2026-05-15). The strategic-review outcome: 51 cycles were
+   brittle because shell-specific reconstruction
+   (`HeuristicPromptDetector`) leaked into `Terminal.Core`
+   and there was no single orchestration point. Locks a
+   **three-layer boundary** — transport (`ShellAdapter` per
+   shell, OSC-133 injection lives here) / pure session core
+   (`Terminal.Core`, no WPF/P-Invoke/shell strings) /
+   accessibility channel (WPF+UIA, swappable sink) — plus a
+   one-file `SessionHost` orchestration point. **Supersedes
+   ADR 0005's stage list** with R0–R7 (folds OSC-133 in).
+   F# kept, WPF kept, **MAUI explicitly out of scope**
+   (maintainer decision 2026-05-15). Read before any
+   transport / core / channel / spawn work. **Proposed —
+   no implementation until the maintainer signs off.**
+10. **RFC 0001 (archived)** — Cycle 33 pivot-gate RFC, formalised
    the `LinearTextStream` substrate + streaming-emission protocol.
    The substrate it specified was replaced by `ContentHistory` +
    `SpeechCursor` in Cycle 45 (PRs #263–#270, 2026-05-12); the RFC
@@ -95,7 +113,7 @@ before deviating.
    context — the live substrate lives in `src/Terminal.Core/`
    (`ContentHistory.fs`, `SpeechCursor.fs`) and is described
    informally in CORE-ABSTRACTION-BOUNDARY.md §7.
-10. **[`docs/CANONICAL-DISPLAY-CATALOG.md`](docs/CANONICAL-DISPLAY-CATALOG.md)**
+11. **[`docs/CANONICAL-DISPLAY-CATALOG.md`](docs/CANONICAL-DISPLAY-CATALOG.md)**
    — Cycle 33 pivot-gate companion. Full per-primitive UIA /
    ARIA / NVDA / JAWS / Narrator / interaction-contract /
    channel-routing specs for the three exemplars (raw text +
@@ -104,9 +122,9 @@ before deviating.
    extension points (severity alert, indeterminate progress,
    Tier-2 deferred, Tier-3 deferred). Read before working on
    any output-side framework or channel implementation.
-11. **[`spec/tech-plan.md`](spec/tech-plan.md)** §N for the canonical
+12. **[`spec/tech-plan.md`](spec/tech-plan.md)** §N for the canonical
     spec of whatever stage you're working on.
-12. **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — canonical PR shape,
+13. **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — canonical PR shape,
     branch naming, F# / .NET 9 gotchas, accessibility
     non-negotiables, P/Invoke conventions, test conventions.
 

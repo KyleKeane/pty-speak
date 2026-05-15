@@ -14,10 +14,11 @@ and serves the decision-trail role this file used to overload.
 ## Current state (2026-05-15)
 
 > **NEW SESSION START HERE →
-> [`adr/0005-osc133-shell-integration.md`](adr/0005-osc133-shell-integration.md)**
-> (Proposed — the Cycle 52 pivot). Cycle 51 is shipped; the
+> [`adr/0006-three-layer-refoundation.md`](adr/0006-three-layer-refoundation.md)**
+> (Proposed — the Cycle 52 re-foundation; reads ADR 0005 as
+> its mechanism spec). Cycle 51 is shipped; the
 > CYCLE-51-PLAYBOOK is now historical. Do NOT implement
-> Cycle 52 until the maintainer accepts ADR 0005.
+> Cycle 52 until the maintainer accepts ADR 0006.
 
 - **`main` HEAD = `fa8885c`** (Cycle 51 PR-AE, #344).
 - **Cycle 51 (IOCell pivot) — SHIPPED.** PR-V (ADR 0004) →
@@ -42,16 +43,23 @@ and serves the decision-trail role this file used to overload.
   cmd emits no boundary protocol. The maintainer chose to
   **exit heuristic screen-scraping** rather than keep
   patching the announce layer.
-- **Cycle 52 = OSC 133 shell integration**
-  ([ADR 0005](adr/0005-osc133-shell-integration.md),
-  **Proposed 2026-05-15**). Inject shell init so cmd /
-  PowerShell emit OSC 133; the already-shipped
-  `Osc133.tryParse` → `Screen.Apply` → `extractIOCell`
-  clean arm becomes primary; `HeuristicPromptDetector`
-  demoted to fallback. Net-subtractive (retires PR-AB +
-  PR-X/Y announce scaffolding). **Not yet accepted — no
+- **Cycle 52 = three-layer re-foundation**
+  ([ADR 0006](adr/0006-three-layer-refoundation.md),
+  **Proposed 2026-05-15**) with OSC 133
+  ([ADR 0005](adr/0005-osc133-shell-integration.md))
+  folded in as its transport mechanism. The 2026-05-15
+  strategic review found the 51-cycle brittleness was
+  structural: shell-specific reconstruction
+  (`HeuristicPromptDetector`) leaked into `Terminal.Core`
+  and there is no single orchestration point. ADR 0006
+  locks a transport (`ShellAdapter`) / pure core /
+  accessibility-channel boundary + a one-file `SessionHost`.
+  **F# kept, WPF kept, MAUI explicitly out of scope**
+  (maintainer decision 2026-05-15 — channel stays an
+  interface for design hygiene only). ADR 0006's R0–R7
+  supersedes ADR 0005's A–F. **Not yet accepted — no
   implementation until the maintainer signs off on
-  ADR 0005.**
+  ADR 0006.**
 - **Cycle 49 + post-49 hotfixes (PRs #313–#331)** shipped
   earlier; detail in [`CHANGELOG.md`](../CHANGELOG.md) /
   `git log` per the
@@ -60,18 +68,23 @@ and serves the decision-trail role this file used to overload.
 
 ## Next stage
 
-**Cycle 52 — OSC 133 shell integration.** Design + decision
-in [ADR 0005](adr/0005-osc133-shell-integration.md)
-(**Proposed**; do not implement until accepted). Stages,
-once accepted: **A** ADR (this) → **B** cmd `PROMPT`
-emitter (A/B + deferred D) → **C** precedence rule + retire
-PR-AB / PR-X/Y scaffolding → **D** PowerShell emitter (full
-A/B/C/D) → **E** feature unlock (per-line progress streaming,
-prompt-path-verbosity fix, clean SpeechCursor command items)
-→ **F** claude/other-shell decision + Cycle closure audit.
-Each stage independently CI-gated + dogfood-validated
-(walking skeleton). Stage B's maintainer cmd dogfood is the
-decisive gate. NVDA matrix rows per stage in
+**Cycle 52 — three-layer re-foundation.** Design + decision
+in [ADR 0006](adr/0006-three-layer-refoundation.md)
+(**Proposed**; do not implement until accepted), with
+[ADR 0005](adr/0005-osc133-shell-integration.md) as the
+OSC-133 mechanism spec. Stages, once accepted: **R0** ADR
+(this) → **R1** extract `ShellAdapter` + `SessionHost`,
+**zero behaviour change** (gate: behaviour-identical
+regression dogfood) → **R2** cmd OSC-133 adapter → **R3**
+precedence + delete PR-AB / PR-X/Y core scaffolding → **R4**
+purify `Terminal.Core` + portability-lint enforcement (the
+structural anti-re-leak gate) → **R5** PowerShell adapter →
+**R6** feature unlock (per-line progress, prompt-verbosity
+fix, clean SpeechCursor) → **R7** claude adapter decision +
+Cycle closure audit. Each stage independently CI-gated +
+dogfood-validated. R1 + R4 are the structural gates; R2's
+cmd OSC-133 dogfood is the first semantic proof. NVDA matrix
+rows per stage in
 [`ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md).
 
 **Deferred (independent; revisit after Cycle 52):**
@@ -131,8 +144,10 @@ Things a new session needs that aren't in
 
 | If you need… | Open |
 |---|---|
-| **Cycle 51 execution map (START HERE)** | [`docs/CYCLE-51-PLAYBOOK.md`](CYCLE-51-PLAYBOOK.md) |
-| Cycle 51 locked decisions | [`docs/adr/0004-iocell-model-for-shell-interaction.md`](adr/0004-iocell-model-for-shell-interaction.md) |
+| **Cycle 52 re-foundation (START HERE)** | [`docs/adr/0006-three-layer-refoundation.md`](adr/0006-three-layer-refoundation.md) |
+| Cycle 52 OSC-133 mechanism spec | [`docs/adr/0005-osc133-shell-integration.md`](adr/0005-osc133-shell-integration.md) |
+| Cycle 51 (shipped) locked decisions | [`docs/adr/0004-iocell-model-for-shell-interaction.md`](adr/0004-iocell-model-for-shell-interaction.md) |
+| Cycle 51 execution map (HISTORICAL) | [`docs/CYCLE-51-PLAYBOOK.md`](CYCLE-51-PLAYBOOK.md) |
 | Cycle-by-cycle trail | [`CHANGELOG.md`](../CHANGELOG.md) `[Unreleased]` |
 | Doc-archiving discipline | [`docs/DOC-MAP.md`](DOC-MAP.md#archiving-stale-onboarding-narrative) |
 | Active strategic plan + roadmap | [`docs/PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md) |
