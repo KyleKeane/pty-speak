@@ -1699,47 +1699,58 @@ module Program =
                         // recognise today, so PromptRowIndex
                         // stays ValueNone there).
                         let raw = outcome.AccumulatedOutput
-                        // Cycle 51 PR-X — the sub-prompt announce
-                        // is the accumulator's last non-empty line
-                        // (the question itself). The screen-row
-                        // sub-prompt reader path is DELETED
-                        // (ADR 0004 — screen rows are display-only);
-                        // the 2026-05-15 dogfood confirmed this
-                        // accumulator text is the correct question
-                        // ("Continue? [Y,N]?" / "Enter your name:"
-                        // / "Enter a number:"). The leading
-                        // echo-strip drops the user's
-                        // submitted-command echo that precedes the
-                        // script's first byte.
-                        let announceBody =
-                            let firstLf = raw.IndexOf('\n')
-                            let postEchoRaw =
-                                if firstLf >= 0 && firstLf + 1 < raw.Length then
-                                    raw.Substring(firstLf + 1)
-                                else
-                                    raw
-                            postEchoRaw.Split(
-                                [| '\n' |], System.StringSplitOptions.None)
-                            |> Array.rev
-                            |> Array.tryFind (fun line ->
-                                not (System.String.IsNullOrWhiteSpace line))
-                            |> Option.defaultValue postEchoRaw
-                        let sanitised = AnnounceSanitiser.sanitise announceBody
-                        let trimmed = sanitised.Trim()
+                        // Cycle 51 PR-AA — speak the FULL preamble
+                        // + question, not just the question line.
+                        // PR-X took only the accumulator's last
+                        // non-empty line because the raw byte
+                        // accumulator carries an OSC window-title
+                        // sequence whose printable body
+                        // (`]0;…\foo.cmd"`) survives the lone-ESC
+                        // `sanitise` as spoken garbage. Strip whole
+                        // ANSI/OSC *sequences* first, then split
+                        // into visible lines and speak them all —
+                        // the maintainer asked for the intro
+                        // context ("This test asks…", "Enter a
+                        // number:") that last-line-only dropped.
+                        let lines =
+                            (AnnounceSanitiser.stripSequences raw)
+                                .Replace("\r", "\n")
+                                .Split(
+                                    [| '\n' |],
+                                    System.StringSplitOptions.None)
+                            |> Array.map (fun l ->
+                                (AnnounceSanitiser.sanitise l).Trim())
+                            |> Array.filter (fun l -> l.Length > 0)
+                        // The question/prompt is the last non-empty
+                        // line (PR-X's proven extraction). Kept
+                        // separately for PR-Y's post-response
+                        // strip, which matches the tuple-final
+                        // delta — that slice begins at the
+                        // question, never at the preamble.
+                        let questionLine =
+                            if lines.Length > 0 then
+                                lines.[lines.Length - 1]
+                            else
+                                ""
+                        // Single-line utterance (space-joined):
+                        // RaiseNotificationEvent's displayString is
+                        // single-line by contract and the embedded
+                        // controls are already gone.
+                        let trimmed = (String.concat " " lines).Trim()
                         if not (System.String.IsNullOrWhiteSpace trimmed) then
                             let toSay =
                                 if trimmed.Length <= OutputAnnounceCapChars then trimmed
                                 else trimmed.Substring(trimmed.Length - OutputAnnounceCapChars)
                             if toSay.Length < trimmed.Length then
                                 log.LogInformation(
-                                    "PR-X sub-prompt announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
+                                    "PR-AA sub-prompt announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
                                     trimmed.Length, toSay.Length, OutputAnnounceCapChars)
                             log.LogInformation(
-                                "PR-X sub-prompt announce. Length={Len} AccumulatorLen={Acc}",
-                                toSay.Length, raw.Length)
+                                "PR-AA sub-prompt announce. Length={Len} Lines={Lines} AccumulatorLen={Acc}",
+                                toSay.Length, lines.Length, raw.Length)
                             log.LogDebug(
-                                "PR-X sub-prompt announce body. Announce={Announce}",
-                                toSay)
+                                "PR-AA sub-prompt announce body. Question={Question} Announce={Announce}",
+                                questionLine, toSay)
                             window.TerminalSurface.Announce(toSay, ActivityIds.output)
                             // Cycle 49 PR-C — invalidate UIA
                             // Text-pattern cache so the review
@@ -1749,12 +1760,15 @@ module Program =
                             raiseTextChanged ()
                             lastAnnouncedText <- toSay
                             lastAnnouncedSeq <- ContentHistory.latestSeq contentHistory
-                            // Cycle 51 PR-Y — remember the exact
-                            // question text (pre-cap `trimmed`, so
-                            // the full prefix is available to
-                            // match) for the tuple-final
-                            // strip-already-spoken-question step.
-                            lastSubPromptAnnounce <- trimmed
+                            // Cycle 51 PR-Y — store ONLY the
+                            // question line (not the full
+                            // preamble+question). The tuple-final
+                            // slice begins at the question
+                            // (watermark sits just before it),
+                            // never at the preamble, so the
+                            // post-response strip must match the
+                            // question alone.
+                            lastSubPromptAnnounce <- questionLine
                         let readyEvent =
                             OutputEvent.create
                                 SemanticCategory.ReadyForInput
@@ -2054,10 +2068,23 @@ module Program =
             // `commandEnterSeq`).
             let tupleFinaliseAnnounce =
                 match finalisedOpt, currentShellPolicy.Streaming with
-                | Some _, ShellPolicy.TupleFinalOnly when lastEnterSeq >= 0L ->
+                | Some _, ShellPolicy.TupleFinalOnly ->
+                    // Cycle 51 PR-AA — when no command Enter has
+                    // happened yet (`lastEnterSeq < 0L`) the
+                    // finalising cell is the shell's startup /
+                    // post-switch banner ("Microsoft Windows
+                    // [Version …]"); slice from the start (0L) so
+                    // it gets spoken. PR-X's `>= 0L` guard
+                    // suppressed it entirely (regression the
+                    // maintainer caught: "when I switched to
+                    // command prompt it no longer reads the
+                    // banner"). Normal commands use the
+                    // command-Enter watermark, unchanged.
+                    let watermark =
+                        if lastEnterSeq >= 0L then lastEnterSeq else 0L
                     let raw =
                         ContentHistory.sliceText
-                            contentHistory lastEnterSeq System.Int64.MaxValue
+                            contentHistory watermark System.Int64.MaxValue
                     let withoutNextPrompt =
                         match augmented.MatchedRowText with
                         | Some p when not (System.String.IsNullOrEmpty p)

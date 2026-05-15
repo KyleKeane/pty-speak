@@ -67,6 +67,66 @@ module AnnounceSanitiser =
                         sb.Append(ch) |> ignore
                 sb.ToString()
 
+    /// Cycle 51 PR-AA — strip whole ANSI/VT escape *sequences*
+    /// (not just the lone ESC byte `sanitise` removes) so a
+    /// multi-line announce sourced from a raw byte accumulator
+    /// doesn't speak the surviving printable body of an OSC
+    /// window-title sequence (e.g. `]0;C:\WINDOWS\…\foo.cmd"`,
+    /// whose `ESC` and `BEL` `sanitise` drops but whose body
+    /// text it keeps). Handled:
+    ///   * CSI: `ESC '['` … final byte 0x40..0x7E
+    ///   * OSC: `ESC ']'` … terminated by BEL (0x07) or ST
+    ///     (`ESC '\'`)
+    ///   * other two-char `ESC <byte>` sequences (`ESC ( B`,
+    ///     `ESC =`, …): drop `ESC` + the following byte
+    /// A trailing lone `ESC` (no following byte) is dropped.
+    /// Lone C0/C1/DEL controls are NOT stripped here — chain
+    /// `sanitise` (single-line) or split on `\n` first
+    /// (multi-line) as the caller needs.
+    let stripSequences (s: string | null) : string =
+        if isNull s then ""
+        else
+            let s = nonNull s
+            let n = s.Length
+            if n = 0 then s
+            else
+                let sb = StringBuilder(n)
+                let mutable i = 0
+                while i < n do
+                    let c = s.[i]
+                    if c = '\u001B' then
+                        if i + 1 >= n then
+                            i <- n
+                        else
+                            match s.[i + 1] with
+                            | '[' ->
+                                i <- i + 2
+                                while i < n
+                                      && not (s.[i] >= '@'
+                                              && s.[i] <= '~') do
+                                    i <- i + 1
+                                if i < n then i <- i + 1
+                            | ']' ->
+                                i <- i + 2
+                                let mutable fin = false
+                                while i < n && not fin do
+                                    if s.[i] = '\u0007' then
+                                        i <- i + 1
+                                        fin <- true
+                                    elif s.[i] = '\u001B'
+                                         && i + 1 < n
+                                         && s.[i + 1] = '\\' then
+                                        i <- i + 2
+                                        fin <- true
+                                    else
+                                        i <- i + 1
+                            | _ ->
+                                i <- i + 2
+                    else
+                        sb.Append(c) |> ignore
+                        i <- i + 1
+                sb.ToString()
+
     /// Cycle 47 follow-up (2026-05-13) — bundle-friendly variant
     /// of `sanitise` that preserves the three "useful whitespace"
     /// control characters: `\n` (0x0A), `\r` (0x0D), and `\t`
