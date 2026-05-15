@@ -13797,6 +13797,28 @@ for the startup banner. New `PR-AB stripped fast-type command
 echo` Information diagnostic. Cleared on every top-level command
 Enter and shell hot-switch.
 
+### Cycle 51 PR-AC (2026-05-15): speak the new shell's banner on hot-switch
+
+Post-PR-AA dogfood: the startup banner is heard on first app
+launch but NOT after a Ctrl+Shift+1/2/3 shell switch (cmd ↔
+PowerShell ↔ cmd). Root cause (corrected from PR-AA's premise):
+on first launch the banner is read because NVDA reads the
+terminal document when the control first gains focus — pty-speak
+never announced it via the tuple-final path (the first
+`PromptStart` finds `Active=None`, so no cell finalises and
+`tupleFinaliseAnnounce` is `None`). On a switch the control
+already has focus, so NVDA doesn't re-read, and the same
+`Active=None` first-prompt means no announce either → silence.
+Fix: `switchToShell` sets `announceBannerOnNextPrompt`; the
+first post-switch `PromptStart` slices the freshly-reset
+ContentHistory from 0 to the new prompt, trims the trailing
+prompt path, cleans escape sequences (same as PR-AA), and speaks
+it once. The flag is consumed on that first prompt even when the
+slice is empty (a banner-less shell won't retry on the next
+prompt). Switch-only — first launch keeps NVDA's focus-read, so
+no double-announce. New `PR-AC shell-switch banner` Information
+diagnostic.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

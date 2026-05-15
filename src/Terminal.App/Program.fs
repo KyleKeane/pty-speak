@@ -1056,6 +1056,16 @@ module Program =
         // every top-level command Enter; cleared on shell
         // hot-switch.
         let mutable lastSubmittedCommand : string = ""
+        // Cycle 51 PR-AC — set true by `switchToShell` after a
+        // shell hot-switch; consumed on the first post-switch
+        // `PromptStart` to speak the new shell's startup banner.
+        // On first app launch NVDA reads the terminal document
+        // when the control first gains focus, so the launch
+        // banner is already covered; on a switch the control
+        // already has focus and the first PromptStart finds
+        // `Active=None` (no cell finalises → no tuple-final
+        // announce), so without this the banner is silent.
+        let mutable announceBannerOnNextPrompt : bool = false
 
         // Cycle 45 Commit 2 — SpeechCursor announce callback +
         // "wake up" trigger. Defined here (very early in compose)
@@ -2178,6 +2188,40 @@ module Program =
                 | Some ContentHistory.MarkerKind.PromptStart ->
                     augmented.MatchedRowText
                 | _ -> None
+            // Cycle 51 PR-AC — the new shell's startup banner, to
+            // be spoken once on the first post-switch PromptStart.
+            // ContentHistory was reset on the switch, so slicing
+            // from 0 captures only the fresh shell's pre-prompt
+            // output (the banner). Trim the trailing prompt path
+            // and clean escape sequences exactly like the
+            // sub-prompt announce (PR-AA).
+            let bannerAnnounce =
+                if announceBannerOnNextPrompt
+                   && markerKind
+                      = Some ContentHistory.MarkerKind.PromptStart then
+                    let raw =
+                        ContentHistory.sliceText
+                            contentHistory 0L System.Int64.MaxValue
+                    let withoutPrompt =
+                        match augmented.MatchedRowText with
+                        | Some p when not (System.String.IsNullOrEmpty p)
+                                      && raw.EndsWith(p) ->
+                            raw.Substring(0, raw.Length - p.Length)
+                        | _ -> raw
+                    let lines =
+                        (AnnounceSanitiser.stripSequences withoutPrompt)
+                            .Replace("\r", "\n")
+                            .Split(
+                                [| '\n' |],
+                                System.StringSplitOptions.None)
+                        |> Array.map (fun l ->
+                            (AnnounceSanitiser.sanitise l).Trim())
+                        |> Array.filter (fun l -> l.Length > 0)
+                    let joined = (String.concat " " lines).Trim()
+                    if System.String.IsNullOrWhiteSpace joined then None
+                    else Some joined
+                else
+                    None
             let boundaryAction () =
                 // Cycle 48 PR-B (ADR 0003) — observe PromptStart
                 // for the ShellInteraction state machine
@@ -2338,6 +2382,36 @@ module Program =
                     lastAnnouncedText <- toSay
                     lastAnnouncedSeq <- ContentHistory.latestSeq contentHistory
                 | None -> ()
+                // Cycle 51 PR-AC — first post-switch PromptStart:
+                // speak the new shell's banner, and consume the
+                // flag even if the slice was empty (so a
+                // banner-less shell doesn't retry on the next
+                // prompt and narrate accumulated output as a
+                // "banner").
+                if announceBannerOnNextPrompt
+                   && markerKind
+                      = Some ContentHistory.MarkerKind.PromptStart then
+                    announceBannerOnNextPrompt <- false
+                    match bannerAnnounce with
+                    | Some banner ->
+                        let toSay =
+                            if banner.Length <= OutputAnnounceCapChars then
+                                banner
+                            else
+                                banner.Substring(0, OutputAnnounceCapChars)
+                        log.LogInformation(
+                            "PR-AC shell-switch banner announce. Length={Len}",
+                            toSay.Length)
+                        log.LogDebug(
+                            "PR-AC shell-switch banner body. Announce={Announce}",
+                            toSay)
+                        window.TerminalSurface.Announce(
+                            toSay, ActivityIds.output)
+                        raiseTextChanged ()
+                        lastAnnouncedText <- toSay
+                        lastAnnouncedSeq <-
+                            ContentHistory.latestSeq contentHistory
+                    | None -> ()
             window.Dispatcher.InvokeAsync(Action(boundaryAction))
             |> ignore
 
@@ -4785,6 +4859,12 @@ module Program =
                                         commandEnterSeq <- -1L
                                         lastSubPromptAnnounce <- ""
                                         lastSubmittedCommand <- ""
+                                        // Cycle 51 PR-AC — speak
+                                        // the new shell's banner on
+                                        // its first prompt (the
+                                        // control already has focus
+                                        // so NVDA won't re-read it).
+                                        announceBannerOnNextPrompt <- true
                                         // Cycle 48 PR-B —
                                         // ShellInteraction state
                                         // resets on shell switch
