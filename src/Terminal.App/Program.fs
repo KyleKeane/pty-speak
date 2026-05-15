@@ -4127,30 +4127,74 @@ module Program =
             historyRecallTimer.Interval <- TimeSpan.FromMilliseconds(100.0)
             let tryAnnounceRecalledDraft () =
                 try
-                    let _, _, snapshot =
+                    let _, (cursorRow, _), snapshot =
                         screen.SnapshotRows(0, screen.Rows)
+                    let promptText =
+                        match shellInteraction.Current with
+                        | ShellInteraction.Composing data ->
+                            match data.PromptText with
+                            | ValueSome t -> Some t
+                            | ValueNone -> None
+                        | _ -> None
                     let promptRowOpt =
                         match currentSession.Active with
                         | Some active -> active.PromptRowIndex
                         | None -> None
-                    match promptRowOpt with
+                    // Cycle 51 PR-Z — a recalled command that
+                    // soft-wraps past `screen.Cols` (long script
+                    // paths) spans prompt-row..cursor-row, and cmd
+                    // scrolls the viewport, so a *fixed*
+                    // `PromptRowIndex` ends up pointing at the
+                    // wrapped tail (`…test-01-e` → `cho.cmd"`).
+                    // Resolve the prompt row by scanning UP from
+                    // the cursor for the row that currently starts
+                    // with the prompt text (robust to scroll);
+                    // fall back to `Active.PromptRowIndex`.
+                    let actualPromptRow =
+                        match promptText with
+                        | Some pt ->
+                            let mutable found = -1
+                            let mutable r =
+                                min cursorRow (snapshot.Length - 1)
+                            while found < 0 && r >= 0 do
+                                if (CanonicalState.renderRow snapshot r)
+                                    .StartsWith(
+                                        pt, StringComparison.Ordinal) then
+                                    found <- r
+                                r <- r - 1
+                            if found >= 0 then Some found else promptRowOpt
+                        | None -> promptRowOpt
+                    match actualPromptRow with
                     | Some promptRow when
                         promptRow >= 0 && promptRow < snapshot.Length ->
-                        let row = CanonicalState.renderRow snapshot promptRow
+                        // Join prompt-row..cursor-row so a wrapped
+                        // recall is read whole. cmd soft-wraps only
+                        // at full width, so non-final rows in the
+                        // span carry no trailing padding; the final
+                        // `.Trim()` handles the cursor row's. When
+                        // the command doesn't wrap, cursorRow ==
+                        // promptRow → single row (unchanged
+                        // behaviour). With no prompt text (e.g.
+                        // PowerShell) we can't bound the span
+                        // safely, so stay on the single prompt row.
+                        let endRow =
+                            match promptText with
+                            | Some _ ->
+                                max promptRow
+                                    (min cursorRow (snapshot.Length - 1))
+                            | None -> promptRow
+                        let row =
+                            seq {
+                                for r in promptRow .. endRow ->
+                                    CanonicalState.renderRow snapshot r }
+                            |> String.concat ""
                         // Strip the prompt-path prefix if the state
                         // machine has one. Without the strip the
                         // announce reads back the full
-                        // `C:\Users\Kyle\…\current>recalledCmd` row
+                        // `C:\Users\Kyle\…\current>recalledCmd`
                         // every time, which the user has already
                         // navigated past visually. Inspired by the
                         // sub-prompt last-line announce (PR-F).
-                        let promptText =
-                            match shellInteraction.Current with
-                            | ShellInteraction.Composing data ->
-                                match data.PromptText with
-                                | ValueSome t -> Some t
-                                | ValueNone -> None
-                            | _ -> None
                         let stripped =
                             match promptText with
                             | Some pt
