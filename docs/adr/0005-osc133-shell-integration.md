@@ -3,6 +3,13 @@
 - **Status:** Proposed (2026-05-15). Supersedes the heuristic
   prompt-detection model as the *primary* boundary source;
   does not delete it (it becomes the fallback).
+- **Status note (2026-05-15):** the "Walking-skeleton stages"
+  A–F list below is **superseded by the R0–R7 stage list in
+  [ADR 0006](0006-three-layer-refoundation.md)**, which folds
+  this ADR's OSC-133 mechanism into the three-layer
+  re-foundation. Read 0006 for the live stage plan; this ADR
+  remains the canonical *mechanism* spec (per-shell emit
+  strategy, injection seam, the existing decoder path).
 - **Deciders:** maintainer (chose "pivot to shell integration"
   2026-05-15 after the Cycle 51 PR-X…PR-AE dogfood cycle).
 - **Predecessors:** ADR 0003 (interaction state machine),
