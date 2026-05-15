@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <RootNamespace>Terminal.Shell</RootNamespace>
+    <AssemblyName>Terminal.Shell</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="ShellEvent.fs" />
+    <Compile Include="ShellAdapter.fs" />
+    <Compile Include="SessionHost.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" />
+  </ItemGroup>
+
+</Project>
