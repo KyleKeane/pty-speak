@@ -1,9 +1,12 @@
 # ADR 0006 — Three-layer re-foundation: ShellAdapter / Session core / Accessibility channel
 
-- **Status:** Proposed (2026-05-15). The architectural
-  re-foundation. Builds on and **supersedes the stage list of
-  [ADR 0005](0005-osc133-shell-integration.md)** (0005's
-  OSC-133 mechanism is folded into this ADR's R-stages).
+- **Status:** Accepted (2026-05-15; maintainer approved). The
+  architectural re-foundation. Builds on and **supersedes the
+  stage list of [ADR 0005](0005-osc133-shell-integration.md)**
+  (0005's OSC-133 mechanism is folded into this ADR's
+  R-stages). R1 in progress (architecture map → behaviour-
+  identical extraction). Each R-stage remains independently
+  CI- and dogfood-gated.
 - **Deciders:** maintainer — chose "Re-foundation ADR now" +
   "Drop MAUI consideration for now" (2026-05-15), after the
   strategic review of why 51 cycles produced brittle
