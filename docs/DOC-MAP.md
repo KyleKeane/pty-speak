@@ -24,7 +24,8 @@ navigation anchor.
 | [`docs/INSTALL.md`](INSTALL.md) | End user wanting to install the latest preview | Before first run | Step-by-step download + install + update flow with the SmartScreen workaround for unsigned previews. References `scripts/install-latest-preview.ps1` for the scripted alternative and `docs/BUILD.md` for build-from-source. |
 | [`CLAUDE.md`](../CLAUDE.md) | Claude Code agents | Every session start (auto-loaded) | Claude-runtime-specific rules (sandbox quirks, MCP behaviour, ask-for-CI-logs, webhook auto-subscribe); indexes the canonical rules in `CONTRIBUTING.md`. |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Human contributors opening PRs | When opening a PR | Canonical home for: PR shape, branch naming, fixup-commit rhythm, F# / .NET 9 gotchas, accessibility non-negotiables, P/Invoke conventions. |
-| [`docs/SESSION-HANDOFF.md`](SESSION-HANDOFF.md) | Next Claude Code session (or human picking up the work) | Session-to-session continuity | TLDR brief (~150 lines): current state, where we left off, next-stage candidates, sandbox gotchas, pointers out. Designed to stay short — historical handoff content moves to `docs/archive/` rather than accumulate here. |
+| [`docs/SESSION-HANDOFF.md`](SESSION-HANDOFF.md) | Next Claude Code session (or human picking up the work) | Session-to-session continuity | TLDR brief (≤200 lines): current state, where we left off, next-stage candidates, sandbox gotchas, pointers out. Stays short by the §"Archiving stale onboarding narrative" discipline — closed-cycle detail moves to CHANGELOG + `docs/archive/`, not accumulated here. |
+| [`docs/CYCLE-51-PLAYBOOK.md`](CYCLE-51-PLAYBOOK.md) | Next session executing the Cycle 51 IOCell pivot | Before writing any Cycle 51 code | Turn-by-turn execution guide for PR-W → PR-Z: exact `file:line` anchors, the rejected classification-by-`EntrySource` thesis (do not re-introduce), the dogfood-bundle evidence, F# gotchas, operational protocol. Companion to ADR 0004 (decisions) + SESSION-HANDOFF (bird's-eye). PR-Z marks it HISTORICAL → `docs/archive/`. |
 | [`spec/overview.md`](../spec/overview.md), [`spec/tech-plan.md`](../spec/tech-plan.md) | Architecture review | When changing design | Immutable spec: external research and stage-by-stage plan. ADR-style authorisation required for edits. |
 | [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md) | Architecture review (post-Stage-7 substrate) | When implementing sub-stages 8a-8f / 9a-9d, or when reasoning about event routing / output channels / profiles / the InputSource and OutputEvent schemas | Substrate spec for the post-Stage-7 framework cycles. Supersedes `spec/tech-plan.md` §8 / §9 in-place; reframes §10 as the first non-built-in framework consumer. Answers MAY-4.md's consolidated questions with v1 commitments (rationale + tradeoffs) on RawInput envelope, Intent layer, dispatcher, OutputEvent + Profile + Channel, threading + priority taxonomy, TOML schema. |
 | [`docs/PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md) | Strategic planning | When planning a cycle (current) | Snapshot 2026-05-12 (post-Cycle-45c). Captures the ContentHistory/SpeechCursor substrate consolidation + candidate next cycles (45g, 45d, semantic-labels, etc.). Predecessor revisions archived under `docs/archive/pre-cycle-45/` per Track E E5 dated-snapshot discipline. |
@@ -122,3 +123,67 @@ The duplication audit that produced this file is the precedent —
 content drift compounds quickly when each session adds material to
 "the doc that feels relevant" without checking which doc owns the
 topic.
+
+## Archiving stale onboarding narrative
+
+**Problem this solves**: the living onboarding docs
+([`SESSION-HANDOFF.md`](SESSION-HANDOFF.md), the `CLAUDE.md`
+§"Current sequencing" block, and any in-flight `CYCLE-N-*.md`
+plan/playbook) accumulate per-cycle detail. A new contributor
+(human or Claude) reading a handoff that still narrates a
+three-cycles-old PR sequence as "current" wastes time
+reconstructing what is actually true now. Onboarding threads
+must describe the **present**, not the archaeology.
+
+**The rule**: a doc whose job is "where are we now / start
+here" carries only the *current* cycle in narrative form.
+The moment a cycle closes, its blow-by-blow detail moves to a
+durable record and the living doc keeps a ≤2-line pointer.
+
+**Durable records (where closed-cycle detail lives)** — these
+are append-only and never trimmed:
+
+- `CHANGELOG.md` `[Unreleased]` / released sections — the
+  canonical per-PR ship record.
+- `git log` — the commit-level truth.
+- The cycle's own `CYCLE-N-*.md` plan/playbook, marked
+  HISTORICAL and moved to `docs/archive/` by that cycle's
+  closure audit.
+- ADRs — the decision record; closure flips
+  Proposed → Accepted / Implemented rather than deleting.
+
+**The archive procedure** (run as part of every
+CLAUDE.md §"Cycle closure audit", or whenever an onboarding
+doc exceeds its size budget):
+
+1. **Identify the stale span** — any section of a living
+   onboarding doc that narrates a *closed* cycle in more than
+   a 2-line summary (per-PR tables, validation-gate
+   checklists, "next: PR-X" transitional language).
+2. **Confirm it is preserved elsewhere** — the same facts
+   must already be in CHANGELOG / git / the cycle's archived
+   plan / an ADR. Onboarding docs hold *no unique history*;
+   if a fact lives only there, move it to the right durable
+   record first, then trim.
+3. **Replace with a pointer** — collapse the span to ≤2 lines:
+   "Cycle N shipped (<PRs/commits>); detail in CHANGELOG +
+   `docs/archive/CYCLE-N-*.md`." Link the durable record.
+4. **Move (don't delete) cycle plans/playbooks** — when a
+   cycle closes, its `CYCLE-N-PLAYBOOK.md` / `CYCLE-N-PLAN.md`
+   gets a HISTORICAL banner at the top (one line: "Historical
+   — Cycle N shipped <date>; see CHANGELOG. Kept for the
+   planning↔shipped delta.") and moves to `docs/archive/`.
+   Update this DOC-MAP table + every cross-reference.
+5. **Size budgets** (enforced, not aspirational):
+   `SESSION-HANDOFF.md` ≤ 200 lines; `CLAUDE.md` §"Current
+   sequencing" ≤ one cycle's worth of bullets. Exceeding the
+   budget is the trigger to run steps 1–4 even mid-cycle.
+
+**Precedent**: `docs/archive/pre-cycle-45/` (the multi-
+thousand-line pre-Cycle-45 handoff + superseded plans),
+`CYCLE-49-PLAN.md` (HISTORICAL-bannered), and the Cycle 46
+retro (`CYCLE-46-NEXT-STEPS.md`) which is the cautionary
+tale: transitional "PR-D is next" language left un-archived
+forced later sessions to reverse-engineer the truth. The
+cost of NOT archiving is paid by every subsequent
+onboarding read.
