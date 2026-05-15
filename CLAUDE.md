@@ -70,7 +70,22 @@ before deviating.
    hand-rolled JSONL on disk with `schemaVersion=2`, round-trip
    reader shipped maintainer-only in PR-W2). Read before working
    on any extraction / announce / channel-routing code.
-8. **RFC 0001 (archived)** — Cycle 33 pivot-gate RFC, formalised
+8. **[`docs/adr/0005-osc133-shell-integration.md`](docs/adr/0005-osc133-shell-integration.md)**
+   — Cycle 52 strategic pivot (Proposed 2026-05-15). After the
+   Cycle 51 PR-X…PR-AE heuristic-patch cycle hit its ceiling,
+   the maintainer chose to **exit heuristic screen-scraping**:
+   inject shell integration so cmd / PowerShell emit OSC 133,
+   making `BoundarySource.Osc133` + the existing (already
+   shipped & tested) `Osc133.tryParse` → `Screen.Apply` →
+   `extractIOCell` clean arm the **primary** path;
+   `HeuristicPromptDetector` demoted to fallback with a
+   "once Osc133 seen, mute heuristic" precedence rule. Net-
+   subtractive — retires the PR-AB / PR-X/Y announce-path
+   scaffolding. Read before working on prompt-boundary
+   detection, the shell-spawn seam, or the announce path.
+   **Proposed, not yet accepted — no implementation until the
+   maintainer signs off on the ADR.**
+9. **RFC 0001 (archived)** — Cycle 33 pivot-gate RFC, formalised
    the `LinearTextStream` substrate + streaming-emission protocol.
    The substrate it specified was replaced by `ContentHistory` +
    `SpeechCursor` in Cycle 45 (PRs #263–#270, 2026-05-12); the RFC
@@ -80,7 +95,7 @@ before deviating.
    context — the live substrate lives in `src/Terminal.Core/`
    (`ContentHistory.fs`, `SpeechCursor.fs`) and is described
    informally in CORE-ABSTRACTION-BOUNDARY.md §7.
-9. **[`docs/CANONICAL-DISPLAY-CATALOG.md`](docs/CANONICAL-DISPLAY-CATALOG.md)**
+10. **[`docs/CANONICAL-DISPLAY-CATALOG.md`](docs/CANONICAL-DISPLAY-CATALOG.md)**
    — Cycle 33 pivot-gate companion. Full per-primitive UIA /
    ARIA / NVDA / JAWS / Narrator / interaction-contract /
    channel-routing specs for the three exemplars (raw text +
@@ -89,9 +104,9 @@ before deviating.
    extension points (severity alert, indeterminate progress,
    Tier-2 deferred, Tier-3 deferred). Read before working on
    any output-side framework or channel implementation.
-10. **[`spec/tech-plan.md`](spec/tech-plan.md)** §N for the canonical
+11. **[`spec/tech-plan.md`](spec/tech-plan.md)** §N for the canonical
     spec of whatever stage you're working on.
-11. **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — canonical PR shape,
+12. **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — canonical PR shape,
     branch naming, F# / .NET 9 gotchas, accessibility
     non-negotiables, P/Invoke conventions, test conventions.
 

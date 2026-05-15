@@ -13,91 +13,68 @@ and serves the decision-trail role this file used to overload.
 
 ## Current state (2026-05-15)
 
-> **NEW SESSION START HERE → [`CYCLE-51-PLAYBOOK.md`](CYCLE-51-PLAYBOOK.md).**
-> That doc is the turn-by-turn execution guide (exact
-> `file:line` anchors, the rejected thesis you must not
-> re-introduce, the bundle evidence). This section is just
-> the bird's-eye; the playbook is the map.
+> **NEW SESSION START HERE →
+> [`adr/0005-osc133-shell-integration.md`](adr/0005-osc133-shell-integration.md)**
+> (Proposed — the Cycle 52 pivot). Cycle 51 is shipped; the
+> CYCLE-51-PLAYBOOK is now historical. Do NOT implement
+> Cycle 52 until the maintainer accepts ADR 0005.
 
-- **`main` HEAD = `f7bbacc`** (Cycle 51 PR-W2, #335). The
-  spike branch `spike/cycle51-iocell-substrate-exploration`
-  (`de8bf81`) is on remote as a **graveyard** — do not
-  cherry-pick from it (playbook §0).
-- **Cycle 51 (IOCell pivot) — PAUSED at the PR-X gate.**
-  Phase 0 spike ✅. **PR-V** (ADR 0004) ✅ #332. **PR-W**
-  ✅ #334 — IOCell rename + `IOCellPhase`/`CellSequence`,
-  ContentHistory sole extractor + drop-on-None,
-  schemaVersion-2 wire format, `IOCELL-SCHEMA.md`. **PR-W2**
-  ✅ #335 (`f7bbacc`) — hand-rolled `parseFromJsonl`
-  round-trip reader (internal/test-only) + 1000-iteration
-  seeded round-trip test. **PR-X / PR-Y / PR-Z NOT yet
-  started.** Decision record:
-  [`adr/0004-iocell-model-for-shell-interaction.md`](adr/0004-iocell-model-for-shell-interaction.md).
-- **⛔ Cycle PAUSED here by maintainer decision
-  (2026-05-15).** PR-X is the *load-bearing,
-  behaviour-changing* fix whose acceptance gate is an
-  inherently-manual NVDA dogfood (the 4-run test-04
-  reproducer no longer going haywire). With the maintainer
-  unavailable for manual testing, they chose to **pause the
-  cycle after PR-W2 rather than land an unvalidated audible
-  change**. **Next-session pickup: do NOT auto-start PR-X.**
-  First the maintainer runs the deferred PR-W/W2 *regression*
-  dogfood (see ⚠ below); only then implement PR-X per
-  playbook §6 (anchors there are vs an older `main` — re-grep
-  before editing) and dogfood its 4-run test-04 acceptance
-  gate before PR-Y.
-- **⚠ PR-W NOT dogfood-validated.** The walking-skeleton
-  release-build NVDA dogfood gate (playbook §8) was **not
-  performed** — the maintainer was unavailable for manual
-  testing and explicitly authorised carrying forward to
-  PR-W2 without it (2026-05-15). PR-W is a type/extraction/
-  schema change with no new announce site, so the
-  outstanding check is a *regression* dogfood (cmd
-  `echo hi` / test-01 still narrate via the now-sole
-  ContentHistory path; "loud silence" not garbage when a
-  cell lacks a PromptStart Seq). **This gate, plus the
-  per-PR gates for W2 onward, must be swept before PR-X's
-  4-run test-04 acceptance gate is meaningful.** Track in
-  the Cycle 51 [`ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
-  row at PR-Z.
-- **Cycle 49 + post-49 hotfixes (PRs #313–#331) shipped**
-  through `ae33bc9`. Per-PR detail lives in
-  [`CHANGELOG.md`](../CHANGELOG.md) + `git log` +
-  [`CYCLE-49-PLAN.md`](CYCLE-49-PLAN.md) (HISTORICAL) —
-  not repeated here per the
+- **`main` HEAD = `fa8885c`** (Cycle 51 PR-AE, #344).
+- **Cycle 51 (IOCell pivot) — SHIPPED.** PR-V (ADR 0004) →
+  PR-W / PR-W2 (IOCell + schemaVersion-2 + round-trip
+  reader) → then the dogfood-driven sequence **PR-X**
+  (Seq-watermark narration, history-scroll + persisted-JSONL
+  fix) → **PR-Y** (single-key sub-prompt question strip) →
+  **PR-Z** (history-recall wrap) → **PR-AA** (sub-prompt
+  preamble + startup banner) → **PR-AB** (fast-type echo
+  strip) → **PR-AC** (switch banner) → **PR-AD** (SpeechCursor
+  fed from sealed IOCells) → **PR-AE** (cursor-anchored
+  prompt detection — the heuristic root-cause fix). All
+  merged #337–#344. Per-PR detail: [`CHANGELOG.md`](../CHANGELOG.md)
+  + `git log`. `CYCLE-51-PLAYBOOK.md` is now HISTORICAL.
+- **Cycle 51 outcome / why Cycle 52 pivots.** PR-AE removed
+  the acute corruption (phantom-`PromptStart` storms). The
+  2026-05-15 preview.141 dogfood confirmed the *residual*
+  issues (progress narrates only at completion;
+  history-recalled command capture is garbage; prompt-path
+  verbosity eats echo output) are the **heuristic
+  screen-scrape architectural ceiling**, not regressions —
+  cmd emits no boundary protocol. The maintainer chose to
+  **exit heuristic screen-scraping** rather than keep
+  patching the announce layer.
+- **Cycle 52 = OSC 133 shell integration**
+  ([ADR 0005](adr/0005-osc133-shell-integration.md),
+  **Proposed 2026-05-15**). Inject shell init so cmd /
+  PowerShell emit OSC 133; the already-shipped
+  `Osc133.tryParse` → `Screen.Apply` → `extractIOCell`
+  clean arm becomes primary; `HeuristicPromptDetector`
+  demoted to fallback. Net-subtractive (retires PR-AB +
+  PR-X/Y announce scaffolding). **Not yet accepted — no
+  implementation until the maintainer signs off on
+  ADR 0005.**
+- **Cycle 49 + post-49 hotfixes (PRs #313–#331)** shipped
+  earlier; detail in [`CHANGELOG.md`](../CHANGELOG.md) /
+  `git log` per the
   [DOC-MAP §"Archiving stale onboarding narrative"](DOC-MAP.md#archiving-stale-onboarding-narrative)
   discipline.
-- **Why the pivot**: the maintainer's 2026-05-14
-  preview.135 dogfood (4-run test-04) went "completely
-  haywire". Root cause is structural — screen-row
-  coordinates as a source of truth on a scrolling buffer.
-  The bundle also falsified the initial
-  classification-by-`EntrySource` thesis (playbook §4).
-  PR-X is the load-bearing fix.
 
 ## Next stage
 
-**Cycle 51 (IOCell pivot).** Full sequencing, exact code
-anchors, the rejected-thesis context, and the per-PR
-execution maps are in
-[`CYCLE-51-PLAYBOOK.md`](CYCLE-51-PLAYBOOK.md); the locked
-decisions are in
-[ADR 0004](adr/0004-iocell-model-for-shell-interaction.md).
-Do not re-narrate them here (DOC-MAP archiving discipline).
-
-One-line state: PR-V ✅ → PR-W ✅ (merged, **dogfood
-deferred**) → PR-W2 ✅ (merged, internal/test-only) →
-**⛔ PAUSED before PR-X** (maintainer decision 2026-05-15) →
-PR-X (the load-bearing fix) → PR-Y → PR-Z. Resume protocol:
-(1) maintainer runs the deferred PR-W/W2 *regression*
-dogfood; (2) then PR-X per playbook §6 (re-grep its anchors
-— they're vs a pre-PR-W `main`); (3) PR-X's 4-run test-04
-acceptance-gate dogfood before PR-Y. Cycle 51 NVDA matrix
-row lives in
+**Cycle 52 — OSC 133 shell integration.** Design + decision
+in [ADR 0005](adr/0005-osc133-shell-integration.md)
+(**Proposed**; do not implement until accepted). Stages,
+once accepted: **A** ADR (this) → **B** cmd `PROMPT`
+emitter (A/B + deferred D) → **C** precedence rule + retire
+PR-AB / PR-X/Y scaffolding → **D** PowerShell emitter (full
+A/B/C/D) → **E** feature unlock (per-line progress streaming,
+prompt-path-verbosity fix, clean SpeechCursor command items)
+→ **F** claude/other-shell decision + Cycle closure audit.
+Each stage independently CI-gated + dogfood-validated
+(walking skeleton). Stage B's maintainer cmd dogfood is the
+decisive gate. NVDA matrix rows per stage in
 [`ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md).
 
-**Next-cycle candidates** (after Cycle 51 ships; none block
-each other):
+**Deferred (independent; revisit after Cycle 52):**
 
 - **`EntrySource.DraftInputRecall`** (deferred from Cycle 49
   E3) — substrate refinement; no audible bug behind it
