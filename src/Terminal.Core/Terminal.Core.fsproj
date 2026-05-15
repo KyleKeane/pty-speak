@@ -45,7 +45,6 @@
       Placed after ShellPolicy so both deps are in scope.
     -->
     <Compile Include="SpeechCursor.fs" />
-    <Compile Include="HeuristicPromptDetector.fs" />
     <Compile Include="SelectionDetector.fs" />
     <Compile Include="Config.fs" />
     <Compile Include="EarconChannel.fs" />
