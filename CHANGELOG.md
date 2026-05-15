@@ -13730,6 +13730,22 @@ commands; cleared on every top-level command Enter +
 shell hot-switch. New `PR-Y stripped already-spoken
 sub-prompt question` Information diagnostic.
 
+### Cycle 51 PR-Z (2026-05-15): history-recall announce reads wrapped commands whole
+
+Post-PR-Y dogfood: Up/Down command-recall occasionally spoke
+the wrapped tail of a long recalled command (`cho.cmd"`,
+`es-no.cmd"`) instead of the command. The recall announce read
+a single screen row at `Active.PromptRowIndex`; when a recalled
+command (a long script path) soft-wraps past `screen.Cols` the
+prompt+command spans two rows and cmd scrolls the viewport, so
+the fixed row index lands on the wrapped continuation. Fix:
+resolve the prompt row by scanning up from the cursor for the
+row that currently starts with the prompt text (robust to
+scroll), then join prompt-row..cursor-row so the wrapped
+command is read whole. Non-wrapping commands are unaffected
+(cursor row == prompt row → single row); with no prompt text
+(e.g. PowerShell) it stays on the single prompt row as before.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
