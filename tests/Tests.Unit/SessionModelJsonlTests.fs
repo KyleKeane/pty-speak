@@ -6,20 +6,20 @@ open Xunit
 open Terminal.Core
 
 // ---------------------------------------------------------------------
-// Cycle 24b — formatTupleAsJsonl behavioural pinning
+// Cycle 24b / 51 — formatIOCellAsJsonl behavioural pinning
 // ---------------------------------------------------------------------
 //
-// formatTupleAsJsonl is the wire format for decades of on-disk
+// formatIOCellAsJsonl is the wire format for decades of on-disk
 // session persistence. Tests pin every encoding decision so the
 // byte-for-byte output cannot drift across F# / .NET versions
 // without a CI-visible failure.
 //
-// Wire format reference: docs/SESSION-MODEL.md §"On-disk wire
-// format (Cycle 24b)".
+// Wire format reference: docs/IOCELL-SCHEMA.md §"On-disk wire
+// format (v2)".
 //
 // Key invariants exercised:
 //   * Field order is fixed and deterministic.
-//   * "schemaVersion":1 is the FIRST key on every record.
+//   * "schemaVersion":2 is the FIRST key on every record.
 //   * Option<T> -> null for None, value for Some.
 //   * DateTime serialises with 100ns ticks (.fffffffZ).
 //   * Sources is an array sorted by explicit boundary ordinal.
@@ -39,11 +39,13 @@ let private fixedGuid =
 
 let private t0 = DateTime(2026, 5, 9, 14, 23, 45, DateTimeKind.Utc)
 
-/// Minimal SessionTuple — every field at a known fixed value.
+/// Minimal IOCell — every field at a known fixed value.
 /// Tests vary one field at a time off this baseline.
-let private baseTuple : SessionModel.SessionTuple =
+let private baseTuple : SessionModel.IOCell =
     { Id = fixedGuid
+      CellSequence = 0L
       CommandId = None
+      Phase = SessionModel.IOCellPhase.Sealed
       ShellId = "powershell"
       PromptStartedAt = t0
       CommandStartedAt = None
@@ -67,14 +69,16 @@ let private stripNewline (s: string) : string =
 // ---------------------------------------------------------------------
 
 [<Fact>]
-let ``minimal tuple emits all 14 fields in fixed order with schemaVersion first`` () =
-    let line = SessionModel.formatTupleAsJsonl baseTuple
+let ``minimal cell emits all 16 fields in fixed order with schemaVersion first`` () =
+    let line = SessionModel.formatIOCellAsJsonl baseTuple
     let json = stripNewline line
     let expected =
-        "{\"schemaVersion\":1,"
+        "{\"schemaVersion\":2,"
         + "\"id\":\"11111111-2222-3333-4444-555555555555\","
+        + "\"cellSequence\":0,"
         + "\"commandId\":null,"
         + "\"shellId\":\"powershell\","
+        + "\"phase\":{\"kind\":\"sealed\"},"
         + "\"promptStartedAt\":\"2026-05-09T14:23:45.0000000Z\","
         + "\"commandStartedAt\":null,"
         + "\"outputStartedAt\":null,"
@@ -89,14 +93,14 @@ let ``minimal tuple emits all 14 fields in fixed order with schemaVersion first`
 
 [<Fact>]
 let ``schemaVersion is the first key on every record`` () =
-    let line = SessionModel.formatTupleAsJsonl baseTuple
-    Assert.StartsWith("{\"schemaVersion\":1,", line)
+    let line = SessionModel.formatIOCellAsJsonl baseTuple
+    Assert.StartsWith("{\"schemaVersion\":2,", line)
 
 [<Fact>]
-let ``JsonlSchemaVersion constant equals 1`` () =
-    // Pinned: future schema changes increment this. Old files
-    // remain readable; replay tools branch on the value.
-    Assert.Equal(1, SessionModel.JsonlSchemaVersion)
+let ``JsonlSchemaVersion constant equals 2`` () =
+    // Cycle 51 PR-W bumped 1 -> 2 (IOCell rename + cellSequence +
+    // phase). Migration is one-way; replay tools branch on it.
+    Assert.Equal(2, SessionModel.JsonlSchemaVersion)
 
 // ---------------------------------------------------------------------
 // Trailing terminator
@@ -104,7 +108,7 @@ let ``JsonlSchemaVersion constant equals 1`` () =
 
 [<Fact>]
 let ``emitted line ends with exactly one LF (never CRLF)`` () =
-    let line = SessionModel.formatTupleAsJsonl baseTuple
+    let line = SessionModel.formatIOCellAsJsonl baseTuple
     Assert.EndsWith("\n", line)
     Assert.False(line.Contains("\r"), "Output must not contain a CR (would corrupt byte stability on Windows).")
 
@@ -114,7 +118,7 @@ let ``emitted line ends with exactly one LF (never CRLF)`` () =
 
 [<Fact>]
 let ``Guid emits in lowercase D format (8-4-4-4-12)`` () =
-    let line = SessionModel.formatTupleAsJsonl baseTuple
+    let line = SessionModel.formatIOCellAsJsonl baseTuple
     Assert.Contains("\"id\":\"11111111-2222-3333-4444-555555555555\"", line)
 
 // ---------------------------------------------------------------------
@@ -123,13 +127,13 @@ let ``Guid emits in lowercase D format (8-4-4-4-12)`` () =
 
 [<Fact>]
 let ``commandId None emits the JSON null literal`` () =
-    let line = SessionModel.formatTupleAsJsonl baseTuple
+    let line = SessionModel.formatIOCellAsJsonl baseTuple
     Assert.Contains("\"commandId\":null,", line)
 
 [<Fact>]
 let ``commandId Some "abc" emits the quoted escaped string`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with CommandId = Some "abc-123" }
     Assert.Contains("\"commandId\":\"abc-123\",", line)
 
@@ -140,13 +144,13 @@ let ``commandId Some "abc" emits the quoted escaped string`` () =
 
 [<Fact>]
 let ``commandStartedAt None emits the JSON null literal`` () =
-    let line = SessionModel.formatTupleAsJsonl baseTuple
+    let line = SessionModel.formatIOCellAsJsonl baseTuple
     Assert.Contains("\"commandStartedAt\":null,", line)
 
 [<Fact>]
 let ``commandStartedAt Some emits a quoted ISO-8601 7-tick UTC timestamp`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with
                 CommandStartedAt = Some (t0.AddMilliseconds(50.0)) }
     Assert.Contains(
@@ -155,13 +159,13 @@ let ``commandStartedAt Some emits a quoted ISO-8601 7-tick UTC timestamp`` () =
 
 [<Fact>]
 let ``outputStartedAt None emits the JSON null literal`` () =
-    let line = SessionModel.formatTupleAsJsonl baseTuple
+    let line = SessionModel.formatIOCellAsJsonl baseTuple
     Assert.Contains("\"outputStartedAt\":null,", line)
 
 [<Fact>]
 let ``outputStartedAt Some emits a quoted timestamp`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with
                 OutputStartedAt = Some (t0.AddMilliseconds(75.0)) }
     Assert.Contains(
@@ -171,13 +175,13 @@ let ``outputStartedAt Some emits a quoted timestamp`` () =
 [<Fact>]
 let ``commandFinishedAt None emits the JSON null literal`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with CommandFinishedAt = None }
     Assert.Contains("\"commandFinishedAt\":null,", line)
 
 [<Fact>]
 let ``commandFinishedAt Some emits a quoted timestamp`` () =
-    let line = SessionModel.formatTupleAsJsonl baseTuple
+    let line = SessionModel.formatIOCellAsJsonl baseTuple
     Assert.Contains(
         "\"commandFinishedAt\":\"2026-05-09T14:23:45.1000000Z\",",
         line)
@@ -194,7 +198,7 @@ let ``DateTime emits with 7-digit fractional seconds (100ns ticks)`` () =
         DateTime(2026, 5, 9, 14, 23, 45, DateTimeKind.Utc)
             .AddTicks(1234567L)
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with PromptStartedAt = oddTicks }
     Assert.Contains(
         "\"promptStartedAt\":\"2026-05-09T14:23:45.1234567Z\",",
@@ -208,7 +212,7 @@ let ``DateTime in local kind is converted to UTC defensively`` () =
     let local =
         DateTime(2026, 5, 9, 14, 23, 45, DateTimeKind.Local)
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with PromptStartedAt = local }
     // The exact UTC value depends on the test machine's timezone;
     // assert the format suffix is always 'Z'.
@@ -226,27 +230,27 @@ let ``DateTime in local kind is converted to UTC defensively`` () =
 
 [<Fact>]
 let ``exitCode None emits the JSON null literal`` () =
-    let line = SessionModel.formatTupleAsJsonl baseTuple
+    let line = SessionModel.formatIOCellAsJsonl baseTuple
     Assert.Contains("\"exitCode\":null,", line)
 
 [<Fact>]
 let ``exitCode Some 0 emits the unquoted integer 0`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with ExitCode = Some 0 }
     Assert.Contains("\"exitCode\":0,", line)
 
 [<Fact>]
 let ``exitCode Some -1 emits a signed integer`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with ExitCode = Some -1 }
     Assert.Contains("\"exitCode\":-1,", line)
 
 [<Fact>]
 let ``exitCode Some Int32.MaxValue emits the unquoted integer`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with ExitCode = Some Int32.MaxValue }
     Assert.Contains("\"exitCode\":2147483647,", line)
 
@@ -257,7 +261,7 @@ let ``exitCode Some Int32.MaxValue emits the unquoted integer`` () =
 [<Fact>]
 let ``BoundarySource Osc133 emits the bare tagged object`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with
                 Sources =
                     Map.ofList
@@ -269,7 +273,7 @@ let ``BoundarySource Osc133 emits the bare tagged object`` () =
 [<Fact>]
 let ``BoundarySource HeuristicPromptRegex emits stabilityMs payload`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with
                 Sources =
                     Map.ofList
@@ -282,7 +286,7 @@ let ``BoundarySource HeuristicPromptRegex emits stabilityMs payload`` () =
 [<Fact>]
 let ``BoundarySource HeuristicPromptRegex with stabilityMs 0 still emits the field`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with
                 Sources =
                     Map.ofList
@@ -293,7 +297,7 @@ let ``BoundarySource HeuristicPromptRegex with stabilityMs 0 still emits the fie
 [<Fact>]
 let ``BoundarySource HeuristicClaudeInkBox emits the bare tagged object`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with
                 Sources =
                     Map.ofList
@@ -312,7 +316,7 @@ let ``Sources entries sort by explicit boundaryOrdinal regardless of insertion o
     // Insert in reverse order; expect output sorted PromptStart,
     // CommandStart, OutputStart, CommandFinished.
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with
                 Sources =
                     Map.ofList
@@ -335,7 +339,7 @@ let ``Sources entry for CommandFinished uses payload-less boundary name`` () =
     // "boundary" value is the bare DU case name (the actual exit
     // code lives on tuple.ExitCode and isn't duplicated here).
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with
                 Sources =
                     Map.ofList
@@ -348,7 +352,7 @@ let ``Sources entry for CommandFinished uses payload-less boundary name`` () =
 
 [<Fact>]
 let ``empty Sources emits an empty array`` () =
-    let line = SessionModel.formatTupleAsJsonl baseTuple
+    let line = SessionModel.formatIOCellAsJsonl baseTuple
     Assert.Contains("\"sources\":[],", line)
 
 // ---------------------------------------------------------------------
@@ -357,13 +361,13 @@ let ``empty Sources emits an empty array`` () =
 
 [<Fact>]
 let ``empty ExtraParams emits an empty object`` () =
-    let line = SessionModel.formatTupleAsJsonl baseTuple
+    let line = SessionModel.formatIOCellAsJsonl baseTuple
     Assert.EndsWith("\"extraParams\":{}}\n", line)
 
 [<Fact>]
 let ``ExtraParams keys sort in ordinal string order regardless of insertion order`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with
                 ExtraParams =
                     Map.ofList
@@ -377,7 +381,7 @@ let ``ExtraParams keys sort in ordinal string order regardless of insertion orde
 [<Fact>]
 let ``ExtraParams keys with non-ASCII characters round-trip via UTF-8 passthrough`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with
                 ExtraParams = Map.ofList [ "café", "value" ] }
     Assert.Contains("\"extraParams\":{\"café\":\"value\"}", line)
@@ -389,49 +393,49 @@ let ``ExtraParams keys with non-ASCII characters round-trip via UTF-8 passthroug
 [<Fact>]
 let ``double-quote escapes as backslash double-quote`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with CommandText = "say \"hello\"" }
     Assert.Contains("\"commandText\":\"say \\\"hello\\\"\"", line)
 
 [<Fact>]
 let ``backslash escapes as double backslash`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with CommandText = "C:\\Users" }
     Assert.Contains("\"commandText\":\"C:\\\\Users\"", line)
 
 [<Fact>]
 let ``newline escapes as backslash-n`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with OutputText = "line1\nline2" }
     Assert.Contains("\"outputText\":\"line1\\nline2\"", line)
 
 [<Fact>]
 let ``carriage return escapes as backslash-r`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with OutputText = "a\rb" }
     Assert.Contains("\"outputText\":\"a\\rb\"", line)
 
 [<Fact>]
 let ``tab and other named control chars use named escapes`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with OutputText = "\t\b\f" }
     Assert.Contains("\"outputText\":\"\\t\\b\\f\"", line)
 
 [<Fact>]
 let ``NUL byte escapes as u0000`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with OutputText = " " }
     Assert.Contains("\"outputText\":\"\\u0000\"", line)
 
 [<Fact>]
 let ``raw ANSI ESC (0x1B) escapes as u001b`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with
                 OutputText = "[31mred[0m" }
     Assert.Contains(
@@ -441,14 +445,14 @@ let ``raw ANSI ESC (0x1B) escapes as u001b`` () =
 [<Fact>]
 let ``DEL (0x7F) escapes as u007f (deliberate superset of RFC 8259)`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with OutputText = "" }
     Assert.Contains("\"outputText\":\"\\u007f\"", line)
 
 [<Fact>]
 let ``forward slash passes through unescaped (RFC 8259 minimum)`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with CommandText = "git/branch" }
     Assert.Contains("\"commandText\":\"git/branch\"", line)
 
@@ -457,14 +461,14 @@ let ``C1 control range (0x80-0x9F) passes through as UTF-8`` () =
     // 0x85 is NEL (next line) — a C1 control. RFC 8259 only
     // mandates escape for U+0000-U+001F, so it passes through.
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with OutputText = "" }
     Assert.DoesNotContain("\\u0085", line)
 
 [<Fact>]
 let ``multi-byte UTF-8 characters pass through unescaped`` () =
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with PromptText = "café" }
     Assert.Contains("\"promptText\":\"café\"", line)
 
@@ -472,7 +476,7 @@ let ``multi-byte UTF-8 characters pass through unescaped`` () =
 let ``emoji surrogate pairs pass through as the original UTF-16 sequence`` () =
     // U+1F44B WAVING HAND SIGN; high+low surrogate pair D83D + DC4B
     let line =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with OutputText = "👋" }
     Assert.Contains("\"outputText\":\"👋\"", line)
 
@@ -484,7 +488,7 @@ let ``emoji surrogate pairs pass through as the original UTF-16 sequence`` () =
 let ``lone high surrogate in a string throws InvalidOperationException`` () =
     let loneHigh = String([| char 0xD83D |])
     Assert.Throws<InvalidOperationException>(fun () ->
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with OutputText = loneHigh }
         |> ignore) |> ignore
 
@@ -492,7 +496,7 @@ let ``lone high surrogate in a string throws InvalidOperationException`` () =
 let ``lone low surrogate in a string throws InvalidOperationException`` () =
     let loneLow = String([| char 0xDC4B |])
     Assert.Throws<InvalidOperationException>(fun () ->
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with OutputText = loneLow }
         |> ignore) |> ignore
 
@@ -503,14 +507,14 @@ let ``lone low surrogate in a string throws InvalidOperationException`` () =
 [<Fact>]
 let ``Sources insertion order does not affect output bytes`` () =
     let a =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with
                 Sources =
                     Map.ofList
                         [ BoundaryKind.PromptStart, BoundarySource.Osc133
                           BoundaryKind.CommandStart, BoundarySource.Osc133 ] }
     let b =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with
                 Sources =
                     Map.ofList
@@ -521,7 +525,7 @@ let ``Sources insertion order does not affect output bytes`` () =
 [<Fact>]
 let ``ExtraParams insertion order does not affect output bytes`` () =
     let a =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with
                 ExtraParams =
                     Map.ofList
@@ -529,7 +533,7 @@ let ``ExtraParams insertion order does not affect output bytes`` () =
                           "k2", "v2"
                           "k3", "v3" ] }
     let b =
-        SessionModel.formatTupleAsJsonl
+        SessionModel.formatIOCellAsJsonl
             { baseTuple with
                 ExtraParams =
                     Map.ofList
@@ -570,11 +574,15 @@ let ``every emitted line parses cleanly via System.Text.Json.JsonDocument`` () =
                     [ "k", "value with \"quotes\""
                       "cl", "extra\nline"
                       "café", "ünïcödé" ] }
-    let line = SessionModel.formatTupleAsJsonl trickyTuple
+    let line = SessionModel.formatIOCellAsJsonl trickyTuple
     let json = stripNewline line
     // Should not throw — that's the assertion.
     use doc = JsonDocument.Parse(json)
     Assert.Equal(JsonValueKind.Object, doc.RootElement.ValueKind)
-    Assert.Equal(1, doc.RootElement.GetProperty("schemaVersion").GetInt32())
+    Assert.Equal(2, doc.RootElement.GetProperty("schemaVersion").GetInt32())
+    Assert.Equal(0L, doc.RootElement.GetProperty("cellSequence").GetInt64())
+    Assert.Equal(
+        "sealed",
+        doc.RootElement.GetProperty("phase").GetProperty("kind").GetString())
     Assert.Equal("weird/shell\\name", doc.RootElement.GetProperty("shellId").GetString())
     Assert.Equal(137, doc.RootElement.GetProperty("exitCode").GetInt32())
