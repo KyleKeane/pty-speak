@@ -1042,6 +1042,20 @@ module Program =
         // Empty when no sub-prompt is outstanding; cleared on every
         // top-level command Enter + shell hot-switch.
         let mutable lastSubPromptAnnounce : string = ""
+        // Cycle 51 PR-AB — the just-submitted top-level command
+        // text (UserInputBuffer.Capture() at the CR keystroke).
+        // `lastEnterSeq` is captured synchronously at CR; when
+        // the user types fast and hits Enter, cmd's echo of the
+        // command round-trips through the PTY and lands in
+        // ContentHistory at Seq > lastEnterSeq, so the tuple-final
+        // slice `[lastEnterSeq, tail]` begins with the command
+        // echo line instead of the output. We strip that exact
+        // already-on-screen command line off the front of the
+        // delta (same shape as PR-Y's question strip). Empty when
+        // no top-level command is outstanding; overwritten on
+        // every top-level command Enter; cleared on shell
+        // hot-switch.
+        let mutable lastSubmittedCommand : string = ""
 
         // Cycle 45 Commit 2 — SpeechCursor announce callback +
         // "wake up" trigger. Defined here (very early in compose)
@@ -2109,19 +2123,48 @@ module Program =
                         // (test-02 — the response Enter re-captured
                         // the watermark past the question) and for
                         // plain commands (no outstanding question).
-                        if not (System.String.IsNullOrEmpty lastSubPromptAnnounce)
-                           && d.StartsWith(lastSubPromptAnnounce) then
+                        let afterQuestion =
+                            if not (System.String.IsNullOrEmpty lastSubPromptAnnounce)
+                               && d.StartsWith(lastSubPromptAnnounce) then
+                                let nl =
+                                    d.IndexOf('\n', lastSubPromptAnnounce.Length)
+                                let stripped =
+                                    if nl >= 0 then
+                                        (d.Substring(nl + 1)).TrimStart('\r', '\n')
+                                    else ""
+                                log.LogInformation(
+                                    "PR-Y stripped already-spoken sub-prompt question. QuestionLen={QLen} RawDeltaLen={RawLen} StrippedLen={StrLen}",
+                                    lastSubPromptAnnounce.Length, d.Length, stripped.Length)
+                                stripped
+                            else d
+                        // Cycle 51 PR-AB — fast-type race: when the
+                        // user types a command quickly and hits
+                        // Enter, the CR watermark is captured before
+                        // cmd's echo of the command round-trips
+                        // through the PTY, so the slice leads with
+                        // the command line, not its output. Drop
+                        // that exact already-on-screen command echo
+                        // through the first newline after it. No-op
+                        // when the user typed slowly (echo Seq <
+                        // watermark → slice already starts at the
+                        // output) and for sub-prompt deltas (the
+                        // command echo is far before the watermark).
+                        if not (System.String.IsNullOrEmpty lastSubmittedCommand)
+                           && afterQuestion.StartsWith(lastSubmittedCommand) then
                             let nl =
-                                d.IndexOf('\n', lastSubPromptAnnounce.Length)
+                                afterQuestion.IndexOf(
+                                    '\n', lastSubmittedCommand.Length)
                             let stripped =
                                 if nl >= 0 then
-                                    (d.Substring(nl + 1)).TrimStart('\r', '\n')
+                                    (afterQuestion.Substring(nl + 1))
+                                        .TrimStart('\r', '\n')
                                 else ""
                             log.LogInformation(
-                                "PR-Y stripped already-spoken sub-prompt question. QuestionLen={QLen} RawDeltaLen={RawLen} StrippedLen={StrLen}",
-                                lastSubPromptAnnounce.Length, d.Length, stripped.Length)
+                                "PR-AB stripped fast-type command echo. CmdLen={CmdLen} PreStripLen={PreLen} StrippedLen={StrLen}",
+                                lastSubmittedCommand.Length,
+                                afterQuestion.Length, stripped.Length)
                             stripped
-                        else d
+                        else afterQuestion
                     if System.String.IsNullOrWhiteSpace delta then None
                     else Some delta
                 | _ -> None
@@ -4386,6 +4429,12 @@ module Program =
                                 // command starts: any outstanding
                                 // sub-prompt question is stale.
                                 lastSubPromptAnnounce <- ""
+                                // Cycle 51 PR-AB — remember the
+                                // command text so the tuple-final
+                                // delta can strip its echo if the
+                                // fast-type race put it inside the
+                                // slice window.
+                                lastSubmittedCommand <- captured.Trim()
                             shellInteractionLog.LogInformation(
                                 "PR-X preamble watermark. PreambleSeq={PreambleSeq} CommandEnterSeq={CommandEnterSeq} SubPromptResponse={SubPromptResponse}",
                                 lastEnterSeq,
@@ -4735,6 +4784,7 @@ module Program =
                                         lastEnterSeq <- -1L
                                         commandEnterSeq <- -1L
                                         lastSubPromptAnnounce <- ""
+                                        lastSubmittedCommand <- ""
                                         // Cycle 48 PR-B —
                                         // ShellInteraction state
                                         // resets on shell switch
