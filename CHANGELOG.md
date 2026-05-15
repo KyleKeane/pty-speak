@@ -13851,6 +13851,37 @@ alongside the ContentHistory reset. New `SpeechCursor` cell-API
 unit tests (additive; the existing 25 Seq-engine tests are
 untouched).
 
+### Cycle 51 PR-AE (2026-05-15): cursor-anchored prompt detection (root-cause fix)
+
+The maintainer's 2026-05-15 dogfood showed garbled spoken output
+on fast typing / history recall and a progress loop that dumped
+everything at the end — and, correctly, flagged the
+fix-one-break-another pattern as a codebase-health smell. Root
+cause (single, upstream): `HeuristicPromptDetector` ignored the
+cursor and PASS 2 picked the **bottommost regex match anywhere
+on screen**. The instant the real prompt row was edited (history
+recall / fast typing) or changed by an in-place progress redraw,
+it no longer matched the bare-prompt regex, so the detector
+re-locked onto a **stale scrollback `C:\…>` row** from a prior
+command cycle, saw a different `rowIdx`, and fired a phantom
+`PromptStart` → bogus tuple finalize → garbage announce sliced
+from a stale watermark. Every recent announce-path patch
+(PR-X/Y/AB) was a downstream compensation for this unstable
+signal.
+
+Fix: PASS 2 is now **cursor-anchored** — the active prompt is the
+stable regex match on the cursor's row; a match on any other row
+is stale scrollback and is ignored (no emission when the cursor
+isn't on a clean prompt, i.e. the user is composing / output is
+streaming). When the cursor is the `(-1,-1)` unit-test sentinel
+the legacy bottommost-match selection is retained, so the
+existing detector test corpus is unaffected (zero churn); four
+additive tests pin the new behaviour. The emission gate,
+dirty-flag, logging, and state are otherwise unchanged. A
+follow-up audit should retire the now-redundant
+announce-path compensations (PR-AB; parts of PR-X/Y) once this is
+dogfood-validated.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

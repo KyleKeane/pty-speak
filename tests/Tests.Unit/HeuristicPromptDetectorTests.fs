@@ -885,3 +885,71 @@ let ``stable prompt at row 0 then prompt scrolled to row 1 emits twice`` () =
         HeuristicPromptDetector.tryDetect snap2 noCursor "cmd" (after 300) s3
     Assert.True(r2.IsSome)
     Assert.Equal(Some 1, r2.Value.MatchedRowIndex)
+
+// ---------------------------------------------------------------------
+// Cycle 51 PR-AE — cursor-anchored active-prompt selection.
+// The active prompt is the row the CURSOR sits on; a regex match
+// on any other row is stale scrollback. The legacy
+// bottommost-match path is preserved when the cursor is the
+// (-1,-1) test sentinel, so the corpus above is unaffected.
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``cursor-anchored - stale scrollback prompt off the cursor row is suppressed`` () =
+    // row 0: a bare prompt left from a prior command cycle (still
+    // matches the regex). row 2: the real prompt row, but the
+    // user has typed on it so it no longer matches. Cursor on
+    // row 2. Legacy bottommost-match would re-lock onto row 0 and
+    // fire a phantom PromptStart; the cursor anchor suppresses.
+    let snap =
+        snapshotOf 3 80 [ "C:\\>"; "some output"; "C:\\>echo hi" ]
+    let detector = HeuristicPromptDetector.create ()
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect snap (2, 11) "cmd" t0 detector
+    let r2, _ =
+        HeuristicPromptDetector.tryDetect snap (2, 11) "cmd" (after 100) s1
+    Assert.True(r2.IsNone)
+
+[<Fact>]
+let ``cursor-anchored - legacy no-cursor path still emits on the same snapshot`` () =
+    // Differentiator: with the (-1,-1) sentinel the legacy
+    // bottommost-match path is preserved (existing corpus
+    // unaffected); only the real-cursor production path anchors.
+    let snap =
+        snapshotOf 3 80 [ "C:\\>"; "some output"; "C:\\>echo hi" ]
+    let detector = HeuristicPromptDetector.create ()
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" t0 detector
+    let r2, _ =
+        HeuristicPromptDetector.tryDetect snap noCursor "cmd" (after 100) s1
+    Assert.True(r2.IsSome)
+
+[<Fact>]
+let ``cursor-anchored - prompt on the cursor row emits with that row's index`` () =
+    let snap = snapshotOf 2 80 [ "prior output"; "C:\\>" ]
+    let detector = HeuristicPromptDetector.create ()
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect snap (1, 4) "cmd" t0 detector
+    let r2, _ =
+        HeuristicPromptDetector.tryDetect snap (1, 4) "cmd" (after 100) s1
+    match r2 with
+    | Some data ->
+        Assert.Equal(Some 1, data.MatchedRowIndex)
+        Assert.Equal(Some "C:\\>", data.MatchedRowText)
+    | None -> Assert.Fail("Expected PromptStart on the cursor's prompt row")
+
+[<Fact>]
+let ``cursor-anchored - selects the cursor row's match not the bottommost`` () =
+    // Two matching prompt rows. Legacy picks bottommost (row 1,
+    // "C:\foo>"); the cursor anchor must pick the cursor's row 0.
+    let snap = snapshotOf 2 80 [ "C:\\>"; "C:\\foo>" ]
+    let detector = HeuristicPromptDetector.create ()
+    let _, s1 =
+        HeuristicPromptDetector.tryDetect snap (0, 4) "cmd" t0 detector
+    let r2, _ =
+        HeuristicPromptDetector.tryDetect snap (0, 4) "cmd" (after 100) s1
+    match r2 with
+    | Some data ->
+        Assert.Equal(Some 0, data.MatchedRowIndex)
+        Assert.Equal(Some "C:\\>", data.MatchedRowText)
+    | None -> Assert.Fail("Expected PromptStart on the cursor row")

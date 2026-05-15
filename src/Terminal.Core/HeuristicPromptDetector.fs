@@ -217,12 +217,16 @@ module HeuristicPromptDetector =
     /// boundary into `SessionModel.apply` + the active
     /// pathway's `OnPromptBoundary`.
     ///
-    /// `cursor` is captured for forward-compatibility with
-    /// the cursor-position refinement (Phase 2); Tier 1.D
-    /// doesn't use it.
+    /// `cursor` (`(row, col)`) anchors active-prompt selection
+    /// (Cycle 51 PR-AE): the prompt the user is at is the one
+    /// the cursor sits on; a regex match on any other row is
+    /// stale scrollback. When `cursor` is invalid (`row < 0` —
+    /// the `(-1,-1)` unit-test sentinel / no cursor) the legacy
+    /// bottommost-match selection is used so the pure-function
+    /// test corpus is unaffected.
     let tryDetect
             (snapshot: Cell[][])
-            (_cursor: int * int)
+            (cursor: int * int)
             (shellKey: string)
             (now: DateTime)
             (state: T)
@@ -320,20 +324,48 @@ module HeuristicPromptDetector =
                     state.LastEmittedPromptRowIndex,
                     priorRowText)
 
-            // PASS 2 — pick highest-rowIdx among stable matches,
-            // apply the row-index-aware emission gate.
+            // PASS 2 — cursor-anchored active-prompt selection,
+            // then the row-index-aware emission gate.
             let mutable emitted : PromptBoundaryData option = None
             let mutable emittedText : string option = None
             let mutable emittedRowIndex : int option = None
-            if stableMatches.Count > 0 then
-                let firstRow, firstText = stableMatches.[0]
-                let mutable bestRow = firstRow
-                let mutable bestText = firstText
-                for i in 1 .. stableMatches.Count - 1 do
-                    let candidateRow, candidateText = stableMatches.[i]
-                    if candidateRow > bestRow then
-                        bestRow <- candidateRow
-                        bestText <- candidateText
+            // Cycle 51 PR-AE (root-cause fix) — the active prompt
+            // is the one the CURSOR sits on. A regex match on any
+            // other row is stale scrollback (a bare `C:\…>` left
+            // on an earlier row from a prior command cycle still
+            // matches the regex; output flows downward). The old
+            // "bottommost match anywhere" rule re-locked onto that
+            // scrollback the instant the real prompt row was
+            // edited (history recall / fast typing) or changed by
+            // an in-place progress redraw, firing a phantom
+            // PromptStart → bogus tuple finalize → garbled
+            // announce (the maintainer's 2026-05-15 dogfood). When
+            // the cursor is invalid (`row < 0` — the (-1,-1)
+            // unit-test sentinel / no cursor) fall back to the
+            // legacy bottommost-match selection so the
+            // pure-function test corpus is unaffected.
+            let cursorRow = fst cursor
+            let bestPrompt : (int * string) option =
+                if cursorRow >= 0 && cursorRow < snapshot.Length then
+                    let mutable hit : (int * string) option = None
+                    for i in 0 .. stableMatches.Count - 1 do
+                        let r, t = stableMatches.[i]
+                        if r = cursorRow then hit <- Some (r, t)
+                    hit
+                elif stableMatches.Count = 0 then
+                    None
+                else
+                    let firstRow, firstText = stableMatches.[0]
+                    let mutable bestRow = firstRow
+                    let mutable bestText = firstText
+                    for i in 1 .. stableMatches.Count - 1 do
+                        let candidateRow, candidateText = stableMatches.[i]
+                        if candidateRow > bestRow then
+                            bestRow <- candidateRow
+                            bestText <- candidateText
+                    Some (bestRow, bestText)
+            match bestPrompt with
+            | Some (bestRow, bestText) ->
                 // Tier 1.E2.A — row-index-aware emission gate.
                 // A NEW PromptStart fires when the (text, rowIdx)
                 // pair differs from the last emitted pair OR the
@@ -390,6 +422,12 @@ module HeuristicPromptDetector =
                               MatchedRowIndex = Some bestRow }
                     emittedText <- Some bestText
                     emittedRowIndex <- Some bestRow
+            | None ->
+                // No active prompt this tick: the cursor isn't on
+                // a stable bare-prompt row (user is composing /
+                // output is streaming / only stale scrollback
+                // matched). Emitting here was the phantom bug.
+                ()
 
             let nextLastEmittedText =
                 match emittedText with
