@@ -53,7 +53,24 @@ before deviating.
    (PRs #299–#305) with a single transition table. Read before
    working on the announce / NVDA-channel routing code or the
    UIA Text-pattern materialiser.
-7. **RFC 0001 (archived)** — Cycle 33 pivot-gate RFC, formalised
+7. **[`docs/adr/0004-iocell-model-for-shell-interaction.md`](docs/adr/0004-iocell-model-for-shell-interaction.md)**
+   — Cycle 51 architectural pivot (Proposed 2026-05-14). Locks
+   four decisions: (1) **IOCell** is the unit of shell
+   interaction (renamed from `SessionTuple`); (2) sub-prompts are
+   inline state inside the parent IOCell in v1, not nested cells;
+   (3) **ContentHistory** is the sole extraction substrate —
+   screen-row coordinates are display-only post-pivot, and
+   extraction drops the cell when no PromptStart Seq exists
+   ("loud silence beats stale-scrollback garbage announce"); (4)
+   **OutputDispatcher** is the sole non-emergency channel —
+   substrate-driven announces flow through Tier 1, app-affordance
+   announces use a narrow named bypass (`AnnounceEmergency`) on a
+   dedicated `pty-speak.app-affordance` activity ID. Also locks
+   the v1 IOCell data structure (F# records + DUs in memory,
+   hand-rolled JSONL on disk with `schemaVersion=2`, round-trip
+   reader shipped maintainer-only in PR-W2). Read before working
+   on any extraction / announce / channel-routing code.
+8. **RFC 0001 (archived)** — Cycle 33 pivot-gate RFC, formalised
    the `LinearTextStream` substrate + streaming-emission protocol.
    The substrate it specified was replaced by `ContentHistory` +
    `SpeechCursor` in Cycle 45 (PRs #263–#270, 2026-05-12); the RFC
@@ -63,7 +80,7 @@ before deviating.
    context — the live substrate lives in `src/Terminal.Core/`
    (`ContentHistory.fs`, `SpeechCursor.fs`) and is described
    informally in CORE-ABSTRACTION-BOUNDARY.md §7.
-8. **[`docs/CANONICAL-DISPLAY-CATALOG.md`](docs/CANONICAL-DISPLAY-CATALOG.md)**
+9. **[`docs/CANONICAL-DISPLAY-CATALOG.md`](docs/CANONICAL-DISPLAY-CATALOG.md)**
    — Cycle 33 pivot-gate companion. Full per-primitive UIA /
    ARIA / NVDA / JAWS / Narrator / interaction-contract /
    channel-routing specs for the three exemplars (raw text +
@@ -72,9 +89,9 @@ before deviating.
    extension points (severity alert, indeterminate progress,
    Tier-2 deferred, Tier-3 deferred). Read before working on
    any output-side framework or channel implementation.
-9. **[`spec/tech-plan.md`](spec/tech-plan.md)** §N for the canonical
-   spec of whatever stage you're working on.
-10. **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — canonical PR shape,
+10. **[`spec/tech-plan.md`](spec/tech-plan.md)** §N for the canonical
+    spec of whatever stage you're working on.
+11. **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — canonical PR shape,
     branch naming, F# / .NET 9 gotchas, accessibility
     non-negotiables, P/Invoke conventions, test conventions.
 
