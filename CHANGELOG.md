@@ -13746,6 +13746,35 @@ command is read whole. Non-wrapping commands are unaffected
 (cursor row == prompt row → single row); with no prompt text
 (e.g. PowerShell) it stays on the single prompt row as before.
 
+### Cycle 51 PR-AA (2026-05-15): speak the full sub-prompt preamble + restore the startup banner
+
+Post-PR-Y/Z dogfood found two "first part not spoken" gaps:
+(1) two-part tests (user-input, numeric, yes/no, pause) spoke
+only the question, not the intro ("This test asks…", "Enter a
+number:"); (2) switching to cmd no longer read the startup
+banner ("Microsoft Windows [Version …]").
+
+(1) PR-X took only the accumulator's last non-empty line
+because the raw byte accumulator carries an OSC window-title
+sequence whose printable body (`]0;…\foo.cmd"`) survives the
+lone-ESC `AnnounceSanitiser.sanitise` as spoken garbage. New
+`AnnounceSanitiser.stripSequences` strips whole CSI / OSC
+(BEL- or ST-terminated) / two-char-ESC sequences (full xUnit
+coverage); the sub-prompt announce now strips sequences, splits
+into visible lines, and speaks the whole preamble + question.
+Only the question line is stored for PR-Y's post-response strip
+(the tuple-final slice begins at the question, never the
+preamble, so PR-Y still matches).
+
+(2) PR-X's `when lastEnterSeq >= 0L` tuple-final guard
+suppressed every announce before the first command Enter —
+including the shell startup / post-switch banner. The slice
+watermark now defaults to `0L` when no command Enter has
+happened yet, so the banner is spoken; normal commands use the
+command-Enter watermark unchanged. New `PR-AA sub-prompt
+announce` Information diagnostic (replaces `PR-X sub-prompt
+announce`).
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

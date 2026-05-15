@@ -138,3 +138,70 @@ let ``sanitiseForBundle preserves non-BMP Unicode`` () =
     let emoji = "\U0001F600"
     let input = sprintf "before %s\nafter" emoji
     Assert.Equal(input, AnnounceSanitiser.sanitiseForBundle input)
+
+// ---------------------------------------------------------------------
+// stripSequences: Cycle 51 PR-AA — strip whole ANSI/VT escape
+// SEQUENCES (CSI / OSC / two-char ESC), not just the lone ESC
+// byte. Used by the sub-prompt announce so a multi-line preamble
+// sourced from the raw byte accumulator doesn't speak the
+// surviving printable body of an OSC window-title sequence.
+// Must NOT strip lone C0 controls (\n / \r) — the caller splits
+// on \n after this and chains `sanitise` per line.
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``stripSequences empty returns empty`` () =
+    Assert.Equal("", AnnounceSanitiser.stripSequences "")
+
+[<Fact>]
+let ``stripSequences null returns empty`` () =
+    Assert.Equal("", AnnounceSanitiser.stripSequences null)
+
+[<Fact>]
+let ``stripSequences leaves plain text unchanged`` () =
+    let s = "Continue? [Y,N]?"
+    Assert.Equal(s, AnnounceSanitiser.stripSequences s)
+
+[<Fact>]
+let ``stripSequences removes CSI colour sequences`` () =
+    let input = "a\x1B[31mb\x1B[0mc"
+    Assert.Equal("abc", AnnounceSanitiser.stripSequences input)
+
+[<Fact>]
+let ``stripSequences removes BEL-terminated OSC title and keeps body after`` () =
+    // The real test-04 shape: OSC set-title then the script's
+    // first output line, BEL between them.
+    let input =
+        "\x1B]0;C:\\WINDOWS\\SYSTEM32\\cmd.exe - foo.cmd\x07=== PTYSPEAK-TEST-START ==="
+    Assert.Equal(
+        "=== PTYSPEAK-TEST-START ===",
+        AnnounceSanitiser.stripSequences input)
+
+[<Fact>]
+let ``stripSequences removes ST-terminated OSC`` () =
+    let input = "x\x1B]0;the title\x1B\\y"
+    Assert.Equal("xy", AnnounceSanitiser.stripSequences input)
+
+[<Fact>]
+let ``stripSequences removes two-char ESC sequence`` () =
+    let input = "a\x1B(Bb"
+    Assert.Equal("ab", AnnounceSanitiser.stripSequences input)
+
+[<Fact>]
+let ``stripSequences drops a trailing lone ESC`` () =
+    Assert.Equal("abc", AnnounceSanitiser.stripSequences "abc\x1B")
+
+[<Fact>]
+let ``stripSequences preserves newlines and carriage returns`` () =
+    // Critical: the multi-line sub-prompt announce splits on \n
+    // AFTER stripSequences, so \n / \r must survive here.
+    let input = "line1\r\nline2\nline3"
+    Assert.Equal(input, AnnounceSanitiser.stripSequences input)
+
+[<Fact>]
+let ``stripSequences cleans the full test-04 sub-prompt accumulator shape`` () =
+    let input =
+        "\n\x1B]0;C:\\WINDOWS\\SYSTEM32\\cmd.exe - \"C:\\test-04.cmd\"\x07=== PTYSPEAK-TEST-START: test-04-yes-no ===\r\nThis test asks a yes/no question. Press Y or N (no Enter needed).\r\nContinue? [Y,N]?"
+    let expected =
+        "\n=== PTYSPEAK-TEST-START: test-04-yes-no ===\r\nThis test asks a yes/no question. Press Y or N (no Enter needed).\r\nContinue? [Y,N]?"
+    Assert.Equal(expected, AnnounceSanitiser.stripSequences input)
