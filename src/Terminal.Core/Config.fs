@@ -293,6 +293,17 @@ module Config =
             "#                        (e.g. \"Local>\" from"
             "#                        \"C:\\Users\\Kyle\\Local>\")."
             "#   \"full\"            — narrate the prompt verbatim."
+            "#   \"full_on_change\"  — full path when the prompt"
+            "#                        changed (a cd / shell-switch),"
+            "#                        final-dir-only when unchanged"
+            "#                        (Cycle 52 R6b)."
+            "#   \"final_on_change\" — the mirror: final-dir-only on"
+            "#                        change, full path when"
+            "#                        unchanged."
+            "#   \"full_on_change_silent\"  — full path on change,"
+            "#                        silent when unchanged."
+            "#   \"final_on_change_silent\" — final-dir-only on"
+            "#                        change, silent when unchanged."
             "#"
             "# Menu changes via `View → Output Verbosity` /"
             "# `View → Prompt Path` are runtime overrides (Layer 3);"
@@ -637,9 +648,15 @@ module Config =
                             | Some "full" -> Some ShellPolicy.Full
                             | Some "full_on_change" ->
                                 Some ShellPolicy.FullOnChangeElseFinal
+                            | Some "final_on_change" ->
+                                Some ShellPolicy.FinalOnChangeElseFull
+                            | Some "full_on_change_silent" ->
+                                Some ShellPolicy.SilentOnUnchangedFullOnChange
+                            | Some "final_on_change_silent" ->
+                                Some ShellPolicy.SilentOnUnchangedFinalOnChange
                             | Some other ->
                                 logger.LogWarning(
-                                    "Config: [shell.{Key}] prompt_path = '{Value}' is not one of 'suppress' / 'final_dir_only' / 'full' / 'full_on_change'; ignored.",
+                                    "Config: [shell.{Key}] prompt_path = '{Value}' is not one of 'suppress' / 'final_dir_only' / 'full' / 'full_on_change' / 'final_on_change' / 'full_on_change_silent' / 'final_on_change_silent'; ignored.",
                                     key, other)
                                 None
                         let verbosity = readVerbosity ()

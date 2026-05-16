@@ -198,6 +198,22 @@ let ``[shell.cmd] prompt_path = "full_on_change" resolves through resolveShellPo
     Assert.Equal(ShellPolicy.TupleFinalOnly, policy.Streaming)
 
 [<Fact>]
+let ``[shell.cmd] prompt_path R6b-followup on-change tokens resolve`` () =
+    // Cycle 52 R6b-followup — the three additional on-change modes.
+    let cases =
+        [ ("final_on_change", ShellPolicy.FinalOnChangeElseFull)
+          ("full_on_change_silent", ShellPolicy.SilentOnUnchangedFullOnChange)
+          ("final_on_change_silent", ShellPolicy.SilentOnUnchangedFinalOnChange) ]
+    for token, expected in cases do
+        let toml =
+            sprintf
+                "schema_version = 1\n[shell.cmd]\nprompt_path = \"%s\"\n"
+                token
+        let config, _ = loadFromText toml
+        let policy = Config.resolveShellPolicy config "cmd"
+        Assert.Equal(expected, policy.PromptPath)
+
+[<Fact>]
 let ``[shell.cmd] both verbosity and prompt_path resolve together`` () =
     let toml =
         "schema_version = 1\n[shell.cmd]\nverbosity = \"off\"\nprompt_path = \"full\"\n"
