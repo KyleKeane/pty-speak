@@ -2277,7 +2277,25 @@ module Program =
                     // R4c delivers for cmd; this heuristic path is
                     // the residual fallback for shells that emit no
                     // OSC 133 (claude).
-                    if finalisedOpt.IsSome
+                    // **P2 (2026-05-16) — explicit heuristic-only
+                    // guard.** Post-R4c/R5b this was already
+                    // correct *by construction* (cmd/PowerShell
+                    // finalise on the real `;D` call, so the `;A`
+                    // PromptStart call has `finalisedOpt = None`
+                    // → this never tripped for them). P2 adds
+                    // `not oscSeenThisSession` to make the
+                    // heuristic-only intent explicit and to harden
+                    // the defensive edge: if an OSC shell ever
+                    // reaches `;A` with an Active cell (a missed/
+                    // garbled `;D`), an OSC-authoritative session
+                    // must NOT fall back to the cmd-heuristic-era
+                    // synthetic marker — that is exactly the R3a
+                    // precedence principle ("once OSC seen, mute
+                    // heuristic"). Golden path: identical. claude
+                    // (`oscSeenThisSession` always false — no
+                    // OSC 133): unchanged, still fires.
+                    if (not oscSeenThisSession)
+                        && finalisedOpt.IsSome
                         && k = ContentHistory.MarkerKind.PromptStart then
                         ContentHistory.appendMarker
                             contentHistory

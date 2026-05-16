@@ -14450,6 +14450,34 @@ post-OSC scan disappear. No user-visible change; CI-gated
 (locally unverifiable — no `dotnet`); regression-swept by the
 next NVDA dogfood. Playbook §5 P1 marked done.
 
+### Cycle 52 P2 (2026-05-16): explicit heuristic-only guard on the Cycle-47 synthetic CommandFinished
+
+Second of the P1–P5 pre-R6 prunings. The Cycle-47
+synthetic-`CommandFinished`-before-`;A` compensation in
+`Program.fs handlePromptBoundary` was already correct *by
+construction* post-R4c/R5b: cmd and PowerShell finalise their
+cell on the real `;D` `CommandFinished` boundary, so the
+subsequent `;A` PromptStart call has `finalisedOpt = None` and
+the `if finalisedOpt.IsSome && k = PromptStart` guard never
+tripped for them — only genuinely-heuristic claude (a
+PromptStart-while-Active interrupt finalises on the same `;A`
+call) reached it. P2 makes that intent **explicit and
+regression-hardened** by adding `not oscSeenThisSession` to the
+guard — the **same predicate P1 uses**, the single source of
+truth for "OSC-133 authoritative this session".
+
+Golden path: **identical**. claude (`oscSeenThisSession` always
+false — emits no OSC 133): **unchanged**, the synthetic marker
+still fires (load-bearing). The only behaviour delta is the
+intended hardening: in the defensive missed/garbled-`;D` edge,
+an OSC-authoritative shell (cmd/PowerShell) no longer falls
+back to the cmd-heuristic-era synthetic marker — which is
+exactly the established R3a precedence principle ("once OSC
+seen, mute heuristic"), not a new decision. One comment +
+one `&&`-condition change; no user-visible change on the
+golden path; locally unverifiable (CI is the build signal).
+Playbook §5 P2 marked done.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
