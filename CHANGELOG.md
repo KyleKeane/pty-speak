@@ -14478,6 +14478,29 @@ one `&&`-condition change; no user-visible change on the
 golden path; locally unverifiable (CI is the build signal).
 Playbook §5 P2 marked done.
 
+### Cycle 52 P3 (2026-05-16): investigated; safe half is a no-op, risky half re-scoped as deferred P3b
+
+Docs-only. P3 (audit-classified "safe-to-delete dead pathway
+config keys") investigated and found mis-scoped: (a) the
+**generated `config.toml` template is already clean** — it has
+no `#[pathway.stream]` / `#substrate_mode` lines (the
+maintainer's on-disk file showing them is a stale-build
+artifact; `Ctrl+Shift+E` only creates-if-missing, never
+rewrites), so that half is a no-op; (b)
+`ShellPathwayConfig.PathwayId` + `resolvePathwayForShell` +
+`[pathway.<id>]` parameter parsing are confirmed dead (no live
+`Terminal.App` consumer — grep-verified) **but entangled in
+the live `ShellPathwayConfig` record** which also carries the
+live `Verbosity` → `currentShellPolicy.Streaming/PromptPath`
+config consumed throughout `Program.fs`. Removing the dead bits
+is a surgical, wide, locally-unverifiable record/parser
+refactor of a ~1000-line core config module — deliberately not
+bundled into the P1–P5 proceed-pass (no-risky-locally-
+unverifiable-rip discipline). Re-scoped as deferred **P3b**
+(ADR 0006 §"Deferred to R6+" item 8), low priority (inert; not
+gating R6). No code change; finding + deferral recorded so a
+fresh session doesn't re-attempt the "safe delete".
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
