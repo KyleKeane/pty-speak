@@ -51,6 +51,7 @@
     <Compile Include="ShellRegistryTests.fs" />
     <Compile Include="ShellSwitchTests.fs" />
     <Compile Include="CmdAdapterTests.fs" />
+    <Compile Include="PowerShellAdapterTests.fs" />
     <Compile Include="HotkeyRegistryTests.fs" />
     <Compile Include="AppReservedHotkeysMirrorTests.fs" />
     <Compile Include="MultiStateRegistryTests.fs" />

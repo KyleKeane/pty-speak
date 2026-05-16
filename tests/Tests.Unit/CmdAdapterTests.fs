@@ -75,18 +75,22 @@ let ``Osc133IntegratorFor Cmd wraps exactly like CmdAdapter.IntegrateOsc133`` ()
         integ "cmd.exe")
 
 [<Fact>]
-let ``Osc133IntegratorFor non-cmd is identity (byte-identical pre-R5a)`` () =
-    // R5b will replace the PowerShell arm; until then every
-    // non-cmd shell returns its command line unchanged — exactly
-    // the pre-R5a `else` branch at both spawn sites.
+let ``Osc133IntegratorFor PowerShell now injects; claude still identity`` () =
+    // R5b flipped the PowerShell arm (was identity at R5a — the
+    // deliberate test-visible change R5a's pin anticipated).
+    // claude (and any future shell) stays identity = the
+    // pre-R5a `else` branch; only cmd + PowerShell inject.
     let psI =
         Terminal.Shell.SessionHost.Osc133IntegratorFor
             Terminal.Pty.ShellRegistry.PowerShell
     let clI =
         Terminal.Shell.SessionHost.Osc133IntegratorFor
             Terminal.Pty.ShellRegistry.Claude
-    Assert.Equal("powershell.exe", psI "powershell.exe")
-    Assert.DoesNotContain("133", psI "powershell.exe")
+    Assert.Equal(
+        Terminal.Shell.PowerShellAdapter.IntegrateOsc133 "powershell.exe",
+        psI "powershell.exe")
+    Assert.Contains("-NoExit -EncodedCommand ", psI "powershell.exe")
+    // claude unchanged — byte-identical to the pre-R5a `else`.
     Assert.Equal("claude", clI "claude")
 
 [<Fact>]

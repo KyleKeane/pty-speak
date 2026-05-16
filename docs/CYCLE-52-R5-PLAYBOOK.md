@@ -138,27 +138,38 @@ the seam, zero behaviour change" discipline):
   is the **R6** target, not R5 — the "Full IShellAdapter
   now" option was explicitly rejected (large, non-
   behaviour-identical, R6-class).
-- **R5b — `PowerShellAdapter`.** New
-  `src/Terminal.Shell/PowerShellAdapter.fs` mirroring
-  `CmdAdapter` (owns one `Parser.create()`; the parser is
-  NOT reset on shell-switch). Add a
-  `PowerShellAdapter.IntegrateOsc133`-equivalent. Injection
-  *mechanism* per ADR 0005 §3: a generated `prompt` function
-  emitting OSC-133, injected via `powershell.exe -NoExit
-  -Command "<prompt fn + init>"` (preferred — self-
-  contained, no temp-file cleanup) or a generated profile.
-  Gate the injection at the **two existing sites**:
-  `SessionHost.ResolveStartupShell`
-  ([`src/Terminal.Shell/SessionHost.fs`](../src/Terminal.Shell/SessionHost.fs):126-135,
-  the `if resolvedShell.Id = ShellRegistry.Cmd` block — add a
-  `PowerShell` arm) and the shell-switch path in `Program.fs`
-  (`switchToShell`, near :4642
-  `CmdAdapter.IntegrateOsc133`, the
-  "R2 cmd OSC-133 prompt injection applied (shell-switch)"
-  log). `ShellRegistry` already has the `PowerShell` entry
-  (PR-J; `Resolve = fun () -> Ok "powershell.exe"`;
-  `parseEnvVar` accepts `powershell`/`pwsh`) — **no registry
-  work needed**.
+- **R5b — `PowerShellAdapter` (DONE — dogfood-pending).**
+  New `src/Terminal.Shell/PowerShellAdapter.fs` (statics
+  only — no parser/instance; Translate stays the shared
+  shell-agnostic path per R5a, spawn/input ConPtyHost-
+  direct; R6 broadens). `Osc133InitScript` = a WinPS-5.1
+  `prompt` function (F# **triple-quoted** → zero escaping
+  risk) emitting `;D;$LASTEXITCODE` (real exit code — the
+  asymmetry cmd lacks) → `;A` → `$($PWD.Path)>` → `;B`;
+  same `;A`/`;B` framing as cmd ⇒ **same `CmdOscAB`
+  consumer arm, zero consumer change**; `Osc133.tryParse`
+  already decodes `;D;<int>`; the leading `;D;0` is handled
+  by the existing `None,CommandFinished` ignore + R4c
+  stray-gate exactly like cmd. `IntegrateOsc133` =
+  `powershell.exe -NoExit -EncodedCommand <base64-UTF16LE
+  of the script>` — chosen over `-Command "…"` because the
+  base64 alphabet is space/quote/metacharacter-free, giving
+  the **same quoting-safe property cmd's space-free value
+  has** (the script can't be space-free, so encode it
+  instead of fighting CreateProcess+PowerShell quoting).
+  Wired via the **R5a selector**: one `PowerShell` arm in
+  `SessionHost.Osc133IntegratorFor` (no second gate site —
+  R5a centralised it) + a distinct `R5b PowerShell OSC-133
+  prompt injection applied (startup|shell-switch)` log at
+  the two log sites (cmd's lines unchanged + greppable).
+  `ShellRegistry` PowerShell entry already exists (PR-J) —
+  no registry work. Pinned by `PowerShellAdapterTests`
+  (script + base64 round-trip) + the flipped
+  `CmdAdapterTests` selector pin. **Locally unverifiable**
+  (no PowerShell in sandbox; cmd/R2 precedent): the script
+  is the dogfood-tunable knob; if the visible prompt or
+  emission needs adjusting it is a contained
+  `Osc133InitScript` one-liner.
 - **R5c — exit code + `;C`.** Emit `;D;$LASTEXITCODE` (real
   exit code — the asymmetry cmd lacks) and, if reachable, a
   real `;C` OutputStart. A real `;C` routes extraction

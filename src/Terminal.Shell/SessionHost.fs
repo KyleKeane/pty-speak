@@ -127,14 +127,17 @@ type SessionHost private () =
         let integrated =
             (SessionHost.Osc133IntegratorFor resolvedShell.Id)
                 resolvedCmdLine
-        // Behaviour-identical: the cmd-specific log fires
-        // exactly when it did pre-R5a (cmd only). R5b adds a
-        // distinct PowerShell injection log alongside its
-        // `Osc133IntegratorFor` arm, so this cmd line stays
-        // stable + greppable in the diagnostic bundle.
+        // The cmd line stays exactly as pre-R5a (cmd only);
+        // R5b adds a DISTINCT PowerShell injection log so each
+        // shell's bundle line is independently greppable.
         if resolvedShell.Id = ShellRegistry.Cmd then
             log.LogInformation(
                 "R2 cmd OSC-133 prompt injection applied (startup). Base={Base} Integrated={Integrated}",
+                resolvedCmdLine,
+                integrated)
+        elif resolvedShell.Id = ShellRegistry.PowerShell then
+            log.LogInformation(
+                "R5b PowerShell OSC-133 prompt injection applied (startup). Base={Base} Integrated={Integrated}",
                 resolvedCmdLine,
                 integrated)
         resolvedShell, integrated
@@ -167,6 +170,11 @@ type SessionHost private () =
         match shellId with
         | ShellRegistry.Cmd ->
             (fun cmdLine -> CmdAdapter.IntegrateOsc133 cmdLine)
+        | ShellRegistry.PowerShell ->
+            // R5b — PowerShell now injects (was identity at
+            // R5a). Real `;D;$LASTEXITCODE` + `;A`/`;B`; same
+            // `CmdOscAB` consumer arm as cmd, plus an exit code.
+            (fun cmdLine -> PowerShellAdapter.IntegrateOsc133 cmdLine)
         | _ ->
             (fun cmdLine -> cmdLine)
 

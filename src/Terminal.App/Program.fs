@@ -4654,6 +4654,11 @@ module Program =
                                 "R2 cmd OSC-133 prompt injection applied (shell-switch). Base={Base} Integrated={Integrated}",
                                 newCmdLine,
                                 integrated)
+                        elif target = ShellRegistry.PowerShell then
+                            log.LogInformation(
+                                "R5b PowerShell OSC-133 prompt injection applied (shell-switch). Base={Base} Integrated={Integrated}",
+                                newCmdLine,
+                                integrated)
                         integrated
                     // Announce-before-launch pattern from
                     // Stage 4b's diagnostic-launcher: NVDA

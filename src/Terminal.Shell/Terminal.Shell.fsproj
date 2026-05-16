@@ -19,6 +19,15 @@
       dependency on ShellEvent / ShellAdapter above.
     -->
     <Compile Include="CmdAdapter.fs" />
+    <!--
+      R5b (ADR 0006 R5): the PowerShell transport adapter's
+      OSC-133 injection. Sibling of CmdAdapter; like it, must
+      precede SessionHost in F# compile order — R5a's
+      SessionHost.Osc133IntegratorFor selector references
+      PowerShellAdapter.IntegrateOsc133 in its PowerShell arm.
+      No dependency on ShellEvent / ShellAdapter / CmdAdapter.
+    -->
+    <Compile Include="PowerShellAdapter.fs" />
     <Compile Include="SessionHost.fs" />
     <!--
       R1.2: HeuristicPromptDetector relocated here from
