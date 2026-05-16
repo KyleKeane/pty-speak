@@ -634,9 +634,17 @@ Currently shipped (orientation reference; spec section 6 is canonical):
   (`+1`=cmd / `+2`=PowerShell / `+3`=Claude; PR-J reordered to
   put PowerShell next to cmd as the diagnostic control shell)
 - `Ctrl+Shift+H` — health-check announce: **informational
-  version** (Cycle 52 R4-followup — local-build sanity check),
-  shell + PID + alive, log level, reader staleness, queue
-  depths (PR-F + PR-J liveness probe)
+  version incl. `+<git-short-sha>` build identity** (Cycle 52
+  R4-followup — a local build always reports
+  `0.0.1-preview.1`, so the `+sha` is the only thing that
+  confirms which commit a dogfood is running; auto-embedded by
+  the `SetGitShortShaSourceRevision` target in
+  `Directory.Build.props`, match it to `git rev-parse --short
+  HEAD`). When triaging a dogfood, **always have the maintainer
+  read the `Ctrl+Shift+H` Version line first** to rule out a
+  stale local build before chasing a "regression". Then shell +
+  PID + alive, log level, reader staleness, queue depths (PR-F +
+  PR-J liveness probe)
 - `Ctrl+Shift+B` — incident marker boundary line in the log (PR-F)
 - `Ctrl+Shift+Y` — copy SessionModel history to clipboard (Cycle 22b);
   paste-friendly structured plain-text dump of all completed

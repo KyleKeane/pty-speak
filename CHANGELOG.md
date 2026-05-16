@@ -14121,6 +14121,33 @@ is a proven follow-on once this model is validated — walking-
 skeleton: smallest correct principled step first, not bundled with
 a boundary-gating restructure.
 
+### Cycle 52 R4-followup (2026-05-16): automatic build identity (git short SHA)
+
+A local `dotnet build`/`publish` never passes `/p:Version` (only
+the release workflow does), so it always reported the
+`Directory.Build.props` default `0.0.1-preview.1` — every local
+build looked identical, so a dogfood could not confirm whether it
+ran the commit under test or a stale build (it surfaced when a
+"banner still broken" finding could not be trusted). Fixed
+**automatically, no per-PR manual discipline**:
+
+- `Directory.Build.props` gains a `SetGitShortShaSourceRevision`
+  target: `git rev-parse --short HEAD` → `SourceRevisionId`; the
+  .NET SDK appends it to `AssemblyInformationalVersion`. Degrades
+  gracefully when git is unavailable (ContinueOnError); only fills
+  when empty so SourceLink / explicit values still win on CI.
+- `resolveInformationalVersion` (`Program.fs`) no longer strips
+  the `+<sha>` trailer (it was discarded). `Ctrl+Shift+H` and the
+  startup log now show `0.0.1-preview.1+<sha>` locally
+  (`<tag>+<sha>` for releases) — match `<sha>` to `git rev-parse
+  --short HEAD`.
+- Canonical rule documented in `CONTRIBUTING.md` (Development
+  environment) + `CLAUDE.md` (dogfood-triage: read the
+  `Ctrl+Shift+H` Version line first to rule out a stale build
+  before chasing a "regression"). Recommended over a manual
+  PR-number convention: the SHA is automatic, exists at commit
+  time, and maps directly to `git`.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

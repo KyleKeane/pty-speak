@@ -885,11 +885,18 @@ module Program =
                 match attr with
                 | :? System.Reflection.AssemblyInformationalVersionAttribute as a
                     when not (System.String.IsNullOrWhiteSpace a.InformationalVersion) ->
-                    let raw = a.InformationalVersion
-                    // Strip any "+commit-sha" trailer SourceLink /
-                    // deterministic-build pipelines append.
-                    let plusIdx = raw.IndexOf('+')
-                    if plusIdx > 0 then raw.Substring(0, plusIdx) else raw
+                    // R4-followup (build-identity, 2026-05-16) —
+                    // KEEP the "+<short-sha>" trailer (was stripped
+                    // here). A local build always reports the
+                    // Directory.Build.props default Version
+                    // (0.0.1-preview.1); the SHA appended by the
+                    // `SetGitShortShaSourceRevision` target is the
+                    // ONLY thing that distinguishes which commit is
+                    // running. Surfaced via Ctrl+Shift+H and the
+                    // startup log so a dogfood can confirm the
+                    // build matches `git rev-parse --short HEAD`.
+                    // Releases carry tag+sha — both unambiguous.
+                    a.InformationalVersion
                 | _ -> "unknown"
             with _ -> "unknown"
         log.LogInformation(
