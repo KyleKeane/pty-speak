@@ -1999,8 +1999,7 @@ module Program =
                 // (`Osc133.tryParse` produces records pre-
                 // augmentation) and the trailing next-prompt
                 // path would leak into OutputText.
-                | None, (BoundaryKind.PromptStart
-                         | BoundaryKind.CommandFinished _) ->
+                | None, (BoundaryKind.PromptStart | BoundaryKind.CommandFinished _) ->
                     let _, (cursorRow, _), snap =
                         screen.SnapshotRows(0, screen.Rows)
                     let text =
