@@ -112,13 +112,32 @@ interface's `ShellEvent list` (CmdAdapter.fs:19 — "`ShellEvent`
 a real seam-wiring step. Sequenced (mirror the R1 "extract
 the seam, zero behaviour change" discipline):
 
-- **R5a — wire the adapter-selection seam, behaviour-
-  identical.** Make `CmdAdapter` implement `IShellAdapter`
-  (or introduce a thin selection layer), change
-  `startReaderLoop` + `SessionHost`/`switchToShell` to pick
-  the adapter by `ShellRegistry.ShellId`. **No PowerShell
-  yet.** cmd path byte-identical; CI + a quick dogfood gate
-  it (R1 precedent). This de-risks R5b.
+- **R5a — adapter-selection seam, behaviour-identical
+  (DONE — maintainer chose "literal R5a seam first"
+  2026-05-16; recon-corrected scope).** Recon finding: the
+  transport is already shell-agnostic *except* the OSC-133
+  injection (already `ShellId`-gated at two sites);
+  `CmdAdapter.Translate` is a verbatim `Parser.feedArray`
+  wrapper; the full `IShellAdapter` (Spawn/WriteInput) is a
+  big **non**-behaviour-identical refactor because spawn is
+  `ConPtyHost.start`-direct and input `host.WriteBytes`-
+  direct. So R5a is the **thin selection layer**, NOT full
+  `IShellAdapter` adoption: a single
+  `SessionHost.Osc133IntegratorFor : ShellId -> (string ->
+  string)` selector (cmd → `CmdAdapter.IntegrateOsc133`;
+  else → `id`) replacing the two inline `if = Cmd` gates
+  (`SessionHost.ResolveStartupShell` + `Program.fs`
+  `switchToShell`). **Byte-identical incl. logs** (the
+  cmd-only "R2 cmd OSC-133 … applied" line still fires
+  exactly when cmd; the single shared VT parser is NOT
+  reset across shell switches — unchanged; spawn/input
+  untouched). Pinned by `CmdAdapterTests`
+  (`Osc133IntegratorFor` dispatch). **R5b adds the
+  PowerShell arm in that ONE selector.** The full
+  `IShellAdapter` (Spawn/WriteInput/`ShellEvent`-Translate)
+  is the **R6** target, not R5 — the "Full IShellAdapter
+  now" option was explicitly rejected (large, non-
+  behaviour-identical, R6-class).
 - **R5b — `PowerShellAdapter`.** New
   `src/Terminal.Shell/PowerShellAdapter.fs` mirroring
   `CmdAdapter` (owns one `Parser.create()`; the parser is

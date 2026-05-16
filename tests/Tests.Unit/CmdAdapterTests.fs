@@ -51,6 +51,44 @@ let ``IntegrateOsc133 wraps the base command line with /K prompt, unquoted`` () 
         "cmd.exe /K prompt $e]133;D$e\\$e]133;A$e\\$p$g$e]133;B$e\\",
         integrated)
 
+// ---------------------------------------------------------------------
+// R5a (ADR 0006) — the shell-adapter SELECTION seam.
+// `SessionHost.Osc133IntegratorFor` centralises the per-ShellId
+// OSC-133 injection dispatch that was previously inlined as an
+// `if = Cmd` gate at the two spawn sites. R5a is byte-identical:
+// cmd wraps exactly like `CmdAdapter.IntegrateOsc133`; every
+// other shell is identity (the pre-R5a `else`). These pin the
+// dispatch so R5b adding the PowerShell arm is a deliberate,
+// test-visible change (this `DoesNotContain "133"` flips then).
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``Osc133IntegratorFor Cmd wraps exactly like CmdAdapter.IntegrateOsc133`` () =
+    let integ =
+        Terminal.Shell.SessionHost.Osc133IntegratorFor
+            Terminal.Pty.ShellRegistry.Cmd
+    Assert.Equal(
+        Terminal.Shell.CmdAdapter.IntegrateOsc133 "cmd.exe",
+        integ "cmd.exe")
+    Assert.Equal(
+        "cmd.exe /K prompt $e]133;D$e\\$e]133;A$e\\$p$g$e]133;B$e\\",
+        integ "cmd.exe")
+
+[<Fact>]
+let ``Osc133IntegratorFor non-cmd is identity (byte-identical pre-R5a)`` () =
+    // R5b will replace the PowerShell arm; until then every
+    // non-cmd shell returns its command line unchanged — exactly
+    // the pre-R5a `else` branch at both spawn sites.
+    let psI =
+        Terminal.Shell.SessionHost.Osc133IntegratorFor
+            Terminal.Pty.ShellRegistry.PowerShell
+    let clI =
+        Terminal.Shell.SessionHost.Osc133IntegratorFor
+            Terminal.Pty.ShellRegistry.Claude
+    Assert.Equal("powershell.exe", psI "powershell.exe")
+    Assert.DoesNotContain("133", psI "powershell.exe")
+    Assert.Equal("claude", clI "claude")
+
 [<Fact>]
 let ``IntegrateOsc133 preserves an arbitrary base path verbatim`` () =
     // The fn is pure (the cmd-only gate lives at the SessionHost /

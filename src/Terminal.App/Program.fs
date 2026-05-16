@@ -4636,18 +4636,25 @@ module Program =
                     // target so claude / PowerShell switches
                     // are byte-identical. The cmd transport
                     // adapter owns the injection (ADR 0006).
+                    // R5a (ADR 0006) — route the per-shell
+                    // OSC-133 injection through the single
+                    // selection seam (`SessionHost.Osc133-
+                    // IntegratorFor`) instead of an inline
+                    // `if = Cmd` gate. Byte-identical: cmd
+                    // wraps + logs exactly as before; non-cmd
+                    // is identity + no log (the pre-R5a `else`).
+                    // R5b adds the PowerShell arm in the
+                    // selector, not here.
                     let newCmdLine =
+                        let integrated =
+                            (Terminal.Shell.SessionHost.Osc133IntegratorFor
+                                target) newCmdLine
                         if target = ShellRegistry.Cmd then
-                            let integrated =
-                                Terminal.Shell.CmdAdapter.IntegrateOsc133
-                                    newCmdLine
                             log.LogInformation(
                                 "R2 cmd OSC-133 prompt injection applied (shell-switch). Base={Base} Integrated={Integrated}",
                                 newCmdLine,
                                 integrated)
-                            integrated
-                        else
-                            newCmdLine
+                        integrated
                     // Announce-before-launch pattern from
                     // Stage 4b's diagnostic-launcher: NVDA
                     // gets the cue into its speech queue
