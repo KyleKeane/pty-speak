@@ -284,8 +284,21 @@ list** and folds 0005's mechanism into it.
   dogfood-gated (matrix `52-R4c`) **alongside / folded
   into the R1–R4 foundation dogfood** — same installed
   preview, one NVDA pass.
-- **R5 — PowerShell adapter** (= ADR 0005 Stage D). Full
-  A/B/C/D + exit code.
+- **R5 — PowerShell adapter** (= ADR 0005 Stage D).
+  **Implemented & dogfood-validated 2026-05-16** (#374
+  R5a selection seam · #375 R5b PowerShell adapter).
+  Shipped as **A/B/D + `$LASTEXITCODE`, no C** — *not* the
+  "Full A/B/C/D" originally written here: PowerShell
+  auto-disables PSReadLine under a screen reader (always,
+  for this app's user), so the `;C`/`PSConsoleHostReadLine`
+  hook can't run. The maintainer R5b dogfood confirmed the
+  `prompt`-function path emits OSC-133 correctly under NVDA
+  regardless (the #1 R5 risk resolved positive). PowerShell
+  rides the **same `CmdOscAB` consumer arm as cmd**, plus a
+  real exit code. **The `;C` clean-reference is not an R5
+  gap — it is deferred to a future shell with a real
+  OutputStart hook** (see §"Deferred to R6+"). Mechanism +
+  status note: ADR 0005 §3 PowerShell R5 status note.
 - **R6 — feature unlock** (= ADR 0005 Stage E). Per-line
   progress streaming, prompt-path-verbosity fix, clean
   SpeechCursor command items — trivially correct on the clean
@@ -427,6 +440,29 @@ would be premature.
    opaque inline blob. The boundary substrate already
    supports the bracketing; this is the navigation/structure
    promotion, gated on the canonical IOCell.
+6. **Clean `;C` / `CleanOscAC` reference shell.** R5
+   confirmed (dogfood 2026-05-16) that PowerShell cannot
+   emit `;C` for pty-speak's screen-reader user (PSReadLine
+   auto-disabled). cmd has no `;C` hook either. So the
+   clean `CleanOscAC` extraction arm
+   (`SessionModel.extractIOCell` `Some promptStart, Some
+   outputStart, _` — no watermark, no `stripNextPrompt`)
+   has **no shell exercising it today**; both shipped
+   shells use `CmdOscAB`. The clean reference (which would
+   also unblock retiring `stripNextPrompt`, deferral 1)
+   waits for a future shell with a real Enter→output hook
+   (a claude TUI mode, or a custom/instrumented shell).
+   Not an R5 gap — a recorded architectural conclusion.
+7. **`Diagnostics → PowerShell Interaction Tests` submenu**
+   (maintainer-requested 2026-05-16, R5b dogfood). Mirror
+   the existing `CMD Interaction Tests` menu (`Program.fs`
+   + `publish/scripts/cmd-tests/*.cmd`) with PowerShell
+   equivalents (`.ps1`) of the test-01/02/04/09 scenarios,
+   so PS manual coverage is one keystroke like cmd's.
+   **Deferred until R6** — adding empty scaffolding before
+   PS feature behaviour (per-line progress, prompt
+   verbosity) defines the concrete scenario list has no
+   signal; wire it when R6 needs PS-specific manual tests.
 
 Each stage independently CI-gated and dogfood-validated. R1
 and R4 are the new structural gates that make the boundary

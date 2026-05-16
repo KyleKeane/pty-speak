@@ -177,6 +177,31 @@ deletable.
      `A` / `B` / `C` / `D;$LASTEXITCODE`. Injected via
      `-NoExit -Command` or a generated profile passed on the
      spawn command line.
+     - **R5 status note (2026-05-16, shipped #374/#375 +
+       dogfood-validated):** shipped as a `prompt`-function
+       emitting **`A`/`B`/`D;$LASTEXITCODE` only — no `C`**,
+       injected via `powershell.exe -NoExit -EncodedCommand
+       <base64-UTF16LE>` (chosen over `-Command "…"`/profile:
+       the base64 token is space/quote/metacharacter-free, so
+       the command line is quoting-safe by construction — the
+       same robustness property cmd's space-free `prompt`
+       value has). **`C` is intentionally absent and that is
+       final, not deferred:** the `PSConsoleHostReadLine`/
+       PSReadLine hook `C` would require is auto-disabled by
+       PowerShell whenever it detects a screen reader, which
+       is *always* the case for pty-speak's user. The maintainer
+       dogfood (2026-05-16) confirmed the warning banner and
+       that the `prompt`-function path nonetheless emits
+       OSC-133 correctly under NVDA (`echo hi`→"hi", clean
+       split, real exit code). PowerShell therefore routes
+       through the **same `extractIOCell` `CmdOscAB` arm as
+       cmd**, plus a real exit code (the asymmetry
+       `ShellEvent.CommandFinished of int option` was designed
+       for). The clean `CleanOscAC` (`;C`) reference waits for
+       a future shell with a real OutputStart hook — ADR 0006
+       §"Deferred to R6+", not an R5 gap. Pinned by
+       `PowerShellAdapterTests`; mechanism in
+       `src/Terminal.Shell/PowerShellAdapter.fs`.
    - **claude** — full-screen Ink TUI; OSC 133 N/A. Stays on
      the heuristic/`claudeRegex` fallback. Out of scope for
      v1 (cmd + PowerShell first).

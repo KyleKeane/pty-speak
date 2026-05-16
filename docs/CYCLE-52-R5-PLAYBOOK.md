@@ -1,10 +1,17 @@
 # Cycle 52 R5–R7 — PowerShell adapter playbook (START HERE)
 
-> **Status**: PROPOSED / IN-FLIGHT. The R1–R4 + R4c foundation
-> is shipped & CI-green on `main` (`b14667f`, PRs #347–#372,
-> 2026-05-15 → 2026-05-16). R5 (PowerShell adapter) is the
-> next push, **gated on the maintainer's R1–R4+R4c foundation
-> dogfood sign-off**.
+> **Status**: **R5 COMPLETE & VALIDATED (2026-05-16,
+> #369–#375).** R1–R4+R4c foundation shipped & dogfood-
+> signed-off; R5a (selection seam) + R5b (PowerShell
+> adapter) shipped & CI-green; the R5b NVDA dogfood passed
+> and **resolved the #1 R5 risk positively** (OSC-133 emits
+> under a screen reader via the `prompt` function despite
+> PSReadLine being auto-disabled; `;C` confirmed unreachable
+> for the screen-reader use case = the final design, not a
+> gap — see §4 R5c/R5d). **Next = R6 (feature unlock) and/or
+> the P1–P5 pre-R5 pruning** (independent; the cmd
+> announce-heuristic FREEZE still stands). This file stays
+> the start-here for R6 and recovery.
 >
 > **NEW / RECOVERED SESSION: this file is your start-here.**
 > It is written to be self-contained: if the originating chat
@@ -170,56 +177,61 @@ the seam, zero behaviour change" discipline):
   is the dogfood-tunable knob; if the visible prompt or
   emission needs adjusting it is a contained
   `Osc133InitScript` one-liner.
-- **R5c — exit code + `;C`.** Emit `;D;$LASTEXITCODE` (real
-  exit code — the asymmetry cmd lacks) and, if reachable, a
-  real `;C` OutputStart. A real `;C` routes extraction
-  through the **clean `CleanOscAC` arm**
-  ([`src/Terminal.Core/SessionModel.fs`](../src/Terminal.Core/SessionModel.fs):857-875,
-  `Some promptStart, Some outputStart, _` →
-  `[promptStart.Seq, outputStart.Seq)` cmd / `[outputStart.Seq,
-  MaxValue)` out — **no watermark, no string-strip**). The
-  consumer side is already done: `Osc133.tryParse`
-  ([`src/Terminal.Core/Osc133.fs`](../src/Terminal.Core/Osc133.fs):80-114)
-  parses `;C` and `;D;<int>`; `BoundaryKind` carries the
-  code.
-- **R5d — NVDA matrix `52-R5` rows + closure.** Pin the
-  exact PowerShell command-line shape in a new
-  `tests/Tests.Unit/PowerShellAdapterTests.fs` (mirror
-  `CmdAdapterTests.fs` — the string is locally unverifiable;
-  the pin fails CI loudly before a release+dogfood is spent).
+- **R5c — exit code + `;C` (RESOLVED by the R5b dogfood,
+  2026-05-16).** The exit code shipped in R5b
+  (`;D;$LASTEXITCODE`). The `;C` sub-goal is **answered, not
+  deferred**: `;C` (OutputStart) would need a
+  `PSConsoleHostReadLine`/PSReadLine hook, and the dogfood
+  confirmed PowerShell **auto-disables PSReadLine under a
+  screen reader** (the maintainer heard the warning banner).
+  Since the screen-reader user is the *only* use case here,
+  `;C` is **not reachable for pty-speak by design** — the
+  `prompt`-function `;A`/`;B`/`;D;<code>` path on the
+  `CmdOscAB` arm is the **final R5 design**, not a stopgap.
+  No further R5c work; the clean `CleanOscAC` reference
+  waits for a future shell with a real OutputStart hook (R6+
+  / claude TUI / a custom shell) — tracked in ADR 0006
+  §"Deferred to R6+", not an R5 open item.
+- **R5d — closure (DONE 2026-05-16).** `PowerShellAdapter`
+  pinned by `PowerShellAdapterTests`; matrix `52-R5b`
+  PASSED (below). R5 is **functionally complete &
+  validated**: PowerShell emits OSC-133 (A/B/D + real exit
+  code) under NVDA, clean command/output split, screen-
+  reader-safe. **Future note (maintainer-requested
+  2026-05-16):** add a `Diagnostics → PowerShell
+  Interaction Tests` submenu mirroring the existing
+  `CMD Interaction Tests` (PS equivalents of
+  test-01/02/04/09), wired in `Program.fs` + `.ps1`
+  scripts under `publish/scripts/`. **Deferred until R6**,
+  when PS feature behaviour (per-line progress, prompt
+  verbosity) needs PS-specific manual coverage and the
+  concrete scenario list is known — adding empty scaffolding
+  now has no signal. Tracked in ADR 0006 §"Deferred to R6+".
 
-**THE #1 R5 RISK — resolve empirically, do not assume:**
-PowerShell **auto-disables PSReadLine when it detects a
-screen reader** ("Warning: PowerShell detected that you might
-be using a screen reader and has disabled PSReadLine for
-compatibility purposes." — seen verbatim in the 2026-05-16
-bundle). Consequences: any `PSConsoleHostReadLine`-based
-OSC-133 hook will **not run**; only a `prompt` function
-fires. A `prompt` function can emit `;A`/`;B`/`;D;$LASTEXITCODE`
-(it runs post-exec, so `$LASTEXITCODE` is fresh — emit `;D`
-*immediately*, not deferred like cmd) but **cannot emit
-`;C`** (no Enter→exec hook, same limit as cmd). So the
-realistic R5 target is **`;A`/`;B`/`;D;<code>` → the
-`CmdOscAB`-equivalent arm**, *not* the clean `CleanOscAC`
-arm. That is still a strict improvement over cmd (real exit
-code; immediate not-deferred `;D`), but it means the clean-
-`;C` reference may have to wait for a shell with a real
-OutputStart hook. **R5b must be defensive + test-driven for
-the no-`;C` fallback; the R5 dogfood (NVDA active) decides
-whether `;C` is ever reachable.** This question is the R5
-go/no-go on "clean reference" — surface it to the maintainer
-early, with the bundle evidence, before committing to a
-`;C`-dependent design.
+**THE #1 R5 RISK — RESOLVED POSITIVE (maintainer dogfood,
+2026-05-16).** PowerShell auto-disables PSReadLine under a
+screen reader (the maintainer confirmed hearing the
+"PSReadLine … disabled … screen reader" warning banner).
+**Outcome: the risk did not materialise.** The `prompt`
+function is a core host hook independent of PSReadLine, so
+OSC-133 emits regardless: switching to PowerShell works,
+`echo hi` ⏎ → NVDA speaks `hi` (clean command/output split,
+the same `CmdOscAB` arm as cmd — no command-echo, no
+next-prompt bleed), with a real `$LASTEXITCODE`. The
+`prompt`-only baseline **holds**; R5 needs no alternative
+mechanism. The only consequence is the documented one:
+`;C` is unreachable under a screen reader (R5c above) — an
+accepted architectural conclusion, not a defect.
 
-Open R5 sub-questions (answer in R5b design, confirm in
-dogfood): immediate vs deferred `;D` (PowerShell `prompt` is
-post-exec → immediate; first prompt has no prior code →
-synthesise `0` or omit); `-Command` vs generated `$PROFILE`
-(start with `-Command`; switch to profile only if the init
-string hits a length limit); cross-shell hot-switch history
-continuity (cmd↔PS — `SessionHost` finalises the prior
-shell's in-flight cell + fresh `SessionModel`; the R5 dogfood
-must exercise `Ctrl+Shift+1`→cmd / `+2`→PS / `+1`→cmd).
+Settled R5 sub-questions (were open in R5b design; now
+confirmed): immediate (not deferred) `;D` via the post-exec
+`prompt` — works; first prompt's `;D;0` absorbed by the
+`None,CommandFinished` ignore + R4c stray-gate — works
+(no spurious launch announce reported); `-EncodedCommand`
+(not `-Command`/profile) — works (no quoting/length issue);
+cmd↔PowerShell hot-switch — works (maintainer switched in
+and back). Deeper PS-specific corpus coverage is the R6
+future-note above, not an R5 gap.
 
 ## 5. Pre-R5 pruning sequence (old-code remnants — scoped)
 

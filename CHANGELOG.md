@@ -14389,6 +14389,38 @@ end-to-end gated by the maintainer's NVDA dogfood (matrix
 `52-R5b`). No change to cmd/claude behaviour. Playbook §4 R5b
 marked done; ADR 0005 §3 PowerShell bullet realised.
 
+### Cycle 52 R5 closure (2026-05-16): R5b dogfood-validated; #1 risk resolved; `;C` conclusion recorded
+
+Docs-only closure of R5 after the maintainer's R5b NVDA
+dogfood. **Outcome — the playbook's #1 R5 risk resolved
+positive:** switching to PowerShell works under NVDA; the
+"PSReadLine … disabled … screen reader" warning reads
+(expected, not a fault); `echo hi` ⏎ → NVDA speaks `hi`
+(clean command/output split, the same `CmdOscAB` arm as
+cmd). The `prompt`-function path emits OSC-133 correctly
+even though PowerShell auto-disables PSReadLine — the
+`prompt`-only baseline holds; no alternative mechanism
+needed.
+
+**R5 is functionally complete & validated** (A/B/D +
+real `$LASTEXITCODE`, screen-reader-safe). The `;C`
+(OutputStart) sub-goal is **answered, not deferred**:
+PSReadLine is the only `;C` hook and it is disabled under
+a screen reader (the only pty-speak use case), so `;C` is
+unreachable **by design** — the A/B/D baseline is the
+final R5 conclusion, not a stopgap; the clean `CleanOscAC`
+reference waits for a future shell with a real OutputStart
+hook (ADR 0006 §"Deferred to R6+" item 6). Recorded across
+the playbook (status flipped to "R5 COMPLETE & VALIDATED";
+R5c/R5d closed; #1-risk section flipped to RESOLVED),
+SESSION-HANDOFF (current state + next = R6/P1–P5), ADR
+0005 §3 (PowerShell R5 status note), ADR 0006 (R5 stage
+Implemented + deferred items 6 & 7), and the `52-R5b`
+matrix row (✅ PASSED). Captured the maintainer-requested
+future note: a `Diagnostics → PowerShell Interaction
+Tests` submenu, deferred to R6 (ADR 0006 §"Deferred to
+R6+" item 7). No code; no user-visible change.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
