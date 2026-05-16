@@ -24,6 +24,15 @@ before deviating.
    brief (~150 lines): current state, where we left off, next-stage
    candidates, operational gotchas. Designed to be the TLDR a new
    session reads first; deeper history lives in the archive.
+3a. **[`docs/CYCLE-52-R5-PLAYBOOK.md`](docs/CYCLE-52-R5-PLAYBOOK.md)**
+   — **the current start-here for active work (R5 PowerShell
+   adapter + the pre-R5 pruning sequence).** Self-contained
+   recovery brief: where we are, the standing FREEZE decision,
+   the meticulously-scoped R5 stages (R5a wire-the-seam → R5b
+   PowerShellAdapter → R5c exit-code/`;C` → R5d closure), the
+   P1–P5 old-code pruning sequence, and the battle-tested
+   operational playbook. Read after SESSION-HANDOFF, before any
+   R5 code.
 4. **[`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md)**
    — current strategic plan (2026-05-12; post-Cycle-45c).
    Predecessor revisions archived under
@@ -938,33 +947,32 @@ points at the cycle headline.
   the PR-X/Y/AA/AB/AC/AD/AE dogfood-driven announce-patch
   sequence. SHIPPED; its compensations are what Cycle 52 R3b
   retired. `CYCLE-51-PLAYBOOK.md` HISTORICAL.
-- **Cycle 52** (PRs #345–#357, 2026-05-15 → 2026-05-16) —
+- **Cycle 52** (PRs #345–#372, 2026-05-15 → 2026-05-16) —
   three-layer re-foundation
   ([ADR 0005](docs/adr/0005-osc133-shell-integration.md) +
   [ADR 0006](docs/adr/0006-three-layer-refoundation.md)).
-  **R1–R4 complete & CI-green:** R1 seam extraction
-  (`Terminal.Shell` / `SessionHost` / `CmdAdapter`,
-  behaviour-identical, dogfood-validated) → R2 cmd OSC-133
-  (Option B; "implicit C" consumer-side) → R3a OSC
-  precedence latch → R3b announce-compensation deletion
-  (**KI-R2-1 structurally fixed**) → R4a heuristic namespace
-  purify → R4b portability-lint *enforces* the boundary.
-  Net: the architectural boundary is structural, not
-  disciplinary.
-- **Validation gate**: one consolidated **R1–R4 foundation
-  dogfood** on an installed preview of post-`cbf8d48` `main`
-  (maintainer batching findings; checkpoint decision
-  2026-05-16). Confirm KI-R2-1 gone, no R3b sub-prompt
-  double-speech, banner still reads, R4a logger category.
-  NVDA matrix Cycle 52 R1–R4 row in
-  [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md).
-- **Next** = **R5** PowerShell adapter (gated on the
-  foundation dogfood) → R6 feature unlock → R7 claude
-  adapter + closure. Other backlog (independent): 45g
-  `ShellPolicy` consolidation, `EntrySource.DraftInputRecall`,
-  backspace-to-empty path-announce (pre-existing, R2-backlog).
-  Sequencing in
-  [`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md).
+  **R1–R4 + R4c complete & CI-green** (R1 seam · R2 cmd
+  OSC-133 · R3a/b precedence + KI-R2-1 fix · R3c/d/e
+  watermark · R4a/b purify+enforce · R4c cmd boundary-only
+  deferred `;D`). **Standing decision (2026-05-16): cmd
+  announce-heuristic FREEZE** — substrate sound; do not
+  patch cmd announce heuristics before R5 (ADR 0006
+  §"Deferred to R6+" decision note). Per-PR detail:
+  CHANGELOG Cycle 52 + ADR 0006 R-stage list.
+- **Validation gate**: one consolidated **R1–R4 + R4c
+  foundation dogfood** (installed preview of post-`b14667f`
+  `main`; matrix rows `52-1`/`R3c`/`R3c-multi`/`R3d`/`R3e`/
+  `R4c` in
+  [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)).
+  Blocks R5 start; maintainer's court.
+- **Next** = **R5 PowerShell adapter** → R6 feature unlock
+  → R7 claude + closure. **Start-here for active work:
+  [`docs/CYCLE-52-R5-PLAYBOOK.md`](docs/CYCLE-52-R5-PLAYBOOK.md)**
+  — the self-contained R5 brief (R5a wire-the-seam → R5b
+  PowerShellAdapter → R5c exit-code/`;C` → R5d closure) +
+  the P1–P5 pre-R5 old-code pruning sequence + ops. Other
+  backlog (independent): 45g `ShellPolicy` consolidation;
+  full deferral list in ADR 0006 §"Deferred to R6+".
 
 ## When in doubt
 

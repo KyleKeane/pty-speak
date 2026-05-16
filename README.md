@@ -35,8 +35,14 @@ target workload.
 > implementation cycle (✓ shipped through PR #199) →
 > Tier 2 SessionModel persistence (✓ shipped through PR #219) →
 > Cycle 25 operational ergonomics + diagnostic-dump bundle
-> (✓ shipped through PR #222) → **Cycle 26 app menu** (next;
-> maintainer-chosen 2026-05-09). Follow
+> (✓ shipped through PR #222) → Cycle 26–51 app menu / UI /
+> IOCell pivot (✓ through PR #344) → **Cycle 52 R1–R4 + R4c
+> three-layer re-foundation + OSC-133 shell integration**
+> (✓ through PR #372, 2026-05-16) → **next: R5 PowerShell
+> adapter** (gated on the R1–R4+R4c foundation dogfood; see
+> [`docs/CYCLE-52-R5-PLAYBOOK.md`](docs/CYCLE-52-R5-PLAYBOOK.md)).
+> Cycle 52 R1–R4c are on `main` pending a released preview
+> (latest released preview is still the prior tag). Follow
 > [Releases](../../releases) for new builds; once installed,
 > `Ctrl+Shift+U` updates in place.
 

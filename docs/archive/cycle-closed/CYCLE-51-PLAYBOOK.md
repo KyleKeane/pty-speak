@@ -1,14 +1,15 @@
-# Cycle 51 execution playbook — IOCell pivot
+# Cycle 51 execution playbook — IOCell pivot (HISTORICAL)
 
-> **NEXT SESSION: THIS IS YOUR START-HERE DOCUMENT.** Read it
-> top to bottom before writing any code. It is a turn-by-turn
-> execution guide with exact `file:line` anchors, the rejected
-> thesis you must NOT re-introduce, and the bundle evidence
-> behind every decision. Companion to
-> [`adr/0004-iocell-model-for-shell-interaction.md`](adr/0004-iocell-model-for-shell-interaction.md)
-> (the canonical decision record — read it second) and
-> [`SESSION-HANDOFF.md`](SESSION-HANDOFF.md) (the ~150-line
-> brief — read it first for the bird's-eye).
+> **HISTORICAL — Cycle 51 shipped 2026-05-14 (PRs #337–#344).**
+> The IOCell pivot landed; its announce compensations were
+> later retired by Cycle 52 R3b. This is no longer a
+> start-here doc — for current work see
+> [`CYCLE-52-R5-PLAYBOOK.md`](../CYCLE-52-R5-PLAYBOOK.md).
+> Kept for the planning-vs-shipped delta. Original companions
+> (paths are archive-relative):
+> [`adr/0004-iocell-model-for-shell-interaction.md`](../adr/0004-iocell-model-for-shell-interaction.md)
+> (the canonical decision record) and
+> [`SESSION-HANDOFF.md`](../SESSION-HANDOFF.md).
 >
 > This doc was written 2026-05-15 by the session that shipped
 > PR-V, deliberately as a crash-safe handoff. It is exhaustive
