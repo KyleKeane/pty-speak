@@ -165,6 +165,9 @@
                     <MenuItem x:Name="MenuItem_CopyHistoryToClipboard"
                               x:FieldModifier="public"
                               Header="_Copy Session History to Clipboard" />
+                    <MenuItem x:Name="MenuItem_CopyFocusedCell"
+                              x:FieldModifier="public"
+                              Header="Copy _Focused Cell to Clipboard" />
                     <MenuItem x:Name="MenuItem_AnnounceSessionLogPath"
                               x:FieldModifier="public"
                               Header="Announce _Session Log Path" />

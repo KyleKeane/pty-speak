@@ -87,6 +87,9 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               // Cycle 46 post-audit — re-narrate last command
               // output capped at 800 chars (Ctrl+Shift+A).
               HotkeyRegistry.AnnounceLastOutput
+              // ADR 0007 Phase 2a — copy the focused cell
+              // (command + output) to clipboard (Ctrl+Shift+C).
+              HotkeyRegistry.CopyFocusedCell
               // Cycle 47 — CMD interaction test corpus (eight
               // menu-only items under Diagnostics → CMD
               // Interaction Tests; each inserts a quoted

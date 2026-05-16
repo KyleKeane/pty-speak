@@ -891,3 +891,50 @@ let ``cellCurrentView is None before any navigation and after cellReset`` () =
     Assert.True((SpeechCursor.cellCurrentView c).IsSome)
     SpeechCursor.cellReset c
     Assert.Equal(None, SpeechCursor.cellCurrentView c)
+
+// ---------------------------------------------------------------------
+// ADR 0007 Phase 2 — focusedCell (the per-cell-operations primitive)
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``focusedCell is None when nothing is focused`` () =
+    let c = manualCursor ()
+    Assert.Equal(None, SpeechCursor.focusedCell c)
+    SpeechCursor.appendCell c (Guid.NewGuid()) 0L "c1" "o1"
+    // Still unparked (Manual; no navigation yet).
+    Assert.Equal(None, SpeechCursor.focusedCell c)
+
+[<Fact>]
+let ``focusedCell resolves command + output by shared CellId from either item`` () =
+    let c = manualCursor ()
+    let id = Guid.NewGuid()
+    SpeechCursor.appendCell c id 7L "echo hi" "hi"
+    // Focus the output item (latest).
+    let _ = SpeechCursor.cellToLatest c
+    match SpeechCursor.focusedCell c with
+    | Some fc ->
+        Assert.Equal(id, fc.CellId)
+        Assert.Equal(7L, fc.CellSequence)
+        Assert.Equal(Some "echo hi", fc.Command)
+        Assert.Equal(Some "hi", fc.Output)
+    | None -> Assert.True(false, "expected a focused cell on the output item")
+    // Focus the command item — same whole-cell resolution.
+    let _ = SpeechCursor.cellPrevious c
+    match SpeechCursor.focusedCell c with
+    | Some fc ->
+        Assert.Equal(Some "echo hi", fc.Command)
+        Assert.Equal(Some "hi", fc.Output)
+    | None -> Assert.True(false, "expected a focused cell on the command item")
+
+[<Fact>]
+let ``focusedCell sides are None when that side was whitespace-only`` () =
+    let c = manualCursor ()
+    let id = Guid.NewGuid()
+    // Whitespace-only command ⇒ no Input item appended.
+    SpeechCursor.appendCell c id 0L "   " "real output"
+    let _ = SpeechCursor.cellToLatest c
+    match SpeechCursor.focusedCell c with
+    | Some fc ->
+        Assert.Equal(None, fc.Command)
+        Assert.Equal(Some "real output", fc.Output)
+    | None -> Assert.True(false, "expected a focused cell")

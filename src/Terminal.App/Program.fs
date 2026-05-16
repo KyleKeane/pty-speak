@@ -3348,6 +3348,104 @@ module Program =
                 }
             ()
 
+        // ADR 0007 Phase 2a (2026-05-16) — `Ctrl+Shift+C`:
+        // copy the focused SpeechCursor cell (command + output)
+        // to the clipboard. The per-cell analogue of
+        // `Ctrl+Shift+Y` (all history) / `Ctrl+Shift+O` (last
+        // output): acts on whichever cell the Manual cursor
+        // (Ctrl+Shift+Up/Down/End) is parked on. Reuses the
+        // same bounded STA-thread Clipboard.SetText pattern as
+        // `runCopyHistoryToClipboard` (STA required by
+        // Clipboard.SetText; 3s timeout prevents a contention
+        // hang). Counts only — never the command/output text —
+        // are logged (logging discipline).
+        let runCopyFocusedCell () : unit =
+            let log =
+                Logger.get
+                    "Terminal.App.Program.runCopyFocusedCell"
+            log.LogInformation(
+                "Ctrl+Shift+C pressed — copying the focused cell to clipboard.")
+            match SpeechCursor.focusedCell speechCursor with
+            | None ->
+                window.TerminalSurface.Announce(
+                    "No focused cell. Press Ctrl+Shift+Up or Down to focus a cell first.",
+                    ActivityIds.diagnostic)
+            | Some cell ->
+                let parts =
+                    [ cell.Command |> Option.map (fun c -> "Command: " + c)
+                      cell.Output |> Option.map (fun o -> "Output: " + o) ]
+                    |> List.choose id
+                let content = String.Join("\n\n", parts)
+                let cmdLen =
+                    cell.Command
+                    |> Option.map String.length
+                    |> Option.defaultValue 0
+                let outLen =
+                    cell.Output
+                    |> Option.map String.length
+                    |> Option.defaultValue 0
+                let _ =
+                    task {
+                        try
+                            let setOk = TaskCompletionSource<bool>()
+                            let staBody = ThreadStart(fun () ->
+                                try
+                                    System.Windows.Clipboard.SetText(content)
+                                    setOk.TrySetResult(true) |> ignore
+                                with ex ->
+                                    log.LogWarning(
+                                        ex,
+                                        "Clipboard.SetText threw: {Message}",
+                                        ex.Message)
+                                    setOk.TrySetResult(false) |> ignore)
+                            let staThread = new Thread(staBody)
+                            staThread.SetApartmentState(ApartmentState.STA)
+                            staThread.IsBackground <- true
+                            staThread.Start()
+                            let! winner =
+                                Task.WhenAny(
+                                    setOk.Task :> Task,
+                                    Task.Delay(3000))
+                            let succeeded =
+                                obj.ReferenceEquals(winner, setOk.Task)
+                                && setOk.Task.Result
+                            let bytes =
+                                System.Text.Encoding.UTF8.GetByteCount(content)
+                            let msg, activityId =
+                                if succeeded then
+                                    log.LogInformation(
+                                        "ADR 0007 Phase 2a focused-cell copy. CellSeq={CellSeq} CmdLen={CmdLen} OutLen={OutLen} Bytes={Bytes}",
+                                        cell.CellSequence,
+                                        cmdLen,
+                                        outLen,
+                                        bytes)
+                                    sprintf
+                                        "Cell %d copied to clipboard, %d bytes."
+                                        cell.CellSequence
+                                        bytes,
+                                    ActivityIds.diagnostic
+                                else
+                                    log.LogWarning(
+                                        "Clipboard.SetText timed out or failed after 3s (focused-cell copy).")
+                                    "Clipboard copy timed out. Try again.",
+                                    ActivityIds.error
+                            let action () =
+                                window.TerminalSurface.Announce(msg, activityId)
+                            do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                        with ex ->
+                            let safe = AnnounceSanitiser.sanitise ex.Message
+                            log.LogError(
+                                ex, "Failed to copy focused cell.")
+                            let action () =
+                                window.TerminalSurface.Announce(
+                                    sprintf "Could not copy cell: %s" safe,
+                                    ActivityIds.error)
+                            try
+                                do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                            with _ -> ()
+                    }
+                ()
+
         // Cycle 24e — `Ctrl+Shift+S`: announce the active
         // Cycle 46 post-audit (2026-05-13) — open the latest
         // tuple's full `OutputText` in the default text editor.
@@ -3976,6 +4074,7 @@ module Program =
         bind HotkeyRegistry.AnnounceSessionLogPath runAnnounceSessionLogPath
         bind HotkeyRegistry.OpenLastOutput runOpenLastOutput
         bind HotkeyRegistry.AnnounceLastOutput runAnnounceLastOutput
+        bind HotkeyRegistry.CopyFocusedCell runCopyFocusedCell
         bind HotkeyRegistry.CmdTestEcho runCmdTestEcho
         bind HotkeyRegistry.CmdTestTextInput runCmdTestTextInput
         bind HotkeyRegistry.CmdTestNumericInput runCmdTestNumericInput

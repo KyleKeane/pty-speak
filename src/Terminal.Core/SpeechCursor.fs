@@ -80,6 +80,21 @@ module SpeechCursor =
           Text: string
           ActivityId: string }
 
+    /// ADR 0007 Phase 2 — the focused cell resolved to its
+    /// command + output. The transcript stores a cell's
+    /// command and output as two `CellView` items sharing one
+    /// `CellId`; this gathers both for the focused item's cell
+    /// so per-cell operations act on the whole cell, not just
+    /// the single item the cursor is parked on. `Command` /
+    /// `Output` are `None` when that side was whitespace-only
+    /// (it was never added to the transcript — same skip rule
+    /// as `appendCell`).
+    type FocusedCell =
+        { CellId: Guid
+          CellSequence: int64
+          Command: string option
+          Output: string option }
+
     /// Configuration knobs. All defaults chosen to match the
     /// architectural intent in `docs/CORE-ABSTRACTION-BOUNDARY.md`.
     type Parameters =
@@ -729,3 +744,24 @@ module SpeechCursor =
     let cellReset (state: T) : unit =
         state.CellTranscript.Clear()
         state.CellPos <- -1
+
+    /// ADR 0007 Phase 2 — resolve the focused item to its whole
+    /// cell (command + output), keyed by the shared `CellId`.
+    /// `None` when nothing is focused (cursor unparked / empty
+    /// transcript). The D2 per-cell-operations primitive: a
+    /// copy/rerun acts on the cell, not on whichever of its two
+    /// items the cursor happens to be parked on.
+    let focusedCell (state: T) : FocusedCell option =
+        match cellCurrentView state with
+        | None -> None
+        | Some v ->
+            let textOf (k: CellKind) =
+                state.CellTranscript
+                |> Seq.tryFind (fun c ->
+                    c.CellId = v.CellId && c.Kind = k)
+                |> Option.map (fun c -> c.Text)
+            Some
+                { CellId = v.CellId
+                  CellSequence = v.CellSequence
+                  Command = textOf CellKind.Input
+                  Output = textOf CellKind.Output }
