@@ -14185,6 +14185,44 @@ either/or** and **cold-start-keyboard** tracked + deferred per
 maintainer lean (the latter explicitly *not* build-identity-caused
 — a separate window-activation/focus race).
 
+### Cycle 52 R3d (2026-05-16): announce intersects watermark with the clean cell output
+
+The SHA-confirmed dogfood bundle (build `09321e7`) proved a real
+R3c regression: **every plain command re-spoke its own typed
+command** — `echo X` announced as `"echo X⏎X"` instead of `"X"`.
+Root cause (bundle-definitive, not speculation): R3c raw-sliced
+`ContentHistory` from `lastAnnouncedSeq`, but the **idle-flush**
+(`runHeartbeat`) silently bumps `lastAnnouncedSeq` to `latestSeq`
+between commands — landing it on the *next* cell's CommandStart
+marker, *before* that cell's command echo. The slice then
+re-included the echo. (`extractIOCell` itself was correct —
+`Arm=CmdOscAB CmdLen=22 OutLen=17` cleanly split command vs
+output; R3c just ignored that split.)
+
+R3d lower-bounds the announce slice at **`max commandEnterSeq
+lastAnnouncedSeq`**. `commandEnterSeq` is `extractIOCell`'s
+CmdOscAB output-start (the top-level command's Enter watermark,
+not moved by a sub-prompt response) and sits *after* the typed
+command echo → plain commands announce **output only**. For a
+sub-prompt, `lastAnnouncedSeq` has advanced past the
+already-spoken question (printed after `commandEnterSeq`) so it
+wins → only the post-response output is announced (**dogfood #2
+stays fixed** — maintainer-validated). The `max` picks whichever
+correctly excludes already-heard bytes. Not KI-R2-1's racy
+`lastEnterSeq`; trailing next-prompt trim and persisted
+`IOCell.OutputText` unchanged. Diagnostics now log
+`CommandEnterSeq` / `LastAnnouncedSeq` / `FromSeq`. (Synthetic
+diagnostic-battery writes don't set `commandEnterSeq` — a
+harness-only staleness, not a real-UX path.)
+
+**#1 banner** root-caused from the same bundle: cmd emits **no
+startup banner** in the maintainer's environment (first content
+is the prompt path); `bannerAnnounce` correctly yields `None`, so
+fresh launch is genuinely silent — not a broken announce. The
+fresh-launch behaviour decision (announce the prompt vs. accept
+silence) is **deferred** until after R3d lands per maintainer
+direction.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

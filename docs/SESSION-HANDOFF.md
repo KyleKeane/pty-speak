@@ -76,23 +76,35 @@ State after the maintainer's batched dogfood of post-`cab2a0d`
   echo+next-path leak is gone (R3b deleted the PR-X
   `lastEnterSeq`/`EndsWith` pile; R3c made the announce a
   settled-watermark Seq-gap). Confirmed by the maintainer.
-- **#2 sub-prompt double-speech — FIXED & validated.** R3c's
-  spoken-watermark: the question is announced once in
-  real-time, then only the post-response output at finalise.
-  Maintainer confirmed ("first half until input, then only
-  the second half"). `test-09-multi-interrupt` (matrix
-  `52-R3c-multi`) pins the MULTI-incremental composition case
-  R5/R6 depend on.
-- **#1 banner — STILL OPEN (the one unresolved functional
-  regression).** Silent on fresh launch *and* shell switch,
-  even post-R3c (R3c default-armed `announceBannerOnNextPrompt`
-  + watermark-sliced `bannerAnnounce`). Root cause NOT
-  determinable by static reading (runtime ordering) — needs a
-  `Ctrl+Shift+D` bundle from a **SHA-confirmed** build,
-  grepped for `R3c banner announce` /
-  `announceBannerOnNextPrompt`. Do **not** re-speculate (two
-  wrong guesses already). Gated on the maintainer capturing
-  that bundle.
+- **#2 sub-prompt double-speech — FIXED & validated.** The
+  question is announced once in real-time, then only the
+  post-response output at finalise. Maintainer confirmed
+  ("first half until input, then only the second half").
+  `test-09-multi-interrupt` (matrix `52-R3c-multi`) pins the
+  MULTI-incremental composition case R5/R6 depend on. Stays
+  fixed under R3d (below).
+- **R3c plain-command echo regression — FIXED by R3d.** The
+  SHA-confirmed bundle (build `09321e7`) proved R3c re-spoke
+  the typed command on every plain command (`echo X` → "echo
+  X⏎X" instead of "X"). Root cause (bundle-definitive): R3c
+  raw-sliced from `lastAnnouncedSeq`, which the **idle-flush**
+  (`runHeartbeat`) silently bumps to the next cell's
+  CommandStart marker, *before* its command echo.
+  `extractIOCell` was correct (`Arm=CmdOscAB CmdLen/OutLen`
+  clean) — R3c ignored that split. **R3d** lower-bounds the
+  announce slice at `max commandEnterSeq lastAnnouncedSeq`
+  (`commandEnterSeq` = extractIOCell's CmdOscAB output-start,
+  after the echo) → plain = output only; sub-prompt =
+  post-question only (#2 preserved). Diagnostics log
+  `CommandEnterSeq`/`LastAnnouncedSeq`/`FromSeq`.
+- **#1 banner — ROOT-CAUSED; fresh-launch behaviour
+  DEFERRED.** The bundle showed cmd emits **no startup banner**
+  in the maintainer's environment (first content is the
+  prompt path); `bannerAnnounce` correctly yields `None`, so
+  fresh launch is genuinely silent — *not* a broken announce
+  / not a code defect. The product decision (announce the
+  prompt on cold launch vs. accept silence) is **deferred**
+  per maintainer until after R3d lands.
 - **Backspace-to-empty path-read — RESOLVED** (R3c watermark).
 - **Alt+F4 not closing — RESOLVED** (was the maintainer's
   keyboard function-lock, not code).
