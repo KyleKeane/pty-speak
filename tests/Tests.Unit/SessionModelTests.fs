@@ -854,6 +854,57 @@ let ``CH path — R2 cmd OSC-133 PromptStart+CommandStart (no OutputStart) split
     Assert.Equal(SessionModel.IOCellPhase.Sealed, cell.Phase)
 
 [<Fact>]
+let ``R4c — cmd deferred ;D (CommandFinished None) finalises a clean Sealed cell, ExitCode None`` () =
+    // R4c (ADR 0005/0006). Post-R4c cmd emits a BOUNDARY-ONLY
+    // deferred `;D` — `BoundaryKind.CommandFinished None` (no
+    // exit code; cmd's `prompt` cannot render %errorlevel%
+    // natively). The cell must still finalise via the
+    // `Some active, CommandFinished` arm + the CmdOscAB
+    // extraction arm, with a clean command/output split, a real
+    // `CommandFinishedAt`, and `ExitCode = None` (the honest cmd
+    // value — PowerShell supplies `Some` in R5; the DU was
+    // designed for exactly this asymmetry).
+    let initial = SessionModel.create "cmd" 100
+    let history = freshHistory ()
+    let history =
+        appendHistoryMarker history t0 ContentHistory.MarkerKind.PromptStart
+    let history =
+        feedHistoryBytes
+            history (after 5)
+            (System.Text.Encoding.ASCII.GetBytes "C:\\dir>\n")
+    let history =
+        appendHistoryMarker
+            history (after 10) ContentHistory.MarkerKind.CommandStart
+    let history =
+        feedHistoryBytes
+            history (after 15)
+            (System.Text.Encoding.ASCII.GetBytes "echo hi\nhi\nC:\\dir>")
+    let s1 =
+        SessionModel.applyWithContentHistory
+            initial
+            (boundaryWithText BoundaryKind.PromptStart t0 "C:\\dir>")
+            [||] history true (-1L)
+    let s2 =
+        SessionModel.applyWithContentHistory
+            s1 (boundary BoundaryKind.CommandStart (after 100))
+            [||] history true (-1L)
+    let _s3, finalisedOpt =
+        SessionModel.applyAndCaptureWithContentHistory
+            s2
+            (boundaryWithText
+                (BoundaryKind.CommandFinished None)
+                (after 200)
+                "C:\\dir>")
+            [||] history true (-1L)
+    Assert.True(finalisedOpt.IsSome)
+    let cell = finalisedOpt.Value
+    Assert.Equal("echo hi", cell.CommandText)
+    Assert.Equal("hi", cell.OutputText)
+    Assert.Equal(None, cell.ExitCode)
+    Assert.Equal(Some (after 200), cell.CommandFinishedAt)
+    Assert.Equal(SessionModel.IOCellPhase.Sealed, cell.Phase)
+
+[<Fact>]
 let ``CH path — heuristic-only PromptStart-only slices the blob`` () =
     let initial = SessionModel.create "cmd" 100
     let _s, finalisedOpt =

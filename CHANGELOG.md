@@ -14253,6 +14253,61 @@ matching the existing script-bailed-mid-sub-prompt path). Unit
 tests cover all three `SingleKeySubmitted` arms +
 `describeTrigger`.
 
+### Cycle 52 R4c (2026-05-16): cmd CommandFinished completion — boundary-only deferred `;D` (pre-R5)
+
+The pre-R5 stage the maintainer chose (2026-05-16) to make the
+cmd OSC-133 event stream *complete*, so R5 (PowerShell) and R6
+(per-line streaming) are genuinely shell-agnostic in the core
+rather than building on a half-instrumented cmd transport. R2
+shipped cmd `;A`/`;B` only and deferred `;D`. R4c prepends a
+**boundary-only** deferred CommandFinished — `$e]133;D$e\`
+ahead of `;A` in `CmdAdapter.Osc133PromptValue` — so cmd emits
+`BoundaryKind.CommandFinished None` at the head of every prompt
+(the standard Windows-Terminal cmd technique; the prior-command
+"finished" marker rides the next prompt because cmd has no
+post-exec hook).
+
+**No exit code on cmd, by OS-level necessity (not a shortcut).**
+Reading the shipped R2 code surfaced that the `%`-expansion
+hazard the old deferral note named was never the root blocker:
+cmd's `prompt`/`PROMPT` only expands `$`-metacodes, so there is
+no native cmd mechanism to render the just-finished
+`%errorlevel%` per prompt at all — it would need clink (a
+third-party native Lua cmd enhancer) or a per-command doskey
+wrapper, both rejected (dependency weight / the "patch" class
+being avoided). The *boundary* is what R6 per-line streaming
+needs (output region `;B` → `;D`); the exit code is a
+documented cmd limitation. `ShellEvent.CommandFinished of int
+option` already modelled the asymmetry — `None` for cmd,
+`Some <code>` for PowerShell (R5, via `$LASTEXITCODE`). The new
+template contains no `%`-expansion anywhere, so the R2
+command-line-`%`-hazard is sidestepped by construction.
+
+Net-corrective as well as net-additive: the real `;D` finalises
+the cell via the clean `Some active, CommandFinished`
+SessionModel arm, so the misplaced Cycle-47 synthetic
+`CommandFinished`-before-`;A` compensation no longer trips for
+cmd (it now fires only for the residual heuristic shell,
+claude) — the correctly-placed real "end output" marker
+replaces it. Consumer-side changes (both in
+`Program.fs handlePromptBoundary`): (1) the `;D` boundary is
+MatchedRowText-augmented like `;A`, so
+`extractIOCell.stripNextPrompt` + the tuple-final announce trim
+the trailing next-prompt — keeping `OutputText` and the spoken
+output clean, equivalent to the pre-R4c PromptStart-interrupt
+finalise; (2) the natural `CommandFinished` ContentHistory
+marker is gated on a real finalise, so cmd's leading `;D` (no
+prior command) and any drop-on-None cell don't inject a stray
+silent "end output" SpeechCursor stop at session start (logged
+once at Information: `R4c cmd CommandFinished suppressed …`).
+User-visible: none on the golden path (output narration
+unchanged); removes a potential stray launch-time SpeechCursor
+stop. Pinned by `CmdAdapterTests` (the locally-unverifiable
+string) + a new `SessionModelTests` R4c arm; end-to-end gated
+by the cmd dogfood (NVDA matrix `52-R4c`, folded into the
+R1–R4 foundation dogfood). ADR 0005 §3 R4c status note + ADR
+0006 R4c stage.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

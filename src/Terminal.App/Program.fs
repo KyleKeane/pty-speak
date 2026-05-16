@@ -1979,7 +1979,28 @@ module Program =
             let augmented, snapshotForApply =
                 match boundary.MatchedRowText, boundary.Kind with
                 | Some _, _ -> boundary, snapshot
-                | None, BoundaryKind.PromptStart ->
+                // R4c (ADR 0005/0006) — `CommandFinished` joins
+                // `PromptStart` here. cmd's deferred `;D` (R4c)
+                // is what finalises a cell (the `Some active,
+                // CommandFinished` SessionModel arm) instead of
+                // the next prompt's `;A` interrupt. By the time
+                // this handler drains, `screen.Apply` has already
+                // processed the whole read chunk (the reader loop
+                // appends + applies the full chunk before the
+                // boundary notification drains — Program.fs
+                // `startReaderLoop`), so the cursor row is the
+                // NEXT prompt's path. Augmenting `;D` with that
+                // row text gives `extractIOCell.stripNextPrompt`
+                // (and the tuple-final announce's trailing trim)
+                // the exact suffix to strip — keeping OutputText
+                // clean, equivalent to the pre-R4c PromptStart-
+                // interrupt finalise. Without this the `;D`
+                // boundary's `MatchedRowText` stays `None`
+                // (`Osc133.tryParse` produces records pre-
+                // augmentation) and the trailing next-prompt
+                // path would leak into OutputText.
+                | None, (BoundaryKind.PromptStart
+                         | BoundaryKind.CommandFinished _) ->
                     let _, (cursorRow, _), snap =
                         screen.SnapshotRows(0, screen.Rows)
                     let text =
@@ -2222,9 +2243,17 @@ module Program =
                     // BEFORE the PromptStart when SessionModel
                     // finalised a prior tuple as incomplete (the
                     // heuristic "PromptStart while
-                    // Active=AwaitingCommandStart" transition fires
-                    // here for cmd, which has no OSC 133). Result
-                    // in the review-cursor document:
+                    // Active=AwaitingCommandStart" transition).
+                    // **R4c note (2026-05-16):** post-R4c cmd
+                    // emits a real deferred `;D`, so cmd finalises
+                    // via the `Some active, CommandFinished` arm
+                    // and its `;A` opens with `finalisedOpt = None`
+                    // — this synthetic guard no longer trips for
+                    // cmd (the natural `;D` CommandFinished marker
+                    // replaces it, correctly placed). It now fires
+                    // only for genuinely-heuristic shells (claude),
+                    // which still emit no OSC 133. Result in the
+                    // review-cursor document:
                     //
                     //   ...prior command's output bytes...
                     //   --- end output ---
@@ -2244,10 +2273,11 @@ module Program =
                     // between cmd writing them and the heuristic
                     // detector firing). The marker therefore appears
                     // AFTER the new prompt's path in the rendered
-                    // tail, not before it. A cleaner model would
-                    // require either OSC 133 emissions (which cmd
-                    // doesn't provide) or backtrack-insert
-                    // semantics in ContentHistory (deferred).
+                    // tail, not before it. The cleaner model — a
+                    // real shell-emitted CommandFinished — is what
+                    // R4c delivers for cmd; this heuristic path is
+                    // the residual fallback for shells that emit no
+                    // OSC 133 (claude).
                     if finalisedOpt.IsSome
                         && k = ContentHistory.MarkerKind.PromptStart then
                         ContentHistory.appendMarker
@@ -2256,13 +2286,41 @@ module Program =
                             DateTime.UtcNow
                             None
                         |> ignore
-                    ContentHistory.appendMarker
-                        contentHistory k DateTime.UtcNow markerPayload
-                    |> ignore
-                    SpeechCursor.onAppend
-                        speechCursor
-                        contentHistory
-                        speechCursorAnnounce
+                    // R4c (ADR 0005/0006) — cmd's deferred `;D`
+                    // is emitted at the head of EVERY prompt,
+                    // including the very first (no prior command
+                    // → SessionModel's `None, CommandFinished`
+                    // arm logs + ignores it) and any `;D` whose
+                    // cell dropped (drop-on-None, ADR 0004). Those
+                    // did NOT finalise a cell; appending a
+                    // `CommandFinished` marker for them injects a
+                    // stray "end output" boundary into
+                    // ContentHistory — a silent-but-navigable
+                    // SpeechCursor stop at session start. Gate the
+                    // natural CommandFinished marker on a real
+                    // finalise (`finalisedOpt.IsSome`).
+                    // PromptStart / CommandStart / OutputStart
+                    // always append — they bracket regions
+                    // regardless of seal. The synthetic
+                    // heuristic-shell compensation above is a
+                    // separate path (direct append, not via `k`)
+                    // and is unaffected.
+                    let strayCommandFinished =
+                        k = ContentHistory.MarkerKind.CommandFinished
+                        && finalisedOpt.IsNone
+                    if strayCommandFinished then
+                        log.LogInformation(
+                            "R4c cmd CommandFinished suppressed (no cell finalised; leading or drop-on-None ;D). Source={Source} Shell={Shell}",
+                            sprintf "%A" augmented.Source,
+                            shellIdToConfigKey currentShellId)
+                    else
+                        ContentHistory.appendMarker
+                            contentHistory k DateTime.UtcNow markerPayload
+                        |> ignore
+                        SpeechCursor.onAppend
+                            speechCursor
+                            contentHistory
+                            speechCursorAnnounce
                 | None -> ()
                 // Cycle 46 PR-C — caret-move replaces the
                 // RaiseNotificationEvent path for terminal output.

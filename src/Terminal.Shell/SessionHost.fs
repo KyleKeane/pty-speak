@@ -115,14 +115,15 @@ type SessionHost private () =
                         | Ok c -> c
                         | Error _ -> "cmd.exe"
                     cmdShell, fallbackCmd
-        // R2 (ADR 0005/0006, Option B) — cmd OSC-133 prompt
-        // injection. Applied once at the single orchestration
-        // return so all three resolution outcomes
-        // (registered-miss / resolved-cmd / fallback-to-cmd)
-        // get it, and non-cmd shells (claude / PowerShell)
-        // are byte-identical. The cmd transport adapter owns
-        // the injection (ADR 0006); SessionHost only gates it
-        // on the resolved ShellId.
+        // R2 + R4c (ADR 0005/0006, Option B) — cmd OSC-133
+        // prompt injection (deferred `;D` + `;A`/`;B`; R4c
+        // added the boundary-only deferred CommandFinished).
+        // Applied once at the single orchestration return so
+        // all three resolution outcomes (registered-miss /
+        // resolved-cmd / fallback-to-cmd) get it, and non-cmd
+        // shells (claude / PowerShell) are byte-identical. The
+        // cmd transport adapter owns the injection (ADR 0006);
+        // SessionHost only gates it on the resolved ShellId.
         if resolvedShell.Id = ShellRegistry.Cmd then
             let integrated =
                 CmdAdapter.IntegrateOsc133 resolvedCmdLine
