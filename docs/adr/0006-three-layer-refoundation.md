@@ -165,7 +165,20 @@ list** and folds 0005's mechanism into it.
 - **R3 — precedence + scaffolding deletion** (= ADR 0005
   Stage C). "Once OSC133 seen, mute heuristic" *inside the
   adapter*; delete the PR-AB / PR-X / PR-Y announce-path
-  compensations from the core.
+  compensations from the core. **Sequenced R3a → R3b**
+  (one-concern-per-PR / walking-skeleton): **R3a — precedence
+  (in progress, 2026-05-16):** per-shell-session
+  `oscSeenThisSession` latch mutes the heuristic dispatch once
+  an `Osc133` boundary is seen (reset on shell-switch, not
+  alt-screen). Implemented at the current Program.fs detector
+  call site; relocating the gate physically *inside*
+  `CmdAdapter` (with the deferred R1.2 heuristic-namespace
+  move) is a structural follow-on (R3c / R4-purify), behaviour
+  first per the R1 precedent. **R3b — scaffolding deletion
+  (next):** delete the PR-X/Y/AA/AB announce-path
+  compensations and make the tuple-final announce
+  marker/Seq-driven like R2's `;B`-anchored `extractIOCell`
+  arm (the natural fix-home for KI-R2-1).
 - **R4 — purify + enforce.** Extend the existing portability-
   lint CI job to assert `Terminal.Core` has no shell strings
   / no WPF / no P/Invoke. **This is the enforcement that

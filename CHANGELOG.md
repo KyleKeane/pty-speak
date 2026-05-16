@@ -13923,6 +13923,36 @@ template needs adjustment it is a contained one-line change in
 `CmdAdapter.Osc133PromptValue`; nothing downstream depends on *how*
 cmd was told to emit OSC 133, only *that* it does.
 
+### Cycle 52 R3a (2026-05-16): OSC-133 precedence — mute heuristic once seen
+
+First half of R3 (ADR 0005 Stage C / ADR 0006 R3) — the
+**precedence** rule. Once an `BoundarySource.Osc133` boundary is
+observed in a shell session, the `HeuristicPromptDetector`'s
+synthetic boundaries are no longer dispatched (`handlePromptBoundary`
+sets a per-session `oscSeenThisSession` latch; `runDetector` mutes
+the heuristic when set). This stops the regex detector from
+competing with the authoritative shell-emitted markers — the root
+cause of the announce-path compensation pile and a contributor to
+KI-R2-1.
+
+Per-shell-session and **reset only on shell-switch** (the
+`switchToShell` `Ok newHost` block), *not* on alt-screen: a
+cmd→claude switch must keep the heuristic (claude emits no OSC); a
+cmd→cmd switch re-mutes on the new session's first OSC boundary;
+alt-screen toggles don't end the session so the latch persists. The
+heuristic detector itself still ticks (state stays warm) — only its
+*dispatch* is gated, so the change is a pure suppression with no
+detector-state divergence.
+
+Diagnostics ship with it: a one-time Information transition log
+(`R3a precedence: first OSC-133 boundary observed …`) marks the
+regime change in any always-on bundle; per-occurrence Debug logs
+(`R3a: muted heuristic boundary …`) detail suppressed boundaries on
+demand. No unit seam (Program.fs composition-root mutable, like the
+shell-switch coordinator) — dogfood-gated, the diagnostic logs are
+the triage surface. The PR-X/Y/AA/AB announce-path compensation
+*deletion* is the separate R3b PR.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

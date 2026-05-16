@@ -1892,6 +1892,20 @@ module Program =
         let mutable promptDetector : HeuristicPromptDetector.T =
             HeuristicPromptDetector.create ()
 
+        // R3a (ADR 0005/0006) — precedence: once an OSC-133
+        // boundary has been observed in the current shell
+        // session, the heuristic detector is muted (its
+        // synthetic boundaries are no longer dispatched). This
+        // stops the regex detector from fighting the
+        // authoritative shell-emitted markers — the root cause
+        // of the announce-path compensation pile. Per-shell-
+        // session: set by `handlePromptBoundary` on the first
+        // `BoundarySource.Osc133`, reset by `switchToShell`
+        // (NOT on alt-screen — the shell keeps emitting OSC
+        // across alt-screen toggles). Mutated on the same
+        // notification-consumer thread as `promptDetector`.
+        let mutable oscSeenThisSession : bool = false
+
         // Cycle 29b — selection-prompt detector. Same actor-
         // model contract as `promptDetector`: mutated on the
         // PathwayPump worker thread, captured by closures that
@@ -1957,6 +1971,22 @@ module Program =
                 (snapshot: Cell[][])
                 : unit
                 =
+            // R3a (ADR 0005/0006) — precedence latch. Any
+            // OSC-133-sourced boundary proves the shell emits
+            // shell-integration markers; from here on the
+            // heuristic detector is muted for this shell
+            // session (see `runDetector`). One-time
+            // transition log so a bundle shows exactly when
+            // the session went OSC-authoritative.
+            match boundary.Source with
+            | BoundarySource.Osc133 ->
+                if not oscSeenThisSession then
+                    oscSeenThisSession <- true
+                    log.LogInformation(
+                        "R3a precedence: first OSC-133 boundary observed; heuristic detector now muted for this shell session. Shell={Shell} Kind={Kind}",
+                        shellIdToConfigKey currentShellId,
+                        sprintf "%A" boundary.Kind)
+            | _ -> ()
             // SessionModel Tier 1.E — PromptText augmentation.
             // Heuristic boundaries arrive with `MatchedRowText`
             // already populated (the detector renders the row
@@ -2475,6 +2505,20 @@ module Program =
             // SessionModel.apply for finalize-time content
             // extraction.
             match boundary with
+            | Some data when oscSeenThisSession ->
+                // R3a (ADR 0005/0006) — OSC-133 is
+                // authoritative for this shell session;
+                // suppress the heuristic boundary so the
+                // regex detector can't corrupt the
+                // shell-emitted marker stream. Debug-level
+                // (off by default; the Information transition
+                // log in handlePromptBoundary already marks
+                // the regime change in an always-on bundle).
+                log.LogDebug(
+                    "R3a: muted heuristic boundary (OSC-133 authoritative this session). Shell={Shell} Kind={Kind} Source={Source}",
+                    shellKey,
+                    sprintf "%A" data.Kind,
+                    sprintf "%A" data.Source)
             | Some data -> handlePromptBoundary data snapshot
             | None -> ()
             // Cycle 29b — also drive the SelectionDetector on
@@ -4748,6 +4792,18 @@ module Program =
                                         promptDetector <-
                                             HeuristicPromptDetector.reset
                                                 promptDetector
+                                        // R3a (ADR 0005/0006)
+                                        // — new shell session:
+                                        // re-arm the heuristic
+                                        // until the new shell's
+                                        // first OSC-133 (a
+                                        // cmd→claude switch has
+                                        // no OSC and MUST keep
+                                        // the heuristic; a
+                                        // cmd→cmd switch re-mutes
+                                        // on the first new-session
+                                        // OSC boundary).
+                                        oscSeenThisSession <- false
                                         // Cycle 29b — companion
                                         // reset on shell-switch
                                         // so a stale candidate
