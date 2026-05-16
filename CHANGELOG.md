@@ -14421,6 +14421,35 @@ future note: a `Diagnostics → PowerShell Interaction
 Tests` submenu, deferred to R6 (ADR 0006 §"Deferred to
 R6+" item 7). No code; no user-visible change.
 
+### Cycle 52 P1 (2026-05-16): heuristic-detector detection-time gate (behaviour-identical)
+
+First of the P1–P5 pre-R6 prunings. `HeuristicPromptDetector`
+was running its per-chunk regex/stability scan for
+cmd/PowerShell even after OSC-133 became authoritative for the
+session — its boundary was only muted at *emit* time, so the
+scan was pure waste + log spam (the 2026-05-16 bundle showed
+hundreds of `HeuristicPromptDetector SUPPRESSED` / `R3a: muted
+heuristic boundary` lines). The prompt-detector logic is
+extracted verbatim into a `runHeuristicPromptDetector` helper;
+`runDetector` now invokes it only `if not oscSeenThisSession`.
+
+**Behaviour-identical**, not a feature change: the single
+notification-consumer thread means `oscSeenThisSession` cannot
+flip mid-call, so "skip the scan" is exactly equivalent to the
+prior "run the scan then mute/discard the boundary";
+`promptDetector` is read nowhere else except the `Ctrl+Shift+D`
+snapshot (which now shows its as-of-OSC state); the flag resets
+on shell-switch so it stays correct across switches. **Claude
+is unchanged** — it emits no OSC-133, so `oscSeenThisSession`
+stays false and its detector runs every chunk exactly as
+before (load-bearing). The claude-only `SelectionDetector`
+(separate, own `shouldDetect` gate) is not affected. Net
+effect: the one-time `R3a precedence …` Information marker
+still fires; the per-chunk muted/SUPPRESSED spam and the wasted
+post-OSC scan disappear. No user-visible change; CI-gated
+(locally unverifiable — no `dotnet`); regression-swept by the
+next NVDA dogfood. Playbook §5 P1 marked done.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
