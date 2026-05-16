@@ -20,20 +20,20 @@ open Microsoft.Extensions.Logging
 ///     each in turn and announces. This is the everyday live
 ///     streaming experience.
 ///
-///   * **Manual**: the user has explicitly navigated backwards
-///     (Up arrow, marker jump, etc.) and is now controlling the
-///     pace. New appends do NOT advance the cursor automatically.
-///     The user moves the cursor forward via Down arrow / "jump
-///     to latest" / etc.
+///   * **Manual**: the user has explicitly navigated and is now
+///     controlling the pace. New appends do NOT advance the
+///     cursor automatically. Post-Cycle-51 PR-AD the user-facing
+///     Manual gestures (`Ctrl+Shift+Up/Down/End`) navigate the
+///     sealed-IOCell `CellTranscript`, not a raw Seq walk;
+///     ADR 0007 Phase 0 removed the dead Seq-nav wrappers so
+///     there is a single navigation model.
 ///
-/// Interaction-mode mode transitions: when a `SelectionShown`
+/// Interaction-mode transitions: when a `SelectionShown`
 /// marker arrives, AutoDrive temporarily suspends — the user has
 /// to navigate the list explicitly with arrow keys. On
 /// `SelectionDismissed`, AutoDrive resumes (provided the user
 /// hadn't separately switched to Manual mode).
 ///
-/// **Commit 1 (this file) is purely additive.** No production
-/// callsite wires to SpeechCursor yet; Commit 2 connects it.
 /// The `announce` callback parameter keeps the module pure and
 /// trivially testable.
 module SpeechCursor =
@@ -52,11 +52,6 @@ module SpeechCursor =
         | AutoDrive
         | Manual
 
-    /// Navigation direction for `toMarker` / `jumpRelative`.
-    type Direction =
-        | Forward
-        | Backward
-
     /// Configuration knobs. All defaults chosen to match the
     /// architectural intent in `docs/CORE-ABSTRACTION-BOUNDARY.md`.
     type Parameters =
@@ -64,9 +59,9 @@ module SpeechCursor =
           /// Manual to assert non-advancement.
           InitialMode: Mode
           /// When true, AutoDrive skips `Spinner` entries
-          /// silently. The user can still navigate to them via
-          /// explicit `next`/`previous`. Defaults true; spinner
-          /// frames are rarely what a user wants narrated.
+          /// silently (they are not announced live). Defaults
+          /// true; spinner frames are rarely what a user wants
+          /// narrated.
           SkipSpinnersInAutoDrive: bool
           /// When true, AutoDrive suspends on `SelectionShown`
           /// (and resumes on `SelectionDismissed`). Defaults
@@ -132,8 +127,8 @@ module SpeechCursor =
         /// on. -1 means "before the first entry" (initial state
         /// or after `reset`).
         member val internal Position: int64 = -1L with get, set
-        /// The highest Seq we have ever announced. Used to drive
-        /// `speakSince` and to gate "have we said this?" checks.
+        /// The highest Seq we have ever announced. `onAppend`
+        /// advances it and gates "have we said this?" checks.
         /// -1 means "nothing has been spoken yet."
         member val internal LastSpokenSeq: int64 = -1L with get, set
         /// Cycle 52 R6b — the trimmed text of the last PromptStart
@@ -166,12 +161,15 @@ module SpeechCursor =
         /// the output after a single-key sub-prompt response"
         /// reports (the raw ContentHistory entries are tagged
         /// `UserInputEcho` and filtered by `renderEntryWithPolicy`;
-        /// ADR 0004 §4a). The legacy ContentHistory-Seq engine
-        /// (`Position`/`LastSpokenSeq`/`onAppend`/`next`/`previous`
-        /// /`toLatest`/`toMarker`) is retained unchanged for
-        /// AutoDrive bookkeeping, the Diagnostics navigability
-        /// dump, and selection-suspend — only the user-facing
-        /// Manual gestures move to this cell model.
+        /// ADR 0004 §4a). The ContentHistory-Seq engine
+        /// (`Position`/`LastSpokenSeq`/`onAppend`) is retained
+        /// for AutoDrive bookkeeping and selection-suspend; the
+        /// user-facing Manual gestures use this cell model. The
+        /// dead Seq-navigation wrappers (`next`/`previous`/
+        /// `toLatest`/`toMarker`/`current`/`speakCurrent`/
+        /// `speakSince`) had no production callers post-PR-AD and
+        /// were removed in ADR 0007 Phase 0 (2026-05-16), leaving
+        /// a single navigation model.
         member val internal CellTranscript
             : ResizeArray<string * string> = ResizeArray() with get
         /// Index into `CellTranscript` the Manual cursor is parked
@@ -225,13 +223,6 @@ module SpeechCursor =
     let setMode (state: T) (m: Mode) : unit =
         state.Mode <- m
 
-    /// Look up the entry the cursor is currently parked on, if
-    /// any. Returns `None` if position is -1 (before any entry)
-    /// or out of range.
-    let current (state: T) (history: ContentHistory.T) : ContentHistory.Entry option =
-        if state.Position < 0L then None
-        else ContentHistory.entryBySeq history state.Position
-
     /// Helper: predicate for "is this entry advanceable?" in
     /// AutoDrive mode. Spinner entries are skipped when the
     /// configuration says to.
@@ -245,39 +236,6 @@ module SpeechCursor =
             | _ -> true
         else
             true
-
-    /// Move the cursor to the next/previous Marker of the given
-    /// kind. Returns the marker entry, or `None` if no match.
-    let toMarker
-            (state: T)
-            (history: ContentHistory.T)
-            (kind: ContentHistory.MarkerKind)
-            (direction: Direction)
-            : ContentHistory.Entry option =
-        let entries = ContentHistory.snapshot history
-        let matchesKind (e: ContentHistory.Entry) =
-            match e with
-            | ContentHistory.Marker m -> m.Kind = kind
-            | _ -> false
-        let candidates =
-            match direction with
-            | Forward ->
-                entries
-                |> Array.filter (fun e ->
-                    matchesKind e
-                    && ContentHistory.entrySeq e > state.Position)
-                |> Array.tryHead
-            | Backward ->
-                entries
-                |> Array.filter (fun e ->
-                    matchesKind e
-                    && ContentHistory.entrySeq e < state.Position)
-                |> Array.tryLast
-        match candidates with
-        | Some e ->
-            state.Position <- ContentHistory.entrySeq e
-            Some e
-        | None -> None
 
     /// Cycle 45f — render an entry under a specific
     /// `PromptPathMode`. PromptStart markers consult the policy
@@ -293,9 +251,9 @@ module SpeechCursor =
     ///
     /// Note: AutoDrive's TextSpan-skip behaviour
     /// (`Parameters.SkipTextSpansInAutoDrive`) is enforced in
-    /// `onAppend`, not here. Manual navigation (`speakCurrent`)
-    /// still renders TextSpans so the user can review them
-    /// explicitly.
+    /// `onAppend`, not here. The Cell-transcript Manual surface
+    /// (Cycle 51 PR-AD) renders its own authoritative cell text,
+    /// so the skip does not gate explicit review.
     let renderEntryWithPolicy
             (promptPath: ShellPolicy.PromptPathMode)
             (entry: ContentHistory.Entry)
@@ -445,85 +403,6 @@ module SpeechCursor =
             | _ -> None
         | _ -> renderEntryWithPolicy promptPath entry
 
-    /// Cycle 49 PR-A — does this entry actually render to an
-    /// audible announcement under the cursor's current policy?
-    /// Newline / Overwrite / empty-TextSpan / boundary-Marker /
-    /// `UserInputEcho`-sourced entries all return `None` from
-    /// `renderEntryForManualNav`; manual navigation should skip
-    /// them rather than parking on Seqs the user can't hear.
-    ///
-    /// Manual nav pre-PR-A landed on every entry by Seq, so a
-    /// `dir`-shaped output (8 lines = 8 TextSpans + 8 Newlines)
-    /// required 16 Ctrl+Shift+Up presses to step backwards, half
-    /// of which announced nothing. PR-A collapses that to 8
-    /// presses, one per audible chunk.
-    ///
-    /// PR-D (2026-05-14) — uses `renderEntryForManualNav` rather
-    /// than `renderEntryWithPolicy` so `PromptStart` markers with
-    /// payload count as renderable for navigation regardless of
-    /// the cursor's `PromptPath` policy. Auto-drive (`onAppend`)
-    /// still uses `renderEntryWithPolicy` so streaming narration
-    /// stays gated on the per-shell verbosity setting.
-    ///
-    /// `toMarker` deliberately does NOT use this filter — a
-    /// marker jump is the user explicitly asking for a marker,
-    /// even if its `renderEntry` returns `None` (e.g.
-    /// `CommandStart` boundary markers).
-    ///
-    /// Lives below `renderEntryWithPolicy` so F#'s single-pass
-    /// type resolution sees the dependency in declaration order;
-    /// `next` / `previous` / `toLatest` follow for the same
-    /// reason.
-    let private renderable (state: T) (entry: ContentHistory.Entry) : bool =
-        (renderEntryForManualNav state.Parameters.PromptPath entry).IsSome
-
-    /// Move the cursor to the next renderable entry in the
-    /// supplied history (Seq > Position). Returns the entry, or
-    /// `None` if no later renderable entry exists.
-    let next (state: T) (history: ContentHistory.T) : ContentHistory.Entry option =
-        let entries = ContentHistory.snapshot history
-        let target =
-            entries
-            |> Array.tryFind (fun e ->
-                ContentHistory.entrySeq e > state.Position
-                && renderable state e)
-        match target with
-        | Some e ->
-            state.Position <- ContentHistory.entrySeq e
-            Some e
-        | None -> None
-
-    /// Move the cursor to the previous renderable entry. Returns
-    /// the entry, or `None` if no earlier renderable entry exists.
-    let previous (state: T) (history: ContentHistory.T) : ContentHistory.Entry option =
-        let entries = ContentHistory.snapshot history
-        let target =
-            entries
-            |> Array.filter (fun e ->
-                ContentHistory.entrySeq e < state.Position
-                && renderable state e)
-            |> Array.tryLast
-        match target with
-        | Some e ->
-            state.Position <- ContentHistory.entrySeq e
-            Some e
-        | None -> None
-
-    /// Jump the cursor to the latest renderable entry. Returns
-    /// the entry, or `None` if history contains no renderable
-    /// entries (only Newlines / Overwrites / etc.).
-    let toLatest (state: T) (history: ContentHistory.T) : ContentHistory.Entry option =
-        let entries = ContentHistory.snapshot history
-        let target =
-            entries
-            |> Array.filter (renderable state)
-            |> Array.tryLast
-        match target with
-        | Some e ->
-            state.Position <- ContentHistory.entrySeq e
-            Some e
-        | None -> None
-
     /// Cycle 52 R6b / R6b-followup — resolve an *on-change*
     /// `PromptPathMode` (`FullOnChangeElseFinal` /
     /// `FinalOnChangeElseFull` / `SilentOnUnchangedFullOnChange` /
@@ -597,57 +476,6 @@ module SpeechCursor =
         | ShellPolicy.SilentOnUnchangedFinalOnChange ->
             resolveOnChange state state.Parameters.PromptPath entry
         | other -> other
-
-    /// Announce the entry at the cursor's current position via
-    /// the supplied callback. Updates `LastSpokenSeq` to the
-    /// entry's Seq if the entry rendered to a non-empty
-    /// announcement. Returns `true` iff something was announced.
-    let speakCurrent
-            (state: T)
-            (history: ContentHistory.T)
-            (announce: string * string -> unit)
-            : bool =
-        match current state history with
-        | None -> false
-        | Some entry ->
-            match renderEntryWithPolicy state.Parameters.PromptPath entry with
-            | None ->
-                // The entry exists but has no audible
-                // announcement (e.g. Newline, Overwrite). Still
-                // advance LastSpokenSeq so we don't redundantly
-                // try again.
-                state.LastSpokenSeq <-
-                    max state.LastSpokenSeq (ContentHistory.entrySeq entry)
-                false
-            | Some (text, activityId) ->
-                announce (text, activityId)
-                state.LastSpokenSeq <-
-                    max state.LastSpokenSeq (ContentHistory.entrySeq entry)
-                true
-
-    /// Announce every entry with Seq in `(LastSpokenSeq, throughSeq]`
-    /// in ascending Seq order. Used by `onAppend` to catch up the
-    /// cursor + speak any entries the user may have skipped (e.g.
-    /// they were in Manual mode and just jumped to latest).
-    let speakSince
-            (state: T)
-            (history: ContentHistory.T)
-            (announce: string * string -> unit)
-            (throughSeq: int64)
-            : int =
-        let entries = ContentHistory.snapshot history
-        let lower = state.LastSpokenSeq
-        let mutable spokenCount = 0
-        for e in entries do
-            let s = ContentHistory.entrySeq e
-            if s > lower && s <= throughSeq then
-                match renderEntryWithPolicy state.Parameters.PromptPath e with
-                | Some (text, activityId) ->
-                    announce (text, activityId)
-                    spokenCount <- spokenCount + 1
-                | None -> ()
-                state.LastSpokenSeq <- s
-        spokenCount
 
     /// Event hook: invoked when ContentHistory has appended one
     /// or more new entries. The caller's invocation is a "wake
@@ -756,8 +584,11 @@ module SpeechCursor =
 
     // -----------------------------------------------------------------
     // Cycle 51 PR-AD (ADR 0004) — sealed-IOCell transcript: the
-    // model the user-facing Manual gestures navigate. Additive;
-    // the legacy ContentHistory-Seq engine above is untouched.
+    // model the user-facing Manual gestures navigate. The
+    // ContentHistory-Seq engine above retains only AutoDrive
+    // bookkeeping (`onAppend`/`Position`/`LastSpokenSeq`) +
+    // selection-suspend; the dead Seq-nav wrappers were removed
+    // in ADR 0007 Phase 0.
     // -----------------------------------------------------------------
 
     /// Append a finalised cell's authoritative command + output as
