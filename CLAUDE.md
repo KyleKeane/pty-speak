@@ -189,19 +189,30 @@ requests". Quick reminders:
 ### CI failures — ask for the log, don't guess
 
 When a CI check fails on a PR, **ask the user to paste the relevant
-log slice** rather than guessing at the failure cause. The local
-sandbox blocks `productionresultssa*.blob.core.windows.net` and
-`api.github.com`, so you cannot fetch CI run logs directly via
-`WebFetch` or `curl` — both 403. The GitHub MCP tools don't return
-job logs either. Without the user's paste, any fix is inferred from
-the diff alone — which produces unfocused fixup commits that may
-miss the real issue. PR #132 demonstrated the failure mode: two
-speculative fixes (`Process.Start` nullness + sequence-in-match-arm
-refactor) were both wrong; the actual cause was an `FS0039`
-record-label resolution issue only visible in the build log.
+log slice** rather than guessing at the failure cause. **This
+request MUST be made via the `AskUserQuestion` tool, never plain
+text** — `AskUserQuestion` pushes a phone notification so the
+maintainer is alerted even away from the desk; a plain-text request
+sits silently in the transcript and stalls the loop (maintainer
+instruction 2026-05-16, after several CI-log asks were sent as plain
+text). This is **not a judgment call about whether the maintainer
+seems present** — always use `AskUserQuestion` for a CI-failure log
+request. Frame the question with the failing-job URL + the exact
+strings to search (screen-reader-friendly, see below) as the
+question/options text. The local sandbox blocks
+`productionresultssa*.blob.core.windows.net` and `api.github.com`,
+so you cannot fetch CI run logs directly via `WebFetch` or `curl` —
+both 403. The GitHub MCP tools don't return job logs either.
+Without the user's paste, any fix is inferred from the diff alone —
+which produces unfocused fixup commits that may miss the real issue.
+PR #132 demonstrated the failure mode: two speculative fixes
+(`Process.Start` nullness + sequence-in-match-arm refactor) were
+both wrong; the actual cause was an `FS0039` record-label
+resolution issue only visible in the build log.
 
 **Request format — the maintainer uses a screen reader.** Long
-logs aren't `Ctrl+F`-searchable on a screen reader. Either:
+logs aren't `Ctrl+F`-searchable on a screen reader. In the
+`AskUserQuestion` body, either:
 
 - Ask for the full log paste and grep server-side via `Bash`
   against the pasted content, OR
@@ -209,10 +220,13 @@ logs aren't `Ctrl+F`-searchable on a screen reader. Either:
   (`error FS`, `error MSB`, `Failed!`, `Build FAILED`, the test
   name) and request the surrounding 5–10 lines.
 
-The second option is usually faster for the maintainer. If the
-user isn't around, queue the question and wait. **Do not push
-speculative fixups** — the cost of one wrong fix is multiple
-minutes of wasted CI cycle plus a noisier git history.
+The second option is usually faster for the maintainer. **Do not
+push speculative fixups** — the cost of one wrong fix is multiple
+minutes of wasted CI cycle plus a noisier git history. (A flaky
+run is the exception to "investigate the diff": if the failure is
+unrelated to the change — infra/runner/network flake — a re-run
+clears it; the maintainer may just say "flaky, green now", in
+which case proceed to merge.)
 
 ### Diagnostic logs — request chunks via the in-app menu
 
@@ -735,8 +749,11 @@ Use `AskUserQuestion` when:
   proceed (e.g. "preserve vs drop history-recall entries in
   ContentHistory" — answered 2026-05-14 via this surface).
 - A CI failure log slice is needed (per "CI failures — ask for
-  the log" rule above) and the maintainer may be away from the
-  desk.
+  the log" rule above). **Always** — not conditioned on whether
+  the maintainer seems present. Plain-text CI-log requests
+  stalled the loop several times on 2026-05-16; the maintainer
+  explicitly asked that these always come through
+  `AskUserQuestion` so the phone buzzes.
 - The MCP server has disconnected and the manual PR-create
   fallback needs the maintainer to open a compare URL.
 - Anything ambiguous in the user's instructions that genuinely
