@@ -211,6 +211,71 @@ stays authoritative for operations (copy/rerun bind to
 ratify D5 specifically — it is the one previously-open
 architectural decision.
 
+**D5a — Recommended D5 resolution: render the history as a
+real focusable list control, with a pane-switch gesture.**
+(Maintainer proposal 2026-05-16.) Rather than hand-
+materialising the typed history into the existing flat
+review-cursor *text* document, render it as an actual
+on-screen **list control** — each cell an item (the
+`CommandOutputTuple` shape from CANONICAL-DISPLAY-CATALOG as
+the item template / automation peer). `Ctrl+Shift+Left` /
+`Ctrl+Shift+Right` switch the *pane / mode* between the
+live command-interaction surface and this history list; the
+user then moves through the list with the **standard list
+keys assistive tech already maps natively** (item up/down,
+Home/End, type-ahead, "list with N items, item M of N"),
+not bespoke app hotkeys. This is the recommended way to
+satisfy D5's "one mental model" goal and is preferred over
+text-document materialisation because:
+
+- A standard list control with correct automation peers is
+  AT-compatible *by construction* — NVDA gets native list
+  browse semantics without a bespoke text projection whose
+  review-cursor behaviour we'd have to tune and keep aligned.
+- It shrinks the custom-hotkey surface (familiar list keys
+  vs. learn-and-document app gestures).
+- It cleanly divides the three-sub-pane model
+  (CORE-ABSTRACTION-BOUNDARY §6): ADR 0002's TextEdit caret
+  stays the **live current-output** surface (the streaming
+  trickle); the **history** sub-pane becomes this focusable
+  list. The two-models tension D5 worried about dissolves —
+  current-output and history are deliberately distinct
+  panes, each with the control type that fits it, joined by
+  the `Ctrl+Shift+Left/Right` switch.
+- Each list item is the natural host for the D2 per-cell
+  operations (invoke / context-menu patterns → copy command
+  / copy output / rerun input), so D2 and the channel
+  rendering converge instead of being layered separately.
+
+Open questions this raises (to resolve in Phase 6, recorded
+not glossed):
+
+1. **Focus vs. the live shell.** While focus is in the
+   history list, keystrokes go to the list, not the shell.
+   The pane-switch gesture is the control for this; Phase 6
+   must define what returns focus to the terminal, and
+   whether/how the live trickle keeps announcing (D3) while
+   the user is browsing history (this maps onto the existing
+   AutoDrive-suspend-during-Manual model).
+2. **A live-updating item under AT.** When the executing
+   cell is an item in the list and its `ProgressSegment`s
+   are still arriving (D3 / Phase 4), the item is mutating
+   while the user may be parked on or near it. Phase 6 must
+   define the UIA update contract (item-added / live-region
+   semantics) so new segments are discoverable without
+   yanking the user's position.
+3. **Retention vs. virtualisation.** The list must
+   virtualise for long sessions yet stay bound to the
+   retained typed transcript (the retention-vs-ring-buffer
+   open decision below), so scrolling far back does not
+   fall off the announce ring buffer.
+
+D5a is the **recommended** resolution; the plain-text-
+materialisation form of D5 and the parallel-only form are
+retained as the recorded alternatives if the list-control
+form proves infeasible under the WPF/UIA stack. Maintainer
+to ratify D5/D5a together.
+
 **D6 — The cell history is the assertable record of what was
 sent to the channel (a test oracle).** (Maintainer
 contribution 2026-05-16.) **Invariant: every channel send
@@ -315,13 +380,20 @@ changes the ADR 0004 IOCell schema.
   *intra-cell segments, not nested cells*; the schema stays
   v2.
 
-- **Phase 6 — channel materialisation + current-line.**
-  Materialise the typed history into the review-cursor UIA
-  document (D5) as `CommandOutputTuple` regions; propagate
-  the live current line to NVDA "read current line"
-  (ADR 0006 item 4). Largest channel-side change; sequenced
-  last because it depends on the typed model (D1) and the
-  segment model (Phases 4–5) being settled.
+- **Phase 6 — history pane + current-line.** Per the
+  recommended **D5a**: render the typed history as a
+  focusable list control (`CommandOutputTuple` item peers),
+  reachable via the `Ctrl+Shift+Left/Right` pane switch and
+  navigated with standard list keys; resolve the three D5a
+  open questions (focus vs. live shell, live-updating item
+  under AT, virtualisation vs. retention). Propagate the
+  live current line to NVDA "read current line" (ADR 0006
+  item 4). If D5a is rejected at ratification, this phase
+  instead materialises into the review-cursor text document
+  (the plain D5 form). Largest channel-side change;
+  sequenced last because it depends on the typed model (D1),
+  the per-cell ops (D2 — items host them), and the segment
+  model (Phases 4–5) being settled.
 
 - **Phase 7 — automated cell-structure diagnostics (D6).**
   Extend the existing test corpus + `Diagnostics → Test …`
@@ -352,9 +424,12 @@ changes the ADR 0004 IOCell schema.
 
 ## Open decisions to resolve (within the phase that needs them)
 
-- **D5 ratification** (Phase 6 gate): materialise-vs-parallel.
-  Recommended: materialise + parallel authoritative model.
-  Maintainer call.
+- **D5 / D5a ratification** (Phase 6 gate). Recommended:
+  **D5a** — render history as a focusable list control with a
+  `Ctrl+Shift+Left/Right` pane switch and standard list-key
+  navigation, parallel typed model authoritative. Fallbacks
+  (recorded): plain D5 text-document materialisation, or
+  parallel-only. Maintainer call; ratify D5/D5a together.
 - **Retention vs the announce ring buffer.** `SessionModel`
   history is a ring buffer (`MaxHistorySize`); evicted cells
   vanish. Proposal: the *navigable* transcript is a separate
@@ -414,7 +489,10 @@ changes the ADR 0004 IOCell schema.
 ## Status / next
 
 **Proposed.** No code lands until the maintainer accepts
-this ADR (in particular D5). On acceptance, R6c is replaced
+this ADR (in particular D5/D5a — the recommended history
+rendering is a focusable list control with a
+`Ctrl+Shift+Left/Right` pane switch and standard list-key
+navigation). On acceptance, R6c is replaced
 by "ADR 0007 Phase 0…7", each its own PR + dogfood under the
 walking-skeleton discipline; the cmd announce-heuristic
 FREEZE is unaffected (this is the navigation / operations /

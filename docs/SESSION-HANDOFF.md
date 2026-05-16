@@ -39,8 +39,9 @@ and serves the decision-trail role this file used to overload.
 > [ADR 0007](adr/0007-canonical-iocell-history-navigation.md)
 > (Proposed): SpeechCursor as the canonical navigable IOCell
 > history (typed cells, per-cell copy/rerun, live-trickle
-> review). Awaiting maintainer acceptance (esp. D5
-> materialise-vs-parallel); NO code lands until accepted.
+> review). Awaiting maintainer acceptance (esp. D5/D5a —
+> recommended: history as a focusable list control +
+> `Ctrl+Shift+Left/Right` pane switch); NO code until accepted.
 > The shelved quick-patch (delete 7 dead Seq functions) is
 > ADR 0007 Phase 0. Next = ADR 0007 acceptance → Phase 0…7
 > → R6d (PS-diagnostics submenu) → R7 (claude + closure).**

@@ -14750,9 +14750,13 @@ the cell history, written on the same path as the channel
 send, is an assertable mirror of what was announced — turning
 listen-and-report dogfood into agent-run structural
 self-checks** (Phase 7; the multi-interrupt cmd script is the
-first oracle target). Doc-only; **no code lands until the
-maintainer accepts the ADR (esp. D5
-materialise-vs-parallel)**. Pointers added in CLAUDE.md
+first oracle target). **D5a (maintainer proposal): the
+recommended channel resolution is to render history as a
+real focusable list control with a `Ctrl+Shift+Left/Right`
+pane switch and standard list-key navigation — AT-native by
+construction — rather than text-document materialisation.**
+Doc-only; **no code lands until the maintainer accepts the
+ADR (esp. D5/D5a)**. Pointers added in CLAUDE.md
 reading order, ADR 0006 deferred-cluster header,
 SESSION-HANDOFF, and the R5 playbook banner.
 

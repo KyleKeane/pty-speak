@@ -43,7 +43,9 @@
 > (Proposed): SpeechCursor as the canonical navigable IOCell
 > history (typed cells, per-cell copy/rerun, live-trickle
 > review for progress/Claude). AWAITING MAINTAINER
-> ACCEPTANCE (esp. D5); no code until accepted. The shelved
+> ACCEPTANCE (esp. D5/D5a — recommended: history as a
+> focusable list control + `Ctrl+Shift+Left/Right` pane
+> switch); no code until accepted. The shelved
 > quick-patch = ADR 0007 Phase 0. Next: ADR 0007 acceptance
 > → Phase 0…7 → R6d PowerShell-diagnostics submenu** — each
 > its own PR + dogfood (walking-skeleton). cmd

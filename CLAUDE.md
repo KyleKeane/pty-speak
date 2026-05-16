@@ -128,8 +128,10 @@ before deviating.
    copy/rerun, live-trickle review for the progress loop /
    Claude CLI). Unifies ADR 0006 §"Deferred to R6+" items
    2–5 into a phased plan (Phase 0 = the shelved dead-code
-   cleanup). **Awaiting maintainer acceptance (esp. D5
-   materialise-vs-parallel); no code lands until accepted.**
+   cleanup). **Awaiting maintainer acceptance (esp. D5/D5a —
+   the recommended history rendering is a focusable list
+   control with a `Ctrl+Shift+Left/Right` pane switch +
+   standard list-key nav); no code lands until accepted.**
    Read before any SpeechCursor / IOCell-history /
    review-cursor-document work.
 10. **RFC 0001 (archived)** — Cycle 33 pivot-gate RFC, formalised
