@@ -211,6 +211,37 @@ stays authoritative for operations (copy/rerun bind to
 ratify D5 specifically — it is the one previously-open
 architectural decision.
 
+**D6 — The cell history is the assertable record of what was
+sent to the channel (a test oracle).** (Maintainer
+contribution 2026-05-16.) **Invariant: every channel send
+writes a correspondingly-bounded cell / segment on the *same
+code path*, at the same moment, so that for every announce
+`announced_text == the text of the cell/segment it produced`,
+with the cell/segment boundaries matching the announce
+boundaries.** Consequence: the cell history becomes a
+machine-readable mirror of the announce stream. A scripted
+scenario (e.g. the multi-interrupt cmd script — its
+sub-prompt components come back as chunks appended to the
+latest output cell) can be **validated by asserting the
+resulting cell/segment structure against an expected
+structure**, rather than the maintainer listening and
+reporting what they heard. This collapses most of the
+listen-and-report dogfood loop into automated structural
+assertions the app (or a test) checks itself. The residual
+that remains genuinely audible-only is "did NVDA actually
+voice it" — and even that shrinks: because the history write
+is *on the send path* (not a parallel reconstruction), a
+correctly-bounded entry in the history is itself evidence the
+send was issued; only the NVDA-side delivery (a TTS/SAPI
+concern outside this process) is left for a thin human or
+NVDA-hook confirmation. This is **why** D1's typed cells and
+D3's explicit segment boundaries are load-bearing beyond
+navigation: they are also the assertion surface. The oracle
+is exactly as trustworthy as the boundary fidelity — a
+mis-placed boundary would pass a structural assert while
+sounding wrong, so the boundary invariant above is the
+contract the oracle rests on.
+
 ## Consequences — phased plan (walking-skeleton)
 
 One PR + NVDA dogfood per phase, in order; each phase is
@@ -265,6 +296,26 @@ changes the ADR 0004 IOCell schema.
   (ADR 0006 item 4). Largest channel-side change; sequenced
   last because it depends on the typed model (D1) and the
   segment model (Phases 4–5) being settled.
+
+- **Phase 7 — automated cell-structure diagnostics (D6).**
+  Extend the existing test corpus + `Diagnostics → Test …`
+  menu so each scripted scenario carries an **expected
+  cell/segment structure** (kinds, order, segment count,
+  boundary positions — not exact text, which is environment-
+  dependent), and the app self-checks the written history
+  against it. The multi-interrupt cmd script is the first
+  target (assert: one input cell, then N `SubPromptExchange`
+  segments in order within the latest output cell, each
+  non-empty, boundaries where the `;`-protocol /
+  state-machine transitions say). Turns "maintainer listens
+  and reports" into "agent runs the script and asserts the
+  structure"; the remaining manual step is a thin
+  audible-delivery confirmation, not a transcription.
+  Sequenced after Phases 4–5 because the oracle asserts the
+  segment model those phases build (per D6: the oracle is
+  only as good as the boundary fidelity). Each prior phase
+  may *retro-add* its scenario's expected-structure assertion
+  here once Phase 7's harness exists.
 
 ## Open decisions to resolve (within the phase that needs them)
 
@@ -331,10 +382,15 @@ changes the ADR 0004 IOCell schema.
 
 **Proposed.** No code lands until the maintainer accepts
 this ADR (in particular D5). On acceptance, R6c is replaced
-by "ADR 0007 Phase 0…6", each its own PR + dogfood under the
+by "ADR 0007 Phase 0…7", each its own PR + dogfood under the
 walking-skeleton discipline; the cmd announce-heuristic
 FREEZE is unaffected (this is the navigation / operations /
 channel layer, not the announce-reconstruction layer). If
 the maintainer wants the design narrowed (e.g. defer
-Phases 4–6), that scoping is taken here, before Phase 0
-ships.
+Phases 4–7), that scoping is taken here, before Phase 0
+ships. **D6/Phase 7 changes the economics of the whole
+plan**: once the cell history is an assertable on-send
+mirror, every later phase's dogfood is mostly a structural
+self-check the agent runs, with only a thin audible-delivery
+confirmation left to the maintainer — so the walking-skeleton
+loop gets materially cheaper as the phases progress.

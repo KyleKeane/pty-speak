@@ -45,7 +45,7 @@
 > review for progress/Claude). AWAITING MAINTAINER
 > ACCEPTANCE (esp. D5); no code until accepted. The shelved
 > quick-patch = ADR 0007 Phase 0. Next: ADR 0007 acceptance
-> → Phase 0…6 → R6d PowerShell-diagnostics submenu** — each
+> → Phase 0…7 → R6d PowerShell-diagnostics submenu** — each
 > its own PR + dogfood (walking-skeleton). cmd
 > announce-heuristic FREEZE still stands (R6a/R6b do NOT
 > touch it — R6a reuses the clean R3c slice; R6b/followup

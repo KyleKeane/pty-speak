@@ -14742,10 +14742,16 @@ an input cell as a new command), and live-trickle review (a
 still-streaming response navigable while it arrives — the
 progress-loop / Claude-CLI core mechanic). Unifies ADR 0006
 §"Deferred to R6+" items 2–5 into a phased plan (Phase 0 =
-the shelved dead-Seq cleanup; Phases 1–6 layer typed
+the shelved dead-Seq cleanup; Phases 1–7 layer typed
 transcript → operations → rerun → live trickle → intra-cell
-segments → review-cursor materialisation). Doc-only; **no
-code lands until the maintainer accepts the ADR (esp. D5
+segments → review-cursor materialisation → automated
+cell-structure diagnostics). **D6 (maintainer contribution):
+the cell history, written on the same path as the channel
+send, is an assertable mirror of what was announced — turning
+listen-and-report dogfood into agent-run structural
+self-checks** (Phase 7; the multi-interrupt cmd script is the
+first oracle target). Doc-only; **no code lands until the
+maintainer accepts the ADR (esp. D5
 materialise-vs-parallel)**. Pointers added in CLAUDE.md
 reading order, ADR 0006 deferred-cluster header,
 SESSION-HANDOFF, and the R5 playbook banner.

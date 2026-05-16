@@ -42,7 +42,7 @@ and serves the decision-trail role this file used to overload.
 > review). Awaiting maintainer acceptance (esp. D5
 > materialise-vs-parallel); NO code lands until accepted.
 > The shelved quick-patch (delete 7 dead Seq functions) is
-> ADR 0007 Phase 0. Next = ADR 0007 acceptance → Phase 0…6
+> ADR 0007 Phase 0. Next = ADR 0007 acceptance → Phase 0…7
 > → R6d (PS-diagnostics submenu) → R7 (claude + closure).**
 > The maintainer-flagged "prompt announce interrupts the
 > output read" is parked as ADR 0006 §"Deferred to R6+"
