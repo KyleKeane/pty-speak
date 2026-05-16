@@ -119,7 +119,19 @@ before deviating.
    Checkpoint at R1–R4 (maintainer 2026-05-16): a
    consolidated foundation dogfood gates R5 (PowerShell
    adapter). Each R-stage stays independently CI- +
-   dogfood-gated.**
+   dogfood-gated.** **ADR 0007
+   ([`docs/adr/0007-canonical-iocell-history-navigation.md`](docs/adr/0007-canonical-iocell-history-navigation.md),
+   Proposed 2026-05-16) reframes R6c:** the maintainer
+   redirected it from a dead-code quick patch to a
+   comprehensive design review — SpeechCursor as the
+   canonical navigable IOCell history (typed cells, per-cell
+   copy/rerun, live-trickle review for the progress loop /
+   Claude CLI). Unifies ADR 0006 §"Deferred to R6+" items
+   2–5 into a phased plan (Phase 0 = the shelved dead-code
+   cleanup). **Awaiting maintainer acceptance (esp. D5
+   materialise-vs-parallel); no code lands until accepted.**
+   Read before any SpeechCursor / IOCell-history /
+   review-cursor-document work.
 10. **RFC 0001 (archived)** — Cycle 33 pivot-gate RFC, formalised
    the `LinearTextStream` substrate + streaming-emission protocol.
    The substrate it specified was replaced by `ContentHistory` +

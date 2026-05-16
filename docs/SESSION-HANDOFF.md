@@ -33,7 +33,16 @@ and serves the decision-trail role this file used to overload.
 > (hybrid progress streaming) + R6b (prompt-path verbosity)
 > + R6b-followup (3 more on-change modes) SHIPPED &
 > dogfood-PASSED (matrix `52-R6a`/`52-R6b` ✅, #383/#385 +
-> followup). Next = R6c (clean SpeechCursor command items)
+> followup). **R6c was redirected by the maintainer
+> (2026-05-16) from a dead-code "quick patch" to a
+> comprehensive design review — now
+> [ADR 0007](adr/0007-canonical-iocell-history-navigation.md)
+> (Proposed): SpeechCursor as the canonical navigable IOCell
+> history (typed cells, per-cell copy/rerun, live-trickle
+> review). Awaiting maintainer acceptance (esp. D5
+> materialise-vs-parallel); NO code lands until accepted.
+> The shelved quick-patch (delete 7 dead Seq functions) is
+> ADR 0007 Phase 0. Next = ADR 0007 acceptance → Phase 0…6
 > → R6d (PS-diagnostics submenu) → R7 (claude + closure).**
 > The maintainer-flagged "prompt announce interrupts the
 > output read" is parked as ADR 0006 §"Deferred to R6+"

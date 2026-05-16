@@ -14728,6 +14728,28 @@ gate). The announce-interrupts-output limitation is **not**
 addressed here — parked as ADR 0006 §"Deferred to R6+"
 item 10 per the maintainer's explicit call.
 
+### Cycle 52 R6c → ADR 0007 (2026-05-16): SpeechCursor canonical IOCell-history design review (Proposed)
+
+The maintainer redirected R6c from the planned dead-code
+"quick patch" to a comprehensive design review of the
+SpeechCursor / IOCell-history component as the core
+computational-history-exploration mechanic. New
+**[ADR 0007](docs/adr/0007-canonical-iocell-history-navigation.md)
+(Proposed)**: SpeechCursor as the canonical navigable IOCell
+history — typed cells (vs today's lossy `(string,string)`
+transcript), per-cell operations (copy command/output, rerun
+an input cell as a new command), and live-trickle review (a
+still-streaming response navigable while it arrives — the
+progress-loop / Claude-CLI core mechanic). Unifies ADR 0006
+§"Deferred to R6+" items 2–5 into a phased plan (Phase 0 =
+the shelved dead-Seq cleanup; Phases 1–6 layer typed
+transcript → operations → rerun → live trickle → intra-cell
+segments → review-cursor materialisation). Doc-only; **no
+code lands until the maintainer accepts the ADR (esp. D5
+materialise-vs-parallel)**. Pointers added in CLAUDE.md
+reading order, ADR 0006 deferred-cluster header,
+SESSION-HANDOFF, and the R5 playbook banner.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

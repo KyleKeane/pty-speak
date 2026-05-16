@@ -367,6 +367,15 @@ list** and folds 0005's mechanism into it.
 
 ### Deferred to R6+ — the canonical-IOCell navigation / operations layer
 
+> **Items 2, 3, 4, 5 below (the canonical-IOCell
+> navigation / per-cell-operations / review-cursor-document
+> cluster) are unified and sequenced in
+> [ADR 0007](0007-canonical-iocell-history-navigation.md)
+> (Proposed 2026-05-16) — the comprehensive design review
+> the maintainer requested in place of the R6c "quick
+> patch". This list is retained as the originating record;
+> ADR 0007 is the live design + phased plan once accepted.**
+
 **Decision (maintainer, 2026-05-16, post-`5518f5c`
 foundation dogfood + bundle analysis): freeze cmd
 announce-heuristic work until the PowerShell clean

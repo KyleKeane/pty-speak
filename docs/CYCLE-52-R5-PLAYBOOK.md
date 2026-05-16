@@ -36,11 +36,17 @@
 > (context-free non-garbage fallback). The maintainer-flagged
 > "prompt announce interrupts the output read" is parked as
 > ADR 0006 §"Deferred to R6+" item 10 (explicitly NOT
-> addressed now). **R6b's `52-R6b` gate is PASSED → R6c is
-> unblocked. Next within R6: R6c clean SpeechCursor command
-> items → R6d PowerShell-diagnostics submenu** — each its
-> own PR + dogfood (walking-skeleton; R6b-followup rides the
-> same `52-R6b` matrix as a followup row). cmd
+> addressed now). **R6b's `52-R6b` gate is PASSED. R6c was
+> redirected by the maintainer (2026-05-16) from a dead-code
+> quick patch to a comprehensive design review —
+> [`adr/0007-canonical-iocell-history-navigation.md`](adr/0007-canonical-iocell-history-navigation.md)
+> (Proposed): SpeechCursor as the canonical navigable IOCell
+> history (typed cells, per-cell copy/rerun, live-trickle
+> review for progress/Claude). AWAITING MAINTAINER
+> ACCEPTANCE (esp. D5); no code until accepted. The shelved
+> quick-patch = ADR 0007 Phase 0. Next: ADR 0007 acceptance
+> → Phase 0…6 → R6d PowerShell-diagnostics submenu** — each
+> its own PR + dogfood (walking-skeleton). cmd
 > announce-heuristic FREEZE still stands (R6a/R6b do NOT
 > touch it — R6a reuses the clean R3c slice; R6b/followup
 > only add opt-in prompt-path modes). This file stays the
