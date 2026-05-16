@@ -1,5 +1,24 @@
 # Cycle 52 R1 — current-architecture & dependency map
 
+> **HISTORICAL (2026-05-16).** This was R1's pre-extraction
+> evidence base (survey 2026-05-15). **Cycle 52 R1–R4 is now
+> complete & merged (#347–#357)**; live state is in
+> [`SESSION-HANDOFF.md`](SESSION-HANDOFF.md) and
+> [`ADR 0006`](adr/0006-three-layer-refoundation.md). Kept
+> for the planning↔shipped delta. **Things this doc says
+> that are now untrue:**
+> - "Namespace rename deferred to R3" (§"…relocated to
+>   *Core assembly*") — **done in R4a (#356)**:
+>   `HeuristicPromptDetector` is `namespace Terminal.Shell`,
+>   logger category `Terminal.Shell.HeuristicPromptDetector`.
+> - Any "deferred to R2/R3/R4" / "in progress" framing —
+>   R1–R4 all shipped; R5 (PowerShell adapter) is next,
+>   gated on the consolidated R1–R4 foundation dogfood.
+> - `file:line` anchors predate the R2–R4 edits (announce
+>   path rewritten in R3b, `Terminal.Shell` namespace in
+>   R4a) and will have drifted — re-derive against current
+>   `main` if precise line numbers are needed.
+
 Evidence base for the ADR 0006 behaviour-preserving
 extraction. Distilled from a full read-only codebase survey
 (2026-05-15). Every claim carries a `file:line` anchor so R1

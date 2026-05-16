@@ -1,20 +1,23 @@
 # ADR 0006 — Three-layer re-foundation: ShellAdapter / Session core / Accessibility channel
 
-- **Status:** Accepted (2026-05-15; maintainer approved). The
+- **Status:** Accepted (2026-05-15; maintainer approved) /
+  **R1–R4 Implemented** (2026-05-16, #347–#357). The
   architectural re-foundation. Builds on and **supersedes the
   stage list of [ADR 0005](0005-osc133-shell-integration.md)**
   (0005's OSC-133 mechanism is folded into this ADR's
-  R-stages). R1 complete + maintainer-dogfood-validated
-  (#348–#352, 2026-05-16). **R2 in progress** — cmd OSC-133
-  `prompt` injection landed (ADR 0005 Stage B mechanism,
-  **Option B**: command-line `prompt`, adapter-owned); cmd
-  emits `;A`/`;B` only (no `prompt` hook for `;C`), so ADR
-  0005 §3's "implicit C" is realised **consumer-side** —
-  `SessionModel.extractIOCell` gained a PromptStart +
-  CommandStart arm anchoring the split at the shell-emitted
-  `;B` (maintainer decision 2026-05-16). cmd dogfood gate
-  pending. Each R-stage remains independently CI- and
-  dogfood-gated.
+  R-stages). **The full structural re-foundation is landed
+  and CI-green:** R1 (seam extraction, maintainer-dogfood-
+  validated) · R2 (cmd OSC-133, Option B; "implicit C"
+  realised consumer-side) · R3a (OSC precedence latch) · R3b
+  (announce-compensation deletion — KI-R2-1 structurally
+  fixed) · R4a (heuristic namespace purify) · R4b
+  (portability-lint *enforces* the boundary). Per-stage
+  status in the R-stage list below. **Checkpoint (maintainer
+  decision 2026-05-16):** R1–R4 is the milestone; a single
+  consolidated R1–R4 *foundation dogfood* gates R5 (the
+  PowerShell adapter — net-new, must not build on an
+  unvalidated foundation). R5–R7 pending that dogfood. Each
+  R-stage remains independently CI- and dogfood-gated.
 - **Deciders:** maintainer — chose "Re-foundation ADR now" +
   "Drop MAUI consideration for now" (2026-05-15), after the
   strategic review of why 51 cycles produced brittle
