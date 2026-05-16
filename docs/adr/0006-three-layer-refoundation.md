@@ -328,9 +328,29 @@ list** and folds 0005's mechanism into it.
   unaffected (`IdleFlushMs = None`). This is why the ADR
   predicted "trivially correct on the clean event stream" —
   R6a is purely the *trigger*, the slice + composition were
-  already validated. **R6b prompt-path-verbosity → R6c
-  clean SpeechCursor command items → R6d PS-diagnostics
-  submenu** (deferred item 7) remain.
+  already validated. **R6b — prompt-path verbosity: SHIPPED
+  & CI-green 2026-05-16 (#385), dogfood-pending** (matrix
+  `52-R6b`). The OSC-133 clean `;A`…`;B` prompt string (R2–R5)
+  removed the reason cmd/PowerShell were forced to the silent
+  `Suppress` default. Maintainer decision: **keep `Suppress`
+  as the per-shell default** (no daily-flow change — auto-drive
+  stays silent at prompts, the prompt stays navigable in
+  review; this is exactly the ADR's "trivially correct on the
+  clean event stream" — the mechanism + clean text were already
+  in place) and **add** a new selectable
+  `PromptPathMode.FullOnChangeElseFinal` (full path when the
+  prompt differs from the previously-narrated one — a `cd` or
+  the first prompt after a shell-switch — final-dir-only when
+  unchanged), alongside the unchanged always-`Full` /
+  always-`FinalDirOnly`. The stateful "changed?" decision is
+  resolved by `SpeechCursor` (`effectivePromptPath`/
+  `resolveOnChange` + a per-cursor `LastPromptStartPayload`
+  cleared by the shell-switch-only `reset`) *before* the pure
+  `ShellPolicy.trimPromptPath`, which keeps a context-free
+  `Full` fallback for the new case. Manual-nav untouched (it
+  already forces `FinalDirOnly` for PromptStart). **R6c clean
+  SpeechCursor command items → R6d PS-diagnostics submenu**
+  (deferred item 7) remain; R6b's `52-R6b` dogfood gates R6c.
 - **R7 — claude/other-shell adapter decision + Cycle closure
   audit** (= ADR 0005 Stage F).
 

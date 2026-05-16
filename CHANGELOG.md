@@ -14616,6 +14616,62 @@ chunks interrupting in-flight speech (expected v1 `MostRecent`
 supersede; smoother queueing parked as ADR 0006 deferred-R6+
 item 9).
 
+### Cycle 52 R6b (2026-05-16): prompt-path verbosity — new context-aware "Full On Directory Change" mode
+
+The R6b feature-unlock (ADR 0006 R6). Pre-OSC-133 the prompt
+text fed to the prompt-path narrator was byte-stream
+reconstruction garbage, so cmd/PowerShell were forced to the
+silent `Suppress` default. OSC-133 (R2–R5) now delivers a
+**clean** `;A`…`;B`-delimited prompt string, so that constraint
+is gone. Maintainer decision 2026-05-16: **keep `Suppress` as
+the per-shell default** (no change to the daily audio flow —
+auto-drive stays silent at prompts; the prompt remains
+navigable in review via `Ctrl+Shift+Up/Down`, unchanged), and
+**add a new selectable mode** rather than flip the default.
+
+New `PromptPathMode.FullOnChangeElseFinal` (`prompt_path =
+"full_on_change"`; `View → Prompt Path → Full On Change`):
+narrates the **full path** when the prompt differs from the
+previously-narrated prompt (a `cd` / dir-changing command, or
+the first prompt after a shell-switch) and **final-dir-only**
+when the prompt is unchanged (several commands in the same
+directory). Directory orientation on a change without repeating
+the whole path every command. The existing `Full` (always
+verbatim) and `FinalDirOnly` (always last-segment) modes are
+unchanged.
+
+Implementation: the "changed?" decision is stateful (it needs
+the prior prompt) so it is resolved by `SpeechCursor`
+(`effectivePromptPath`/`resolveOnChange`, using a new
+per-cursor `LastPromptStartPayload`) *before* the pure
+`ShellPolicy.trimPromptPath` call; `trimPromptPath`'s own arm
+for the new case is a context-free `Full` fallback for any
+direct caller. `LastPromptStartPayload` is cleared by
+`SpeechCursor.reset` — which post-Cycle-45c fires on
+**shell-switch only** (ContentHistory is continuous, not
+per-command), so the watermark survives across commands within
+a shell (making "unchanged ⇒ terse" work) and resets on a
+switch (first prompt in the new shell ⇒ full path). Manual-nav
+is untouched (it already forces `FinalDirOnly` for PromptStart
+regardless of policy — the new mode is purely an auto-drive
+verbosity). Wired through `Config` (`full_on_change`),
+`HotkeyRegistry` (4th `PromptPathVerbosity` option),
+`Program.fs` (menu reader/setter/cue) and the XAML menu
+(`MenuItem_PromptPathVerbosity_full_on_change`).
+
+Diagnostic trigger (CLAUDE.md "new features ship with their
+triggers"): each on-change resolution logs `R6b prompt-path
+on-change resolve. Changed={…} Resolved={Full|FinalDirOnly}
+KeyLen={…}` at Information so a `Ctrl+Shift+D` bundle confirms
+the path fired and which effective mode was chosen. Tests:
+`ShellPolicyTests` (context-free fallback + all-mode coverage),
+`SpeechCursorTests` (first=full, unchanged=final-dir,
+changed=full, reset=full), `ConfigTests` (`full_on_change`
+resolves). Locally unverifiable (no sandbox `dotnet`);
+F# structure re-read twice before push. NVDA matrix row
+`52-R6b` added — **dogfood-pending; gates R6c** per
+walking-skeleton.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

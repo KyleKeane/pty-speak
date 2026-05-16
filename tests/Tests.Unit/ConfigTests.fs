@@ -188,6 +188,16 @@ let ``[shell.cmd] prompt_path = "final_dir_only" resolves through resolveShellPo
     Assert.Equal(ShellPolicy.TupleFinalOnly, policy.Streaming)
 
 [<Fact>]
+let ``[shell.cmd] prompt_path = "full_on_change" resolves through resolveShellPolicy`` () =
+    // Cycle 52 R6b — the new context-aware mode.
+    let toml =
+        "schema_version = 1\n[shell.cmd]\nprompt_path = \"full_on_change\"\n"
+    let config, _ = loadFromText toml
+    let policy = Config.resolveShellPolicy config "cmd"
+    Assert.Equal(ShellPolicy.FullOnChangeElseFinal, policy.PromptPath)
+    Assert.Equal(ShellPolicy.TupleFinalOnly, policy.Streaming)
+
+[<Fact>]
 let ``[shell.cmd] both verbosity and prompt_path resolve together`` () =
     let toml =
         "schema_version = 1\n[shell.cmd]\nverbosity = \"off\"\nprompt_path = \"full\"\n"

@@ -25,9 +25,13 @@ exposes:
 
 - **Per-shell verbosity / prompt-path overrides** (Cycle 45f) —
   `verbosity = "tuple_final" | "line_by_line" | "off"` and
-  `prompt_path = "suppress" | "final_dir_only" | "full"` under
-  `[shell.<id>]`. Runtime-togglable via `View → Output Verbosity`
-  / `View → Prompt Path`. Layer 3 (menu) overlays Layer 2 (TOML)
+  `prompt_path = "suppress" | "final_dir_only" | "full" |
+  "full_on_change"` under `[shell.<id>]`
+  (`full_on_change` — Cycle 52 R6b — narrates the full path when
+  the directory changed since the last prompt, final-dir-only when
+  unchanged; resets to full on a shell-switch). Runtime-togglable
+  via `View → Output Verbosity` / `View → Prompt Path`. Layer 3
+  (menu) overlays Layer 2 (TOML)
   overlays Layer 1 (compiled defaults in
   `src/Terminal.Core/ShellPolicy.fs`).
 - **Per-shell profile-set override** (Cycle 38b) —
@@ -434,8 +438,11 @@ have no effect.
 
 - `verbosity` — `tuple_final` / `line_by_line` / `off` (Cycle
   45f; runtime-togglable via `View → Output Verbosity`)
-- `prompt_path` — `suppress` / `final_dir_only` / `full` (Cycle
-  45f; runtime-togglable via `View → Prompt Path`)
+- `prompt_path` — `suppress` / `final_dir_only` / `full` /
+  `full_on_change` (Cycle 45f; `full_on_change` added Cycle 52
+  R6b — full path on a directory change, final-dir-only when
+  unchanged, resets to full on shell-switch; runtime-togglable
+  via `View → Prompt Path`)
 - `profiles = [...]` — per-shell profile-set override (Cycle 38b)
 
 Implementation pointer: `src/Terminal.Core/ShellPolicy.fs`

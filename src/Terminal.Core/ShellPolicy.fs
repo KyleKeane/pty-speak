@@ -71,10 +71,25 @@ module ShellPolicy =
     /// `Full` narrates the prompt verbatim. For shells with short
     /// prompts (`claude>`, `>>>`) or users who genuinely want the
     /// full path.
+    ///
+    /// `FullOnChangeElseFinal` (Cycle 52 R6b) — context-aware:
+    /// when the prompt text *differs* from the previously-narrated
+    /// prompt (a `cd` / dir-changing command, or the first prompt
+    /// after a shell-switch) it narrates the **full** path; when
+    /// the prompt is **unchanged** (running several commands in the
+    /// same directory) it narrates only the **final dir** segment.
+    /// Gives directory orientation on a change without repeating
+    /// the whole path on every command. The "changed?" decision is
+    /// stateful (it needs the prior prompt) so it is resolved by
+    /// `SpeechCursor` before the pure `trimPromptPath` call — see
+    /// `SpeechCursor.effectivePromptPath`. `trimPromptPath`'s own
+    /// arm for this case is a context-free fallback (= `Full`) for
+    /// any direct caller that does not do change-resolution.
     type PromptPathMode =
         | Suppress
         | FinalDirOnly
         | Full
+        | FullOnChangeElseFinal
 
     /// Per-shell policy record. Future-extension seats included
     /// from day one so Cycle 45g's consolidation refactor doesn't
@@ -196,7 +211,15 @@ module ShellPolicy =
         else
             match mode with
             | Suppress -> None
-            | Full -> Some text
+            // Context-free fallback: the change-aware resolution
+            // (Full when the prompt changed, FinalDirOnly when
+            // unchanged) is `SpeechCursor.effectivePromptPath`'s
+            // job — it resolves this case to `Full`/`FinalDirOnly`
+            // *before* calling here. A direct caller (a test, a
+            // future non-SpeechCursor path) that passes this case
+            // through gets `Full` — verbatim, never garbage.
+            | Full
+            | FullOnChangeElseFinal -> Some text
             | FinalDirOnly ->
                 let trimmed = text.TrimEnd()
                 // Identify trailing delimiter character (if any).

@@ -758,8 +758,9 @@ module HotkeyRegistry =
             Options =
               [ { OptionId = "suppress"; DisplayName = "Suppress" }
                 { OptionId = "final_dir_only"; DisplayName = "Final Directory Only" }
-                { OptionId = "full"; DisplayName = "Full" } ]
-            Description = "Per-shell prompt-path verbosity on PromptStart marker (Cycle 45f). Same scoping as Output Verbosity." } ]
+                { OptionId = "full"; DisplayName = "Full" }
+                { OptionId = "full_on_change"; DisplayName = "Full On Directory Change" } ]
+            Description = "Per-shell prompt-path verbosity on PromptStart marker (Cycle 45f; Cycle 52 R6b added 'Full On Directory Change' — full path when the dir changed, final-dir-only when unchanged). Same scoping as Output Verbosity." } ]
 
     /// Look up the `MultiStateDef` for a `MultiStateCommand`.
     /// Throws `KeyNotFoundException` if missing — pinned by

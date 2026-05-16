@@ -96,9 +96,24 @@ let ``Full returns Some text verbatim for non-empty input`` () =
 
 [<Fact>]
 let ``Empty or whitespace input returns None under every mode`` () =
-    for mode in [ ShellPolicy.Suppress; ShellPolicy.FinalDirOnly; ShellPolicy.Full ] do
+    for mode in
+        [ ShellPolicy.Suppress
+          ShellPolicy.FinalDirOnly
+          ShellPolicy.Full
+          ShellPolicy.FullOnChangeElseFinal ] do
         Assert.Equal(None, ShellPolicy.trimPromptPath mode "")
         Assert.Equal(None, ShellPolicy.trimPromptPath mode "   ")
+
+[<Fact>]
+let ``FullOnChangeElseFinal is a context-free Full fallback in trimPromptPath`` () =
+    // The change-aware resolution is SpeechCursor.effectivePromptPath's
+    // job; a direct caller that passes this case through gets the
+    // prompt verbatim (never garbage, never None for non-empty input).
+    Assert.Equal(
+        Some "C:\\Users\\Kyle\\AppData\\Local\\>",
+        ShellPolicy.trimPromptPath
+            ShellPolicy.FullOnChangeElseFinal
+            "C:\\Users\\Kyle\\AppData\\Local\\>")
 
 // ---- trimPromptPath: FinalDirOnly ----------------------------------
 

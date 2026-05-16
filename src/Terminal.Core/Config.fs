@@ -635,9 +635,11 @@ module Config =
                             | Some "suppress" -> Some ShellPolicy.Suppress
                             | Some "final_dir_only" -> Some ShellPolicy.FinalDirOnly
                             | Some "full" -> Some ShellPolicy.Full
+                            | Some "full_on_change" ->
+                                Some ShellPolicy.FullOnChangeElseFinal
                             | Some other ->
                                 logger.LogWarning(
-                                    "Config: [shell.{Key}] prompt_path = '{Value}' is not one of 'suppress' / 'final_dir_only' / 'full'; ignored.",
+                                    "Config: [shell.{Key}] prompt_path = '{Value}' is not one of 'suppress' / 'final_dir_only' / 'full' / 'full_on_change'; ignored.",
                                     key, other)
                                 None
                         let verbosity = readVerbosity ()
