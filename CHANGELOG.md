@@ -14564,6 +14564,50 @@ routing, not rot). **P1–P5 pre-R6 pruning sequence complete**
 (P1/P2/P4/P5 shipped; P3 → no-op + deferred P3b). Playbook §5
 P5 marked done.
 
+### Cycle 52 R6a (2026-05-16): hybrid progress streaming — long-running commands no longer silent until they seal
+
+First R6 feature-unlock change (ADR 0006 R6). Pre-R6a a
+long-running command (`ping -n 8 …`, a multi-second `dir /s`)
+was **completely silent under cmd / PowerShell until it sealed
+at `;D`** — the Cycle-48 PR-E retirement of the legacy
+idle-flush *body* removed the only mid-execution speech without
+a principled replacement. R6a re-wires the existing idle-flush
+quiescence point (the timer already runs to seal stale active
+spans for the diagnostic bundle) to fire the **same clean
+watermark slice the tuple-final uses**, but *during* the
+`Executing` window, so output is announced progressively as it
+trickles in. The seal then speaks only the un-spoken remainder
+— **no double-talk**, because the R3c/R3e spoken-watermark
+primitive (`52-R3c-multi`-validated) composes: each flush
+advances `lastAnnouncedSeq`; the `;D` seal slices from
+`max(commandEnterSeq, lastAnnouncedSeq)`.
+
+Tightly gated, three conjuncts: (1) **`Executing` only** —
+never while `Composing` at the prompt (the sub-prompt + banner
+paths own those windows; mutually exclusive — R6a fires
+mid-`Executing`, they fire at the boundary). (2) **`Streaming =
+TupleFinalOnly` only** — the one policy with a final read to
+compose against; `LineByLine` / `Off` semantics untouched. (3)
+`fromSeq = max commandEnterSeq lastAnnouncedSeq` — the R3d
+watermark; excludes the typed-command echo (slicing from
+`lastAnnouncedSeq` alone would re-introduce the "echo hi⏎hi"
+regression R3d fixed) with **no** next-prompt strip (the next
+prompt does not exist yet mid-`Executing` — that is the seal's
+job). claude unaffected: its `IdleFlushMs = None` ⇒ the whole
+arm never runs. `ActivityIds.output` + `MostRecent`: a later
+progress chunk correctly supersedes an unfinished earlier one
+(identical to the tuple-final).
+
+Diagnostic trigger (CLAUDE.md "new features ship with their
+triggers"): each fired flush logs `R6a progress announce
+(Executing idle-flush). CommandEnterSeq={…} LastAnnouncedSeq={…}
+FromSeq={…} Len={…}` at Information — strictly-increasing
+`FromSeq` across a multi-chunk command confirms the watermark
+composed; absence on `echo hi` / claude confirms the gate.
+Locally unverifiable (no sandbox `dotnet`); structure
+re-read twice before push. NVDA matrix row `52-R6a` added —
+**dogfood-pending; gates R6b** per walking-skeleton.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

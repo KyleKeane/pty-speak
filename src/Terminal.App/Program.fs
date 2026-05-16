@@ -4210,10 +4210,90 @@ module Program =
                         |> ignore
                         let latest = ContentHistory.latestSeq contentHistory
                         if latest > lastAnnouncedSeq then
-                            // Advance the watermark silently so
-                            // future legacy-path queries (if any
-                            // remain) don't see the same bytes
-                            // twice once we re-enable.
+                            // R6a (ADR 0006 R6 — hybrid progress
+                            // streaming). PR-E retired the legacy
+                            // idle-flush *body*; R6a re-wires this
+                            // quiescence point to fire the SAME clean
+                            // watermark slice the tuple-final uses,
+                            // but DURING the Executing window, so a
+                            // long-running command isn't silent until
+                            // it seals. Watermark-composed with the
+                            // seal announce (the R3c/R3e primitive
+                            // `52-R3c-multi` validated: each flush
+                            // advances `lastAnnouncedSeq`, so the
+                            // tuple-final at `;D` speaks only the
+                            // remainder — no double-talk). Gated:
+                            //   * Executing only — never while
+                            //     Composing at the prompt; the
+                            //     sub-prompt + banner paths own those
+                            //     windows (mutually exclusive — this
+                            //     fires mid-Executing, they fire at
+                            //     the Executing→Composing boundary /
+                            //     first PromptStart).
+                            //   * Streaming = TupleFinalOnly — the
+                            //     only policy with a final read to
+                            //     compose against; LineByLine / Off
+                            //     keep their semantics untouched.
+                            //   * fromSeq = max commandEnterSeq
+                            //     lastAnnouncedSeq — the R3d
+                            //     watermark; excludes the typed-
+                            //     command echo (slicing from
+                            //     lastAnnouncedSeq alone would
+                            //     re-introduce the "echo hi⏎hi"
+                            //     regression R3d fixed). NO
+                            //     next-prompt strip: the next prompt
+                            //     does not exist yet mid-Executing
+                            //     (that is the seal's job).
+                            // claude unaffected (its IdleFlushMs =
+                            // None ⇒ this whole arm never runs).
+                            // ActivityIds.output + MostRecent: a
+                            // later progress chunk correctly
+                            // supersedes an unfinished earlier one
+                            // (identical to the tuple-final).
+                            let isExecuting =
+                                match shellInteraction.Current with
+                                | ShellInteraction.Executing _ -> true
+                                | _ -> false
+                            let progressOptIn =
+                                match currentShellPolicy.Streaming with
+                                | ShellPolicy.TupleFinalOnly -> true
+                                | _ -> false
+                            if isExecuting && progressOptIn then
+                                let fromSeq =
+                                    max commandEnterSeq lastAnnouncedSeq
+                                let raw =
+                                    ContentHistory.sliceText
+                                        contentHistory
+                                        fromSeq
+                                        System.Int64.MaxValue
+                                let body =
+                                    (raw.TrimStart('\r', '\n'))
+                                        .TrimEnd('\r', '\n')
+                                if not
+                                    (System.String.IsNullOrWhiteSpace
+                                        body) then
+                                    let toSay =
+                                        if body.Length
+                                           <= OutputAnnounceCapChars
+                                        then body
+                                        else
+                                            body.Substring(
+                                                body.Length
+                                                - OutputAnnounceCapChars)
+                                    log.LogInformation(
+                                        "R6a progress announce (Executing idle-flush). CommandEnterSeq={CommandEnterSeq} LastAnnouncedSeq={LastAnnouncedSeq} FromSeq={FromSeq} Len={Len}",
+                                        commandEnterSeq,
+                                        lastAnnouncedSeq,
+                                        fromSeq,
+                                        toSay.Length)
+                                    window.TerminalSurface.Announce(
+                                        toSay, ActivityIds.output)
+                            // Advance the watermark in EVERY case
+                            // (announced or not / not-Executing /
+                            // not-opt-in) — preserves the prior
+                            // silent no-double-talk invariant
+                            // exactly; the seal then speaks only the
+                            // remainder.
                             lastAnnouncedSeq <- latest
                 | None -> ()
             with ex ->

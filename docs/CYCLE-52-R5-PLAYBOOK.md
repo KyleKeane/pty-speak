@@ -1,17 +1,24 @@
 # Cycle 52 R5–R7 — PowerShell adapter playbook (START HERE)
 
-> **Status**: **R5 COMPLETE & VALIDATED (2026-05-16,
-> #369–#375).** R1–R4+R4c foundation shipped & dogfood-
-> signed-off; R5a (selection seam) + R5b (PowerShell
-> adapter) shipped & CI-green; the R5b NVDA dogfood passed
-> and **resolved the #1 R5 risk positively** (OSC-133 emits
-> under a screen reader via the `prompt` function despite
-> PSReadLine being auto-disabled; `;C` confirmed unreachable
-> for the screen-reader use case = the final design, not a
-> gap — see §4 R5c/R5d). **Next = R6 (feature unlock) and/or
-> the P1–P5 pre-R5 pruning** (independent; the cmd
-> announce-heuristic FREEZE still stands). This file stays
-> the start-here for R6 and recovery.
+> **Status**: **R5 COMPLETE & VALIDATED; P1–P5 pruning
+> COMPLETE; R6 IN PROGRESS (2026-05-16, #369–#383).** R1–R4+
+> R4c foundation + R5a/R5b shipped & R5b-dogfood-validated
+> (#1 risk resolved positive — see §4 R5c/R5d). P1–P5
+> pre-R6 pruning done (P1/P2/P4/P5 shipped; P3 no-op +
+> deferred P3b — playbook §5). **R6a (hybrid per-line
+> progress streaming) shipped & CI-green — DOGFOOD-PENDING**
+> (the first R6 audible-behaviour change; matrix `52-R6a`;
+> the maintainer chose the hybrid model 2026-05-16: keep
+> the authoritative tuple-final seal read, ADD progress
+> announces on output-quiescence during Executing, reusing
+> the validated R3c/R3e watermark). **Next within R6: R6b
+> prompt-path-verbosity → R6c clean SpeechCursor command
+> items → R6d PowerShell-diagnostics submenu** — each its
+> own PR + dogfood (walking-skeleton: R6a's `52-R6a`
+> dogfood gates R6b). cmd announce-heuristic FREEZE still
+> stands (R6a does NOT touch it — it reuses the clean R3c
+> slice, not raw per-TextSpan). This file stays the
+> start-here for R6 and recovery.
 >
 > **NEW / RECOVERED SESSION: this file is your start-here.**
 > It is written to be self-contained: if the originating chat
