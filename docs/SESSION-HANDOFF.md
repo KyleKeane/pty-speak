@@ -20,12 +20,20 @@ and serves the decision-trail role this file used to overload.
 > prior one was). It points onward to
 > [`adr/0006-three-layer-refoundation.md`](adr/0006-three-layer-refoundation.md)
 > (**Accepted 2026-05-15**; reads ADR 0005 as its mechanism
-> spec). **Cycle 52 R1–R4 COMPLETE & merged (#347–#357)** —
-> the three-layer re-foundation is structurally done and
-> CI-enforced; KI-R2-1 is structurally fixed. **The gate
-> before R5 is one consolidated R1–R4 "foundation" dogfood**
-> (maintainer batching findings; 5 of those PRs are merged
-> but not yet maintainer-dogfooded, by explicit choice).
+> spec). **Cycle 52 R1–R4+R4c + R5 COMPLETE & VALIDATED
+> (#347–#375, 2026-05-16).** Three-layer re-foundation
+> structural + CI-enforced; KI-R2-1 fixed; cmd OSC-133
+> (A/B/D); **R5a selection seam + R5b PowerShell adapter
+> shipped, and the R5b NVDA dogfood PASSED — the #1 R5 risk
+> resolved positive** (PowerShell emits OSC-133 under a
+> screen reader via the `prompt` function even though
+> PSReadLine is auto-disabled; `echo hi`→"hi" clean; real
+> exit code; `;C` unreachable-under-screen-reader = the
+> final design, not a gap). **Next = R6 (feature unlock)
+> and/or P1–P5 pruning**; the cmd announce-heuristic FREEZE
+> still stands. Historical detail kept below for recovery.
+> **The R1–R4 "foundation" dogfood** was signed off
+> 2026-05-16, gating (and now cleared for) R5.
 > **R4c (pre-R5, maintainer-chosen 2026-05-16)** completes
 > the cmd transport with a *boundary-only* deferred `;D`
 > (`CommandFinished None`; no exit code — cmd has no native
@@ -188,19 +196,32 @@ cmd. Folded into the R1–R4 foundation dogfood (matrix
 > (R4c-class) is still fine — only the announce-heuristic
 > layer is frozen.
 
-**R5 — PowerShell adapter** (= ADR 0005 Stage D): full
-OSC-133 `A/B/C/D` + exit code via a generated profile /
-`-NoExit -Command`, as a second `Terminal.Shell` adapter.
-**Gated on the R1–R4 foundation dogfood** (maintainer
-decision 2026-05-16: checkpoint at R1–R4, validate the
-foundation before a second adapter builds on it; R4c rides
-that same dogfood). Then
-**R6** feature unlock (per-line progress, prompt-verbosity
-fix, clean SpeechCursor — trivial on the clean event
-stream) → **R7** claude adapter decision + Cycle closure
-audit. R1 + R4 were the structural gates; R5+ is net-
-additive on the now-enforced boundary. NVDA matrix rows per
-stage in [`ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md).
+**R5 — PowerShell adapter — COMPLETE & VALIDATED
+(2026-05-16, #374 R5a + #375 R5b).** Shipped as
+`-NoExit -EncodedCommand` injecting a `prompt`-function
+emitting `;A`/`;B`/`;D;$LASTEXITCODE` (A/B/D, real exit
+code) on the same `CmdOscAB` consumer arm as cmd. **`;C`
+is NOT shipped and that is final, not a gap:** PowerShell
+auto-disables PSReadLine under a screen reader (the only
+use case here), so the `;C`/`PSConsoleHostReadLine` hook
+can't run — the A/B/D baseline is the design conclusion,
+not a stopgap. The R5b NVDA dogfood passed: PowerShell
+spawns under NVDA, `echo hi`→"hi" clean split, real exit
+code; the #1 R5 risk resolved positive.
+
+**Next = R6 — feature unlock** (per-line progress, prompt-
+verbosity fix, clean SpeechCursor — "trivial on the clean
+event stream" per ADR 0006) → **R7** claude adapter
+decision + Cycle closure audit. The **P1–P5 pre-R5 pruning
+sequence** (heuristic-detector detection-time gate;
+Cycle-47 synthetic-compensation shell-guard; dead pathway
+config keys; canonical-corpus ESC-byte bug; comment-rot
+sweep — all in
+[`CYCLE-52-R5-PLAYBOOK.md`](CYCLE-52-R5-PLAYBOOK.md) §5)
+is independent and can land in parallel; the cmd
+announce-heuristic FREEZE still stands. NVDA matrix rows
+per stage in
+[`ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md).
 
 **Dogfood operations (Cycle 52 R1, learned 2026-05-15/16).**
 Run R-stage dogfoods from an **installed preview release**
