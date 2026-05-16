@@ -243,20 +243,31 @@ heuristics*, not these). Recommended order — least-risk
 first; none block R5a but all should land before R5b so the
 PowerShell adapter is built against a pruned tree:
 
-- **P1 — heuristic-detector detection-time gate (prune-with-
-  care).** `HeuristicPromptDetector` runs full-tilt for cmd
-  even when OSC-133 is authoritative; it is only muted at
-  *emit* time
-  ([`src/Terminal.App/Program.fs`](../src/Terminal.App/Program.fs)
-  `runDetector` ~:2482-2530; `tryDetect` in
-  [`src/Terminal.Shell/HeuristicPromptDetector.fs`](../src/Terminal.Shell/HeuristicPromptDetector.fs)).
-  The 2026-05-16 bundle showed hundreds of
-  `HeuristicPromptDetector SUPPRESSED` / `R3a: muted
-  heuristic boundary` lines — wasted per-chunk regex + map
-  work + log spam. Fix: early-exit `runDetector` when
-  `oscSeenThisSession` is set **for OSC-emitting shells**;
-  keep it fully live for **claude** (no OSC-133 — load-
-  bearing). Gate, don't delete.
+- **P1 — heuristic-detector detection-time gate (DONE
+  2026-05-16, #377).** `HeuristicPromptDetector` had been
+  running full-tilt for cmd/PowerShell even when OSC-133 is
+  authoritative — only muted at *emit* time (the 2026-05-16
+  bundle showed hundreds of `HeuristicPromptDetector
+  SUPPRESSED` / `R3a: muted heuristic boundary` lines =
+  wasted per-chunk regex + log spam). Fix shipped: the
+  prompt-detector logic was extracted verbatim into
+  `runHeuristicPromptDetector` and `runDetector` now calls
+  it only `if not oscSeenThisSession`
+  ([`src/Terminal.App/Program.fs`](../src/Terminal.App/Program.fs)).
+  **Behaviour-identical** (single notification-consumer
+  thread ⇒ `oscSeenThisSession` can't flip mid-call, so
+  "skip" ≡ the prior "run then mute"; `promptDetector` is
+  read nowhere else except the `Ctrl+Shift+D` snapshot,
+  which now shows its as-of-OSC state; `oscSeenThisSession`
+  resets on shell-switch so it's correct across switches).
+  **Claude unchanged** — it never sets `oscSeenThisSession`
+  (no OSC-133) so its detector stays fully live. The
+  `SelectionDetector` (claude-only, own gate) is **not**
+  gated by P1. Net: same one-time `R3a precedence …`
+  Information marker; the per-chunk spam + scan disappear
+  post-OSC. CI-green; validated by the next dogfood's
+  regression sweep (cmd/claude narrate identically; bundle
+  shows no per-chunk `R3a: muted` post-OSC).
 - **P2 — Cycle-47 synthetic-CommandFinished shell-guard
   (prune-with-care).** The synthetic-`CommandFinished`-
   before-`;A` compensation

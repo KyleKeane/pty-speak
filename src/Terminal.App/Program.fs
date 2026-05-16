@@ -2475,6 +2475,56 @@ module Program =
         // sites had identical 4-arg shape:
         //   shellKey + detectionTime + tryDetect + state
         //   update + dispatch on Some.
+        // P1 (ADR 0006 R5/R6-prep — heuristic-detector
+        // detection-time gate). The heuristic prompt detector's
+        // boundary is ALWAYS muted + discarded once OSC-133 is
+        // authoritative for the shell session
+        // (`oscSeenThisSession`, latched by R3a). Running its
+        // per-chunk regex/stability scan post-OSC is pure waste
+        // + log spam (the 2026-05-16 bundle showed hundreds of
+        // muted/SUPPRESSED lines). The prompt-detector logic is
+        // extracted here verbatim so `runDetector` can SKIP it
+        // entirely once OSC is authoritative — observationally
+        // identical (a muted boundary and no boundary are the
+        // same; nothing reads `promptDetector` except the
+        // Ctrl+Shift+D snapshot, which then shows its as-of-OSC
+        // state). Claude never sets `oscSeenThisSession` (no
+        // OSC-133) so its detector stays fully live. Single
+        // notification-consumer thread ⇒ `oscSeenThisSession`
+        // cannot flip mid-call, so the gate is exactly
+        // equivalent to the prior emit-time mute. `shellKey` is
+        // passed in (also used by the SelectionDetector below).
+        let runHeuristicPromptDetector
+                (snapshot: Cell[][])
+                (cursorPos: int * int)
+                (shellKey: string)
+                (now: DateTime)
+                : unit
+                =
+            let boundary, nextDetector =
+                HeuristicPromptDetector.tryDetect
+                    snapshot cursorPos shellKey now promptDetector
+            promptDetector <- nextDetector
+            // Tier 1.E2.B: forward the snapshot so
+            // handlePromptBoundary can pass it through to
+            // SessionModel.apply for finalize-time content
+            // extraction.
+            match boundary with
+            | Some data when oscSeenThisSession ->
+                // Defensive only — `runDetector` gates this
+                // helper behind `not oscSeenThisSession` and the
+                // single-thread invariant means the flag cannot
+                // flip mid-call, so this arm is now unreachable
+                // in practice; kept verbatim (prior behaviour,
+                // minimal diff).
+                log.LogDebug(
+                    "R3a: muted heuristic boundary (OSC-133 authoritative this session). Shell={Shell} Kind={Kind} Source={Source}",
+                    shellKey,
+                    sprintf "%A" data.Kind,
+                    sprintf "%A" data.Source)
+            | Some data -> handlePromptBoundary data snapshot
+            | None -> ()
+
         // Helper closes over `currentShellId` + `promptDetector`
         // (composition-root mutables; safe because all callers
         // run on the single notification-consumer thread per
@@ -2486,31 +2536,12 @@ module Program =
                 : unit
                 =
             let shellKey = shellIdToConfigKey currentShellId
-            let boundary, nextDetector =
-                HeuristicPromptDetector.tryDetect
-                    snapshot cursorPos shellKey now promptDetector
-            promptDetector <- nextDetector
-            // Tier 1.E2.B: forward the snapshot so
-            // handlePromptBoundary can pass it through to
-            // SessionModel.apply for finalize-time content
-            // extraction.
-            match boundary with
-            | Some data when oscSeenThisSession ->
-                // R3a (ADR 0005/0006) — OSC-133 is
-                // authoritative for this shell session;
-                // suppress the heuristic boundary so the
-                // regex detector can't corrupt the
-                // shell-emitted marker stream. Debug-level
-                // (off by default; the Information transition
-                // log in handlePromptBoundary already marks
-                // the regime change in an always-on bundle).
-                log.LogDebug(
-                    "R3a: muted heuristic boundary (OSC-133 authoritative this session). Shell={Shell} Kind={Kind} Source={Source}",
-                    shellKey,
-                    sprintf "%A" data.Kind,
-                    sprintf "%A" data.Source)
-            | Some data -> handlePromptBoundary data snapshot
-            | None -> ()
+            // P1 — skip the heuristic scan entirely once OSC-133
+            // is authoritative (see `runHeuristicPromptDetector`).
+            // Behaviour-identical to the prior emit-time mute;
+            // eliminates the per-chunk waste + log spam.
+            if not oscSeenThisSession then
+                runHeuristicPromptDetector snapshot cursorPos shellKey now
             // Cycle 29b — also drive the SelectionDetector on
             // the same snapshot+cursor+now triple. The detector
             // short-circuits internally when shellKey ≠ "claude"
