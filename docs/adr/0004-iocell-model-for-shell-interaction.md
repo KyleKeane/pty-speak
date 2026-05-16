@@ -298,6 +298,26 @@ Seq watermarks). v1's choice is "inline" because:
 - Migration is smaller — today's behavior is already
   inline; we're explicitly NOT changing it in v1.
 
+**Future-direction note (maintainer, 2026-05-16).** The
+promotion target is now shaped: the IOCell produced by a
+multi-interruption / sub-prompt flow (the `test-09`-class
+cases) should expose its internals as a **collection of
+navigable chunks within a container** — or, at minimum, a
+**sequence of unambiguous output segments connected to the
+most-recent input cell** — rather than one opaque inline
+blob. The boundary substrate already brackets each segment
+by its own Seq watermarks (so the data is there); what is
+deferred is the navigation/structure promotion on top. This
+is **gated on the canonical IOCell being solid** (the
+post-R5 foundation) and is tracked alongside the
+SpeechCursor-history → IOCell-history-navigation work and
+the review-cursor-document decision in
+[ADR 0006](0006-three-layer-refoundation.md) §"Deferred to
+R6+ — the canonical-IOCell navigation / operations layer".
+v1 stays inline; this note records the agreed shape so the
+promotion, when it happens, is not re-litigated from
+scratch.
+
 ### Decision 3 — ContentHistory is the sole extraction substrate
 
 For all IOCell extraction (boundary detection, command /

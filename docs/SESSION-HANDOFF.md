@@ -216,7 +216,26 @@ verified to fully restore it on both build types.
   E3) — substrate refinement; no audible bug behind it
   after PR-I's screen-read approach.
 - **Sub-prompts as nested IOCells** (ADR 0006; only if
-  Cycle 51 dogfood surfaces the need).
+  Cycle 51 dogfood surfaces the need). Future *shape* now
+  recorded — see below.
+- **Canonical-IOCell navigation / operations layer**
+  (maintainer direction 2026-05-16; full detail in
+  [ADR 0006](adr/0006-three-layer-refoundation.md)
+  §"Deferred to R6+", cross-linked from
+  [ADR 0004](adr/0004-iocell-model-for-shell-interaction.md)
+  Decision 2). Five tracked deferrals, all gated on the
+  canonical IOCell being solid (post-R5 foundation), all
+  deliberately *not* pre-R5: (1) retire `stripNextPrompt` →
+  one shell-agnostic output-region cut (R5's real `;C`/`;D`
+  reveals the general shape); (2) replace SpeechCursor
+  manual history-nav with IOCell-history nav + per-cell ops
+  (copy-output, run-again-input); (3) **open decision** —
+  write IOCell history into the review-cursor document or
+  keep parallel; (4) move live current-line/system focus so
+  NVDA "read current line" propagates; (5) multi-interrupt
+  IOCell as navigable chunks in a container / sequence of
+  output segments tied to the input cell. Explicitly-
+  tracked, rationale-bearing deferrals — not punts.
 - **Cell-navigation hotkeys** (`h`, `o`, `Alt+Up/Down`) per
   CANONICAL-DISPLAY-CATALOG §1.6.
 - **User-facing replay UI** — leverages the
