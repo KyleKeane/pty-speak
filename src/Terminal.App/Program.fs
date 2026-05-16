@@ -2093,38 +2093,46 @@ module Program =
             // both streaming AND tuple-finalise are silent —
             // SpeechCursor manual navigation is the only way to
             // hear output.
-            // R3c (ADR 0005/0006) — the tuple-final announce
-            // speaks the UN-SPOKEN Seq gap, not `cell.OutputText`.
-            // `lastAnnouncedSeq` is the SETTLED post-announce
-            // watermark (advanced after EVERY announce, including
-            // the real-time sub-prompt announce), so anything
-            // already spoken incrementally has Seq <= watermark
-            // and is excluded by construction — the sub-prompt
-            // question is no longer re-read at finalise (dogfood
-            // #2). This is NOT KI-R2-1's `lastEnterSeq`: that was
-            // a racy byte-stream CR capture, this is the settled
-            // announce watermark on the immutable history. The
-            // trailing next-prompt is trimmed by the SAME bounded
-            // `MatchedRowText` strip `extractIOCell` uses for the
-            // persisted record — reliable here precisely because
-            // the lower bound is settled (KI-R2-1 was the racy
-            // lower bound making that strip miss, not the strip
-            // itself). `finalisedOpt`'s `IOCell.OutputText` is
-            // unchanged — it remains the persisted record;
-            // announce vs persistence intentionally diverge
-            // (un-spoken gap vs full output). Gated on a
-            // finalised cell + `TupleFinalOnly` (LineByLine
-            // already streamed per-TextSpan; Off is
-            // SpeechCursor-only). The pre-prompt banner is the
-            // SAME Seq-gap rule on the `bannerAnnounce` path
-            // below (now also watermark-driven).
+            // R3d (ADR 0005/0006) — the tuple-final announce
+            // speaks the un-spoken portion of THIS cell's clean
+            // output. Lower bound = `max commandEnterSeq
+            // lastAnnouncedSeq`:
+            //   * `commandEnterSeq` is `extractIOCell`'s CmdOscAB
+            //     output-start (the top-level command's Enter
+            //     watermark; NOT moved by a sub-prompt response).
+            //     It sits AFTER the typed-command echo, so plain
+            //     commands announce OUTPUT ONLY. R3c sliced from
+            //     `lastAnnouncedSeq` alone — but the idle-flush
+            //     (`runHeartbeat`) silently bumps that to the
+            //     NEXT cell's CommandStart marker, BEFORE its
+            //     echo, so R3c re-spoke the typed command
+            //     ("echo X⏎X" instead of "X"; bundle-proven
+            //     2026-05-16, build 09321e7).
+            //   * `lastAnnouncedSeq` is the settled post-announce
+            //     watermark; for a sub-prompt it has advanced
+            //     PAST the already-spoken question (which is
+            //     printed after `commandEnterSeq`), so it wins
+            //     and only the post-response output is announced
+            //     (dogfood #2 stays fixed — maintainer-validated).
+            // `max` picks whichever correctly excludes
+            // already-heard bytes. NOT KI-R2-1's racy byte-stream
+            // `lastEnterSeq`. Trailing next-prompt trimmed by the
+            // same bounded `MatchedRowText` strip `extractIOCell`
+            // uses. `IOCell.OutputText` (persisted) unchanged —
+            // announce vs persistence intentionally diverge.
+            // Gated on a finalised cell + `TupleFinalOnly`. The
+            // pre-prompt banner is the separate `bannerAnnounce`
+            // path below. (Synthetic diagnostic-battery writes
+            // don't set `commandEnterSeq`; that harness-only
+            // staleness is a known non-UX limitation.)
             let tupleFinaliseAnnounce =
                 match finalisedOpt, currentShellPolicy.Streaming with
                 | Some _, ShellPolicy.TupleFinalOnly ->
+                    let fromSeq = max commandEnterSeq lastAnnouncedSeq
                     let raw =
                         ContentHistory.sliceText
                             contentHistory
-                            lastAnnouncedSeq
+                            fromSeq
                             System.Int64.MaxValue
                     let withoutNextPrompt =
                         let r = raw.TrimEnd('\r', '\n')
@@ -2335,13 +2343,13 @@ module Program =
                         else text.Substring(text.Length - OutputAnnounceCapChars)
                     if toSay.Length < text.Length then
                         log.LogInformation(
-                            "R3c tuple-final announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
+                            "R3d tuple-final announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
                             text.Length, toSay.Length, OutputAnnounceCapChars)
                     log.LogInformation(
-                        "R3c tuple-final announce (un-spoken Seq gap). FromSeq={FromSeq} Len={Len}",
-                        lastAnnouncedSeq, toSay.Length)
+                        "R3d tuple-final announce (clean output, watermark-intersected). CommandEnterSeq={CommandEnterSeq} LastAnnouncedSeq={LastAnnouncedSeq} FromSeq={FromSeq} Len={Len}",
+                        commandEnterSeq, lastAnnouncedSeq, (max commandEnterSeq lastAnnouncedSeq), toSay.Length)
                     log.LogDebug(
-                        "R3c tuple-final announce body. Announce={Announce}",
+                        "R3d tuple-final announce body. Announce={Announce}",
                         toSay)
                     window.TerminalSurface.Announce(toSay, ActivityIds.output)
                     // Cycle 49 PR-C — invalidate UIA Text-pattern
