@@ -23,20 +23,24 @@
   <!--
     Build-identity (2026-05-16, maintainer request). A LOCAL
     `dotnet build` never passes /p:Version, so it always reports
-    the default Version above (0.0.1-preview.1) — every local
-    build looks identical, so a dogfood can't confirm which commit
-    is running. This target embeds the short git commit SHA as
-    SourceRevisionId; the .NET SDK appends it to
+    the default Version above (0.0.1-preview.1); every local
+    build looks identical, so a dogfood cannot confirm which
+    commit is running. This target embeds the short git commit
+    SHA as SourceRevisionId; the .NET SDK appends it to
     AssemblyInformationalVersion
-    (IncludeSourceRevisionInInformationalVersion defaults true), so
-    Ctrl+Shift+H and the startup log show `0.0.1-preview.1+<sha>`.
-    Match <sha> against `git rev-parse --short HEAD` of the tree
-    you built — fully automatic, no per-PR manual discipline.
-    Degrades gracefully (ContinueOnError) when git is unavailable
-    (e.g. a source tarball): SourceRevisionId stays empty and the
-    InformationalVersion simply lacks the +sha, exactly today's
-    behaviour. Only fills when empty, so an explicit
-    SourceRevisionId / SourceLink still wins.
+    (IncludeSourceRevisionInInformationalVersion defaults true),
+    so Ctrl+Shift+H and the startup log show
+    `0.0.1-preview.1+(sha)`. Match that sha against the tree's
+    short HEAD commit SHA (the short form of `git rev-parse`) to
+    confirm the build: fully automatic, no per PR manual
+    discipline. Degrades gracefully (ContinueOnError) when git
+    is unavailable (e.g. a source tarball): SourceRevisionId
+    stays empty and the InformationalVersion simply lacks the
+    +sha, exactly today's behaviour. Only fills when empty, so
+    an explicit SourceRevisionId or SourceLink still wins.
+    NOTE: keep this comment free of double-hyphen sequences —
+    XML comments forbid them (MSB4024); the literal git flag
+    lives only in the Exec Command attribute below, never here.
   -->
   <Target Name="SetGitShortShaSourceRevision"
           BeforeTargets="GetAssemblyVersion;CoreCompile"
