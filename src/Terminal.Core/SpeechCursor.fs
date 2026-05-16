@@ -588,10 +588,7 @@ module SpeechCursor =
         match current state history with
         | None -> false
         | Some entry ->
-            match
-                renderEntryWithPolicy
-                    (effectivePromptPath state entry) entry
-            with
+            match renderEntryWithPolicy state.Parameters.PromptPath entry with
             | None ->
                 // The entry exists but has no audible
                 // announcement (e.g. Newline, Overwrite). Still
@@ -622,9 +619,7 @@ module SpeechCursor =
         for e in entries do
             let s = ContentHistory.entrySeq e
             if s > lower && s <= throughSeq then
-                match
-                    renderEntryWithPolicy (effectivePromptPath state e) e
-                with
+                match renderEntryWithPolicy state.Parameters.PromptPath e with
                 | Some (text, activityId) ->
                     announce (text, activityId)
                     spokenCount <- spokenCount + 1
@@ -698,7 +693,7 @@ module SpeechCursor =
                     if not suppressTextSpan then
                         match
                             renderEntryWithPolicy
-                                state.Parameters.PromptPath
+                                (effectivePromptPath state entry)
                                 entry
                         with
                         | Some (text, activityId) ->
