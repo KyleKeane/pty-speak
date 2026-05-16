@@ -14872,6 +14872,48 @@ is regression-only (same surface as `52-ADR7-P0`).
 Locally unverifiable — F# structure re-read; CI is the
 build signal.
 
+### Cycle 52 — ADR 0007 Phase 2a: copy the focused cell (`Ctrl+Shift+C`) (2026-05-16)
+
+First **behavioural** ADR 0007 phase (D2 — per-cell
+operations). New reserved hotkey **`Ctrl+Shift+C`** /
+menu **Output History → Copy Focused Cell to Clipboard**:
+copies the SpeechCursor cell the Manual cursor
+(`Ctrl+Shift+Up/Down/End`) is parked on — its command +
+output — to the clipboard. The per-cell analogue of
+`Ctrl+Shift+Y` (all history) / `Ctrl+Shift+O` (last
+output); those are unchanged (reframed conceptually as the
+all/last specialisations, not refactored).
+
+New `SpeechCursor.focusedCell : T -> FocusedCell option`
+(`{ CellId; CellSequence; Command: string option; Output:
+string option }`) resolves the focused item to its whole
+cell by the shared `CellId` (the transcript stores command
++ output as two `CellView` items; D2 operations act on the
+cell, not the single parked item). `Command`/`Output` are
+`None` when that side was whitespace-only (same skip rule
+as `appendCell`). Wired through `HotkeyRegistry`
+(`CopyFocusedCell` AppCommand + `Ctrl+Shift+C` builtIns +
+`nameOf` + `allCommands`), `Program.fs` (`runCopyFocusedCell`
+— reuses the bounded STA-thread `Clipboard.SetText` pattern;
+"No focused cell." when unparked; "Cell N copied… B bytes."
+on success), `TerminalView.AppReservedHotkeys`
+(`Ctrl+Shift+C` so the keyboard filter lets it reach the
+InputBinding), and `MainWindow.xaml` (auto-wired menu item).
+
+Diagnostic trigger (CLAUDE.md rule): the press logs at
+Information; success logs single-line templated
+`ADR 0007 Phase 2a focused-cell copy. CellSeq={…}
+CmdLen={…} OutLen={…} Bytes={…}` — **counts only**, never
+the command/output text (logging discipline). Tests:
+`SpeechCursorTests` (`focusedCell` None/resolve-either-
+item/whitespace-skip); `HotkeyRegistryTests` `expected`
+set + the collision/round-trip fixtures cover the new
+gesture (`Ctrl+Shift+C` confirmed free). **First phase
+with new audible behaviour ⇒ a real NVDA dogfood, not
+regression-only**: matrix row `52-ADR7-P2a`. Locally
+unverifiable — F# structure re-read; CI is the build
+signal.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

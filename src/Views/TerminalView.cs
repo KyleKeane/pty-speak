@@ -689,6 +689,15 @@ public class TerminalView : FrameworkElement
             // binding for Ctrl+Shift+A.
             (Key.A, ModifierKeys.Control | ModifierKeys.Shift, "Re-narrate last command output (capped)"),
 
+            // ADR 0007 Phase 2a (2026-05-16) — copy the focused
+            // SpeechCursor cell (command + output) to the
+            // clipboard. Per-cell *C*opy; the per-cell analogue
+            // of Ctrl+Shift+Y (all) / Ctrl+Shift+O (last). NVDA
+            // collision check: no default NVDA binding for
+            // Ctrl+Shift+C (default NVDA copy is its own
+            // review-cursor gesture, not Ctrl+Shift+C).
+            (Key.C, ModifierKeys.Control | ModifierKeys.Shift, "Copy the focused cell to clipboard"),
+
             // Cycle 48 post-PR-F (2026-05-13) — SpeechCursor
             // navigation accelerators. Per maintainer dogfood
             // of preview.118: menu-only routing felt buried.

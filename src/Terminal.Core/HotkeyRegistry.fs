@@ -121,6 +121,13 @@ module HotkeyRegistry =
         // when the user wants spoken rather than text-editor
         // surface.
         | AnnounceLastOutput
+        // ADR 0007 Phase 2a (2026-05-16) — copy the focused
+        // SpeechCursor cell's command + output to the
+        // clipboard. The per-cell analogue of
+        // `CopyHistoryToClipboard` (all) / `OpenLastOutput`
+        // (last): this acts on whichever cell the Manual
+        // cursor (Ctrl+Shift+Up/Down/End) is parked on.
+        | CopyFocusedCell
         // Cycle 47 — CMD interaction tests. Each menu item
         // writes a quoted invocation of the corresponding
         // `scripts/cmd-tests/*.cmd` script to the PTY input
@@ -232,6 +239,7 @@ module HotkeyRegistry =
         | AnnounceSessionLogPath -> "AnnounceSessionLogPath"
         | OpenLastOutput -> "OpenLastOutput"
         | AnnounceLastOutput -> "AnnounceLastOutput"
+        | CopyFocusedCell -> "CopyFocusedCell"
         | CmdTestEcho -> "CmdTestEcho"
         | CmdTestTextInput -> "CmdTestTextInput"
         | CmdTestNumericInput -> "CmdTestNumericInput"
@@ -360,6 +368,12 @@ module HotkeyRegistry =
             Key = Some (Letter 'A')
             Modifiers = Some ctrlShift
             Description = "Re-narrate last command output (capped at 800 chars; Cycle 46 post-audit)" }
+          // ADR 0007 Phase 2a (2026-05-16) — copy the focused
+          // SpeechCursor cell (command + output) to clipboard.
+          { Command = CopyFocusedCell
+            Key = Some (Letter 'C')
+            Modifiers = Some ctrlShift
+            Description = "Copy the focused cell (command + output) to the clipboard (ADR 0007 Phase 2a)" }
           // Cycle 47 — CMD interaction test corpus. All menu-
           // only (no keyboard accelerators). Each item writes
           // an invocation of the corresponding `.cmd` script
@@ -606,6 +620,7 @@ module HotkeyRegistry =
           AnnounceSessionLogPath
           OpenLastOutput
           AnnounceLastOutput
+          CopyFocusedCell
           CmdTestEcho
           CmdTestTextInput
           CmdTestNumericInput
