@@ -14605,8 +14605,16 @@ FromSeq={…} Len={…}` at Information — strictly-increasing
 `FromSeq` across a multi-chunk command confirms the watermark
 composed; absence on `echo hi` / claude confirms the gate.
 Locally unverifiable (no sandbox `dotnet`); structure
-re-read twice before push. NVDA matrix row `52-R6a` added —
-**dogfood-pending; gates R6b** per walking-skeleton.
+re-read twice before push. NVDA matrix row `52-R6a` added.
+**Dogfood-validated 2026-05-16** (matrix `52-R6a` ✅ PASSED):
+the progress loop announces each output line as it appears,
+echo/claude unaffected; maintainer cleared the R6b gate. Two
+non-blocking observations recorded on the matrix row — a
+transient first-few-echoes prompt-path-after-output that did
+not reproduce even on restart (watch-item), and progress
+chunks interrupting in-flight speech (expected v1 `MostRecent`
+supersede; smoother queueing parked as ADR 0006 deferred-R6+
+item 9).
 
 ## [0.0.1-preview.18] — 2026-04-28
 
