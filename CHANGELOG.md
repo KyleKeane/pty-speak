@@ -14501,6 +14501,39 @@ unverifiable-rip discipline). Re-scoped as deferred **P3b**
 gating R6). No code change; finding + deferral recorded so a
 fresh session doesn't re-attempt the "safe delete".
 
+### Cycle 52 P4 (2026-05-16): canonical-corpus ESC-byte bug fixed (silently-dead test coverage restored)
+
+Fourth of the P1–P5 pre-R6 prunings, and a real bug fix. The
+`cmd.echo.color.error` scenario in
+`tests/fixtures/canonical-interactions.toml` (the lone ANSI-
+colour scenario) contained two **raw ESC (0x1B) bytes** in its
+`command` value. TOML 1.0.0 forbids raw control characters in
+basic strings, so Tomlyn (`CanonicalCorpus.parseFromString` →
+`Toml.ToModel`) rejected the **entire document** with
+`Invalid control character found \u1B` at (146,11) — meaning
+the **whole** canonical-interaction corpus silently failed to
+load, and every `Ctrl+Shift+D` since reported
+`corpus skipped: TOML parse error` with only a `[WRN]` instead
+of running the regression net. (Visible in the maintainer's
+2026-05-16 bundle.)
+
+Verified end-to-end that the consumer needs a *real* ESC at
+runtime (`Scenario.Command` → Diagnostics `commandBytes` =
+`Encoding.UTF8.GetBytes` → `ConPtyHost.WriteBytes`), then
+re-encoded the two bytes as the TOML-1.0 standard Unicode
+escape (Tomlyn decodes `\uXXXX` → U+001B → UTF-8 0x1B byte —
+byte-identical to the prior intent). Applied via `sed` because
+a raw 0x1B can't be round-tripped through the Edit tool — this
+is exactly the CLAUDE.md test-fixture foot-gun ("use the
+explicit Unicode escape, not a raw byte"). Post-fix
+`grep -c $'\x1b'` on the fixture is 0; line 146 is the only
+changed line; the loader is **unchanged**; the whole corpus
+load is restored (not just this one scenario — the parse
+failure was document-wide). No code change; CI-gated;
+maintainer's next `Ctrl+Shift+D` will show a populated
+`--- CANONICAL CORPUS RESULTS ---` section (diagnostic,
+behaviour-neutral). Playbook §5 P4 marked done.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

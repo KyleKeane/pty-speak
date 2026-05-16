@@ -309,7 +309,7 @@ PowerShell adapter is built against a pruned tree:
   deferred P3b** (ADR 0006 §"Deferred to R6+"), not
   bundled. Net P3 deliverable: this finding recorded; no
   code change (nothing safe + substantial to ship).
-- **P4 — canonical-corpus ESC-byte fix (bug).**
+- **P4 — canonical-corpus ESC-byte fix (DONE 2026-05-16, #381).**
   [`tests/fixtures/canonical-interactions.toml`](../tests/fixtures/canonical-interactions.toml):146
   (`command = "echo <ESC>[31mPtySpeakDiagRedText<ESC>[0m"`)
   contains **raw ESC (0x1B) bytes** → TOML 1.0.0 rejects
@@ -320,8 +320,21 @@ PowerShell adapter is built against a pruned tree:
   expects (confirm against the corpus loader — likely
   ``); verify no other raw control bytes in the file
   (`grep -anP '\x1b' tests/fixtures/canonical-interactions.toml`).
-  This is a real loss of test coverage; fix before R5b so
-  PowerShell corpus scenarios load.
+  This is a real loss of test coverage. **Shipped:** the two
+  raw ESC bytes re-encoded as the TOML-1.0 standard
+  Unicode escape (Tomlyn decodes it → U+001B →
+  Diagnostics `Encoding.UTF8.GetBytes` → 0x1B byte to the
+  PTY — exactly the prior intent); applied via `sed` since
+  the raw 0x1B can't pass through the Edit tool (the
+  CLAUDE.md "use the explicit Unicode escape, not a raw
+  byte" foot-gun). `grep -c $'\x1b'` now 0; the loader is
+  unchanged; the whole corpus load is restored (it was
+  failing wholesale on this one line, not just this
+  scenario). Validation: the maintainer's next
+  `Ctrl+Shift+D` shows a populated
+  `--- CANONICAL CORPUS RESULTS ---` section instead of the
+  `corpus skipped: TOML parse error` `[WRN]` — diagnostic,
+  behaviour-neutral, not a blocking manual test.
 - **P5 — comment-rot sweep (docs-class, low-risk).** Stale
   references to deleted concepts in *comments only*:
   `StreamPathway`/`TuiPathway`/`DisplayPathway`/
