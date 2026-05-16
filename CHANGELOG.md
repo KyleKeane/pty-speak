@@ -14755,8 +14755,14 @@ recommended channel resolution is to render history as a
 real focusable list control with a `Ctrl+Shift+Left/Right`
 pane switch and standard list-key navigation — AT-native by
 construction — rather than text-document materialisation.**
-Doc-only; **no code lands until the maintainer accepts the
-ADR (esp. D5/D5a)**. Pointers added in CLAUDE.md
+D5a also carries a recorded set of forward considerations
+(maintainer-flagged): per-pane focus memory, kind-filtered
+structured jumps (first/last, prev-next input/output cell),
+user bookmarks + section markers, and operation-discovery
+menu surfaces — all deferred to Phase 6's sub-phases,
+validated against the real list once it exists, not built
+speculatively. Doc-only; **no code lands until the maintainer
+accepts the ADR (esp. D5/D5a)**. Pointers added in CLAUDE.md
 reading order, ADR 0006 deferred-cluster header,
 SESSION-HANDOFF, and the R5 playbook banner.
 

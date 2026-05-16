@@ -276,6 +276,49 @@ retained as the recorded alternatives if the list-control
 form proves infeasible under the WPF/UIA stack. Maintainer
 to ratify D5/D5a together.
 
+**D5a considerations to carry into the list design**
+(maintainer-flagged 2026-05-16; explicitly *not* decided
+here — the basic list lands first and these are felt out
+against real navigation, then resolved in the phase that
+owns each). Recorded so they are not re-litigated when we
+arrive:
+
+- **Per-pane focus memory.** Each pane (live interaction /
+  history list) remembers its last-focused position; the
+  `Ctrl+Shift+Left/Right` switch restores focus to where the
+  user last was in that pane, not to a reset position.
+  (Phase 6; interacts with D5a open question 1.)
+- **Kind-filtered structured jumps.** Beyond item-by-item:
+  jump-to-first-cell, jump-to-last-cell, previous/next
+  **input** cell, previous/next **output** cell. These fall
+  out of D1's `CellKind` almost for free (the analogue of
+  assistive tech's jump-by-element-type quick-nav within the
+  list). Hotkey slots per the AppReservedHotkey contract.
+  (Phase 6, building on D1/D2.)
+- **User bookmarks and section markers.** Let the user drop
+  lightweight landmarks into the history (a bookmark on a
+  cell; a named section boundary) and jump between them.
+  This is *user-authored* data, distinct from shell-derived
+  cells — open question to resolve when built: session-only
+  vs. persisted alongside the session log (ties to the
+  retention decision). (Phase 6+; new lightweight concept.)
+- **Operation discovery without breaking review.** The D2
+  per-cell operations must be discoverable without
+  interrupting coherent linear review. Two complementary
+  surfaces, both acting on the **focused** cell: the
+  assistive-tech-standard context menu (Applications key /
+  Shift+F10) on the focused item, and a single
+  "operate-on-focused-cell" menu (a command list the user
+  opens deliberately). Decide the exact split when the list
+  exists and the review feel is real — the constraint is
+  that opening/closing the menu must not move or lose the
+  review position.
+
+These are subtle and partly un-imaginable before the basic
+list exists; the list (Phase 6) is the place to start, and
+each item above is layered and validated against real
+navigation afterwards, not built speculatively up front.
+
 **D6 — The cell history is the assertable record of what was
 sent to the channel (a test oracle).** (Maintainer
 contribution 2026-05-16.) **Invariant: every channel send
@@ -390,10 +433,19 @@ changes the ADR 0004 IOCell schema.
   live current line to NVDA "read current line" (ADR 0006
   item 4). If D5a is rejected at ratification, this phase
   instead materialises into the review-cursor text document
-  (the plain D5 form). Largest channel-side change;
-  sequenced last because it depends on the typed model (D1),
-  the per-cell ops (D2 — items host them), and the segment
-  model (Phases 4–5) being settled.
+  (the plain D5 form). Then layer the **D5a considerations**
+  (per-pane focus memory; kind-filtered jumps —
+  first/last/prev-next input/output; user bookmarks +
+  section markers; the operation-discovery menu surfaces) —
+  each validated against real navigation feel once the basic
+  list works, not built speculatively. Largest channel-side
+  change; sequenced last because it depends on the typed
+  model (D1), the per-cell ops (D2 — items host them), and
+  the segment model (Phases 4–5) being settled. May itself
+  split into sub-phases (6a basic list + pane switch → 6b
+  focus memory + structured jumps → 6c bookmarks/sections →
+  6d operation-discovery menu) once the basic list exists
+  and the feel is real.
 
 - **Phase 7 — automated cell-structure diagnostics (D6).**
   Extend the existing test corpus + `Diagnostics → Test …`
@@ -436,6 +488,11 @@ changes the ADR 0004 IOCell schema.
   retained structure independent of the announce ring buffer
   so navigation history isn't silently truncated. Bound +
   spill-to-session-log policy TBD (Phase 1).
+- **Bookmark / section persistence** (Phase 6c): user-
+  authored landmarks are session-only vs. persisted
+  alongside the session log. Decide with the retention
+  decision above (same lifetime question, user-data
+  flavour).
 - **ProgressSegment granularity** (Phase 4): one segment per
   idle-flush chunk vs coalesced cadence. Tie to ADR 0006
   deferred item 9 (queue-and-coalesce); must not regress the
