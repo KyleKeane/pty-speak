@@ -1,6 +1,7 @@
 namespace Terminal.Core
 
 open System
+open Microsoft.Extensions.Logging
 
 /// Cycle 45 — SpeechCursor: the announce + navigate primitive
 /// over `ContentHistory`.
@@ -36,6 +37,14 @@ open System
 /// The `announce` callback parameter keeps the module pure and
 /// trivially testable.
 module SpeechCursor =
+
+    /// Cycle 52 R6b — diagnostic trigger for the
+    /// `FullOnChangeElseFinal` prompt-path mode. One Information
+    /// line per PromptStart resolution so a `Ctrl+Shift+D` bundle
+    /// can confirm the path fired and which effective mode
+    /// (`Full` on change / `FinalDirOnly` unchanged) was chosen.
+    let private r6bLog =
+        Logger.get "Terminal.Core.SpeechCursor.PromptPathOnChange"
 
     /// Auto-drive vs Manual mode. AutoDrive is the default; the
     /// user toggles to Manual when they want paced review.
@@ -127,6 +136,17 @@ module SpeechCursor =
         /// `speakSince` and to gate "have we said this?" checks.
         /// -1 means "nothing has been spoken yet."
         member val internal LastSpokenSeq: int64 = -1L with get, set
+        /// Cycle 52 R6b — the trimmed text of the last PromptStart
+        /// payload the auto-drive walk has seen, used solely by
+        /// `PromptPathMode.FullOnChangeElseFinal` to decide
+        /// full-path (changed) vs final-dir-only (unchanged).
+        /// `None` = no prompt seen yet ⇒ the next prompt counts as
+        /// "changed" (full path). Cleared by `reset` (shell-switch
+        /// only — post-Cycle-45c ContentHistory is continuous, so
+        /// this survives across commands within a shell, which is
+        /// exactly what makes "unchanged ⇒ terse" work).
+        member val internal LastPromptStartPayload: string option =
+            None with get, set
         member val internal Mode: Mode = parameters.InitialMode with get, set
         /// Bookkeeping: while true, AutoDrive is suspended due to
         /// a `SelectionShown` marker; mode is logically AutoDrive
@@ -504,6 +524,58 @@ module SpeechCursor =
             Some e
         | None -> None
 
+    /// Cycle 52 R6b — resolve `PromptPathMode.FullOnChangeElseFinal`
+    /// to a concrete `Full` (prompt changed since the last one, or
+    /// first prompt) / `FinalDirOnly` (prompt unchanged) for THIS
+    /// entry, using the per-cursor `LastPromptStartPayload`. Every
+    /// other mode passes through untouched. Side-effect: on a
+    /// PromptStart with payload under the on-change mode it updates
+    /// `LastPromptStartPayload` so the *next* prompt's change-test
+    /// is against this one. Non-PromptStart entries and a
+    /// payload-less PromptStart never reach `trimPromptPath` (the
+    /// other `renderEntryWithPolicy` arms ignore the mode; the
+    /// PromptStart arm maps `Payload = None → None` before the
+    /// trim), so returning the mode unchanged there is inert.
+    let private resolveOnChange
+            (state: T)
+            (entry: ContentHistory.Entry)
+            : ShellPolicy.PromptPathMode =
+        // The trimmed PromptStart payload, or None for any entry
+        // that never reaches trimPromptPath (non-PromptStart, or a
+        // payload-less PromptStart — `renderEntryWithPolicy` maps
+        // those to None before the trim regardless of mode).
+        let promptKey =
+            match entry with
+            | ContentHistory.Marker m
+                when m.Kind = ContentHistory.MarkerKind.PromptStart ->
+                m.Payload |> Option.map (fun t -> t.Trim())
+            | _ -> None
+        match promptKey with
+        | None -> ShellPolicy.FullOnChangeElseFinal
+        | Some key ->
+            let changed =
+                match state.LastPromptStartPayload with
+                | Some prev -> prev <> key
+                | None -> true
+            state.LastPromptStartPayload <- Some key
+            let resolved =
+                if changed then ShellPolicy.Full
+                else ShellPolicy.FinalDirOnly
+            r6bLog.LogInformation(
+                "R6b prompt-path on-change resolve. Changed={Changed} Resolved={Resolved} KeyLen={KeyLen}",
+                changed,
+                (if changed then "Full" else "FinalDirOnly"),
+                key.Length)
+            resolved
+
+    let private effectivePromptPath
+            (state: T)
+            (entry: ContentHistory.Entry)
+            : ShellPolicy.PromptPathMode =
+        match state.Parameters.PromptPath with
+        | ShellPolicy.FullOnChangeElseFinal -> resolveOnChange state entry
+        | other -> other
+
     /// Announce the entry at the cursor's current position via
     /// the supplied callback. Updates `LastSpokenSeq` to the
     /// entry's Seq if the entry rendered to a non-empty
@@ -621,7 +693,7 @@ module SpeechCursor =
                     if not suppressTextSpan then
                         match
                             renderEntryWithPolicy
-                                state.Parameters.PromptPath
+                                (effectivePromptPath state entry)
                                 entry
                         with
                         | Some (text, activityId) ->
@@ -641,12 +713,22 @@ module SpeechCursor =
                         state.SelectionSuspend <- true
                 | _ -> ()
 
-    /// Reset cursor state. Called when the tuple seals and
-    /// ContentHistory itself resets.
+    /// Reset cursor state. Post-Cycle-45c `ContentHistory` is
+    /// continuous (it does NOT reset per command), so the only
+    /// `ContentHistory.reset` + `SpeechCursor.reset` call site is
+    /// `switchToShell` — i.e. this fires on a **shell-switch**,
+    /// not on every tuple seal. That is exactly what makes the
+    /// R6b `FullOnChangeElseFinal` mode work: `LastPromptStartPayload`
+    /// survives across commands within a shell (so an unchanged
+    /// directory stays terse) and is cleared here on a switch (so
+    /// the first prompt in the new shell narrates the full path).
     let reset (state: T) : unit =
         state.Position <- -1L
         state.LastSpokenSeq <- -1L
         state.SelectionSuspend <- false
+        // R6b — clear the on-change watermark so the first prompt
+        // after a shell-switch counts as "changed" (full path).
+        state.LastPromptStartPayload <- None
         // Mode is preserved across resets — the user's choice of
         // AutoDrive vs Manual survives tuple boundaries.
 

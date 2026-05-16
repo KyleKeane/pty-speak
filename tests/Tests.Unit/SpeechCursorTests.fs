@@ -537,13 +537,21 @@ let ``PromptStart under Full returns the payload verbatim`` () =
 [<Fact>]
 let ``PromptStart with empty payload returns None under every mode`` () =
     let entry = promptMarker (Some "")
-    for mode in [ ShellPolicy.Suppress; ShellPolicy.FinalDirOnly; ShellPolicy.Full ] do
+    for mode in
+        [ ShellPolicy.Suppress
+          ShellPolicy.FinalDirOnly
+          ShellPolicy.Full
+          ShellPolicy.FullOnChangeElseFinal ] do
         Assert.Equal(None, SpeechCursor.renderEntryWithPolicy mode entry)
 
 [<Fact>]
 let ``PromptStart with no payload returns None under every mode`` () =
     let entry = promptMarker None
-    for mode in [ ShellPolicy.Suppress; ShellPolicy.FinalDirOnly; ShellPolicy.Full ] do
+    for mode in
+        [ ShellPolicy.Suppress
+          ShellPolicy.FinalDirOnly
+          ShellPolicy.Full
+          ShellPolicy.FullOnChangeElseFinal ] do
         Assert.Equal(None, SpeechCursor.renderEntryWithPolicy mode entry)
 
 [<Fact>]
@@ -553,6 +561,89 @@ let ``backwards-compat renderEntry suppresses PromptStart`` () =
     // spontaneously start announcing prompts.
     let entry = promptMarker (Some "C:\\Users\\Kyle>")
     Assert.Equal(None, SpeechCursor.renderEntry entry)
+
+// ---------------------------------------------------------------------
+// Cycle 52 R6b — FullOnChangeElseFinal (on-change prompt verbosity).
+// The change-aware resolution lives in the private
+// `effectivePromptPath`, exercised through the auto-drive
+// `onAppend` path; these drive a real cursor + history.
+// ---------------------------------------------------------------------
+
+let private onChangeCursor () : SpeechCursor.T =
+    SpeechCursor.create
+        { SpeechCursor.defaultParameters with
+            PromptPath = ShellPolicy.FullOnChangeElseFinal }
+
+let private appendPrompt (history: ContentHistory.T) (payload: string) =
+    ContentHistory.appendMarker
+        history
+        ContentHistory.MarkerKind.PromptStart
+        t0
+        (Some payload)
+    |> ignore
+
+[<Fact>]
+let ``FullOnChangeElseFinal narrates the full path on the first prompt`` () =
+    let cursor = onChangeCursor ()
+    let history = freshHistory ()
+    let announce, snap = capture ()
+    appendPrompt history "C:\\Users\\Kyle\\Local>"
+    SpeechCursor.onAppend cursor history announce
+    Assert.Equal<(string * string) list>(
+        [ ("C:\\Users\\Kyle\\Local>", ActivityIds.output) ],
+        snap ())
+
+[<Fact>]
+let ``FullOnChangeElseFinal narrates final-dir-only when the prompt is unchanged`` () =
+    let cursor = onChangeCursor ()
+    let history = freshHistory ()
+    let announce, snap = capture ()
+    appendPrompt history "C:\\Users\\Kyle\\Local>"
+    SpeechCursor.onAppend cursor history announce
+    // Same prompt again (commands run in the same directory).
+    appendPrompt history "C:\\Users\\Kyle\\Local>"
+    SpeechCursor.onAppend cursor history announce
+    Assert.Equal<(string * string) list>(
+        [ ("C:\\Users\\Kyle\\Local>", ActivityIds.output)
+          ("Local>", ActivityIds.output) ],
+        snap ())
+
+[<Fact>]
+let ``FullOnChangeElseFinal narrates the full path again when the directory changes`` () =
+    let cursor = onChangeCursor ()
+    let history = freshHistory ()
+    let announce, snap = capture ()
+    appendPrompt history "C:\\Users\\Kyle\\Local>"
+    SpeechCursor.onAppend cursor history announce
+    appendPrompt history "C:\\Users\\Kyle\\Local>"
+    SpeechCursor.onAppend cursor history announce
+    // `cd` to a different directory → full path again.
+    appendPrompt history "C:\\Users\\Kyle\\Other>"
+    SpeechCursor.onAppend cursor history announce
+    Assert.Equal<(string * string) list>(
+        [ ("C:\\Users\\Kyle\\Local>", ActivityIds.output)
+          ("Local>", ActivityIds.output)
+          ("C:\\Users\\Kyle\\Other>", ActivityIds.output) ],
+        snap ())
+
+[<Fact>]
+let ``FullOnChangeElseFinal resets to full path after SpeechCursor.reset`` () =
+    // reset fires on shell-switch (post-Cycle-45c ContentHistory is
+    // continuous). The first prompt after a switch must narrate the
+    // full path even if its text matches the last pre-switch prompt.
+    let cursor = onChangeCursor ()
+    let history = freshHistory ()
+    let announce, snap = capture ()
+    appendPrompt history "C:\\Users\\Kyle\\Local>"
+    SpeechCursor.onAppend cursor history announce
+    SpeechCursor.reset cursor
+    let history2 = freshHistory ()
+    appendPrompt history2 "C:\\Users\\Kyle\\Local>"
+    SpeechCursor.onAppend cursor history2 announce
+    Assert.Equal<(string * string) list>(
+        [ ("C:\\Users\\Kyle\\Local>", ActivityIds.output)
+          ("C:\\Users\\Kyle\\Local>", ActivityIds.output) ],
+        snap ())
 
 // ---------------------------------------------------------------------
 // Cycle 49 PR-D — renderEntryForManualNav decouples nav from narration
@@ -579,7 +670,11 @@ let ``manual-nav render still returns None for PromptStart with empty payload`` 
     // safety net as `renderEntryWithPolicy` under every policy.
     let empty = promptMarker (Some "")
     let none = promptMarker None
-    for mode in [ ShellPolicy.Suppress; ShellPolicy.FinalDirOnly; ShellPolicy.Full ] do
+    for mode in
+        [ ShellPolicy.Suppress
+          ShellPolicy.FinalDirOnly
+          ShellPolicy.Full
+          ShellPolicy.FullOnChangeElseFinal ] do
         Assert.Equal(None, SpeechCursor.renderEntryForManualNav mode empty)
         Assert.Equal(None, SpeechCursor.renderEntryForManualNav mode none)
 

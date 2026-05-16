@@ -5268,12 +5268,15 @@ module Program =
                     match currentShellPolicy.PromptPath with
                     | ShellPolicy.Suppress -> "suppress"
                     | ShellPolicy.FinalDirOnly -> "final_dir_only"
-                    | ShellPolicy.Full -> "full")
+                    | ShellPolicy.Full -> "full"
+                    | ShellPolicy.FullOnChangeElseFinal -> "full_on_change")
                 (fun target ->
                     let next =
                         match target with
                         | "final_dir_only" -> Some ShellPolicy.FinalDirOnly
                         | "full" -> Some ShellPolicy.Full
+                        | "full_on_change" ->
+                            Some ShellPolicy.FullOnChangeElseFinal
                         | "suppress" -> Some ShellPolicy.Suppress
                         | _ -> None
                     match next with
@@ -5298,6 +5301,8 @@ module Program =
                             | ShellPolicy.FinalDirOnly ->
                                 "Prompt path final directory only."
                             | ShellPolicy.Full -> "Prompt path full."
+                            | ShellPolicy.FullOnChangeElseFinal ->
+                                "Prompt path full on directory change."
                         window.TerminalSurface.Announce(
                             cue, ActivityIds.logToggle))
         multiStateBindings.[HotkeyRegistry.PromptPathVerbosity] <-

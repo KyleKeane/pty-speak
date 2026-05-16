@@ -126,6 +126,9 @@
                     <MenuItem x:Name="MenuItem_PromptPathVerbosity_full"
                               x:FieldModifier="public"
                               Header="F_ull" />
+                    <MenuItem x:Name="MenuItem_PromptPathVerbosity_full_on_change"
+                              x:FieldModifier="public"
+                              Header="Full On _Change" />
                 </MenuItem>
                 <!-- Cycle 48 post-PR-F (2026-05-13) — infrastructure
                      items (open data folder, edit config) lifted
