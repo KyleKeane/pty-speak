@@ -14020,6 +14020,40 @@ that targeted the old category string must use the new one. This
 removes the last namespace-level Terminal.Core/shell-leak, setting
 up R4b (extend the portability-lint CI to *enforce* the boundary).
 
+### Cycle 52 R4b (2026-05-16): portability-lint enforces the Terminal.Core boundary
+
+Second half of R4 — **the structural enforcement gate** ADR 0006
+calls "the answer to why 51 cycles stayed brittle". The three-layer
+boundary (transport / pure core / channel) is only real if CI
+keeps it real. The existing `portability-lint` job (ADR 0001:
+substrate must not import WPF / `Microsoft.Win32`) gains two
+anchored checks for ADR 0006 R4:
+
+- **No P/Invoke in `Terminal.Core`** — `[<DllImport …>]` /
+  `extern` (the pure session core does no native interop; that
+  belongs in the transport layer). Scoped to `Terminal.Core` only
+  (Terminal.Audio may legitimately need native audio interop).
+- **`Terminal.Core` must not depend on `Terminal.Shell`** — no
+  `open Terminal.Shell` and no `<ProjectReference …Terminal.Shell…>`
+  in `Terminal.Core.fsproj` (dependency direction is Shell → Core,
+  never Core → Shell — the exact 51-cycle leak class).
+
+"No shell strings" (ADR 0006 R4's third clause) is enforced
+**structurally rather than via a literal grep**: with no
+Terminal.Shell dependency and no P/Invoke, shell-specific
+executable code/strings cannot live in `Terminal.Core` by
+construction. A brittle shell-string-literal grep is deliberately
+omitted — `Terminal.Core` carries many legitimate doc-comments
+discussing cmd / PowerShell behaviour, and a literal grep would
+false-positive on correct documentation (the too-aggressive-lint
+failure mode CLAUDE.md warns against). All greps stay anchored
+(`^…open`, `^…[<DllImport`, `<ProjectReference`) so doc-comment
+mentions never trigger; verified zero violations on current `main`
+(the boundary already holds post-R1–R4a — this just locks it).
+
+**This completes R4.** With R1 (extract the seam) + R4 (enforce
+it), the architectural boundary is structural, not disciplinary.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

@@ -132,6 +132,51 @@ jobs:
           fi
           echo "Portability invariant held: no host-specific imports in substrate."
 
+      # R4b (ADR 0006 R4-enforce, 2026-05-16): the structural
+      # gate that "structurally prevents re-leak — the answer
+      # to why 51 cycles stayed brittle". The three-layer
+      # boundary (transport / pure core / channel) is only real
+      # if CI enforces it. ADR 0006 R4 names "no shell strings
+      # / no WPF / no P/Invoke" in Terminal.Core. WPF is
+      # already covered by the step above. The two below add
+      # the P/Invoke ban and the transport-layer
+      # (Terminal.Shell) dependency ban. "No shell strings" is
+      # enforced *structurally*: with no Terminal.Shell
+      # dependency and no P/Invoke, shell-specific executable
+      # code/strings cannot live in Terminal.Core. A brittle
+      # shell-string-literal grep is deliberately NOT used —
+      # Terminal.Core has many legitimate doc-comments
+      # discussing cmd / PowerShell behaviour, and a literal
+      # grep would false-positive on correct documentation (the
+      # too-aggressive-lint failure mode CLAUDE.md warns
+      # against). All greps stay anchored like the step above
+      # so doc-comment mentions never trigger. P/Invoke is
+      # scoped to Terminal.Core only (Terminal.Audio may need
+      # native audio interop; ADR 0006 R4 names Terminal.Core).
+      - name: Terminal.Core must not use P/Invoke
+        run: |
+          set -e
+          violations=$(grep -rEn '^[[:space:]]*\[<[[:space:]]*DllImport|^[[:space:]]*extern[[:space:]]' src/Terminal.Core --include='*.fs' || true)
+          if [ -n "$violations" ]; then
+            echo "::error::Portability invariant violated. Terminal.Core (pure session core) must not use P/Invoke per ADR 0006 R4 — native interop belongs in the transport layer."
+            echo "$violations"
+            exit 1
+          fi
+          echo "Portability invariant held: no P/Invoke in Terminal.Core."
+
+      - name: Terminal.Core must not depend on the transport layer
+        run: |
+          set -e
+          opens=$(grep -rEn '^[[:space:]]*open[[:space:]]+Terminal\.Shell' src/Terminal.Core --include='*.fs' || true)
+          projref=$(grep -nE '<ProjectReference[^>]*Terminal\.Shell' src/Terminal.Core/Terminal.Core.fsproj || true)
+          if [ -n "$opens" ] || [ -n "$projref" ]; then
+            echo "::error::Portability invariant violated. Terminal.Core (pure session core) must not depend on Terminal.Shell (the transport layer) per ADR 0006 — the dependency direction is Shell -> Core, never Core -> Shell."
+            echo "$opens"
+            echo "$projref"
+            exit 1
+          fi
+          echo "Portability invariant held: Terminal.Core has no Terminal.Shell dependency."
+
   workflow-lint:
     name: Workflow lint (actionlint)
     runs-on: ubuntu-latest

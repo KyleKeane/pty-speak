@@ -200,11 +200,20 @@ list** and folds 0005's mechanism into it.
   `open Terminal.Core`; consumers `open Terminal.Shell`;
   logger category restrung) — the deferred R1.2 / R3c tail,
   removing the last namespace-level shell-leak. Behaviour-
-  preserving (15 +/2 −). **R4b — enforce (next):** extend the
-  existing portability-lint CI job to assert `Terminal.Core`
-  has no shell strings / no WPF / no P/Invoke. **This is the
-  enforcement that structurally prevents re-leak** — the
-  answer to "why did 51 cycles stay brittle".
+  preserving (15 +/2 −). **R4b — enforce (done 2026-05-16):**
+  the `portability-lint` CI job gained two anchored checks —
+  no P/Invoke in `Terminal.Core`, and no `Terminal.Shell`
+  dependency in `Terminal.Core` (`open` + `<ProjectReference>`).
+  WPF was already covered (ADR 0001 step). "No shell strings"
+  is enforced **structurally** (no shell dependency + no
+  P/Invoke ⇒ shell code/strings can't live in core) rather
+  than via a brittle literal grep that would false-positive
+  on core's legitimate shell-discussing doc-comments —
+  rationale recorded in the job comment + CHANGELOG. **This
+  is the enforcement that structurally prevents re-leak** —
+  the answer to "why did 51 cycles stay brittle". **R4
+  complete**: with R1 (extract the seam) + R4 (enforce it)
+  the boundary is structural, not disciplinary.
 - **R5 — PowerShell adapter** (= ADR 0005 Stage D). Full
   A/B/C/D + exit code.
 - **R6 — feature unlock** (= ADR 0005 Stage E). Per-line
