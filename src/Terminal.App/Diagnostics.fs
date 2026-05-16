@@ -11,6 +11,7 @@ open PtySpeak.Views
 open Terminal.Audio
 open Terminal.Core
 open Terminal.Pty
+open Terminal.Shell
 
 /// Ctrl+Shift+D diagnostic battery.
 ///

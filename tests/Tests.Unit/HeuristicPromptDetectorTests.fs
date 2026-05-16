@@ -3,6 +3,7 @@ module PtySpeak.Tests.Unit.HeuristicPromptDetectorTests
 open System
 open Xunit
 open Terminal.Core
+open Terminal.Shell
 
 // ---------------------------------------------------------------------
 // SessionModel Tier 1.D — heuristic prompt-boundary detector
