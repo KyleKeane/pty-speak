@@ -415,6 +415,98 @@ things on a fragile substrate"): the demarcation is an
   in Open Decisions), explicitly *not* a near-term task —
   the near-term value is the boundary, not the rework.
 
+**D8 — Control type and update mechanism (expert
+recommendation; maintainer deferred this).** The history is
+rendered with a **standard WPF control that maps to a
+standard UIA control type — never a bespoke
+`AutomationPeer`.** This is the single most reliability-
+relevant choice: NVDA's most robust, best-tested code paths
+are the standard control types; a custom peer is precisely
+the fragile path the ADR 0004/0006 thesis warns against.
+
+- **Primary recommendation: `TreeView` → UIA `Tree`.** The
+  model is hierarchical (cells → sub-prompt / progress
+  segments per D3/D5; the far-field per-cell line-by-line
+  drill-in). `Tree` gives NVDA native level / expand-collapse
+  / "item N of M, level K" semantics for free, and
+  expand-collapse is the natural "drill into a large cell's
+  output" affordance.
+- **Fallback: `ListBox`/`ListView` → UIA `List`** if the
+  first cut is deliberately flat (no segment hierarchy yet).
+  Also extremely well-supported; the simpler 6a starting
+  point. The model can start as a `List` and grow to a
+  `Tree` when segments land (Phase 4/5) without changing the
+  typed model.
+- Either way the control is a **projection** of the typed
+  model (D5a/D1): each node carries the IOCell `Id` behind
+  it so D2 operations bind to identity, and the `CellKind`
+  drives node role/labelling. The `CommandOutputTuple`
+  semantics are conveyed via the standard control's
+  name/description/structure, *not* a bespoke peer.
+- **Honest caveat**: not locally verifiable here (no NVDA in
+  the sandbox). This is an expertise-grounded recommendation;
+  the **Phase 6a dogfood is its ratification gate** — the
+  phased plan exists precisely so this is validated on a
+  minimal control before anything is layered on it. If the
+  6a dogfood finds `Tree` mis-behaves under NVDA, fall back
+  to `List`; the typed model is unaffected either way.
+
+- **Update mechanism**: append is **event-driven off the
+  canonical seal event** (the existing `appendCell` site,
+  D7-clean: sourced from the finalized `IOCell`, never a
+  `ContentHistory` text slice), marshalled to the UI
+  dispatcher thread, into an observable append-only typed
+  collection the control is bound to. The standard control
+  raises its **standard UIA structure / item-added event**
+  so AT discovers the new node **without the focus / review
+  position being moved** — auto-follow to the live edge only
+  when the user is already at the edge (the D5a Q1/Q2
+  contract). Never a poll; the list is a subscriber to the
+  canonical pipeline (D9), not a re-derivation.
+
+**D9 — Cell lifecycle / navigation / operation events are
+first-class, modality-agnostic events on the canonical
+pipeline.** (Maintainer principle 2026-05-16.) Every cell
+event — appended, navigated-to, operated-on, segment-arrived
+— is emitted as a typed semantic event through the existing
+canonical channel surface (`OutputDispatcher`, ADR 0004
+Decision 4) with its **own unambiguous `ActivityId`** (new
+ids under a `pty-speak.cell.*` family in
+`Terminal.Core/Types.fs`), exactly as today's output / mode /
+shell-switch events are. Speech (`NvdaChannel`), earcon
+(`EarconChannel` / WASAPI `Terminal.Audio`), and **future
+modalities — multi-line braille especially — compose from the
+same event**; speech is not primary with earcon bolted on.
+The cell-history pipeline therefore *is* the application of
+ADR 0004 Decision 4 + ADR 0001's substrate/channel dichotomy
+to the history surface: one canonical, unambiguous,
+typed event stream; many composable sinks. Because the events
+are unambiguous and typed, richer composite modalities (a
+braille line that mirrors the focused cell while speech reads
+it; an earcon that marks cell-kind on navigation) can be
+built **without re-deriving meaning** from rendered text.
+
+This makes the computational cell history **the most complete
+semantic representation of the interaction that can be
+synthesized from the information available** — which is the
+point: a shell encodes minimal metadata and leans on a visual
+rendering for the user to interpret meaning; pty-speak's role
+is to recover the maximal unambiguous semantic structure from
+that stream and expose it as composable events and
+representations, rather than relaying computationally
+ambiguous content.
+
+> **Note — this generalizes beyond ADR 0007.** The
+> maximal-semantic-surfacing principle in D9's last paragraph
+> is a project-wide guiding principle, not specific to the
+> cell history; it belongs at the ADR 0001 / CORE-ABSTRACTION-
+> BOUNDARY level. It is **recorded here as the motivating
+> principle for D9** and **recommended for elevation** to
+> those documents, but that cross-ADR edit is **not made
+> unilaterally** — flagged for maintainer direction (an
+> architecture-scope decision per the project's "defer to
+> the maintainer on cross-stage architecture" rule).
+
 ## Consequences — phased plan (walking-skeleton)
 
 One PR + NVDA dogfood per phase, in order; each phase is
@@ -480,11 +572,15 @@ changes the ADR 0004 IOCell schema.
   list works, not built speculatively. Largest channel-side
   change; sequenced last because it depends on the typed
   model (D1), the per-cell ops (D2 — items host them), and
-  the segment model (Phases 4–5) being settled. May itself
-  split into sub-phases (6a basic list + pane switch → 6b
-  focus memory + structured jumps → 6c bookmarks/sections →
-  6d operation-discovery menu) once the basic list exists
-  and the feel is real.
+  the segment model (Phases 4–5) being settled. Splits into
+  sub-phases: **6a** basic control (D8: `TreeView`/UIA `Tree`
+  primary, `ListBox`/UIA `List` fallback) + `Ctrl+Shift+
+  Left/Right` pane switch + the D9 `pty-speak.cell.*` event
+  family on the canonical pipeline — *its dogfood is the D8
+  control-type ratification gate* → **6b** focus memory +
+  kind-filtered jumps → **6c** bookmarks/sections → **6d**
+  operation-discovery menu. Nothing past 6a is built until
+  6a's NVDA dogfood confirms the control type.
 
 - **Phase 7 — automated cell-structure diagnostics (D6).**
   Extend the existing test corpus + `Diagnostics → Test …`
@@ -564,6 +660,16 @@ changes the ADR 0004 IOCell schema.
   near-term phases. Recorded only so the cell/list design
   does not foreclose it (keep the item's content
   addressable, not pre-flattened).
+- **Final control-type pick: `Tree` vs `List`** (Phase 6a
+  research + dogfood). D8 recommends `Tree`; the 6a dogfood
+  ratifies or falls back to `List`. Decided on real NVDA
+  behaviour, not in the abstract.
+- **`pty-speak.cell.*` ActivityId taxonomy** (Phase 6a /
+  D9): the exact event set (cell-appended, cell-focused,
+  cell-operated, segment-arrived, pane-switched) and their
+  ids in `Terminal.Core/Types.fs`, so earcon/braille sinks
+  have a stable contract. Settle when 6a wires the first
+  event; keep ids unambiguous and single-purpose.
 
 ## Alternatives considered
 
@@ -609,9 +715,15 @@ changes the ADR 0004 IOCell schema.
 this ADR (in particular D5/D5a — the recommended history
 rendering is a focusable list control with a
 `Ctrl+Shift+Left/Right` pane switch and standard list-key
-navigation; and D7 — the new pipeline is fenced off from the
+navigation; D7 — the new pipeline is fenced off from the
 legacy review-cursor text materialisation rather than built
-on it). On acceptance, R6c is replaced
+on it; D8 — a standard UIA control (`Tree` recommended, `List`
+fallback), never a bespoke peer, ratified by the 6a dogfood;
+and D9 — cell events are first-class modality-agnostic events
+on the canonical pipeline. The D9 maximal-semantic-surfacing
+principle is flagged for elevation to ADR 0001 /
+CORE-ABSTRACTION-BOUNDARY — a separate maintainer call). On
+acceptance, R6c is replaced
 by "ADR 0007 Phase 0…7", each its own PR + dogfood under the
 walking-skeleton discipline; the cmd announce-heuristic
 FREEZE is unaffected (this is the navigation / operations /

@@ -14769,8 +14769,24 @@ enforced at Phase 0/1, policed by D6's oracle; the legacy
 review-cursor document is left as-is, its verbatim-vs-nicer
 evolution a deferred Phase 6 fork.** Per-cell line-by-line /
 list-or-table rendering recorded as an explicitly far-field
-aspiration (not next-steps). Doc-only; **no code lands until
-the maintainer accepts the ADR (esp. D5/D5a, D7)**. Pointers
+aspiration (not next-steps). **D8 (expert recommendation
+maintainer deferred): the history is a standard UIA control —
+`TreeView`/UIA `Tree` recommended (hierarchy + drill-in),
+`ListBox`/UIA `List` fallback — never a bespoke
+`AutomationPeer`; appended event-driven off the seal event
+into an observable typed collection, ratified by the Phase 6a
+NVDA dogfood. D9 (maintainer principle): cell lifecycle /
+nav / op events are first-class modality-agnostic events on
+the canonical `OutputDispatcher` pipeline (new
+`pty-speak.cell.*` ActivityId family) so speech / earcon /
+future multi-line braille compose from one unambiguous event
+stream — the cell history as the most complete semantic
+representation we can synthesize. The D9 maximal-semantic-
+surfacing principle is flagged for elevation to ADR 0001 /
+CORE-ABSTRACTION-BOUNDARY (separate maintainer call; not
+edited unilaterally).** Doc-only; **no code lands until
+the maintainer accepts the ADR (esp. D5/D5a, D7, D8/D9)**.
+Pointers
 added in CLAUDE.md
 reading order, ADR 0006 deferred-cluster header,
 SESSION-HANDOFF, and the R5 playbook banner.
