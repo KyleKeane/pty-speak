@@ -1,6 +1,13 @@
 # ADR 0007 — SpeechCursor as the canonical navigable IOCell history: typed cells, per-cell operations, and live-trickle review
 
-- **Status**: Proposed (2026-05-16)
+- **Status**: Accepted (2026-05-16; maintainer directed
+  implementation to proceed after extensive co-authoring —
+  "this is as much conceptualization as I can do … progress
+  on implementation"). D1–D9 + D5a adopted; D5a is the
+  adopted resolution of the former-open D5; D8's `Tree`-vs-
+  `List` control type is ratified by the Phase 6a dogfood;
+  the D9 principle is elevated to
+  [ADR 0008](0008-maximal-semantic-surfacing.md).
 - **Date**: 2026-05-16
 - **Deciders**: maintainer (KyleKeane)
 - **Authoring item**: Cycle 52. The maintainer redirected
@@ -496,16 +503,15 @@ that stream and expose it as composable events and
 representations, rather than relaying computationally
 ambiguous content.
 
-> **Note — this generalizes beyond ADR 0007.** The
-> maximal-semantic-surfacing principle in D9's last paragraph
-> is a project-wide guiding principle, not specific to the
-> cell history; it belongs at the ADR 0001 / CORE-ABSTRACTION-
-> BOUNDARY level. It is **recorded here as the motivating
-> principle for D9** and **recommended for elevation** to
-> those documents, but that cross-ADR edit is **not made
-> unilaterally** — flagged for maintainer direction (an
-> architecture-scope decision per the project's "defer to
-> the maintainer on cross-stage architecture" rule).
+> **Note — this generalizes beyond ADR 0007; now elevated.**
+> The maximal-semantic-surfacing principle in D9's last
+> paragraph is a project-wide guiding principle, not specific
+> to the cell history. The maintainer directed its elevation
+> (2026-05-16); it is now
+> **[ADR 0008](0008-maximal-semantic-surfacing.md) (Accepted)**,
+> with pointers from ADR 0001 and CORE-ABSTRACTION-BOUNDARY.
+> D9 is the cell-history-layer application of that principle;
+> ADR 0008 is the canonical statement.
 
 ## Consequences — phased plan (walking-skeleton)
 
@@ -711,28 +717,34 @@ changes the ADR 0004 IOCell schema.
 
 ## Status / next
 
-**Proposed.** No code lands until the maintainer accepts
-this ADR (in particular D5/D5a — the recommended history
-rendering is a focusable list control with a
-`Ctrl+Shift+Left/Right` pane switch and standard list-key
-navigation; D7 — the new pipeline is fenced off from the
-legacy review-cursor text materialisation rather than built
-on it; D8 — a standard UIA control (`Tree` recommended, `List`
-fallback), never a bespoke peer, ratified by the 6a dogfood;
-and D9 — cell events are first-class modality-agnostic events
-on the canonical pipeline. The D9 maximal-semantic-surfacing
-principle is flagged for elevation to ADR 0001 /
-CORE-ABSTRACTION-BOUNDARY — a separate maintainer call). On
-acceptance, R6c is replaced
-by "ADR 0007 Phase 0…7", each its own PR + dogfood under the
-walking-skeleton discipline; the cmd announce-heuristic
-FREEZE is unaffected (this is the navigation / operations /
-channel layer, not the announce-reconstruction layer). If
-the maintainer wants the design narrowed (e.g. defer
-Phases 4–7), that scoping is taken here, before Phase 0
-ships. **D6/Phase 7 changes the economics of the whole
+**Accepted (2026-05-16).** The maintainer co-authored
+D1–D9 + D5a and directed implementation to proceed ("this is
+as much conceptualization as I can do … progress on
+implementation"). R6c is replaced by **"ADR 0007 Phase 0…7"**,
+each its own PR + dogfood under the walking-skeleton
+discipline; the cmd announce-heuristic FREEZE is unaffected
+(this is the navigation / operations / channel layer, not the
+announce-reconstruction layer). No scope narrowing was
+requested — the full Phase 0…7 is in force.
+
+Adopted specifics: **D5a** is the adopted resolution of the
+former-open D5 (history = focusable standard control + pane
+switch); **D8** recommends `TreeView`/UIA `Tree`
+(`List` fallback) with the **Phase 6a NVDA dogfood as the
+control-type ratification gate** — `Tree` is not locked until
+6a confirms it under NVDA; **D9**'s project-wide principle is
+elevated to [ADR 0008](0008-maximal-semantic-surfacing.md)
+(Accepted). **D6/Phase 7 changes the economics of the whole
 plan**: once the cell history is an assertable on-send
 mirror, every later phase's dogfood is mostly a structural
 self-check the agent runs, with only a thin audible-delivery
 confirmation left to the maintainer — so the walking-skeleton
 loop gets materially cheaper as the phases progress.
+
+**Implementation order**: Phase 0 (delete the dead Seq
+engine — net-subtractive, no audible change, the single-model
+precondition) starts immediately as its own PR; Phases 1→7
+follow, each gated by its own CI + dogfood. CI failures and
+essential blocking questions are raised via `AskUserQuestion`
+(phone notification), per the maintainer's standing
+instruction, not buried in chat text.

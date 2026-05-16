@@ -40,14 +40,15 @@
 > redirected by the maintainer (2026-05-16) from a dead-code
 > quick patch to a comprehensive design review —
 > [`adr/0007-canonical-iocell-history-navigation.md`](adr/0007-canonical-iocell-history-navigation.md)
-> (Proposed): SpeechCursor as the canonical navigable IOCell
-> history (typed cells, per-cell copy/rerun, live-trickle
-> review for progress/Claude). AWAITING MAINTAINER
-> ACCEPTANCE (esp. D5/D5a — recommended: history as a
-> focusable list control + `Ctrl+Shift+Left/Right` pane
-> switch); no code until accepted. The shelved
-> quick-patch = ADR 0007 Phase 0. Next: ADR 0007 acceptance
-> → Phase 0…7 → R6d PowerShell-diagnostics submenu** — each
+> (**ACCEPTED 2026-05-16**): SpeechCursor as the canonical
+> navigable IOCell history (D1–D9 + D5a; D8 control type
+> `Tree`-rec / `List`-fallback ratified by the Phase 6a
+> dogfood; D9 principle elevated to **ADR 0008** maximal
+> semantic surfacing, Accepted). **Implementation in
+> progress — full Phase 0…7, each its own PR + dogfood.
+> Phase 0 (delete the 7 dead Seq functions; net-subtractive,
+> no audible change) STARTS NOW.** Next: Phase 0 → 1…7 →
+> R6d PowerShell-diagnostics submenu** — each
 > its own PR + dogfood (walking-skeleton). cmd
 > announce-heuristic FREEZE still stands (R6a/R6b do NOT
 > touch it — R6a reuses the clean R3c slice; R6b/followup

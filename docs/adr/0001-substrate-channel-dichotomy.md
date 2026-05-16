@@ -1,6 +1,15 @@
 # ADR 0001 — Substrate / channel dichotomy as a non-negotiable architectural constraint
 
 - **Status**: Accepted
+  - **Status note (2026-05-16)**: the *purpose* this
+    dichotomy serves is now stated as a project-wide
+    guiding principle in
+    [`0008-maximal-semantic-surfacing.md`](0008-maximal-semantic-surfacing.md)
+    (Accepted) — recover maximal unambiguous semantics and
+    emit typed canonical events; never relay computationally
+    ambiguous content. ADR 0001 is the *mechanism* (substrate
+    vs. channel); ADR 0008 is the *why*. Read 0008 alongside
+    this.
 - **Date**: 2026-05-09
 - **Deciders**: maintainer (KyleKeane)
 - **Authoring item**: PROJECT-PLAN-2026-05-09 §A (architectural

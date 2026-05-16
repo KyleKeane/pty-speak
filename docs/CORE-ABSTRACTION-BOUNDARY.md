@@ -1,5 +1,16 @@
 # Core abstraction boundary
 
+> **Guiding principle (2026-05-16)**: the purpose this whole
+> boundary serves is recorded as
+> [`adr/0008-maximal-semantic-surfacing.md`](adr/0008-maximal-semantic-surfacing.md)
+> (Accepted) — recover the maximal unambiguous semantic
+> structure obtainable from the shell interaction, carry it
+> as typed data, and emit it as unambiguous typed events on
+> the one canonical pipeline from which all output modalities
+> compose; never relay computationally ambiguous content as
+> the primary contract. Every section below is an instance of
+> that principle; read ADR 0008 first.
+
 > **Cycle 45c update (2026-05-12)**: the Cycle 5-9 screen-grid-diff
 > pipeline this doc references throughout (`StreamPathway` /
 > `LinearTextStream` / `DisplayPathway` / `TuiPathway` /

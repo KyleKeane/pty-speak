@@ -121,19 +121,24 @@ before deviating.
    adapter). Each R-stage stays independently CI- +
    dogfood-gated.** **ADR 0007
    ([`docs/adr/0007-canonical-iocell-history-navigation.md`](docs/adr/0007-canonical-iocell-history-navigation.md),
-   Proposed 2026-05-16) reframes R6c:** the maintainer
-   redirected it from a dead-code quick patch to a
-   comprehensive design review — SpeechCursor as the
-   canonical navigable IOCell history (typed cells, per-cell
-   copy/rerun, live-trickle review for the progress loop /
-   Claude CLI). Unifies ADR 0006 §"Deferred to R6+" items
-   2–5 into a phased plan (Phase 0 = the shelved dead-code
-   cleanup). **Awaiting maintainer acceptance (esp. D5/D5a —
-   the recommended history rendering is a focusable list
-   control with a `Ctrl+Shift+Left/Right` pane switch +
-   standard list-key nav); no code lands until accepted.**
-   Read before any SpeechCursor / IOCell-history /
-   review-cursor-document work.
+   **Accepted 2026-05-16**) replaces R6c:** SpeechCursor as
+   the canonical navigable IOCell history (D1 typed cells /
+   D2 per-cell ops / D3 live-trickle / D4 one model / D5a
+   focusable standard control + `Ctrl+Shift+Left/Right` pane
+   switch / D6 on-send test-oracle / D7 fenced off from the
+   legacy review-cursor patchwork / D8 standard UIA control
+   `Tree`-recommended-`List`-fallback, ratified by the Phase
+   6a dogfood / D9 cell events on the canonical pipeline).
+   Unifies ADR 0006 §"Deferred to R6+" items 2–5; **full
+   Phase 0…7 in force**, each its own PR + dogfood. Phase 0
+   (delete the dead Seq engine — net-subtractive) is the
+   start. D9's project-wide principle is elevated to **ADR
+   0008** ([`docs/adr/0008-maximal-semantic-surfacing.md`](docs/adr/0008-maximal-semantic-surfacing.md),
+   Accepted): recover maximal unambiguous semantics, emit
+   typed canonical events, never relay ambiguous content —
+   read it as the *why* behind ADR 0001/0004/0007. Read both
+   before any SpeechCursor / IOCell-history / channel /
+   substrate work.
 10. **RFC 0001 (archived)** — Cycle 33 pivot-gate RFC, formalised
    the `LinearTextStream` substrate + streaming-emission protocol.
    The substrate it specified was replaced by `ContentHistory` +

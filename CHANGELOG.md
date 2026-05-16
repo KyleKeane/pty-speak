@@ -14791,6 +14791,29 @@ added in CLAUDE.md
 reading order, ADR 0006 deferred-cluster header,
 SESSION-HANDOFF, and the R5 playbook banner.
 
+### Cycle 52 — ADR 0007 Accepted + ADR 0008 (maximal semantic surfacing) + Phase 0 implementation start (2026-05-16)
+
+The maintainer concluded the design-review co-authoring and
+directed implementation to proceed. **[ADR 0007](docs/adr/0007-canonical-iocell-history-navigation.md)
+flipped Proposed → Accepted**; D1–D9 + D5a adopted (D8's
+`Tree`-vs-`List` control type ratified by the Phase 6a NVDA
+dogfood; no scope narrowing — full Phase 0…7 in force). D9's
+project-wide principle elevated to a new
+**[ADR 0008](docs/adr/0008-maximal-semantic-surfacing.md)
+(Accepted)** — *recover maximal unambiguous semantics, emit
+typed canonical events, never relay computationally ambiguous
+content as the primary contract*; it is the **why** behind
+ADR 0001 (mechanism) / 0004 / 0007, with pointers added from
+ADR 0001's Status notes and CORE-ABSTRACTION-BOUNDARY's
+header, and a CLAUDE.md reading-order entry. SESSION-HANDOFF
+and the R5 playbook banner flipped to "Accepted; Phase 0
+starts now". Implementation then begins with **Phase 0**
+(delete the 7 dead `SpeechCursor` Seq functions —
+net-subtractive, zero production callers, no audible
+behaviour change; the single-model precondition) as its own
+PR, followed by Phases 1→7 each independently CI- +
+dogfood-gated.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
