@@ -11,11 +11,14 @@ namespace Terminal.Core
 /// equivalent semantics live in ContentHistory's idle-window
 /// + Overwrite/Spinner entry handling) AND the channel fan-out
 /// (which targets NvdaChannel + FileLoggerChannel for every event the
-/// dispatcher routes). Phase A splits these — the pathway owns
-/// the algorithm, this profile owns the routing. The split
-/// matches the spec's Layer 3 / Layer 4 boundary: pathways
-/// produce OutputEvents (semantic decisions), profiles produce
-/// ChannelDecisions (rendering decisions).
+/// dispatcher routes). Phase A split these into two layers —
+/// the *algorithm* layer (the now-retired StreamPathway's
+/// role, post-Cycle-45c carried by ContentHistory) vs the
+/// *routing* layer (this profile). The split matched the
+/// spec's Layer 3 / Layer 4 boundary: Layer 3 produces
+/// OutputEvents (semantic decisions — was "pathways",
+/// post-Cycle-45c ContentHistory + the detectors), Layer 4
+/// profiles produce ChannelDecisions (rendering decisions).
 ///
 /// **Behaviour-identical to the old StreamProfile catch-all.**
 /// The Stage 8b StreamProfile.Apply ended with:
