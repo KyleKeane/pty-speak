@@ -269,15 +269,22 @@ PowerShell adapter is built against a pruned tree:
   regression sweep (cmd/claude narrate identically; bundle
   shows no per-chunk `R3a: muted` post-OSC).
 - **P2 — Cycle-47 synthetic-CommandFinished shell-guard
-  (prune-with-care).** The synthetic-`CommandFinished`-
-  before-`;A` compensation
-  ([`Program.fs`](../src/Terminal.App/Program.fs) ~:2280-2287,
-  `if finalisedOpt.IsSome && k = …PromptStart`) is now dead
-  for cmd post-R4c (cmd finalises via the real `;D`
-  `CommandFinished` arm) but **still load-bearing for
-  claude**. Guard the block on the shell being heuristic-
-  only (not cmd); do not delete. (May fold into P1 — same
-  "heuristic-only shells" predicate.)
+  (DONE 2026-05-16, #379).** The synthetic-`CommandFinished`-
+  before-`;A` compensation in
+  [`Program.fs`](../src/Terminal.App/Program.fs) was already
+  correct *by construction* post-R4c/R5b (cmd & PowerShell
+  finalise on the real `;D` call, so the `;A` PromptStart
+  call has `finalisedOpt = None` → it never tripped for
+  them). P2 adds `not oscSeenThisSession` to the guard —
+  using the **same predicate as P1**, the single source of
+  truth for "OSC authoritative this session". Golden path:
+  identical. claude (`oscSeenThisSession` always false, no
+  OSC 133): unchanged, still fires (load-bearing). The only
+  behaviour delta is the intended hardening: in the
+  defensive missed/garbled-`;D` edge an OSC shell no longer
+  falls back to the cmd-heuristic-era synthetic marker —
+  exactly the R3a precedence principle. Comment + one
+  `&&`-condition change; CI-green.
 - **P3 — dead pathway config keys (safe-to-delete).** The
   `[pathway.<id>]` TOML schema + `pathway` key parsing in
   [`src/Terminal.Core/Config.fs`](../src/Terminal.Core/Config.fs)
