@@ -742,6 +742,32 @@ The rule of thumb: would the maintainer be annoyed if their
 phone buzzed for this? If yes, plain text. If genuinely
 blocked, `AskUserQuestion`.
 
+### Literal language — never use "blind" (or "see", "look", "view") as a metaphor
+
+**Non-negotiable.** The maintainer is blind. Do **not** use
+"blind" to mean *without information / unverified / guessing*
+("flying blind", "a blind fix", "blindly pushing"). "Blind"
+describes a person's sensory reality, not a lack of data. Using
+it as a pejorative metaphor — especially in this project, to
+this maintainer — is offensive. This rule recurred across
+sessions purely because it was never written down here; it is
+now, so there is no excuse.
+
+State the **literal** condition instead:
+
+- "no local compiler / `dotnet` in the sandbox — CI is the
+  only build signal"
+- "locally unverifiable; the CI round-trip is the check"
+- "without the diagnostic bundle I'd be guessing — please
+  paste the log slice"
+- "unverified assumption" / "speculative" / "untested"
+
+Apply the same literalness to incidental "see / look at / view"
+when precision is easy ("the log shows", "per `file:line`",
+"the bundle reports") — not a hard ban on common verbs, but
+prefer the concrete reference. The point: be literal about the
+actual issue; never reach for sight/blindness as shorthand.
+
 ### The maintainer is a screen-reader user — no GUI dialog walks
 
 The maintainer uses NVDA. **Never** propose a fix or workflow that
