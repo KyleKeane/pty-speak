@@ -14068,6 +14068,59 @@ the existing startup-log version resolver; no GUI walk (a
 screen-reader-friendly hotkey, not a Help-menu dialog). One-line
 `sprintf` extension to the existing `runHealthCheck` summary.
 
+### Cycle 52 R3c (2026-05-16): principled spoken-watermark announce
+
+The R1–R4 foundation dogfood surfaced two announce regressions
+(#1 banner silent on fresh launch + switch; #2 interactive
+commands re-read the just-spoken sub-prompt question). Root cause:
+R3b correctly deleted the brittle byte-stream pile but substituted
+*"tuple-final = `cell.OutputText` verbatim"* — which **ignores the
+spoken-watermark**, so anything already spoken incrementally (the
+sub-prompt question now; per-line progress in R6; PowerShell's
+richer interaction in R5) gets re-spoken; and the banner (un-spoken
+pre-prompt output, no finalised cell) had no home. This is
+architectural, not a patch: R5/R6 build directly on this path.
+
+R3c re-wires the announce to the **spoken-watermark** primitive the
+codebase already had (`SpeechCursor.LastSpokenSeq` doc;
+`lastAnnouncedSeq`, advanced after *every* announce incl. the
+real-time sub-prompt one):
+
+- **Tuple-final** now speaks `ContentHistory.sliceText` from
+  `lastAnnouncedSeq` (the un-spoken Seq gap), not `cell.OutputText`.
+  #2 fixed *by construction* — the sub-prompt question is
+  `Seq ≤ watermark` and excluded; **no string strip, no PR-Y
+  resurrection.** This is **not** KI-R2-1's `lastEnterSeq` (a racy
+  byte-stream CR capture); `lastAnnouncedSeq` is the *settled
+  post-announce* watermark on the immutable history. The trailing
+  next-prompt trim reuses the same bounded `MatchedRowText` strip
+  `extractIOCell` already uses for the persisted record — reliable
+  here precisely *because* the lower bound is settled (KI-R2-1 was
+  the racy lower bound, not the trim). `IOCell.OutputText` is
+  unchanged — persistence (full) and announce (un-spoken gap)
+  intentionally diverge.
+- **Banner** is the same Seq-gap rule: `bannerAnnounce` slices from
+  `lastAnnouncedSeq` (was a hard `0L`), and
+  `announceBannerOnNextPrompt` now **defaults `true`** so fresh
+  launch announces the pre-prompt banner (R3b's deletion of the old
+  PR-AA `lastEnterSeq<0` path had removed the only fresh-launch
+  mechanism — the prior "NVDA reads the document on focus" comment
+  was disproved by the dogfood: fresh launch only said "Terminal,
+  edit, blank"). Switch path unchanged structurally
+  (`switchToShell` still re-arms + resets the watermark).
+
+Net: incremental + tuple-final announces now **compose** (every
+announce advances the watermark; the next speaks only the
+remainder) — exactly what R5/R6 require, with **zero new
+machinery** for R6's per-line streaming. Diagnostics: `R3c
+tuple-final announce (un-spoken Seq gap). FromSeq=… Len=…` and
+`R3c banner announce (un-spoken pre-prompt gap). FromSeq=…`.
+Dogfood-gated (own NVDA matrix row); the full single-rule
+unification (deleting the separate `bannerAnnounce` path entirely)
+is a proven follow-on once this model is validated — walking-
+skeleton: smallest correct principled step first, not bundled with
+a boundary-gating restructure.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

@@ -1034,16 +1034,22 @@ module Program =
         // not move the top-level command watermark.
         let mutable awaitingSubPromptEnter : bool = false
         let mutable commandEnterSeq : int64 = -1L
-        // Cycle 51 PR-AC — set true by `switchToShell` after a
-        // shell hot-switch; consumed on the first post-switch
-        // `PromptStart` to speak the new shell's startup banner.
-        // On first app launch NVDA reads the terminal document
-        // when the control first gains focus, so the launch
-        // banner is already covered; on a switch the control
-        // already has focus and the first PromptStart finds
-        // `Active=None` (no cell finalises → no tuple-final
-        // announce), so without this the banner is silent.
-        let mutable announceBannerOnNextPrompt : bool = false
+        // Cycle 51 PR-AC / R3c — speak the shell's pre-prompt
+        // banner on the first `PromptStart`. **Default `true`**
+        // (R3c, dogfood #1): the prior comment claimed fresh
+        // launch was "already covered" because NVDA reads the
+        // document on first focus — the 2026-05-16 foundation
+        // dogfood disproved that (fresh launch only said
+        // "Terminal, edit, blank"; R3b's deletion of the old
+        // PR-AA `lastEnterSeq<0` banner path removed the only
+        // fresh-launch banner mechanism). With the watermark
+        // model the banner is just un-spoken pre-prompt output
+        // (Seq > the initial `lastAnnouncedSeq = -1`), so the
+        // same first-PromptStart path covers BOTH fresh launch
+        // (default true) and shell-switch (`switchToShell`
+        // re-arms it + resets the watermark). Consumed on the
+        // first PromptStart.
+        let mutable announceBannerOnNextPrompt : bool = true
 
         // Cycle 45 Commit 2 — SpeechCursor announce callback +
         // "wake up" trigger. Defined here (very early in compose)
@@ -2080,28 +2086,48 @@ module Program =
             // both streaming AND tuple-finalise are silent —
             // SpeechCursor manual navigation is the only way to
             // hear output.
-            // R3b (ADR 0005/0006) — the tuple-final announce is
-            // the R2-sealed IOCell's OutputText. extractIOCell's
-            // ;B-anchored arm already produced a clean
-            // command/output split (the prompt path + command
-            // echo are excluded by construction via the
-            // CommandStart marker), so the PR-X `lastEnterSeq`
-            // slice, the `MatchedRowText` EndsWith next-prompt
-            // trim, and the PR-Y / PR-AB sub-prompt-question /
-            // command-echo strips are all retired — no
-            // announce-side watermark or strip state remains.
-            // Gated on `TupleFinalOnly` (under LineByLine the
-            // per-TextSpan announces already covered the output;
-            // under Off both are silent — SpeechCursor only).
-            // The pre-first-prompt shell banner is NOT a finalised
-            // cell, so it stays on the separate PR-AA/AC
-            // `bannerAnnounce` path below (ADR 0006 R3 names only
-            // PR-AB/X/Y for deletion).
+            // R3c (ADR 0005/0006) — the tuple-final announce
+            // speaks the UN-SPOKEN Seq gap, not `cell.OutputText`.
+            // `lastAnnouncedSeq` is the SETTLED post-announce
+            // watermark (advanced after EVERY announce, including
+            // the real-time sub-prompt announce), so anything
+            // already spoken incrementally has Seq <= watermark
+            // and is excluded by construction — the sub-prompt
+            // question is no longer re-read at finalise (dogfood
+            // #2). This is NOT KI-R2-1's `lastEnterSeq`: that was
+            // a racy byte-stream CR capture, this is the settled
+            // announce watermark on the immutable history. The
+            // trailing next-prompt is trimmed by the SAME bounded
+            // `MatchedRowText` strip `extractIOCell` uses for the
+            // persisted record — reliable here precisely because
+            // the lower bound is settled (KI-R2-1 was the racy
+            // lower bound making that strip miss, not the strip
+            // itself). `finalisedOpt`'s `IOCell.OutputText` is
+            // unchanged — it remains the persisted record;
+            // announce vs persistence intentionally diverge
+            // (un-spoken gap vs full output). Gated on a
+            // finalised cell + `TupleFinalOnly` (LineByLine
+            // already streamed per-TextSpan; Off is
+            // SpeechCursor-only). The pre-prompt banner is the
+            // SAME Seq-gap rule on the `bannerAnnounce` path
+            // below (now also watermark-driven).
             let tupleFinaliseAnnounce =
                 match finalisedOpt, currentShellPolicy.Streaming with
-                | Some cell, ShellPolicy.TupleFinalOnly ->
+                | Some _, ShellPolicy.TupleFinalOnly ->
+                    let raw =
+                        ContentHistory.sliceText
+                            contentHistory
+                            lastAnnouncedSeq
+                            System.Int64.MaxValue
+                    let withoutNextPrompt =
+                        let r = raw.TrimEnd('\r', '\n')
+                        match augmented.MatchedRowText with
+                        | Some p when not (System.String.IsNullOrEmpty p)
+                                      && r.EndsWith(p) ->
+                            r.Substring(0, r.Length - p.Length)
+                        | _ -> raw
                     let body =
-                        (cell.OutputText.TrimStart('\r', '\n'))
+                        (withoutNextPrompt.TrimStart('\r', '\n'))
                             .TrimEnd('\r', '\n')
                     if System.String.IsNullOrWhiteSpace body then None
                     else Some body
@@ -2116,20 +2142,28 @@ module Program =
                 | Some ContentHistory.MarkerKind.PromptStart ->
                     augmented.MatchedRowText
                 | _ -> None
-            // Cycle 51 PR-AC — the new shell's startup banner, to
-            // be spoken once on the first post-switch PromptStart.
-            // ContentHistory was reset on the switch, so slicing
-            // from 0 captures only the fresh shell's pre-prompt
-            // output (the banner). Trim the trailing prompt path
-            // and clean escape sequences exactly like the
-            // sub-prompt announce (PR-AA).
+            // Cycle 51 PR-AC / R3c — the shell's pre-prompt
+            // banner, spoken once on the first PromptStart (fresh
+            // launch via the `announceBannerOnNextPrompt` default;
+            // post-switch via `switchToShell` re-arming it). R3c:
+            // slice from `lastAnnouncedSeq` (the SAME un-spoken
+            // Seq-gap rule as the tuple-final), not a hard `0L`.
+            // On fresh launch / post-switch the watermark is -1
+            // (initial / reset by switchToShell) so this still
+            // captures the full pre-prompt banner; using the
+            // watermark keeps banner + tuple-final on one
+            // consistent "speak what hasn't been spoken" model.
+            // Trailing prompt path + escape sequences trimmed as
+            // before.
             let bannerAnnounce =
                 if announceBannerOnNextPrompt
                    && markerKind
                       = Some ContentHistory.MarkerKind.PromptStart then
                     let raw =
                         ContentHistory.sliceText
-                            contentHistory 0L System.Int64.MaxValue
+                            contentHistory
+                            lastAnnouncedSeq
+                            System.Int64.MaxValue
                     let withoutPrompt =
                         match augmented.MatchedRowText with
                         | Some p when not (System.String.IsNullOrEmpty p)
@@ -2294,13 +2328,13 @@ module Program =
                         else text.Substring(text.Length - OutputAnnounceCapChars)
                     if toSay.Length < text.Length then
                         log.LogInformation(
-                            "R3b tuple-final announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
+                            "R3c tuple-final announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
                             text.Length, toSay.Length, OutputAnnounceCapChars)
                     log.LogInformation(
-                        "R3b tuple-final announce (sealed IOCell OutputText). Len={Len}",
-                        toSay.Length)
+                        "R3c tuple-final announce (un-spoken Seq gap). FromSeq={FromSeq} Len={Len}",
+                        lastAnnouncedSeq, toSay.Length)
                     log.LogDebug(
-                        "R3b tuple-final announce body. Announce={Announce}",
+                        "R3c tuple-final announce body. Announce={Announce}",
                         toSay)
                     window.TerminalSurface.Announce(toSay, ActivityIds.output)
                     // Cycle 49 PR-C — invalidate UIA Text-pattern
@@ -2328,10 +2362,10 @@ module Program =
                             else
                                 banner.Substring(0, OutputAnnounceCapChars)
                         log.LogInformation(
-                            "PR-AC shell-switch banner announce. Length={Len}",
-                            toSay.Length)
+                            "R3c banner announce (un-spoken pre-prompt gap). FromSeq={FromSeq} Length={Len}",
+                            lastAnnouncedSeq, toSay.Length)
                         log.LogDebug(
-                            "PR-AC shell-switch banner body. Announce={Announce}",
+                            "R3c banner announce body. Announce={Announce}",
                             toSay)
                         window.TerminalSurface.Announce(
                             toSay, ActivityIds.output)
