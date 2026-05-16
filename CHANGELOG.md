@@ -14223,6 +14223,36 @@ fresh-launch behaviour decision (announce the prompt vs. accept
 silence) is **deferred** until after R3d lands per maintainer
 direction.
 
+### Cycle 52 R3e (2026-05-16): single-key sub-prompt re-arms Executing — fixes test-09 multi-sub-prompt
+
+The SHA-confirmed dogfood bundle (build `62fdc2d`) validated R3d
+but exposed a structural defect on the new multi-interrupt test
+(`test-09-multi-interrupt.cmd`: SECTION ONE → `choice` Q1 →
+SECTION TWO → `choice` Q2 → SECTION THREE). After the **first**
+single-key answer the 2nd sub-prompt was never announced and the
+resumed output (Seq 145–163 in the bundle) was mis-tagged
+`UserInputEcho`. Root cause (bundle-definitive): a `choice`-style
+sub-prompt is answered by a **single keystroke with no `\r`**, so
+the `\r`→`EnterPressed` byte-path never fires. The state stayed
+stuck `Composing(SinglekeySubmit=true)`; only `EnterPressed`
+transitioned `Composing → Executing`, so (a) `entrySourceFor`
+kept tagging cmd's resumed output `UserInputEcho`, and (b) the 2nd
+`SubPromptIdle` was the blocked `Composing,SubPromptIdle → None`
+arm so INTERRUPTION TWO was never surfaced.
+
+R3e adds a `SingleKeySubmitted` `Transition`: the byte-write path
+emits it on the first keystroke while
+`Composing(SinglekeySubmit=true)`, driving `Composing → Executing`
+(empty `SubmittedCommand`). Post-answer output is then tagged
+`CmdOutput` and a subsequent `Executing,SubPromptIdle → Composing`
+re-detects the 2nd sub-prompt. No-op for normal command typing
+(`Composing`, not single-key) and for `Executing` (so multi-byte
+writes after the transition don't re-fire). `awaitingSubPromptEnter`
+self-heals at the next `PromptDetected` (no Enter to clear it,
+matching the existing script-bailed-mid-sub-prompt path). Unit
+tests cover all three `SingleKeySubmitted` arms +
+`describeTrigger`.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

@@ -4395,6 +4395,27 @@ module Program =
                     // tracking is deferred (would route the
                     // KeyCode through to the buffer alongside
                     // the encoded bytes — see ADR §5.5).
+                    //
+                    // R3e (2026-05-16) — a single-key sub-prompt
+                    // (cmd `choice`) is answered by a keystroke
+                    // with NO `\r`, so the `\r`→EnterPressed
+                    // branch below never fires; without this the
+                    // state stays stuck
+                    // `Composing(SinglekeySubmit=true)`, which
+                    // mis-tags cmd's resumed output as
+                    // `UserInputEcho` AND blocks re-detection of
+                    // a 2nd sub-prompt in the same command (the
+                    // test-09 / KI defect, bundle-proven
+                    // 2026-05-16). Emit `SingleKeySubmitted` on
+                    // the first keystroke while in that state →
+                    // `Executing`. The `SinglekeySubmit` guard
+                    // leaves normal command typing untouched, and
+                    // post-transition the state is `Executing` so
+                    // later writes no-op.
+                    match shellInteraction.Current with
+                    | ShellInteraction.Composing d when d.SinglekeySubmit && bytes.Length > 0 ->
+                        recordTransition ShellInteraction.SingleKeySubmitted
+                    | _ -> ()
                     for i in 0 .. bytes.Length - 1 do
                         let b = bytes.[i]
                         if b >= 0x20uy && b <= 0x7Euy then
