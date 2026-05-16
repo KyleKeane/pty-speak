@@ -15,6 +15,7 @@ open Terminal.Core
 open Terminal.Core.Channels
 open Terminal.Audio
 open Terminal.Pty
+open Terminal.Shell
 open Terminal.Accessibility
 open PtySpeak.Views
 

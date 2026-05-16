@@ -194,11 +194,17 @@ list** and folds 0005's mechanism into it.
   risk; dogfood is the gate. R3c (heuristic→adapter
   physical relocation + R1.2 namespace move) remains the
   structural follow-on.
-- **R4 — purify + enforce.** Extend the existing portability-
-  lint CI job to assert `Terminal.Core` has no shell strings
-  / no WPF / no P/Invoke. **This is the enforcement that
-  structurally prevents re-leak** — the answer to "why did 51
-  cycles stay brittle".
+- **R4 — purify + enforce.** Sequenced R4a → R4b. **R4a —
+  purify (done 2026-05-16):** `HeuristicPromptDetector`
+  namespace `Terminal.Core` → `Terminal.Shell` (+ explicit
+  `open Terminal.Core`; consumers `open Terminal.Shell`;
+  logger category restrung) — the deferred R1.2 / R3c tail,
+  removing the last namespace-level shell-leak. Behaviour-
+  preserving (15 +/2 −). **R4b — enforce (next):** extend the
+  existing portability-lint CI job to assert `Terminal.Core`
+  has no shell strings / no WPF / no P/Invoke. **This is the
+  enforcement that structurally prevents re-leak** — the
+  answer to "why did 51 cycles stay brittle".
 - **R5 — PowerShell adapter** (= ADR 0005 Stage D). Full
   A/B/C/D + exit code.
 - **R6 — feature unlock** (= ADR 0005 Stage E). Per-line

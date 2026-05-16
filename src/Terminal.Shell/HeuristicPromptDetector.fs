@@ -1,8 +1,18 @@
-namespace Terminal.Core
+namespace Terminal.Shell
 
 open System
 open System.Text.RegularExpressions
 open Microsoft.Extensions.Logging
+// R4a (ADR 0006 R3c/R4-purify) — the heuristic detector now
+// declares its true home namespace. R1.2 physically moved the
+// file into the Terminal.Shell project but kept the
+// `Terminal.Core` namespace + call sites unchanged ("deferred to
+// R3 when call sites change anyway"). The Terminal.Core types it
+// consumes (Logger / PromptBoundaryData / BoundaryKind / Cell /
+// CanonicalState) were implicitly visible while it lived in that
+// namespace; now they need an explicit open (mirrors
+// `CmdAdapter.fs`).
+open Terminal.Core
 
 /// Tier 1.D — heuristic prompt-boundary fallback.
 ///
@@ -192,7 +202,7 @@ module HeuristicPromptDetector =
           LastEmittedPromptRowIndex = None
           RowDirtyAfterEmit = false }
 
-    let private logger = Logger.get "Terminal.Core.HeuristicPromptDetector"
+    let private logger = Logger.get "Terminal.Shell.HeuristicPromptDetector"
 
     /// Resolve the per-shell regex + stability window from
     /// the shell-key string. Returns `None` for unknown

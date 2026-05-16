@@ -13997,6 +13997,29 @@ tuple-final announce (sealed IOCell OutputText). Len=…` (Info),
 body at Debug, plus `R3b command-Enter watermark …`. No unit seam
 (Program.fs composition-root path).
 
+### Cycle 52 R4a (2026-05-16): HeuristicPromptDetector namespace purify (Terminal.Core → Terminal.Shell)
+
+First half of R4 (ADR 0006 R4-purify, folding the deferred R1.2 /
+R3c tail). R1.2 physically moved `HeuristicPromptDetector.fs` into
+the `Terminal.Shell` project but kept its `namespace Terminal.Core`
++ call sites ("deferred to R3 when call sites change anyway"). R4a
+completes that: the file now declares `namespace Terminal.Shell`
+with an explicit `open Terminal.Core` for the substrate types it
+consumes (Logger / PromptBoundaryData / BoundaryKind / Cell /
+CanonicalState — previously visible implicitly via the namespace),
+mirroring `CmdAdapter.fs`. The three code consumers
+(`Program.fs`, `Diagnostics.fs`, `HeuristicPromptDetectorTests.fs`)
+gain `open Terminal.Shell`. Pure behaviour-preserving relocation
+(15 +/2 −, no logic change); the Terminal.Core `///` doc-comment
+mentions of the detector are unaffected.
+
+**Maintainer-facing:** the FileLogger category for the detector
+changes `Terminal.Core.HeuristicPromptDetector` →
+`Terminal.Shell.HeuristicPromptDetector` — diagnostic-bundle greps
+that targeted the old category string must use the new one. This
+removes the last namespace-level Terminal.Core/shell-leak, setting
+up R4b (extend the portability-lint CI to *enforce* the boundary).
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
