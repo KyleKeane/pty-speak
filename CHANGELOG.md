@@ -14728,6 +14728,92 @@ gate). The announce-interrupts-output limitation is **not**
 addressed here — parked as ADR 0006 §"Deferred to R6+"
 item 10 per the maintainer's explicit call.
 
+### Cycle 52 R6c → ADR 0007 (2026-05-16): SpeechCursor canonical IOCell-history design review (Proposed)
+
+The maintainer redirected R6c from the planned dead-code
+"quick patch" to a comprehensive design review of the
+SpeechCursor / IOCell-history component as the core
+computational-history-exploration mechanic. New
+**[ADR 0007](docs/adr/0007-canonical-iocell-history-navigation.md)
+(Proposed)**: SpeechCursor as the canonical navigable IOCell
+history — typed cells (vs today's lossy `(string,string)`
+transcript), per-cell operations (copy command/output, rerun
+an input cell as a new command), and live-trickle review (a
+still-streaming response navigable while it arrives — the
+progress-loop / Claude-CLI core mechanic). Unifies ADR 0006
+§"Deferred to R6+" items 2–5 into a phased plan (Phase 0 =
+the shelved dead-Seq cleanup; Phases 1–7 layer typed
+transcript → operations → rerun → live trickle → intra-cell
+segments → review-cursor materialisation → automated
+cell-structure diagnostics). **D6 (maintainer contribution):
+the cell history, written on the same path as the channel
+send, is an assertable mirror of what was announced — turning
+listen-and-report dogfood into agent-run structural
+self-checks** (Phase 7; the multi-interrupt cmd script is the
+first oracle target). **D5a (maintainer proposal): the
+recommended channel resolution is to render history as a
+real focusable list control with a `Ctrl+Shift+Left/Right`
+pane switch and standard list-key navigation — AT-native by
+construction — rather than text-document materialisation.**
+D5a also carries a recorded set of forward considerations
+(maintainer-flagged): per-pane focus memory, kind-filtered
+structured jumps (first/last, prev-next input/output cell),
+user bookmarks + section markers, and operation-discovery
+menu surfaces — all deferred to Phase 6's sub-phases,
+validated against the real list once it exists, not built
+speculatively. **D7 (maintainer strategic concern): the new
+cell pipeline sources only from the typed IOCell layer and is
+fenced off from the legacy ContentHistory text-materialisation
+patchwork (ADR 0002) rather than built on it — an invariant
+enforced at Phase 0/1, policed by D6's oracle; the legacy
+review-cursor document is left as-is, its verbatim-vs-nicer
+evolution a deferred Phase 6 fork.** Per-cell line-by-line /
+list-or-table rendering recorded as an explicitly far-field
+aspiration (not next-steps). **D8 (expert recommendation
+maintainer deferred): the history is a standard UIA control —
+`TreeView`/UIA `Tree` recommended (hierarchy + drill-in),
+`ListBox`/UIA `List` fallback — never a bespoke
+`AutomationPeer`; appended event-driven off the seal event
+into an observable typed collection, ratified by the Phase 6a
+NVDA dogfood. D9 (maintainer principle): cell lifecycle /
+nav / op events are first-class modality-agnostic events on
+the canonical `OutputDispatcher` pipeline (new
+`pty-speak.cell.*` ActivityId family) so speech / earcon /
+future multi-line braille compose from one unambiguous event
+stream — the cell history as the most complete semantic
+representation we can synthesize. The D9 maximal-semantic-
+surfacing principle is flagged for elevation to ADR 0001 /
+CORE-ABSTRACTION-BOUNDARY (separate maintainer call; not
+edited unilaterally).** Doc-only; **no code lands until
+the maintainer accepts the ADR (esp. D5/D5a, D7, D8/D9)**.
+Pointers
+added in CLAUDE.md
+reading order, ADR 0006 deferred-cluster header,
+SESSION-HANDOFF, and the R5 playbook banner.
+
+### Cycle 52 — ADR 0007 Accepted + ADR 0008 (maximal semantic surfacing) + Phase 0 implementation start (2026-05-16)
+
+The maintainer concluded the design-review co-authoring and
+directed implementation to proceed. **[ADR 0007](docs/adr/0007-canonical-iocell-history-navigation.md)
+flipped Proposed → Accepted**; D1–D9 + D5a adopted (D8's
+`Tree`-vs-`List` control type ratified by the Phase 6a NVDA
+dogfood; no scope narrowing — full Phase 0…7 in force). D9's
+project-wide principle elevated to a new
+**[ADR 0008](docs/adr/0008-maximal-semantic-surfacing.md)
+(Accepted)** — *recover maximal unambiguous semantics, emit
+typed canonical events, never relay computationally ambiguous
+content as the primary contract*; it is the **why** behind
+ADR 0001 (mechanism) / 0004 / 0007, with pointers added from
+ADR 0001's Status notes and CORE-ABSTRACTION-BOUNDARY's
+header, and a CLAUDE.md reading-order entry. SESSION-HANDOFF
+and the R5 playbook banner flipped to "Accepted; Phase 0
+starts now". Implementation then begins with **Phase 0**
+(delete the 7 dead `SpeechCursor` Seq functions —
+net-subtractive, zero production callers, no audible
+behaviour change; the single-model precondition) as its own
+PR, followed by Phases 1→7 each independently CI- +
+dogfood-gated.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

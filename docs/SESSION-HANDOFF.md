@@ -33,8 +33,22 @@ and serves the decision-trail role this file used to overload.
 > (hybrid progress streaming) + R6b (prompt-path verbosity)
 > + R6b-followup (3 more on-change modes) SHIPPED &
 > dogfood-PASSED (matrix `52-R6a`/`52-R6b` ✅, #383/#385 +
-> followup). Next = R6c (clean SpeechCursor command items)
-> → R6d (PS-diagnostics submenu) → R7 (claude + closure).**
+> followup). **R6c was redirected by the maintainer
+> (2026-05-16) from a dead-code "quick patch" to a
+> comprehensive design review — now
+> [ADR 0007](adr/0007-canonical-iocell-history-navigation.md)
+> (**Accepted 2026-05-16**): SpeechCursor as the canonical
+> navigable IOCell history (D1 typed cells / D2 per-cell ops
+> / D3 live-trickle / D5a focusable standard control + pane
+> switch / D6 on-send test-oracle / D7 fenced off from legacy
+> / D8 standard UIA control, `Tree`-rec, 6a-dogfood-gated /
+> D9 cell events on the canonical pipeline). D9's principle
+> elevated to **[ADR 0008](adr/0008-maximal-semantic-surfacing.md)**
+> (Accepted). **Implementation in progress: full Phase 0…7,
+> each its own PR + dogfood. Phase 0 = delete the 7 dead Seq
+> functions (net-subtractive, no audible change) — STARTS
+> NOW.** Next = Phase 0 → 1…7 → R6d (PS-diagnostics submenu)
+> → R7 (claude + closure).**
 > The maintainer-flagged "prompt announce interrupts the
 > output read" is parked as ADR 0006 §"Deferred to R6+"
 > item 10 (NOT addressed now, maintainer's call). The cmd
