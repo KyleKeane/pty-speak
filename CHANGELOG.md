@@ -14164,6 +14164,27 @@ full corpus pattern: `HotkeyRegistry` DU/`nameOf`/`builtIns`/
 `Diagnostics → CMD Interaction Tests → Multi-Interrupt (R3c)`
 menu item. NVDA matrix row `52-R3c-multi`.
 
+### Cycle 52 R4-followup-2 (2026-05-16): SHA spoken char-by-char in Ctrl+Shift+H
+
+Build-identity dogfood follow-up. The `+<sha>` trailer added by
+the build-identity feature is a 7-char hex commit id; tokens like
+`09321e7` match the `<digits>e<digits>` shape, so NVDA's number
+reader voiced them as scientific notation ("9321 times ten to the
+7"). `runHealthCheck` now spells the SHA character-by-character
+(space-separated) in the **spoken** summary only — NVDA reads each
+character. The startup log and the `Ctrl+Shift+D` bundle keep the
+raw `+sha` (unchanged `resolveInformationalVersion`) for
+grep/triage; this only reshapes what is voiced.
+
+Also recorded in `docs/SESSION-HANDOFF.md` the consolidated
+post-dogfood state: **#2 sub-prompt double-speech FIXED &
+maintainer-validated** (R3c watermark); **KI-R2-1 / backspace /
+Alt+F4 RESOLVED**; **#1 banner STILL OPEN** (silent post-R3c —
+needs a SHA-confirmed bundle, no re-speculation); **output-path
+either/or** and **cold-start-keyboard** tracked + deferred per
+maintainer lean (the latter explicitly *not* build-identity-caused
+— a separate window-activation/focus race).
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

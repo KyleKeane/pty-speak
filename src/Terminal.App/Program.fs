@@ -3002,11 +3002,37 @@ module Program =
                 // way an installed preview does). Reuses the
                 // startup-log resolver; also captured in the
                 // bundle via the LogInformation below.
+                //
+                // R4-followup-2 (2026-05-16, dogfood) — the
+                // `+<sha>` trailer is a 7-char hex commit id;
+                // tokens like `09321e7` match the
+                // `<digits>e<digits>` shape so NVDA's number
+                // reader speaks them as scientific notation
+                // ("9321 times ten to the 7"). Spell the SHA out
+                // character-by-character (space-separated) in the
+                // SPOKEN summary only — NVDA then reads each
+                // character. The startup log + the
+                // `LogInformation` below keep the raw `+sha`
+                // (unchanged `resolveInformationalVersion`) for
+                // grep/triage; this only reshapes what is voiced.
+                let spokenVersion =
+                    let v = resolveInformationalVersion ()
+                    let plus = v.IndexOf('+')
+                    if plus >= 0 && plus < v.Length - 1 then
+                        let basePart = v.Substring(0, plus)
+                        let sha = v.Substring(plus + 1)
+                        let spelled =
+                            System.String.Join(
+                                " ",
+                                sha.ToCharArray() |> Array.map string)
+                        sprintf "%s build %s" basePart spelled
+                    else
+                        v
                 let summary =
                     sprintf
                         "%s Version %s. %s shell, PID %d (%s), log level %s. Reader last byte %.0f ms ago. Notification queue %d of 256."
                         verdict
-                        (resolveInformationalVersion ())
+                        spokenVersion
                         currentShell.DisplayName
                         pid
                         aliveStr
