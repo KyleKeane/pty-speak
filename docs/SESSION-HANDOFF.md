@@ -22,6 +22,11 @@ and serves the decision-trail role this file used to overload.
 > before R5 is one consolidated R1–R4 "foundation" dogfood**
 > (maintainer batching findings; 5 of those PRs are merged
 > but not yet maintainer-dogfooded, by explicit choice).
+> **R4c (pre-R5, maintainer-chosen 2026-05-16)** completes
+> the cmd transport with a *boundary-only* deferred `;D`
+> (`CommandFinished None`; no exit code — cmd has no native
+> `%errorlevel%`-in-prompt mechanism). Folds into the same
+> R1–R4 foundation dogfood (matrix `52-R4c`).
 
 - **`main` HEAD = `cbf8d48`** (Cycle 52 R4b, #357).
 - **Cycle 52 R1–R4 — the full structural re-foundation —
@@ -39,7 +44,12 @@ and serves the decision-trail role this file used to overload.
     arm — ADR 0005 §3's "implicit C" realised **consumer-
     side** (maintainer decision 2026-05-16). Core mechanism
     dogfood-validated 2026-05-16 (~9 clean evals, no escape
-    leak); KI-R2-1 surfaced (see below).
+    leak); KI-R2-1 surfaced (see below). **R4c (this PR,
+    2026-05-16)** prepends a boundary-only deferred `;D` →
+    the live value is now `cmd /K prompt
+    $e]133;D$e\$e]133;A$e\$p$g$e]133;B$e\` (cmd emits
+    `CommandFinished None` at every prompt head; no exit
+    code — cmd OS-level limitation).
   - **R3a** (#354): OSC-133 precedence — a per-shell-session
     `oscSeenThisSession` latch mutes the heuristic dispatch
     once an `Osc133` boundary is seen (reset on shell-switch,
@@ -144,12 +154,27 @@ State after the maintainer's batched dogfood of post-`cab2a0d`
 
 ## Next stage
 
+**R4c — cmd CommandFinished completion (pre-R5; this PR):**
+prepend a *boundary-only* deferred `;D` (`$e]133;D$e\`) to
+the cmd `prompt` template so cmd emits
+`BoundaryKind.CommandFinished None` at the head of every
+prompt — completing the cmd OSC-133 event stream (`;B`→`;D`
+output region) so R5/R6 are genuinely shell-agnostic in the
+core. No exit code: cmd has no native `%errorlevel%`-in-
+prompt mechanism (clink/doskey rejected — dependency / patch
+class); the boundary is what R6 needs, the code is an
+OS-level cmd limitation. Net-corrective — the real `;D`
+replaces the misplaced Cycle-47 synthetic compensation for
+cmd. Folded into the R1–R4 foundation dogfood (matrix
+`52-R4c`); same installed preview, one NVDA pass.
+
 **R5 — PowerShell adapter** (= ADR 0005 Stage D): full
 OSC-133 `A/B/C/D` + exit code via a generated profile /
 `-NoExit -Command`, as a second `Terminal.Shell` adapter.
 **Gated on the R1–R4 foundation dogfood** (maintainer
 decision 2026-05-16: checkpoint at R1–R4, validate the
-foundation before a second adapter builds on it). Then
+foundation before a second adapter builds on it; R4c rides
+that same dogfood). Then
 **R6** feature unlock (per-line progress, prompt-verbosity
 fix, clean SpeechCursor — trivial on the clean event
 stream) → **R7** claude adapter decision + Cycle closure

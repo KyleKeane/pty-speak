@@ -31,37 +31,53 @@ type CmdAdapter() =
     member _.Translate(bytes: byte[]) : VtEvent[] =
         Parser.feedArray parser bytes
 
-    /// R2 (ADR 0005/0006) — the cmd `prompt` template that
-    /// emits OSC 133 shell-integration markers (Option B:
+    /// R2 + R4c (ADR 0005/0006) — the cmd `prompt` template
+    /// that emits OSC 133 shell-integration markers (Option B:
     /// prompt-string injection; the cmd transport adapter owns
     /// the injection per ADR 0006).
     ///
-    /// cmd renders this template at every prompt. It emits
-    /// OSC 133 PromptStart (`;A`) before the visible path and
-    /// CommandStart (`;B`) after it. cmd has no hook to emit
-    /// OutputStart (`;C`) in the gap between Enter and the
-    /// command's output, so `SessionModel.extractIOCell`'s R2
+    /// cmd renders this template at every prompt. The leading
+    /// `;D` (R4c) is the **deferred CommandFinished boundary**:
+    /// cmd has no post-exec hook, so the prior command's "I am
+    /// finished" marker is emitted at the *head of the next
+    /// prompt* (the standard Windows-Terminal cmd technique).
+    /// Then `;A` (PromptStart) before the visible path and
+    /// `;B` (CommandStart) after it. cmd still has no hook to
+    /// emit OutputStart (`;C`) in the gap between Enter and the
+    /// command's output, so `SessionModel.extractIOCell`'s
     /// CommandStart arm anchors the command/output split at
     /// the `;B` marker — ADR 0005 §3's "implicit C", realised
     /// consumer-side per the maintainer's 2026-05-16 decision.
+    ///
+    /// **No exit code on `;D`.** This is a *boundary-only*
+    /// CommandFinished — `ShellEvent.CommandFinished None` for
+    /// cmd. cmd's `prompt`/`PROMPT` only expands `$`-metacodes;
+    /// there is **no native cmd mechanism** to render the
+    /// just-finished command's `%errorlevel%` per-prompt (it
+    /// would need clink or a per-command doskey wrapper — a
+    /// third-party / fragile dependency in the spawn seam,
+    /// explicitly out of scope, maintainer decision
+    /// 2026-05-16). The *boundary* is what R6 per-line
+    /// streaming needs (output-region start `;B` → end `;D`);
+    /// the exit code is a documented OS-level cmd limitation,
+    /// not ours. PowerShell (R5) supplies `Some <code>` via
+    /// `$LASTEXITCODE`; `ShellEvent.CommandFinished of int
+    /// option` was designed for exactly this asymmetry.
     ///
     /// cmd `prompt` codes: `$e` = ESC (Win10+), `$p` = cwd,
     /// `$g` = `>`, literal `\` = backslash. The OSC 133
     /// terminator is ST = ESC `\` = `$e\` (the VT parser
     /// accepts ST as well as BEL — `StateMachine.fs`). The
     /// `\\` pairs in the F# literal are single backslashes at
-    /// runtime.
-    ///
-    /// Exit-code (`;D`) is deferred: its live `%errorlevel%`
-    /// cannot defer through cmd's command-line `%`-expansion
-    /// without fragile escaping, and A/B alone is sufficient
-    /// for the command/output split (the R2 dogfood gate).
+    /// runtime. No `%`-expansion appears anywhere in the
+    /// template, so the R2 command-line-`%`-hazard the prior
+    /// deferral note named is sidestepped by construction.
     static member Osc133PromptValue : string =
-        "$e]133;A$e\\$p$g$e]133;B$e\\"
+        "$e]133;D$e\\$e]133;A$e\\$p$g$e]133;B$e\\"
 
-    /// R2 — wrap a resolved cmd command line with the OSC 133
-    /// `prompt` injection. No surrounding quotes: the value is
-    /// space-free and contains no cmd metacharacters
+    /// R2 + R4c — wrap a resolved cmd command line with the
+    /// OSC 133 `prompt` injection. No surrounding quotes: the
+    /// value is space-free and contains no cmd metacharacters
     /// (`&|<>()@^`), so an unquoted `/K prompt <value>`
     /// sidesteps cmd's nuanced outer-quote-stripping entirely.
     ///

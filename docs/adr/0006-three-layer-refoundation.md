@@ -18,6 +18,16 @@
   PowerShell adapter — net-new, must not build on an
   unvalidated foundation). R5–R7 pending that dogfood. Each
   R-stage remains independently CI- and dogfood-gated.
+- **R4c added (2026-05-16):** a pre-R5 stage — complete
+  the cmd transport with a *boundary-only* deferred `;D`
+  (`CommandFinished None`; no exit code — cmd has no
+  native `%errorlevel%`-in-prompt mechanism, an OS-level
+  limitation). Makes the cmd OSC-133 event stream
+  *complete* so R5/R6 are genuinely shell-agnostic in the
+  core. Net-corrective (the real `;D` replaces the
+  misplaced Cycle-47 synthetic compensation for cmd).
+  See the R4c entry in the R-stage list + ADR 0005 §3 R4c
+  status note. Folded into the R1–R4 foundation dogfood.
 - **Deciders:** maintainer — chose "Re-foundation ADR now" +
   "Drop MAUI consideration for now" (2026-05-15), after the
   strategic review of why 51 cycles produced brittle
@@ -239,6 +249,41 @@ list** and folds 0005's mechanism into it.
   the answer to "why did 51 cycles stay brittle". **R4
   complete**: with R1 (extract the seam) + R4 (enforce it)
   the boundary is structural, not disciplinary.
+- **R4c — cmd CommandFinished completion (pre-R5; the
+  extra stage the maintainer chose 2026-05-16).** R2
+  shipped cmd OSC-133 deliberately half: `;A`/`;B` only,
+  `;D` deferred. R5 (PowerShell, full A/B/C/D) and R6
+  (per-line streaming) are only genuinely shell-agnostic
+  in the core if the cmd event stream is *complete* — i.e.
+  cmd also delivers a real `CommandFinished` *boundary*.
+  R4c prepends a **boundary-only deferred `;D`** to the cmd
+  `prompt` template (`$e]133;D$e\` ahead of `;A`), so cmd
+  emits `BoundaryKind.CommandFinished None` at the head of
+  every prompt — the standard Windows-Terminal cmd
+  technique. **No exit code on cmd:** reading the shipped
+  R2 code surfaced that cmd's `prompt` cannot render
+  `%errorlevel%` natively at all (needs clink / a doskey
+  wrapper — rejected: dependency + patch class); the
+  *boundary* is what R6 needs (output region `;B`→`;D`),
+  the code is a documented OS-level cmd limitation.
+  `ShellEvent.CommandFinished of int option` already
+  modelled the asymmetry (`None` cmd / `Some` PowerShell).
+  Net-additive + net-corrective: the real `;D` replaces
+  the misplaced Cycle-47 synthetic-CommandFinished-before-
+  `;A` compensation for cmd (it now fires only for the
+  residual heuristic shell, claude); consumer changes are
+  one augmentation-arm extension (`;D` gets
+  MatchedRowText like `;A`, keeping OutputText + the
+  tuple-final announce clean — equivalent to the pre-R4c
+  PromptStart-interrupt finalise) and one gate (suppress
+  the natural `CommandFinished` marker when no cell
+  finalised, so cmd's leading/drop-on-None `;D` doesn't
+  inject a stray "end output" SpeechCursor stop).
+  Mechanism spec: ADR 0005 §3 R4c status note. Pinned by
+  `CmdAdapterTests` + the R4c `SessionModelTests` arm;
+  dogfood-gated (matrix `52-R4c`) **alongside / folded
+  into the R1–R4 foundation dogfood** — same installed
+  preview, one NVDA pass.
 - **R5 — PowerShell adapter** (= ADR 0005 Stage D). Full
   A/B/C/D + exit code.
 - **R6 — feature unlock** (= ADR 0005 Stage E). Per-line

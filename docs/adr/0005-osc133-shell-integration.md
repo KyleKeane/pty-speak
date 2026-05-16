@@ -7,10 +7,15 @@
   boundary source; does not delete it (it becomes the
   fallback, now muted-once-OSC-seen per R3a). The **cmd**
   emit strategy shipped as **Option B** (command-line
-  `prompt`; A/B only — `;C` realised consumer-side, `;D`
-  deferred; see §3 R2 status note). **PowerShell** (full
-  A/B/C/D) is R5, pending the R1–R4 foundation dogfood.
-  Implementation proceeds via ADR 0006's R0–R7 stages.
+  `prompt`; A/B + `;C` realised consumer-side. **`;D`
+  completed in R4c** as a *boundary-only* deferred
+  CommandFinished — no exit code; cmd has no native
+  `%errorlevel%`-in-prompt mechanism, an OS-level limitation,
+  not ours; see §3 R2 + R4c status notes). **PowerShell**
+  (full A/B/C/D + exit code) is R5, pending the R1–R4
+  foundation dogfood. Implementation proceeds via ADR 0006's
+  R0–R7 stages (R4c is the pre-R5 stage that completes the
+  cmd transport).
 - **Status note (2026-05-15):** the "Walking-skeleton stages"
   A–F list below is **superseded by the R0–R7 stage list in
   [ADR 0006](0006-three-layer-refoundation.md)**, which folds
@@ -130,6 +135,43 @@ deletable.
        fragile escaping; **A/B only** in R2, which is
        sufficient for the split (the R2 gate). `;D` returns
        when reachable without the quoting hazard.
+     - **R4c status note (2026-05-16):** `;D` returned as a
+       pre-R5 stage — but **boundary-only, no exit code**.
+       Reading the shipped R2 code surfaced that the
+       `%`-expansion hazard was never the root blocker:
+       cmd's `prompt`/`PROMPT` only expands `$`-metacodes,
+       so there is **no native cmd mechanism** to render the
+       just-finished `%errorlevel%` per prompt at all (it
+       needs clink — a third-party native Lua cmd enhancer —
+       or a per-command doskey wrapper; both rejected:
+       dependency weight + the "patch" class the maintainer
+       is avoiding). The maintainer chose (2026-05-16) the
+       boundary-only deferred `;D`: prepend `$e]133;D$e\` to
+       the A/B template so cmd emits `BoundaryKind.Command-
+       Finished None` at the head of every prompt (the
+       standard Windows-Terminal cmd technique; zero
+       `%`-expansion → R2 hazard sidestepped by
+       construction). This is what R6 per-line streaming
+       needs (output-region start `;B` → end `;D`); the
+       exit code is a documented OS-level cmd limitation,
+       not ours. `ShellEvent.CommandFinished of int option`
+       was designed for the asymmetry — `None` (cmd) vs
+       `Some <code>` (PowerShell R5, via `$LASTEXITCODE`).
+       Consumer side: the `;D` boundary is now
+       MatchedRowText-augmented like `;A` (so
+       `extractIOCell.stripNextPrompt` + the tuple-final
+       announce trim the trailing next-prompt — equivalent
+       to the pre-R4c PromptStart-interrupt finalise, which
+       moves to the clean `Some active, CommandFinished`
+       arm); and the natural `CommandFinished` ContentHistory
+       marker is gated on a real finalise so cmd's leading
+       `;D` (no prior command) and drop-on-None cells don't
+       inject a stray "end output" SpeechCursor stop. The
+       Cycle-47 synthetic-`CommandFinished`-before-`;A`
+       compensation no longer trips for cmd (residual
+       heuristic fallback for claude only). Pinned by
+       `CmdAdapterTests` + the R4c `SessionModelTests` arm;
+       end-to-end via the cmd dogfood (matrix `52-R4c`).
    - **PowerShell / pwsh** — a generated `prompt` function +
      `PSConsoleHostReadLine` / PSReadLine handler emits full
      `A` / `B` / `C` / `D;$LASTEXITCODE`. Injected via
