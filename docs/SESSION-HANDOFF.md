@@ -67,32 +67,55 @@ and serves the decision-trail role this file used to overload.
   `CHANGELOG.md` / `git log`. `CYCLE-51-PLAYBOOK.md` is
   HISTORICAL.
 
-### Known issues for the R1–R4 foundation dogfood
+### R1–R4 dogfood findings (post-maintainer-dogfood 2026-05-16)
 
-The maintainer is **batching dogfood findings** (explicit
-2026-05-16). Validate these against an installed preview of
-post-`cbf8d48` `main`:
+State after the maintainer's batched dogfood of post-`cab2a0d`
+`main`:
 
-- **KI-R2-1 — should now be GONE.** R2 dogfood (2026-05-16)
-  surfaced: after ~9 commands the echo output + next input
-  path leaked into the announce; toggling path-suppression
-  recovered it. Root cause = the PR-X `lastEnterSeq` +
-  `EndsWith(MatchedRowText)` next-prompt trim. R3b deleted
-  that path (announce = Seq-sliced IOCell `OutputText`, no
-  `EndsWith` heuristic). **Confirm the leak no longer
-  reproduces under sustained command volume.**
-- **R3b sub-prompt double-speech — watch for it.** Sub-prompt
-  cells now announce their `OutputText`, which may re-include
-  the just-spoken sub-prompt question (the accepted
-  single-step re-derivation risk; PR-Y strip deleted). Listen
-  on `test-02` (typed-Enter) / `test-04` (single-key Y/N) —
-  if the question is spoken twice, that's the R3b-followup
-  signal.
-- **Banner must still read** on a shell switch (PR-AA/AC
-  preserved through R3b).
-- **R4a logger-category change** is maintainer-facing: any
-  bundle grep that targeted `Terminal.Core.HeuristicPrompt`
-  `Detector` must now use `Terminal.Shell.…`.
+- **KI-R2-1 — RESOLVED & validated.** The volume-triggered
+  echo+next-path leak is gone (R3b deleted the PR-X
+  `lastEnterSeq`/`EndsWith` pile; R3c made the announce a
+  settled-watermark Seq-gap). Confirmed by the maintainer.
+- **#2 sub-prompt double-speech — FIXED & validated.** R3c's
+  spoken-watermark: the question is announced once in
+  real-time, then only the post-response output at finalise.
+  Maintainer confirmed ("first half until input, then only
+  the second half"). `test-09-multi-interrupt` (matrix
+  `52-R3c-multi`) pins the MULTI-incremental composition case
+  R5/R6 depend on.
+- **#1 banner — STILL OPEN (the one unresolved functional
+  regression).** Silent on fresh launch *and* shell switch,
+  even post-R3c (R3c default-armed `announceBannerOnNextPrompt`
+  + watermark-sliced `bannerAnnounce`). Root cause NOT
+  determinable by static reading (runtime ordering) — needs a
+  `Ctrl+Shift+D` bundle from a **SHA-confirmed** build,
+  grepped for `R3c banner announce` /
+  `announceBannerOnNextPrompt`. Do **not** re-speculate (two
+  wrong guesses already). Gated on the maintainer capturing
+  that bundle.
+- **Backspace-to-empty path-read — RESOLVED** (R3c watermark).
+- **Alt+F4 not closing — RESOLVED** (was the maintainer's
+  keyboard function-lock, not code).
+- **Output-path either/or — tracked, DEFERRED** (maintainer
+  lean 2026-05-16). Only with output-path announcements ON
+  (non-default): fast `echo`+Enter → path only; slow → output
+  only. Hypothesis: path-announce vs tuple-final contend under
+  NVDA same-activity supersession + speech-render timing.
+- **Cold-start keyboard — tracked, DEFERRED** (maintainer
+  decision 2026-05-16). A freshly-built EXE doesn't receive
+  keyboard until close+reopen. **NOT build-identity-caused**
+  (that's build-time metadata only). Suspected cold-start
+  window-activation / input-focus race; workaround exists
+  (relaunch). Needs narrowing (launch method? every cold
+  start vs post-build? window foregrounded?) before touching
+  the load-bearing WPF startup/focus path.
+- **SHA spoken as scientific notation — FIXED** (R4-followup-2:
+  `Ctrl+Shift+H` now spells the `+<sha>` char-by-char; the
+  startup log / bundle keep the raw `+sha` for grep).
+- **R4a logger-category change** is maintainer-facing: bundle
+  greps for the heuristic detector use
+  `Terminal.Shell.HeuristicPromptDetector` (old
+  `Terminal.Core.…` returns nothing).
 
 ## Next stage
 
