@@ -113,20 +113,39 @@ dogfood.
   found); detector state is caller-threaded — `SessionHost`
   takes ownership, removing the foot-gun.
 
-## Recommended R1 commit order
+## R1 commit order — as shipped
 
-1. New `Terminal.Shell` assembly: `ShellAdapter` interface +
-   `ShellEvent` DU + `SessionHost` skeleton (pure addition,
-   zero behaviour change, just must compile + be referenced).
-2. Move `HeuristicPromptDetector` → `Terminal.Shell`
-   (wholesale; fix `open`s/refs; tests follow it).
-3. `Program.fs` shell resolution → `SessionHost.Create`.
-4. Rewire `startReaderLoop` to `adapter.Translate` (the cmd
-   adapter wraps the *existing* parser+heuristic path
-   verbatim — still no semantic change).
-5. Project references + add the bytes→IOCell integration test.
-6. Full suite green + **R1 behaviour-identical NVDA dogfood
-   gate** before any R2 semantic work.
+1. ✅ **R1.1 (#348)** New `Terminal.Shell` assembly:
+   `IShellAdapter` interface + `ShellEvent` DU +
+   `SessionHost` skeleton (inert, zero behaviour change).
+2. ✅ **R1.2 (#349)** `HeuristicPromptDetector` →
+   `Terminal.Shell`, wholesale. Kept `namespace
+   Terminal.Core` (no caller churn); detector leaves the
+   *Core assembly*. Namespace rename deferred to R3.
+3. ✅ **R1.3 (#350)** `Program.fs` shell-resolution →
+   `SessionHost.ResolveStartupShell(config, log)`, verbatim;
+   `Program.fs` delegates with the same `log` instance →
+   byte-identical logs.
+4. ✅ **R1.4 (#351)** `startReaderLoop` routed through
+   `CmdAdapter`. Per the maintainer's 2026-05-16 decision
+   this is a **`VtEvent` seam** — `CmdAdapter.Translate :
+   byte[] → VtEvent[]` is a verbatim `Parser.feedArray`
+   wrapper. `ShellEvent`/`IShellAdapter` (R1.1) are
+   **deliberately left as the R2 boundary**; they only
+   become meaningful with R2's OSC-133. (The original plan's
+   "bytes→IOCell integration test" was not added — the
+   `VtEvent`-stream identity + the full unit suite + the
+   consolidated dogfood are the behaviour-identity net;
+   revisit a dedicated integration test in R2 when the
+   event stream actually changes.)
+5. ▶ **R1 gate (next):** one consolidated behaviour-
+   identical NVDA dogfood from an **installed preview
+   release** (preview.143 @ `66ab95d`), in the maintainer's
+   normal environment — **not** a dev `dotnet run`/`publish`
+   build (unreliable NVDA UIA-notification delivery on the
+   RDP/VM). Acceptance: narrates identically to preview.141
+   (residual heuristic bugs included — that *is* behaviour-
+   identity). Then R2.
 
-Each step is an independently CI-gated PR. R1 lands no OSC-133
-emitter and no precedence rule — those are R2/R3.
+Each step shipped as an independently CI-gated PR. R1 landed
+no OSC-133 emitter and no precedence rule — those are R2/R3.
