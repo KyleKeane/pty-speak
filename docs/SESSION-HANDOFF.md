@@ -17,11 +17,12 @@ and serves the decision-trail role this file used to overload.
 > [`adr/0006-three-layer-refoundation.md`](adr/0006-three-layer-refoundation.md)**
 > (**Accepted 2026-05-15**; reads ADR 0005 as its mechanism
 > spec). Cycle 51 is shipped; the CYCLE-51-PLAYBOOK is now
-> historical. **Cycle 52 R1 in progress** — architecture map
-> then behaviour-identical extraction; each R-stage stays
-> independently CI- + dogfood-gated.
+> historical. **Cycle 52 R1 (R1.1–R1.4) complete & merged
+> (#347–#351)**; the gate before any R2 work is one
+> consolidated behaviour-identical NVDA dogfood
+> (preview.143), in progress.
 
-- **`main` HEAD = `fa8885c`** (Cycle 51 PR-AE, #344).
+- **`main` HEAD = `66ab95d`** (Cycle 52 R1.4, #351).
 - **Cycle 51 (IOCell pivot) — SHIPPED.** PR-V (ADR 0004) →
   PR-W / PR-W2 (IOCell + schemaVersion-2 + round-trip
   reader) → then the dogfood-driven sequence **PR-X**
@@ -58,10 +59,19 @@ and serves the decision-trail role this file used to overload.
   **F# kept, WPF kept, MAUI explicitly out of scope**
   (maintainer decision 2026-05-15 — channel stays an
   interface for design hygiene only). ADR 0006's R0–R7
-  supersedes ADR 0005's A–F. **Accepted 2026-05-15;
-  R1 in progress** (architecture map → behaviour-identical
-  extraction; each R-stage independently CI- + dogfood-
-  gated).
+  supersedes ADR 0005's A–F. **Accepted 2026-05-15; R1
+  (R1.1–R1.4) complete & merged** (#347 map+acceptance →
+  #348 R1.1 `Terminal.Shell` skeleton → #349 R1.2
+  `HeuristicPromptDetector` out of the Core assembly →
+  #350 R1.3 shell-resolution → `SessionHost` → #351 R1.4
+  reader loop through `CmdAdapter`, the **VtEvent** seam).
+  All behaviour-identical by construction + CI-green. Per
+  maintainer's 2026-05-16 choice the R1 adapter contract is
+  `VtEvent`-based; `ShellEvent`/`IShellAdapter` (R1.1) stay
+  untouched as the R2 boundary (meaningful with OSC-133).
+  The R1 gate is **one consolidated behaviour-identical
+  NVDA dogfood** (preview.143) before any R2 — not
+  per-substep.
 - **Cycle 49 + post-49 hotfixes (PRs #313–#331)** shipped
   earlier; detail in [`CHANGELOG.md`](../CHANGELOG.md) /
   `git log` per the
@@ -83,14 +93,43 @@ purify `Terminal.Core` + portability-lint enforcement (the
 structural anti-re-leak gate) → **R5** PowerShell adapter →
 **R6** feature unlock (per-line progress, prompt-verbosity
 fix, clean SpeechCursor) → **R7** claude adapter decision +
-Cycle closure audit. Each stage independently CI-gated +
-dogfood-validated. R1 + R4 are the structural gates; R2's
-cmd OSC-133 dogfood is the first semantic proof. NVDA matrix
-rows per stage in
+Cycle closure audit. **R0 + R1 (R1.1–R1.4) done & merged**
+(#347–#351); **next = the consolidated R1 NVDA dogfood
+(preview.143), then R2.** R1 + R4 are the structural gates;
+R2's cmd OSC-133 dogfood is the first semantic proof. NVDA
+matrix rows per stage in
 [`ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md).
+
+**Dogfood operations (Cycle 52 R1, learned 2026-05-15/16).**
+Run R-stage dogfoods from an **installed preview release**
+(`gh release create vX --target main --prerelease …` →
+`scripts\install-latest-preview.ps1 -Tag vX`), **not** a dev
+`dotnet run`/`publish` build — the dev-host process has
+unreliable NVDA UIA-notification delivery on the RDP/VM and
+burned ~an hour of false "regression" chasing. **NVDA
+UIA-notification wedge:** after heavy app start/stop churn,
+NVDA can stop voicing UIA Notification events (output /
+diagnostics) while still speaking *menus* (native focus
+tracking). This is an environment artifact, not a code
+regression — **restart NVDA** (reboot the VM if that fails);
+verified to fully restore it on both build types.
 
 **Deferred (independent; revisit after Cycle 52):**
 
+- **Backspace-to-empty announces the full input path**
+  (observed 2026-05-16, preview.143 R1 dogfood prep). At a
+  prompt, hold backspace until the line is empty: deleting
+  the **last** character now narrates the entire input path
+  (`C:\…\Terminal.App>`) instead of just `>`. Repro: new
+  line, type `1`, backspace. Suspected **pre-existing**
+  (announce-path / PR-I history-recall prefix-strip, Cycle
+  49 era — untouched by R1; R1.1–R1.4 don't touch the
+  announce path). **Classify during the R1 dogfood:** if
+  preview.141 shows the same, it's pre-existing → R2
+  backlog (the OSC-133/clean-SpeechCursor work targets
+  exactly this); if preview.141 says only `>`, it's an R1
+  regression and blocks R2. Maintainer: "not worth fixing
+  now, note for later."
 - **`EntrySource.DraftInputRecall`** (deferred from Cycle 49
   E3) — substrate refinement; no audible bug behind it
   after PR-I's screen-read approach.
