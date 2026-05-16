@@ -14148,6 +14148,22 @@ ran the commit under test or a stale build (it surfaced when a
   PR-number convention: the SHA is automatic, exists at commit
   time, and maps directly to `git`.
 
+### Cycle 52 R3c-followup (2026-05-16): multi-interrupt watermark-composition test
+
+New CMD-corpus test `test-09-multi-interrupt` (maintainer-requested
+from the R3c dogfood). Three distinctly-labelled output sections
+separated by **two** `choice /c YN` interruptions — the
+composition case the R3c spoken-watermark must hold: each section
++ each question announced exactly once, in sequence, no re-read of
+an earlier segment when the watermark advances past the *second*
+incremental announce. R3c was validated against a single
+sub-prompt (test 02/04); this pins the multi-incremental case that
+R5 (PowerShell) and R6 (per-line streaming) depend on. Wired the
+full corpus pattern: `HotkeyRegistry` DU/`nameOf`/`builtIns`/
+`allCommands` + `HotkeyRegistryTests` mirror + `runCmdTest` bind +
+`Diagnostics → CMD Interaction Tests → Multi-Interrupt (R3c)`
+menu item. NVDA matrix row `52-R3c-multi`.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

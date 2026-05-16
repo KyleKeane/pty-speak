@@ -230,6 +230,9 @@
                         <MenuItem x:Name="MenuItem_CmdTestStderr"
                                   x:FieldModifier="public"
                                   Header="Stderr _Output" />
+                        <MenuItem x:Name="MenuItem_CmdTestMultiInterrupt"
+                                  x:FieldModifier="public"
+                                  Header="_Multi-Interrupt (R3c)" />
                     </MenuItem>
                 </MenuItem>
                 <!-- Inspect — "look at what already happened"

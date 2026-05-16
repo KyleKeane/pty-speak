@@ -99,6 +99,7 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               HotkeyRegistry.CmdTestPause
               HotkeyRegistry.CmdTestProgress
               HotkeyRegistry.CmdTestStderr
+              HotkeyRegistry.CmdTestMultiInterrupt
               // Cycle 26c — first menu-only command. Surfaced
               // via Diagnostics → Test Process Cleanup; no
               // keyboard accelerator.

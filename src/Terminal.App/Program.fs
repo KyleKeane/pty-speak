@@ -3433,6 +3433,7 @@ module Program =
         let runCmdTestPause () = runCmdTest "test-06-pause"
         let runCmdTestProgress () = runCmdTest "test-07-progress"
         let runCmdTestStderr () = runCmdTest "test-08-stderr"
+        let runCmdTestMultiInterrupt () = runCmdTest "test-09-multi-interrupt"
 
         // session-log file path. Reads `sessionLogWriter` (post
         // -Cycle-24c) + `persistenceConfig.Mode` (post-Cycle-24a)
@@ -3839,6 +3840,7 @@ module Program =
         bind HotkeyRegistry.CmdTestPause runCmdTestPause
         bind HotkeyRegistry.CmdTestProgress runCmdTestProgress
         bind HotkeyRegistry.CmdTestStderr runCmdTestStderr
+        bind HotkeyRegistry.CmdTestMultiInterrupt runCmdTestMultiInterrupt
         // Cycle 43a — diagnostic chunk extractors + grep dialog.
         // All menu-only (no keyboard accelerator); `bindHotkey`
         // skips the KeyBinding installation but still registers

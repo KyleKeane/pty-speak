@@ -136,6 +136,7 @@ module HotkeyRegistry =
         | CmdTestPause
         | CmdTestProgress
         | CmdTestStderr
+        | CmdTestMultiInterrupt
         // Cycle 26c — first menu-only command. Interactive
         // process-cleanup test (`scripts/test-process-cleanup.ps1`)
         // surfaced via Diagnostics → Test Process Cleanup. No
@@ -239,6 +240,7 @@ module HotkeyRegistry =
         | CmdTestPause -> "CmdTestPause"
         | CmdTestProgress -> "CmdTestProgress"
         | CmdTestStderr -> "CmdTestStderr"
+        | CmdTestMultiInterrupt -> "CmdTestMultiInterrupt"
         | RunProcessCleanupScript -> "RunProcessCleanupScript"
         | CloseWindow -> "CloseWindow"
         | ExitApp -> "ExitApp"
@@ -395,6 +397,10 @@ module HotkeyRegistry =
             Key = None
             Modifiers = None
             Description = "CMD test: stderr output (Cycle 47)" }
+          { Command = CmdTestMultiInterrupt
+            Key = None
+            Modifiers = None
+            Description = "CMD test: multi-interrupt watermark composition (Cycle 52 R3c)" }
           // Cycle 26c — menu-only; no default keyboard accelerator.
           // Surfaced as Diagnostics → Test Process Cleanup.
           { Command = RunProcessCleanupScript
@@ -608,6 +614,7 @@ module HotkeyRegistry =
           CmdTestPause
           CmdTestProgress
           CmdTestStderr
+          CmdTestMultiInterrupt
           RunProcessCleanupScript
           CloseWindow
           ExitApp
