@@ -124,16 +124,51 @@ type SessionHost private () =
         // shells (claude / PowerShell) are byte-identical. The
         // cmd transport adapter owns the injection (ADR 0006);
         // SessionHost only gates it on the resolved ShellId.
+        let integrated =
+            (SessionHost.Osc133IntegratorFor resolvedShell.Id)
+                resolvedCmdLine
+        // Behaviour-identical: the cmd-specific log fires
+        // exactly when it did pre-R5a (cmd only). R5b adds a
+        // distinct PowerShell injection log alongside its
+        // `Osc133IntegratorFor` arm, so this cmd line stays
+        // stable + greppable in the diagnostic bundle.
         if resolvedShell.Id = ShellRegistry.Cmd then
-            let integrated =
-                CmdAdapter.IntegrateOsc133 resolvedCmdLine
             log.LogInformation(
                 "R2 cmd OSC-133 prompt injection applied (startup). Base={Base} Integrated={Integrated}",
                 resolvedCmdLine,
                 integrated)
-            resolvedShell, integrated
-        else
-            resolvedShell, resolvedCmdLine
+        resolvedShell, integrated
+
+    /// R5a (ADR 0006 / [`docs/CYCLE-52-R5-PLAYBOOK.md`]) — the
+    /// shell-adapter SELECTION seam. The ONLY shell-specific
+    /// transport behaviour wired today is the OSC-133
+    /// command-line injection: cmd wraps via
+    /// `CmdAdapter.IntegrateOsc133`; every other shell is
+    /// identity — **byte-identical to the pre-R5a `else`
+    /// branch** at both spawn sites (startup
+    /// `ResolveStartupShell` + `Program.fs` `switchToShell`).
+    /// Centralised at the single orchestration point so the
+    /// per-`ShellId` dispatch lives in ONE place and **R5b
+    /// adds PowerShell in exactly this one arm**.
+    ///
+    /// Deliberately NOT the full `IShellAdapter` (Spawn /
+    /// WriteInput / byte→`ShellEvent` Translate): spawn stays
+    /// `ConPtyHost.start`-direct, input `host.WriteBytes`-
+    /// direct, and the single shared VT parser is NOT reset
+    /// across shell switches (all unchanged — behaviour-
+    /// identical, the R1 discipline). Broadening this toward
+    /// the full `IShellAdapter` contract is the R6 target;
+    /// rationale + the recon that corrected the R5a scope are
+    /// in the playbook.
+    static member Osc133IntegratorFor
+            (shellId: ShellRegistry.ShellId)
+            : string -> string
+            =
+        match shellId with
+        | ShellRegistry.Cmd ->
+            (fun cmdLine -> CmdAdapter.IntegrateOsc133 cmdLine)
+        | _ ->
+            (fun cmdLine -> cmdLine)
 
     /// Placeholder factory. Real adapter selection + spawn
     /// wiring lands in a subsequent R1 step; the constructor

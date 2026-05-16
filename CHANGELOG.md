@@ -14308,6 +14308,36 @@ by the cmd dogfood (NVDA matrix `52-R4c`, folded into the
 R1–R4 foundation dogfood). ADR 0005 §3 R4c status note + ADR
 0006 R4c stage.
 
+### Cycle 52 R5a (2026-05-16): adapter-selection seam (behaviour-identical; foundation sign-off received)
+
+First step after the maintainer's R1–R4+R4c foundation
+dogfood sign-off. Recon corrected the playbook's R5a premise:
+the transport is already shell-agnostic except the OSC-133
+injection (already `ShellId`-gated at two sites);
+`CmdAdapter.Translate` is a verbatim VT-parser wrapper; the
+full `IShellAdapter` (Spawn/WriteInput) is a large
+**non**-behaviour-identical refactor (spawn is
+`ConPtyHost.start`-direct, input `host.WriteBytes`-direct) —
+deferred to R6. Maintainer chose "literal R5a seam first".
+
+R5a is therefore the **thin selection layer**, not full
+`IShellAdapter` adoption: a single
+`SessionHost.Osc133IntegratorFor : ShellRegistry.ShellId ->
+(string -> string)` selector (cmd → `CmdAdapter.Integrate-
+Osc133`; every other shell → identity) replacing the two
+inline `if = Cmd` OSC-133 gates (`SessionHost.Resolve-
+StartupShell` startup + `Program.fs` `switchToShell`).
+**Byte-identical including logs:** the cmd-only "R2 cmd
+OSC-133 … applied" line still fires exactly when cmd; the
+single shared VT parser is still not reset across shell
+switches; spawn/input paths untouched. Centralises the
+per-`ShellId` dispatch so **R5b adds PowerShell in exactly
+one arm**. Pinned by two `CmdAdapterTests` facts
+(`Osc133IntegratorFor` Cmd-wraps / non-cmd-identity — the
+non-cmd assertion flips deliberately when R5b lands). No
+user-visible change. Playbook §4 R5a updated to the realized
+scope + the recon correction (full `IShellAdapter` = R6).
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
