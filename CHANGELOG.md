@@ -13882,6 +13882,47 @@ follow-up audit should retire the now-redundant
 announce-path compensations (PR-AB; parts of PR-X/Y) once this is
 dogfood-validated.
 
+### Cycle 52 R2 (2026-05-16): cmd OSC-133 prompt integration (Option B)
+
+The cmd transport adapter now injects an OSC-133 shell-integration
+`prompt` template at spawn (startup **and** switch-to-cmd), so cmd
+emits PromptStart (`;A`) before the prompt path and CommandStart
+(`;B`) after it. Replaces the brittle byte-stream
+`lastEnterSeq`/first-newline heuristic with an authoritative
+shell-emitted boundary for the command/output split.
+
+Mechanism (ADR 0005/0006, **Option B** — command-line `prompt`
+injection, adapter-owned): `cmd.exe /K prompt
+$e]133;A$e\$p$g$e]133;B$e\` (unquoted — the value is space-free
+with no cmd metacharacters, sidestepping cmd's outer-quote
+stripping). Injection is gated on the resolved/target `ShellId =
+Cmd`, so claude / PowerShell spawns are byte-identical.
+
+cmd's `prompt` has no hook to emit OutputStart (`;C`) between Enter
+and command output, so per the maintainer's 2026-05-16 decision the
+consumer realises ADR 0005 §3's "implicit C":
+`SessionModel.extractIOCell` gains a third arm — PromptStart +
+CommandStart, no OutputStart — that anchors the proven PR-X
+watermark split at the shell-emitted `;B` marker (the `[A,B)`
+region is the prompt path and is excluded by construction).
+Provenance is OSC 133, not the heuristic fallback. The pre-R2
+PromptStart-only arm is byte-identical (no `CommandStart` marker
+existed pre-R2 — the heuristic detector emits only `PromptStart`),
+so no shell without the injection regresses. Exit-code (`;D`) is
+deferred (its live `%errorlevel%` can't defer through cmd's
+command-line `%`-expansion without fragile escaping; A/B is
+sufficient for the split).
+
+Diagnostics ship with the feature: an `Arm={CleanOscAC|CmdOscAB|
+Heuristic}` line per extraction and `R2 cmd OSC-133 prompt
+injection applied … Base=… Integrated=…` at both spawn seams. The
+exact command-line string is locally unverifiable (no cmd in the
+dev sandbox) — pinned by `CmdAdapterTests` and validated
+end-to-end by the cmd dogfood (ADR 0005 §4 Stage B). If the
+template needs adjustment it is a contained one-line change in
+`CmdAdapter.Osc133PromptValue`; nothing downstream depends on *how*
+cmd was told to emit OSC 133, only *that* it does.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

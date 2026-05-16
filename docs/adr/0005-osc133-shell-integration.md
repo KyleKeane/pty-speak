@@ -105,6 +105,25 @@ deletable.
      command captured at `B` is the *final* line the shell
      will run, so **history recall is correct by
      construction**.
+     - **R2 status note (2026-05-16):** implemented as
+       **Option B** (command-line `cmd.exe /K prompt …`,
+       adapter-owned — `CmdAdapter.IntegrateOsc133`), *not*
+       `setx`/env `PROMPT`. Two refinements forced by the
+       shipped consumer + cmd's `prompt` semantics:
+       (1) "OutputStart (`C`) is the implicit transition
+       after `B` + Enter" is **not** synthesised — the
+       shipped `SessionModel.extractIOCell` needs a literal
+       marker. cmd's `prompt` has no post-Enter/pre-output
+       hook, so the "implicit C" is realised **consumer-
+       side**: a new PromptStart + CommandStart
+       `extractIOCell` arm anchors the command/output split
+       at the shell-emitted `;B` marker (maintainer decision
+       2026-05-16). (2) deferred-`D;%errorlevel%` is itself
+       deferred — its live `%errorlevel%` can't defer
+       through cmd's *command-line* `%`-expansion without
+       fragile escaping; **A/B only** in R2, which is
+       sufficient for the split (the R2 gate). `;D` returns
+       when reachable without the quoting hazard.
    - **PowerShell / pwsh** — a generated `prompt` function +
      `PSConsoleHostReadLine` / PSReadLine handler emits full
      `A` / `B` / `C` / `D;$LASTEXITCODE`. Injected via

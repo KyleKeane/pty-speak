@@ -4558,6 +4558,24 @@ module Program =
                         sprintf "Cannot switch to %s: %s" shell.DisplayName safe,
                         ActivityIds.error)
                 | Ok newCmdLine ->
+                    // R2 (ADR 0005/0006, Option B) — cmd
+                    // OSC-133 prompt injection on
+                    // switch-to-cmd. Gated on the switch
+                    // target so claude / PowerShell switches
+                    // are byte-identical. The cmd transport
+                    // adapter owns the injection (ADR 0006).
+                    let newCmdLine =
+                        if target = ShellRegistry.Cmd then
+                            let integrated =
+                                Terminal.Shell.CmdAdapter.IntegrateOsc133
+                                    newCmdLine
+                            log.LogInformation(
+                                "R2 cmd OSC-133 prompt injection applied (shell-switch). Base={Base} Integrated={Integrated}",
+                                newCmdLine,
+                                integrated)
+                            integrated
+                        else
+                            newCmdLine
                     // Announce-before-launch pattern from
                     // Stage 4b's diagnostic-launcher: NVDA
                     // gets the cue into its speech queue

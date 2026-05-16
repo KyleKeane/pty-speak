@@ -4,9 +4,17 @@
   architectural re-foundation. Builds on and **supersedes the
   stage list of [ADR 0005](0005-osc133-shell-integration.md)**
   (0005's OSC-133 mechanism is folded into this ADR's
-  R-stages). R1 in progress (architecture map → behaviour-
-  identical extraction). Each R-stage remains independently
-  CI- and dogfood-gated.
+  R-stages). R1 complete + maintainer-dogfood-validated
+  (#348–#352, 2026-05-16). **R2 in progress** — cmd OSC-133
+  `prompt` injection landed (ADR 0005 Stage B mechanism,
+  **Option B**: command-line `prompt`, adapter-owned); cmd
+  emits `;A`/`;B` only (no `prompt` hook for `;C`), so ADR
+  0005 §3's "implicit C" is realised **consumer-side** —
+  `SessionModel.extractIOCell` gained a PromptStart +
+  CommandStart arm anchoring the split at the shell-emitted
+  `;B` (maintainer decision 2026-05-16). cmd dogfood gate
+  pending. Each R-stage remains independently CI- and
+  dogfood-gated.
 - **Deciders:** maintainer — chose "Re-foundation ADR now" +
   "Drop MAUI consideration for now" (2026-05-15), after the
   strategic review of why 51 cycles produced brittle
