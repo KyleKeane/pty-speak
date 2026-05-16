@@ -13,8 +13,12 @@ and serves the decision-trail role this file used to overload.
 
 ## Current state (2026-05-16)
 
-> **NEW SESSION START HERE →
-> [`adr/0006-three-layer-refoundation.md`](adr/0006-three-layer-refoundation.md)**
+> **NEW / RECOVERED SESSION START HERE →
+> [`CYCLE-52-R5-PLAYBOOK.md`](CYCLE-52-R5-PLAYBOOK.md)** — the
+> self-contained R5 brief + pruning sequence + ops playbook
+> (written so a lost chat session lands exactly where the
+> prior one was). It points onward to
+> [`adr/0006-three-layer-refoundation.md`](adr/0006-three-layer-refoundation.md)
 > (**Accepted 2026-05-15**; reads ADR 0005 as its mechanism
 > spec). **Cycle 52 R1–R4 COMPLETE & merged (#347–#357)** —
 > the three-layer re-foundation is structurally done and
