@@ -14,7 +14,6 @@ open Velopack.Sources
 open Terminal.Core
 open Terminal.Core.Channels
 open Terminal.Audio
-open Terminal.Parser
 open Terminal.Pty
 open Terminal.Accessibility
 open PtySpeak.Views
@@ -109,7 +108,7 @@ module Program =
     let private startReaderLoop
             (dispatcher: Dispatcher)
             (host: ConPtyHost)
-            (parser: Parser)
+            (adapter: Terminal.Shell.CmdAdapter)
             (screen: Screen)
             (view: TerminalView)
             (contentHistory: ContentHistory.T)
@@ -147,7 +146,7 @@ module Program =
                             let chunkTs = DateTime.UtcNow
                             for i in 0 .. chunk.Length - 1 do
                                 onByteFromPty chunkTs chunk.[i]
-                            let events = Parser.feedArray parser chunk
+                            let events = adapter.Translate chunk
                             // Cycle 45c — feed ContentHistory (the
                             // sole aural substrate post-PR-3c).
                             // `appendFromEvent` is Gate-locked so
@@ -900,7 +899,12 @@ module Program =
 
         let cts = new CancellationTokenSource()
         let screen = Screen(rows = ScreenRows, cols = ScreenCols)
-        let parser = Parser.create ()
+        // R1.4 (ADR 0006): the cmd transport adapter owns the VT
+        // parser. Behaviour-identical seam — `Translate` is a
+        // verbatim `Parser.feedArray` wrapper; created once and
+        // not reset across shell switches, exactly as the bare
+        // parser was.
+        let cmdAdapter = Terminal.Shell.CmdAdapter()
 
         // Cycle 45 — ContentHistory + SpeechCursor are the aural
         // substrate (parallel to the screen-grid + UIA surface).
@@ -4153,7 +4157,7 @@ module Program =
                 startReaderLoop
                     window.Dispatcher
                     host
-                    parser
+                    cmdAdapter
                     screen
                     window.TerminalSurface
                     contentHistory
