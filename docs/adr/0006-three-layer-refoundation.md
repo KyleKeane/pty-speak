@@ -302,7 +302,27 @@ list** and folds 0005's mechanism into it.
 - **R6 — feature unlock** (= ADR 0005 Stage E). Per-line
   progress streaming, prompt-path-verbosity fix, clean
   SpeechCursor command items — trivially correct on the clean
-  event stream.
+  event stream. Sequenced R6a→R6d, one PR + dogfood each
+  (walking-skeleton). **R6a — hybrid per-line progress
+  streaming: SHIPPED & CI-green 2026-05-16 (#383),
+  dogfood-pending** (matrix `52-R6a`). Maintainer chose the
+  *hybrid* model: the authoritative `TupleFinalOnly` seal
+  read is unchanged (no edit-conflation risk — it stays the
+  screen-authoritative `IOCell.OutputText`); R6a additionally
+  fires the **same clean watermark slice** the tuple-final
+  uses, on output-quiescence during the `Executing` window
+  (the retired idle-flush timer re-wired to the validated
+  R3c/R3e watermark — `fromSeq = max commandEnterSeq
+  lastAnnouncedSeq`, no command-echo, no next-prompt-strip
+  needed mid-execution). Watermark-composed so the seal
+  speaks only the remainder (`52-R3c-multi` proved the
+  composition). Gated Executing ∧ `TupleFinalOnly`; claude
+  unaffected (`IdleFlushMs = None`). This is why the ADR
+  predicted "trivially correct on the clean event stream" —
+  R6a is purely the *trigger*, the slice + composition were
+  already validated. **R6b prompt-path-verbosity → R6c
+  clean SpeechCursor command items → R6d PS-diagnostics
+  submenu** (deferred item 7) remain.
 - **R7 — claude/other-shell adapter decision + Cycle closure
   audit** (= ADR 0005 Stage F).
 
