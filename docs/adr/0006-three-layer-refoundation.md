@@ -295,6 +295,43 @@ list** and folds 0005's mechanism into it.
 
 ### Deferred to R6+ — the canonical-IOCell navigation / operations layer
 
+**Decision (maintainer, 2026-05-16, post-`5518f5c`
+foundation dogfood + bundle analysis): freeze cmd
+announce-heuristic work until the PowerShell clean
+reference exists.** The R1–R4 + R4c bundle proved the
+IOCell substrate is sound — `extractIOCell` produced a
+correct `CmdLen`/`OutLen` split on every command (plain,
+`dir`, test-02, test-09's seven segments); the
+`RecentTuple` dump and ContentHistory markers are clean.
+**Every remaining cmd defect lives in the announce-
+reconstruction layer on top**, not the substrate:
+- the R3d tuple-final announce slices
+  `[max(commandEnterSeq, lastAnnouncedSeq), end)` then
+  string-strips the trailing prompt using a *racy screen-
+  cursor-row snapshot*; under history-recall churn (the
+  bundle showed ~60 `PR-I history-recall` arrow-spam
+  events and a Seq-86 `"echo1 echo hidir echo hi…"`
+  accumulation) that snapshot mismatches → path/echo
+  bleed. Same byte-stream-reconstruction root cause as
+  deferral 1 below; **not a new R4c regression** (R4c only
+  made the strip reachable on the `;D` path; the racy
+  mechanism is R3c/R3d, unchanged).
+- cmd emits **no pre-prompt banner at all** (bundle: zero
+  `R3c banner announce` for cmd; PowerShell's fires with
+  the full text). "Terminal edit Blank" on fresh cmd
+  launch is the empty-document focus fallback, **not a
+  bug** — architectural for cmd. The banner *mechanism*
+  works (PowerShell proves it).
+
+Consequently: **do not push further cmd announce-heuristic
+patches pre-R5.** PowerShell's native `A/B/C/D` removes the
+reconstruction entirely and becomes the clean reference;
+cmd's announce path is then rebuilt to that shape
+(deferral 1). Continuing to patch cmd announce heuristics
+now is the documented tail-chasing loop. cmd substrate
+work (R4c-class) remains fine; only the announce-heuristic
+layer is frozen.
+
 Strategic referrals captured 2026-05-16 (maintainer
 direction, on the R4c-merge discussion). All are
 **deliberately deferred until the canonical IOCell is
