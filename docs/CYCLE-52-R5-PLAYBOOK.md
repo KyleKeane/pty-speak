@@ -285,14 +285,30 @@ PowerShell adapter is built against a pruned tree:
   falls back to the cmd-heuristic-era synthetic marker —
   exactly the R3a precedence principle. Comment + one
   `&&`-condition change; CI-green.
-- **P3 — dead pathway config keys (safe-to-delete).** The
-  `[pathway.<id>]` TOML schema + `pathway` key parsing in
-  [`src/Terminal.Core/Config.fs`](../src/Terminal.Core/Config.fs)
-  are parsed but unconsumed since Cycle 45c deleted the
-  pathway pipeline. Remove the parsing + deprecate the
-  schema with a one-line comment. Also drop the dead
-  `#[pathway.stream]` / `#substrate_mode` lines in the
-  generated `config.toml` template.
+- **P3 — dead pathway config keys (INVESTIGATED 2026-05-16,
+  #380; re-scoped — audit's "safe-to-delete" was
+  optimistic).** Findings: (a) the generated `config.toml`
+  template
+  ([`src/Terminal.Core/Config.fs`](../src/Terminal.Core/Config.fs)
+  :218+) is **already clean** — it has **no**
+  `#[pathway.stream]` / `#substrate_mode` lines; the
+  maintainer's on-disk file showing them is a stale-build
+  artifact (`Ctrl+Shift+E` only creates-if-missing, never
+  rewrites). So that half of P3 is a **no-op**. (b)
+  `ShellPathwayConfig.PathwayId` + `resolvePathwayForShell`
+  + the `[pathway.<id>]` parameter-table parsing are
+  confirmed **dead** (no live consumer in `Terminal.App` —
+  grep-verified) **but entangled in the live
+  `ShellPathwayConfig` record**, which also carries the
+  live `Verbosity` → `currentShellPolicy.Streaming/PromptPath`
+  config consumed throughout `Program.fs`. Removing the
+  dead field/resolver is therefore a surgical, wide-ish,
+  **locally-unverifiable** record/parser refactor — NOT a
+  clean delete. Per the "no risky locally-unverifiable rip
+  in a proceed-pass" discipline it is **re-scoped as
+  deferred P3b** (ADR 0006 §"Deferred to R6+"), not
+  bundled. Net P3 deliverable: this finding recorded; no
+  code change (nothing safe + substantial to ship).
 - **P4 — canonical-corpus ESC-byte fix (bug).**
   [`tests/fixtures/canonical-interactions.toml`](../tests/fixtures/canonical-interactions.toml):146
   (`command = "echo <ESC>[31mPtySpeakDiagRedText<ESC>[0m"`)

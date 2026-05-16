@@ -463,6 +463,27 @@ would be premature.
    PS feature behaviour (per-line progress, prompt
    verbosity) defines the concrete scenario list has no
    signal; wire it when R6 needs PS-specific manual tests.
+8. **P3b — remove dead pathway config plumbing**
+   (investigated 2026-05-16, #380). `ShellPathwayConfig.
+   PathwayId` + `resolvePathwayForShell` + the
+   `[pathway.<id>]` parameter-table parsing in
+   `Terminal.Core/Config.fs` are confirmed dead (no live
+   `Terminal.App` consumer since Cycle 45c deleted the
+   pathway pipeline) **but entangled in the live
+   `ShellPathwayConfig` record**, which also carries the
+   live `Verbosity` → `currentShellPolicy.Streaming/
+   PromptPath` config consumed throughout `Program.fs`.
+   Removal is a surgical, wide-ish, locally-unverifiable
+   record/parser refactor of a ~1000-line core config
+   module — deliberately NOT bundled into the P1–P5
+   proceed-pass (the audit's "safe-to-delete" was
+   optimistic; the cmd announce FREEZE does not apply but
+   the no-risky-locally-unverifiable-rip discipline does).
+   Its own careful PR: extract/rename the record so the
+   live `Verbosity`/prompt-path config is preserved
+   byte-for-byte while `PathwayId`/resolver/`[pathway.*]`
+   parsing are dropped + a deprecation note added. Low
+   priority (inert; pure cleanliness); not gating R6.
 
 Each stage independently CI-gated and dogfood-validated. R1
 and R4 are the new structural gates that make the boundary
