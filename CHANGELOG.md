@@ -14338,6 +14338,57 @@ non-cmd assertion flips deliberately when R5b lands). No
 user-visible change. Playbook §4 R5a updated to the realized
 scope + the recon correction (full `IShellAdapter` = R6).
 
+### Cycle 52 R5b (2026-05-16): PowerShell adapter — OSC-133 emission
+
+The PowerShell transport adapter. New
+`src/Terminal.Shell/PowerShellAdapter.fs` (statics only —
+Translate stays the shared shell-agnostic path per R5a;
+spawn/input ConPtyHost-direct; R6 broadens). `Osc133InitScript`
+is a Windows-PowerShell-5.1 `prompt` function (F# **triple-
+quoted** → zero escaping risk) emitting `;D;$LASTEXITCODE`
+(a **real exit code** — the asymmetry cmd structurally lacks:
+cmd is `CommandFinished None`, PowerShell `Some <code>`) →
+`;A` → `$($PWD.Path)>` → `;B`. Same `;A`/`;B` framing as cmd,
+so PowerShell routes through the **same `extractIOCell`
+`CmdOscAB` arm with zero consumer change** (`Osc133.tryParse`
+already decodes `;D;<int>`); the leading `;D;0` is absorbed by
+the existing `None,CommandFinished` ignore + the R4c stray-`;D`
+gate exactly as cmd's leading `;D`. `IntegrateOsc133` wraps
+`powershell.exe` as `-NoExit -EncodedCommand <base64-UTF16LE
+of the script>` — chosen over `-Command "…"` so the produced
+command line is quoting-safe by construction (the base64
+alphabet is space/quote/metacharacter-free — the same
+robustness property cmd's space-free `prompt` value has; the
+script can't be space-free, so encode it rather than fight
+CreateProcess+PowerShell quoting).
+
+Wired through the **R5a selector**: a single `PowerShell` arm
+in `SessionHost.Osc133IntegratorFor` (R5a centralised the
+dispatch — no second gate site) + a distinct
+`R5b PowerShell OSC-133 prompt injection applied
+(startup|shell-switch)` log at the two log sites (cmd's lines
+unchanged + independently greppable). `ShellRegistry`
+PowerShell entry already existed (PR-J) — no registry work.
+
+**Screen-reader posture:** the `prompt` function is a core
+host hook independent of PSReadLine, so `;A`/`;B`/`;D;<code>`
+emit even though PowerShell auto-disables PSReadLine under a
+screen reader. We deliberately do **not** attempt `;C`
+(OutputStart — would need the disabled PSReadLine hook); the
+playbook's #1 R5 risk. PowerShell is therefore the screen-
+reader-safe baseline on the same arm as cmd, plus an exit
+code. Whether `;C` is ever reachable is the dogfood question.
+
+Pinned by a new `PowerShellAdapterTests` (the script string +
+the base64 round-trip + quoting-safety) and the flipped
+`CmdAdapterTests` selector pin (PowerShell now injects — the
+deliberate test-visible change R5a's pin anticipated).
+**Locally unverifiable** (no PowerShell in the dev sandbox —
+the cmd/R2 precedent): the script is a dogfood-tunable knob;
+end-to-end gated by the maintainer's NVDA dogfood (matrix
+`52-R5b`). No change to cmd/claude behaviour. Playbook §4 R5b
+marked done; ADR 0005 §3 PowerShell bullet realised.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
