@@ -14054,6 +14054,20 @@ mentions never trigger; verified zero violations on current `main`
 **This completes R4.** With R1 (extract the seam) + R4 (enforce
 it), the architectural boundary is structural, not disciplinary.
 
+### Cycle 52 R4-followup (2026-05-16): health-check reports the informational version
+
+`Ctrl+Shift+H` now announces (and logs to the bundle) the
+`AssemblyInformationalVersion` alongside the existing shell / PID /
+liveness / log-level / queue line — e.g. *"Pty-speak healthy.
+Version 0.0.1-preview.NN+sha. cmd shell, PID …"*. Surfaced on
+maintainer request from the R1–R4 foundation dogfood: a local
+`git pull` + build has no release-tag in the window title (unlike
+an installed preview), so there was no keyboard-only way to
+sanity-check that the running build is the intended version. Reuses
+the existing startup-log version resolver; no GUI walk (a
+screen-reader-friendly hotkey, not a Help-menu dialog). One-line
+`sprintf` extension to the existing `runHealthCheck` summary.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

@@ -2952,10 +2952,20 @@ module Program =
                     else
                         "Pty-speak healthy."
                 let aliveStr = if alive then "alive" else "dead"
+                // R4-followup (2026-05-16, maintainer request) —
+                // surface the AssemblyInformationalVersion in the
+                // Ctrl+Shift+H announce so a local `git pull` +
+                // build can be sanity-checked against the intended
+                // version without a GUI walk (the window title
+                // doesn't carry the release tag on a dev build the
+                // way an installed preview does). Reuses the
+                // startup-log resolver; also captured in the
+                // bundle via the LogInformation below.
                 let summary =
                     sprintf
-                        "%s %s shell, PID %d (%s), log level %s. Reader last byte %.0f ms ago. Notification queue %d of 256."
+                        "%s Version %s. %s shell, PID %d (%s), log level %s. Reader last byte %.0f ms ago. Notification queue %d of 256."
                         verdict
+                        (resolveInformationalVersion ())
                         currentShell.DisplayName
                         pid
                         aliveStr

@@ -633,9 +633,10 @@ Currently shipped (orientation reference; spec section 6 is canonical):
 - `Ctrl+Shift+1` / `+2` / `+3` — hot-switch the spawned shell
   (`+1`=cmd / `+2`=PowerShell / `+3`=Claude; PR-J reordered to
   put PowerShell next to cmd as the diagnostic control shell)
-- `Ctrl+Shift+H` — health-check announce: shell + PID + alive,
-  log level, reader staleness, queue depths (PR-F + PR-J liveness
-  probe)
+- `Ctrl+Shift+H` — health-check announce: **informational
+  version** (Cycle 52 R4-followup — local-build sanity check),
+  shell + PID + alive, log level, reader staleness, queue
+  depths (PR-F + PR-J liveness probe)
 - `Ctrl+Shift+B` — incident marker boundary line in the log (PR-F)
 - `Ctrl+Shift+Y` — copy SessionModel history to clipboard (Cycle 22b);
   paste-friendly structured plain-text dump of all completed
