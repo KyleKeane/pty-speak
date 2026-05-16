@@ -293,6 +293,75 @@ list** and folds 0005's mechanism into it.
 - **R7 — claude/other-shell adapter decision + Cycle closure
   audit** (= ADR 0005 Stage F).
 
+### Deferred to R6+ — the canonical-IOCell navigation / operations layer
+
+Strategic referrals captured 2026-05-16 (maintainer
+direction, on the R4c-merge discussion). All are
+**deliberately deferred until the canonical IOCell is
+solid** (post-R5 foundation), not punted — an explicitly-
+tracked, rationale-bearing deferral per the cycle-closure
+discipline. R5 (PowerShell's real `A/B/C/D`) is what makes
+several of these solvable in a *whole-system* way rather
+than against cmd's quirks alone; designing them pre-R5
+would be premature.
+
+1. **Retire `stripNextPrompt` → one shell-agnostic
+   output-region cut.** Today the trailing-next-prompt edge
+   of an IOCell's output is reconstructed by string-suffix
+   subtraction (`SessionModel.extractIOCell` slices
+   `[…, Int64.MaxValue)` then strips the known prompt text)
+   — a residual reconstruction heuristic, exactly the
+   ADR-0006 anti-pattern. The clean form is a positional
+   region-cut: cmd via deferred-finalise / backtrack-insert
+   at the next `;A` Seq (the marker that isn't in
+   ContentHistory yet at `;D`-finalise time — see the R4c
+   consumer note + ADR 0005 §3 R4c); PowerShell via its
+   native `;C`/`;D`. R5 surfaces this cross-shell (the
+   `CleanOscAC` arm slices `[;C, MaxValue)` with **no**
+   strip — R5's dogfood reveals the general shape), so the
+   one model that is correct for both shells is designed
+   *then*. Until then `stripNextPrompt` stays (it works on
+   the golden path; the failure mode is output that
+   legitimately ends with text equal to the prompt path).
+2. **Replace SpeechCursor manual history-navigation with
+   canonical IOCell-history navigation + per-cell
+   operations.** The SpeechCursor's navigable history and
+   the underlying review-cursor document have been
+   strategically under-invested while the substrate
+   stabilised. The target: navigate the **IOCell history**
+   itself, with reliable, typed per-cell operations —
+   copy-output-to-clipboard on output cells, run-again on
+   input cells (CORE-ABSTRACTION-BOUNDARY's history sub-pane
+   + reserved peer panes). Gated on the canonical IOCell so
+   navigation/operations bind to a stable cell identity, not
+   a Seq-walk over raw ContentHistory.
+3. **Open decision — is IOCell history written into the
+   review-cursor document?** NVDA's review cursor navigates
+   a UIA text document (ADR 0002 channel). Whether the
+   canonical IOCell history is materialised into that
+   document (so review-cursor nav == cell-history nav) or
+   kept as a parallel structure with its own nav surface is
+   an **unresolved architectural decision**, not yet taken.
+   Record it; decide post-canonical-IOCell.
+4. **Live current-line / system focus → NVDA "read current
+   line".** The system focus / caret is not currently moved
+   to the live current line in a way that propagates to
+   NVDA's read-current-line keyboard shortcut. Tracked gap;
+   better served once the canonical IOCell + its document
+   representation (item 3) are settled, since the answer
+   depends on what "current line" means against the cell
+   model.
+5. **Multi-interrupt IOCell internal structure.** See ADR
+   0004 Decision 2's future-direction note (annotated
+   2026-05-16): the IOCell produced by multi-interruption /
+   sub-prompt-flow tests should expose its internals as a
+   collection of navigable chunks within a container — or at
+   minimum a sequence of unambiguous output segments
+   connected to the most-recent input cell — rather than one
+   opaque inline blob. The boundary substrate already
+   supports the bracketing; this is the navigation/structure
+   promotion, gated on the canonical IOCell.
+
 Each stage independently CI-gated and dogfood-validated. R1
 and R4 are the new structural gates that make the boundary
 real and keep it real.
