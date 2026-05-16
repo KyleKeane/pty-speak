@@ -524,20 +524,25 @@ module SpeechCursor =
             Some e
         | None -> None
 
-    /// Cycle 52 R6b — resolve `PromptPathMode.FullOnChangeElseFinal`
-    /// to a concrete `Full` (prompt changed since the last one, or
-    /// first prompt) / `FinalDirOnly` (prompt unchanged) for THIS
-    /// entry, using the per-cursor `LastPromptStartPayload`. Every
-    /// other mode passes through untouched. Side-effect: on a
-    /// PromptStart with payload under the on-change mode it updates
-    /// `LastPromptStartPayload` so the *next* prompt's change-test
-    /// is against this one. Non-PromptStart entries and a
-    /// payload-less PromptStart never reach `trimPromptPath` (the
-    /// other `renderEntryWithPolicy` arms ignore the mode; the
-    /// PromptStart arm maps `Payload = None → None` before the
-    /// trim), so returning the mode unchanged there is inert.
+    /// Cycle 52 R6b / R6b-followup — resolve an *on-change*
+    /// `PromptPathMode` (`FullOnChangeElseFinal` /
+    /// `FinalOnChangeElseFull` / `SilentOnUnchangedFullOnChange` /
+    /// `SilentOnUnchangedFinalOnChange`) to a concrete
+    /// `Full` / `FinalDirOnly` / `Suppress` for THIS entry,
+    /// branching on whether the prompt changed since the last one
+    /// (first prompt = "changed"), using the per-cursor
+    /// `LastPromptStartPayload`. Any non-on-change mode passes
+    /// through untouched. Side-effect: on a PromptStart with
+    /// payload it updates `LastPromptStartPayload` so the *next*
+    /// prompt's change-test is against this one. Non-PromptStart
+    /// entries and a payload-less PromptStart never reach
+    /// `trimPromptPath` (the other `renderEntryWithPolicy` arms
+    /// ignore the mode; the PromptStart arm maps `Payload = None →
+    /// None` before the trim), so returning `mode` unchanged there
+    /// is inert.
     let private resolveOnChange
             (state: T)
+            (mode: ShellPolicy.PromptPathMode)
             (entry: ContentHistory.Entry)
             : ShellPolicy.PromptPathMode =
         // The trimmed PromptStart payload, or None for any entry
@@ -551,7 +556,7 @@ module SpeechCursor =
                 m.Payload |> Option.map (fun t -> t.Trim())
             | _ -> None
         match promptKey with
-        | None -> ShellPolicy.FullOnChangeElseFinal
+        | None -> mode
         | Some key ->
             let changed =
                 match state.LastPromptStartPayload with
@@ -559,12 +564,25 @@ module SpeechCursor =
                 | None -> true
             state.LastPromptStartPayload <- Some key
             let resolved =
-                if changed then ShellPolicy.Full
-                else ShellPolicy.FinalDirOnly
+                match mode with
+                | ShellPolicy.FullOnChangeElseFinal ->
+                    if changed then ShellPolicy.Full
+                    else ShellPolicy.FinalDirOnly
+                | ShellPolicy.FinalOnChangeElseFull ->
+                    if changed then ShellPolicy.FinalDirOnly
+                    else ShellPolicy.Full
+                | ShellPolicy.SilentOnUnchangedFullOnChange ->
+                    if changed then ShellPolicy.Full
+                    else ShellPolicy.Suppress
+                | ShellPolicy.SilentOnUnchangedFinalOnChange ->
+                    if changed then ShellPolicy.FinalDirOnly
+                    else ShellPolicy.Suppress
+                | other -> other
             r6bLog.LogInformation(
-                "R6b prompt-path on-change resolve. Changed={Changed} Resolved={Resolved} KeyLen={KeyLen}",
+                "R6b prompt-path on-change resolve. Mode={Mode} Changed={Changed} Resolved={Resolved} KeyLen={KeyLen}",
+                (sprintf "%A" mode),
                 changed,
-                (if changed then "Full" else "FinalDirOnly"),
+                (sprintf "%A" resolved),
                 key.Length)
             resolved
 
@@ -573,7 +591,11 @@ module SpeechCursor =
             (entry: ContentHistory.Entry)
             : ShellPolicy.PromptPathMode =
         match state.Parameters.PromptPath with
-        | ShellPolicy.FullOnChangeElseFinal -> resolveOnChange state entry
+        | ShellPolicy.FullOnChangeElseFinal
+        | ShellPolicy.FinalOnChangeElseFull
+        | ShellPolicy.SilentOnUnchangedFullOnChange
+        | ShellPolicy.SilentOnUnchangedFinalOnChange ->
+            resolveOnChange state state.Parameters.PromptPath entry
         | other -> other
 
     /// Announce the entry at the cursor's current position via

@@ -72,24 +72,39 @@ module ShellPolicy =
     /// prompts (`claude>`, `>>>`) or users who genuinely want the
     /// full path.
     ///
-    /// `FullOnChangeElseFinal` (Cycle 52 R6b) — context-aware:
-    /// when the prompt text *differs* from the previously-narrated
-    /// prompt (a `cd` / dir-changing command, or the first prompt
-    /// after a shell-switch) it narrates the **full** path; when
-    /// the prompt is **unchanged** (running several commands in the
-    /// same directory) it narrates only the **final dir** segment.
-    /// Gives directory orientation on a change without repeating
-    /// the whole path on every command. The "changed?" decision is
-    /// stateful (it needs the prior prompt) so it is resolved by
-    /// `SpeechCursor` before the pure `trimPromptPath` call — see
-    /// `SpeechCursor.effectivePromptPath`. `trimPromptPath`'s own
-    /// arm for this case is a context-free fallback (= `Full`) for
-    /// any direct caller that does not do change-resolution.
+    /// The four *on-change* modes are context-aware: they narrate
+    /// one thing when the prompt text *differs* from the
+    /// previously-narrated prompt (a `cd` / dir-changing command,
+    /// or the first prompt after a shell-switch) and another when
+    /// it is *unchanged* (running several commands in the same
+    /// directory) — directory orientation on a change without
+    /// repeating the same string every command:
+    ///
+    /// - `FullOnChangeElseFinal` (Cycle 52 R6b) — full path on
+    ///   change, final-dir-only when unchanged.
+    /// - `FinalOnChangeElseFull` (Cycle 52 R6b-followup) — the
+    ///   mirror: final-dir-only on change, full path when
+    ///   unchanged.
+    /// - `SilentOnUnchangedFullOnChange` (Cycle 52 R6b-followup) —
+    ///   full path on change, **silent** when unchanged.
+    /// - `SilentOnUnchangedFinalOnChange` (Cycle 52 R6b-followup) —
+    ///   final-dir-only on change, **silent** when unchanged.
+    ///
+    /// The "changed?" decision is stateful (it needs the prior
+    /// prompt) so it is resolved by `SpeechCursor` before the pure
+    /// `trimPromptPath` call — see `SpeechCursor.effectivePromptPath`.
+    /// `trimPromptPath`'s own arms for these cases are context-free
+    /// fallbacks (verbatim `Full`, or the `FinalDirOnly` trim, never
+    /// garbage / never `None` for non-empty input) for any direct
+    /// caller that does not do change-resolution.
     type PromptPathMode =
         | Suppress
         | FinalDirOnly
         | Full
         | FullOnChangeElseFinal
+        | FinalOnChangeElseFull
+        | SilentOnUnchangedFullOnChange
+        | SilentOnUnchangedFinalOnChange
 
     /// Per-shell policy record. Future-extension seats included
     /// from day one so Cycle 45g's consolidation refactor doesn't
@@ -219,8 +234,11 @@ module ShellPolicy =
             // future non-SpeechCursor path) that passes this case
             // through gets `Full` — verbatim, never garbage.
             | Full
-            | FullOnChangeElseFinal -> Some text
-            | FinalDirOnly ->
+            | FullOnChangeElseFinal
+            | FinalOnChangeElseFull
+            | SilentOnUnchangedFullOnChange -> Some text
+            | FinalDirOnly
+            | SilentOnUnchangedFinalOnChange ->
                 let trimmed = text.TrimEnd()
                 // Identify trailing delimiter character (if any).
                 let delim =

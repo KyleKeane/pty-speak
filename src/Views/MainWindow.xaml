@@ -129,6 +129,15 @@
                     <MenuItem x:Name="MenuItem_PromptPathVerbosity_full_on_change"
                               x:FieldModifier="public"
                               Header="Full On _Change" />
+                    <MenuItem x:Name="MenuItem_PromptPathVerbosity_final_on_change"
+                              x:FieldModifier="public"
+                              Header="Final _Dir On Change, Full When Same" />
+                    <MenuItem x:Name="MenuItem_PromptPathVerbosity_full_on_change_silent"
+                              x:FieldModifier="public"
+                              Header="Full On Change, S_ilent When Same" />
+                    <MenuItem x:Name="MenuItem_PromptPathVerbosity_final_on_change_silent"
+                              x:FieldModifier="public"
+                              Header="Fina_l Dir On Change, Silent When Same" />
                 </MenuItem>
                 <!-- Cycle 48 post-PR-F (2026-05-13) — infrastructure
                      items (open data folder, edit config) lifted

@@ -329,8 +329,17 @@ list** and folds 0005's mechanism into it.
   predicted "trivially correct on the clean event stream" —
   R6a is purely the *trigger*, the slice + composition were
   already validated. **R6b — prompt-path verbosity: SHIPPED
-  & CI-green 2026-05-16 (#385), dogfood-pending** (matrix
-  `52-R6b`). The OSC-133 clean `;A`…`;B` prompt string (R2–R5)
+  & dogfood-PASSED 2026-05-16 (#385, matrix `52-R6b` ✅;
+  maintainer "this works"). R6b-followup (this-PR) added the
+  three additional on-change modes the maintainer requested
+  in the same dogfood — `FinalOnChangeElseFull` (the mirror)
+  + `SilentOnUnchangedFullOnChange` /
+  `SilentOnUnchangedFinalOnChange` (silent when unchanged) —
+  completing the {full,final} × {change,unchange,silent}
+  family; the announce-interrupts-output limitation the
+  maintainer also flagged is parked as deferred item 10
+  (explicitly NOT addressed now, maintainer's call).** The
+  OSC-133 clean `;A`…`;B` prompt string (R2–R5)
   removed the reason cmd/PowerShell were forced to the silent
   `Suppress` default. Maintainer decision: **keep `Suppress`
   as the per-shell default** (no daily-flow change — auto-drive
@@ -350,7 +359,9 @@ list** and folds 0005's mechanism into it.
   `Full` fallback for the new case. Manual-nav untouched (it
   already forces `FinalDirOnly` for PromptStart). **R6c clean
   SpeechCursor command items → R6d PS-diagnostics submenu**
-  (deferred item 7) remain; R6b's `52-R6b` dogfood gates R6c.
+  (deferred item 7) remain; R6b's `52-R6b` dogfood is **PASSED
+  → R6c unblocked** (R6b-followup rides the same `52-R6b`
+  matrix as a followup row, not a new gate).
 - **R7 — claude/other-shell adapter decision + Cycle closure
   audit** (= ADR 0005 Stage F).
 
@@ -551,6 +562,29 @@ would be premature.
    tuple-final seal as the screen-authoritative read and the
    R3c/R3e watermark composition (the load-bearing invariants
    R6a is built on).
+
+10. **Prompt-path announce interrupts the output read
+    (R6b follow-on).** Surfaced in the `52-R6b` dogfood
+    2026-05-16: when a non-`Suppress` prompt-path mode
+    narrates the prompt, that announce uses
+    `ActivityIds.output` + `MostRecent`, so it **interrupts**
+    a still-in-progress output read of the *previous*
+    command (the same supersede semantics as item 9, here
+    biting the prompt-vs-output boundary rather than
+    chunk-vs-chunk). The maintainer confirmed this is a
+    **known limitation, explicitly NOT to be addressed now**
+    ("better just noted as a future improvement … so we can
+    move forward") — it does not block R6b or its followup
+    (the modes themselves work; dogfood-passed). Likely
+    shares a fix with item 9 (queue-and-coalesce / an
+    activity-ID separation for prompt vs output so a prompt
+    announce defers behind an unfinished output read instead
+    of cutting it off). Park here; revisit with item 9 if
+    real-use friction prioritises it over the R6c–R7 primary
+    track. Any future work must preserve the `Suppress`
+    per-shell default (the daily flow is unchanged — this
+    only bites users who opt into an announcing prompt-path
+    mode).
 
 Each stage independently CI-gated and dogfood-validated. R1
 and R4 are the new structural gates that make the boundary

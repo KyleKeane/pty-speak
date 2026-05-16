@@ -1,7 +1,8 @@
 # Cycle 52 R5–R7 — PowerShell adapter playbook (START HERE)
 
 > **Status**: **R5 COMPLETE & VALIDATED; P1–P5 pruning
-> COMPLETE; R6 IN PROGRESS (2026-05-16, #369–#385).** R1–R4+
+> COMPLETE; R6 IN PROGRESS (2026-05-16, #369–#385 +
+> R6b-followup).** R1–R4+
 > R4c foundation + R5a/R5b shipped & R5b-dogfood-validated
 > (#1 risk resolved positive — see §4 R5c/R5d). P1–P5
 > pre-R6 pruning done (P1/P2/P4/P5 shipped; P3 no-op +
@@ -20,23 +21,30 @@
 > keep the authoritative tuple-final seal read, ADD progress
 > announces on output-quiescence during Executing, reusing
 > the validated R3c/R3e watermark. **R6b (prompt-path
-> verbosity) shipped & CI-green — DOGFOOD-PENDING
-> 2026-05-16 (#385, matrix `52-R6b`)**: maintainer decision
-> — keep `Suppress` as the per-shell default (no daily-flow
-> change; prompt still navigable in review) and ADD a new
-> selectable `FullOnChangeElseFinal` mode (full path on a
-> directory change / shell-switch, final-dir-only when
-> unchanged) alongside the existing always-`Full` /
-> always-`FinalDirOnly`. State lives in `SpeechCursor`
-> (`LastPromptStartPayload`, cleared by the shell-switch-only
-> `reset`); `trimPromptPath` stays pure (context-free `Full`
-> fallback). **Next within R6: R6c clean SpeechCursor command
+> verbosity) shipped & DOGFOOD-PASSED 2026-05-16 (#385,
+> matrix `52-R6b` ✅; maintainer "this works")**: kept
+> `Suppress` as the per-shell default (no daily-flow change;
+> prompt still navigable in review) and ADDED selectable
+> on-change modes. **R6b-followup (post-#385) added the
+> three more the maintainer requested in that same dogfood:
+> `FinalOnChangeElseFull` (mirror), `SilentOnUnchangedFull
+> OnChange` / `SilentOnUnchangedFinalOnChange` (silent when
+> unchanged)** — completing the {full,final} ×
+> {change,unchange,silent} family. State lives in
+> `SpeechCursor` (`LastPromptStartPayload`, cleared by the
+> shell-switch-only `reset`); `trimPromptPath` stays pure
+> (context-free non-garbage fallback). The maintainer-flagged
+> "prompt announce interrupts the output read" is parked as
+> ADR 0006 §"Deferred to R6+" item 10 (explicitly NOT
+> addressed now). **R6b's `52-R6b` gate is PASSED → R6c is
+> unblocked. Next within R6: R6c clean SpeechCursor command
 > items → R6d PowerShell-diagnostics submenu** — each its
-> own PR + dogfood (walking-skeleton; R6b's `52-R6b` dogfood
-> gates R6c). cmd announce-heuristic FREEZE still
-> stands (R6a/R6b do NOT touch it — R6a reuses the clean R3c
-> slice; R6b only adds an opt-in prompt-path mode). This file
-> stays the start-here for R6 and recovery.
+> own PR + dogfood (walking-skeleton; R6b-followup rides the
+> same `52-R6b` matrix as a followup row). cmd
+> announce-heuristic FREEZE still stands (R6a/R6b do NOT
+> touch it — R6a reuses the clean R3c slice; R6b/followup
+> only add opt-in prompt-path modes). This file stays the
+> start-here for R6 and recovery.
 >
 > **NEW / RECOVERED SESSION: this file is your start-here.**
 > It is written to be self-contained: if the originating chat

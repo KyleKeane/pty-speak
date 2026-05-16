@@ -100,7 +100,10 @@ let ``Empty or whitespace input returns None under every mode`` () =
         [ ShellPolicy.Suppress
           ShellPolicy.FinalDirOnly
           ShellPolicy.Full
-          ShellPolicy.FullOnChangeElseFinal ] do
+          ShellPolicy.FullOnChangeElseFinal
+          ShellPolicy.FinalOnChangeElseFull
+          ShellPolicy.SilentOnUnchangedFullOnChange
+          ShellPolicy.SilentOnUnchangedFinalOnChange ] do
         Assert.Equal(None, ShellPolicy.trimPromptPath mode "")
         Assert.Equal(None, ShellPolicy.trimPromptPath mode "   ")
 
@@ -113,6 +116,29 @@ let ``FullOnChangeElseFinal is a context-free Full fallback in trimPromptPath`` 
         Some "C:\\Users\\Kyle\\AppData\\Local\\>",
         ShellPolicy.trimPromptPath
             ShellPolicy.FullOnChangeElseFinal
+            "C:\\Users\\Kyle\\AppData\\Local\\>")
+
+[<Fact>]
+let ``the R6b-followup on-change modes are non-garbage context-free fallbacks`` () =
+    // Same contract as FullOnChangeElseFinal: a direct caller that
+    // does not do change-resolution gets a sensible value, never
+    // garbage / never None for non-empty input. The two modes whose
+    // change branch is Full fall back to verbatim; the final-dir
+    // one falls back to the FinalDirOnly trim.
+    Assert.Equal(
+        Some "C:\\Users\\Kyle\\AppData\\Local\\>",
+        ShellPolicy.trimPromptPath
+            ShellPolicy.FinalOnChangeElseFull
+            "C:\\Users\\Kyle\\AppData\\Local\\>")
+    Assert.Equal(
+        Some "C:\\Users\\Kyle\\AppData\\Local\\>",
+        ShellPolicy.trimPromptPath
+            ShellPolicy.SilentOnUnchangedFullOnChange
+            "C:\\Users\\Kyle\\AppData\\Local\\>")
+    Assert.Equal(
+        Some "Local>",
+        ShellPolicy.trimPromptPath
+            ShellPolicy.SilentOnUnchangedFinalOnChange
             "C:\\Users\\Kyle\\AppData\\Local\\>")
 
 // ---- trimPromptPath: FinalDirOnly ----------------------------------

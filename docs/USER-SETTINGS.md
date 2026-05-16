@@ -26,10 +26,15 @@ exposes:
 - **Per-shell verbosity / prompt-path overrides** (Cycle 45f) —
   `verbosity = "tuple_final" | "line_by_line" | "off"` and
   `prompt_path = "suppress" | "final_dir_only" | "full" |
-  "full_on_change"` under `[shell.<id>]`
-  (`full_on_change` — Cycle 52 R6b — narrates the full path when
-  the directory changed since the last prompt, final-dir-only when
-  unchanged; resets to full on a shell-switch). Runtime-togglable
+  "full_on_change" | "final_on_change" | "full_on_change_silent" |
+  "final_on_change_silent"` under `[shell.<id>]`
+  (the four on-change modes — Cycle 52 R6b + R6b-followup — are
+  context-aware: `full_on_change` = full path on a directory
+  change, final-dir-only when unchanged; `final_on_change` = the
+  mirror (final-dir on change, full when unchanged);
+  `full_on_change_silent` / `final_on_change_silent` = full /
+  final-dir on change, **silent** when unchanged; all reset to the
+  "changed" rendering on a shell-switch). Runtime-togglable
   via `View → Output Verbosity` / `View → Prompt Path`. Layer 3
   (menu) overlays Layer 2 (TOML)
   overlays Layer 1 (compiled defaults in
@@ -439,10 +444,14 @@ have no effect.
 - `verbosity` — `tuple_final` / `line_by_line` / `off` (Cycle
   45f; runtime-togglable via `View → Output Verbosity`)
 - `prompt_path` — `suppress` / `final_dir_only` / `full` /
-  `full_on_change` (Cycle 45f; `full_on_change` added Cycle 52
-  R6b — full path on a directory change, final-dir-only when
-  unchanged, resets to full on shell-switch; runtime-togglable
-  via `View → Prompt Path`)
+  `full_on_change` / `final_on_change` / `full_on_change_silent` /
+  `final_on_change_silent` (Cycle 45f; the four context-aware
+  on-change modes added Cycle 52 R6b + R6b-followup —
+  `full_on_change` = full on a dir change / final-dir when
+  unchanged, `final_on_change` = the mirror, the two `_silent`
+  variants = full / final-dir on change but silent when unchanged;
+  all reset to the "changed" rendering on a shell-switch;
+  runtime-togglable via `View → Prompt Path`)
 - `profiles = [...]` — per-shell profile-set override (Cycle 38b)
 
 Implementation pointer: `src/Terminal.Core/ShellPolicy.fs`

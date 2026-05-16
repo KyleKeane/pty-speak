@@ -29,9 +29,17 @@ and serves the decision-trail role this file used to overload.
 > screen reader via the `prompt` function even though
 > PSReadLine is auto-disabled; `echo hi`→"hi" clean; real
 > exit code; `;C` unreachable-under-screen-reader = the
-> final design, not a gap). **Next = R6 (feature unlock)
-> and/or P1–P5 pruning**; the cmd announce-heuristic FREEZE
-> still stands. Historical detail kept below for recovery.
+> final design, not a gap). **P1–P5 pruning COMPLETE; R6a
+> (hybrid progress streaming) + R6b (prompt-path verbosity)
+> + R6b-followup (3 more on-change modes) SHIPPED &
+> dogfood-PASSED (matrix `52-R6a`/`52-R6b` ✅, #383/#385 +
+> followup). Next = R6c (clean SpeechCursor command items)
+> → R6d (PS-diagnostics submenu) → R7 (claude + closure).**
+> The maintainer-flagged "prompt announce interrupts the
+> output read" is parked as ADR 0006 §"Deferred to R6+"
+> item 10 (NOT addressed now, maintainer's call). The cmd
+> announce-heuristic FREEZE still stands. Historical detail
+> kept below for recovery.
 > **The R1–R4 "foundation" dogfood** was signed off
 > 2026-05-16, gating (and now cleared for) R5.
 > **R4c (pre-R5, maintainer-chosen 2026-05-16)** completes

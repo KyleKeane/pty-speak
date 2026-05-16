@@ -541,7 +541,10 @@ let ``PromptStart with empty payload returns None under every mode`` () =
         [ ShellPolicy.Suppress
           ShellPolicy.FinalDirOnly
           ShellPolicy.Full
-          ShellPolicy.FullOnChangeElseFinal ] do
+          ShellPolicy.FullOnChangeElseFinal
+          ShellPolicy.FinalOnChangeElseFull
+          ShellPolicy.SilentOnUnchangedFullOnChange
+          ShellPolicy.SilentOnUnchangedFinalOnChange ] do
         Assert.Equal(None, SpeechCursor.renderEntryWithPolicy mode entry)
 
 [<Fact>]
@@ -551,7 +554,10 @@ let ``PromptStart with no payload returns None under every mode`` () =
         [ ShellPolicy.Suppress
           ShellPolicy.FinalDirOnly
           ShellPolicy.Full
-          ShellPolicy.FullOnChangeElseFinal ] do
+          ShellPolicy.FullOnChangeElseFinal
+          ShellPolicy.FinalOnChangeElseFull
+          ShellPolicy.SilentOnUnchangedFullOnChange
+          ShellPolicy.SilentOnUnchangedFinalOnChange ] do
         Assert.Equal(None, SpeechCursor.renderEntryWithPolicy mode entry)
 
 [<Fact>]
@@ -646,6 +652,68 @@ let ``FullOnChangeElseFinal resets to full path after SpeechCursor.reset`` () =
         snap ())
 
 // ---------------------------------------------------------------------
+// Cycle 52 R6b-followup — the three additional on-change modes.
+// Same auto-drive `onAppend` path; same `appendPrompt` helper.
+// ---------------------------------------------------------------------
+
+let private cursorWith (mode: ShellPolicy.PromptPathMode) : SpeechCursor.T =
+    SpeechCursor.create
+        { SpeechCursor.defaultParameters with PromptPath = mode }
+
+[<Fact>]
+let ``FinalOnChangeElseFull narrates final-dir on change, full when unchanged`` () =
+    let cursor = cursorWith ShellPolicy.FinalOnChangeElseFull
+    let history = freshHistory ()
+    let announce, snap = capture ()
+    appendPrompt history "C:\\Users\\Kyle\\Local>"
+    SpeechCursor.onAppend cursor history announce
+    // Same dir (unchanged) → full path.
+    appendPrompt history "C:\\Users\\Kyle\\Local>"
+    SpeechCursor.onAppend cursor history announce
+    // `cd` (changed) → final-dir-only.
+    appendPrompt history "C:\\Users\\Kyle\\Other>"
+    SpeechCursor.onAppend cursor history announce
+    Assert.Equal<(string * string) list>(
+        [ ("Local>", ActivityIds.output)
+          ("C:\\Users\\Kyle\\Local>", ActivityIds.output)
+          ("Other>", ActivityIds.output) ],
+        snap ())
+
+[<Fact>]
+let ``SilentOnUnchangedFullOnChange narrates full on change, nothing when unchanged`` () =
+    let cursor = cursorWith ShellPolicy.SilentOnUnchangedFullOnChange
+    let history = freshHistory ()
+    let announce, snap = capture ()
+    appendPrompt history "C:\\Users\\Kyle\\Local>"
+    SpeechCursor.onAppend cursor history announce
+    // Same dir (unchanged) → silent (no announce entry at all).
+    appendPrompt history "C:\\Users\\Kyle\\Local>"
+    SpeechCursor.onAppend cursor history announce
+    // `cd` (changed) → full path.
+    appendPrompt history "C:\\Users\\Kyle\\Other>"
+    SpeechCursor.onAppend cursor history announce
+    Assert.Equal<(string * string) list>(
+        [ ("C:\\Users\\Kyle\\Local>", ActivityIds.output)
+          ("C:\\Users\\Kyle\\Other>", ActivityIds.output) ],
+        snap ())
+
+[<Fact>]
+let ``SilentOnUnchangedFinalOnChange narrates final-dir on change, nothing when unchanged`` () =
+    let cursor = cursorWith ShellPolicy.SilentOnUnchangedFinalOnChange
+    let history = freshHistory ()
+    let announce, snap = capture ()
+    appendPrompt history "C:\\Users\\Kyle\\Local>"
+    SpeechCursor.onAppend cursor history announce
+    appendPrompt history "C:\\Users\\Kyle\\Local>"
+    SpeechCursor.onAppend cursor history announce
+    appendPrompt history "C:\\Users\\Kyle\\Other>"
+    SpeechCursor.onAppend cursor history announce
+    Assert.Equal<(string * string) list>(
+        [ ("Local>", ActivityIds.output)
+          ("Other>", ActivityIds.output) ],
+        snap ())
+
+// ---------------------------------------------------------------------
 // Cycle 49 PR-D — renderEntryForManualNav decouples nav from narration
 // ---------------------------------------------------------------------
 
@@ -674,7 +742,10 @@ let ``manual-nav render still returns None for PromptStart with empty payload`` 
         [ ShellPolicy.Suppress
           ShellPolicy.FinalDirOnly
           ShellPolicy.Full
-          ShellPolicy.FullOnChangeElseFinal ] do
+          ShellPolicy.FullOnChangeElseFinal
+          ShellPolicy.FinalOnChangeElseFull
+          ShellPolicy.SilentOnUnchangedFullOnChange
+          ShellPolicy.SilentOnUnchangedFinalOnChange ] do
         Assert.Equal(None, SpeechCursor.renderEntryForManualNav mode empty)
         Assert.Equal(None, SpeechCursor.renderEntryForManualNav mode none)
 

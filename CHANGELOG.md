@@ -14669,8 +14669,64 @@ the path fired and which effective mode was chosen. Tests:
 changed=full, reset=full), `ConfigTests` (`full_on_change`
 resolves). Locally unverifiable (no sandbox `dotnet`);
 F# structure re-read twice before push. NVDA matrix row
-`52-R6b` added — **dogfood-pending; gates R6c** per
-walking-skeleton.
+`52-R6b` added. **Dogfood-validated 2026-05-16** (matrix
+`52-R6b` ✅; maintainer: "this works") — gate cleared,
+R6c unblocked. One known limitation recorded (announcing
+the prompt interrupts an in-progress output read; ADR 0006
+§"Deferred to R6+" item 10) — explicitly NOT addressed now
+(maintainer's call). The three additional on-change modes
+the maintainer requested in the same dogfood ship as the
+R6b-followup entry below.
+
+### Cycle 52 R6b-followup (2026-05-16): three additional on-change prompt-path modes
+
+Maintainer request from the `52-R6b` dogfood: alongside the
+R6b `full_on_change` (full path on a directory change,
+final-dir-only when unchanged), add the rest of the
+{full,final} × {change, unchanged→{final|full|silent}}
+family. New `PromptPathMode` cases + `prompt_path` tokens:
+
+- `final_on_change` (`FinalOnChangeElseFull`) — the **mirror**
+  of `full_on_change`: final-dir-only on a change, full path
+  when unchanged.
+- `full_on_change_silent` (`SilentOnUnchangedFullOnChange`) —
+  full path on a change, **silent** when unchanged.
+- `final_on_change_silent` (`SilentOnUnchangedFinalOnChange`)
+  — final-dir-only on a change, **silent** when unchanged.
+
+The default stays `Suppress` for every shell (no daily-flow
+change); these are opt-in via `[shell.<id>] prompt_path` or
+`View → Prompt Path`. Same stateful resolution as R6b:
+`SpeechCursor.resolveOnChange` (now mode-parametric) maps
+`(mode, changed?)` → a concrete `Full` / `FinalDirOnly` /
+`Suppress` *before* the pure `ShellPolicy.trimPromptPath`,
+using the per-cursor `LastPromptStartPayload` cleared by the
+shell-switch-only `reset`; the "silent when unchanged" cases
+resolve to `Suppress` (the existing PromptStart arm already
+maps `Suppress → None`). `trimPromptPath`'s context-free
+arms for the new modes stay non-garbage (verbatim `Full`, or
+the `FinalDirOnly` trim) for any direct caller. Wired through
+`Config` (3 new tokens + warning-list + embedded config-doc
+comment), `HotkeyRegistry` (3 new `PromptPathVerbosity`
+options + description), `Program.fs` (getter/setter/cue —
+the exhaustive matches are compiler-enforced), the XAML menu
+(3 new `MenuItem_PromptPathVerbosity_*`), and
+`docs/USER-SETTINGS.md`.
+
+Diagnostic trigger (CLAUDE.md "new features ship with their
+triggers"): the existing on-change resolve log now also
+carries `Mode={Mode}` and `Resolved=` covers `Suppress`, so
+a `Ctrl+Shift+D` bundle shows which mode resolved and to
+what. Tests: `ShellPolicyTests` (all-mode no-garbage +
+context-free fallback for the 3), `SpeechCursorTests`
+(per-mode changed/unchanged/silent via the auto-drive
+`onAppend` path; coverage lists extended), `ConfigTests`
+(the 3 tokens resolve). Locally unverifiable (no sandbox
+`dotnet`); F# structure re-read twice before push. NVDA
+matrix row `52-R6b-followup` added (rides the `52-R6b`
+gate). The announce-interrupts-output limitation is **not**
+addressed here — parked as ADR 0006 §"Deferred to R6+"
+item 10 per the maintainer's explicit call.
 
 ## [0.0.1-preview.18] — 2026-04-28
 

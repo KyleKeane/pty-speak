@@ -5269,7 +5269,12 @@ module Program =
                     | ShellPolicy.Suppress -> "suppress"
                     | ShellPolicy.FinalDirOnly -> "final_dir_only"
                     | ShellPolicy.Full -> "full"
-                    | ShellPolicy.FullOnChangeElseFinal -> "full_on_change")
+                    | ShellPolicy.FullOnChangeElseFinal -> "full_on_change"
+                    | ShellPolicy.FinalOnChangeElseFull -> "final_on_change"
+                    | ShellPolicy.SilentOnUnchangedFullOnChange ->
+                        "full_on_change_silent"
+                    | ShellPolicy.SilentOnUnchangedFinalOnChange ->
+                        "final_on_change_silent")
                 (fun target ->
                     let next =
                         match target with
@@ -5277,6 +5282,12 @@ module Program =
                         | "full" -> Some ShellPolicy.Full
                         | "full_on_change" ->
                             Some ShellPolicy.FullOnChangeElseFinal
+                        | "final_on_change" ->
+                            Some ShellPolicy.FinalOnChangeElseFull
+                        | "full_on_change_silent" ->
+                            Some ShellPolicy.SilentOnUnchangedFullOnChange
+                        | "final_on_change_silent" ->
+                            Some ShellPolicy.SilentOnUnchangedFinalOnChange
                         | "suppress" -> Some ShellPolicy.Suppress
                         | _ -> None
                     match next with
@@ -5303,6 +5314,12 @@ module Program =
                             | ShellPolicy.Full -> "Prompt path full."
                             | ShellPolicy.FullOnChangeElseFinal ->
                                 "Prompt path full on directory change."
+                            | ShellPolicy.FinalOnChangeElseFull ->
+                                "Prompt path final directory on change, full when unchanged."
+                            | ShellPolicy.SilentOnUnchangedFullOnChange ->
+                                "Prompt path full on change, silent when unchanged."
+                            | ShellPolicy.SilentOnUnchangedFinalOnChange ->
+                                "Prompt path final directory on change, silent when unchanged."
                         window.TerminalSurface.Announce(
                             cue, ActivityIds.logToggle))
         multiStateBindings.[HotkeyRegistry.PromptPathVerbosity] <-

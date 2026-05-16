@@ -759,8 +759,11 @@ module HotkeyRegistry =
               [ { OptionId = "suppress"; DisplayName = "Suppress" }
                 { OptionId = "final_dir_only"; DisplayName = "Final Directory Only" }
                 { OptionId = "full"; DisplayName = "Full" }
-                { OptionId = "full_on_change"; DisplayName = "Full On Directory Change" } ]
-            Description = "Per-shell prompt-path verbosity on PromptStart marker (Cycle 45f; Cycle 52 R6b added 'Full On Directory Change' — full path when the dir changed, final-dir-only when unchanged). Same scoping as Output Verbosity." } ]
+                { OptionId = "full_on_change"; DisplayName = "Full On Directory Change" }
+                { OptionId = "final_on_change"; DisplayName = "Final Dir On Change, Full When Same" }
+                { OptionId = "full_on_change_silent"; DisplayName = "Full On Change, Silent When Same" }
+                { OptionId = "final_on_change_silent"; DisplayName = "Final Dir On Change, Silent When Same" } ]
+            Description = "Per-shell prompt-path verbosity on PromptStart marker (Cycle 45f; Cycle 52 R6b added 'Full On Directory Change'; R6b-followup added the mirror 'Final Dir On Change, Full When Same' and the two silent-when-unchanged variants — context-aware: one rendering when the dir changed, another when unchanged). Same scoping as Output Verbosity." } ]
 
     /// Look up the `MultiStateDef` for a `MultiStateCommand`.
     /// Throws `KeyNotFoundException` if missing — pinned by
