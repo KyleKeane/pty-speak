@@ -14534,6 +14534,36 @@ maintainer's next `Ctrl+Shift+D` will show a populated
 `--- CANONICAL CORPUS RESULTS ---` section (diagnostic,
 behaviour-neutral). Playbook §5 P4 marked done.
 
+### Cycle 52 P5 (2026-05-16): comment-rot sweep — one genuine fix; broad rewrite (rightly) not done
+
+Last of the P1–P5 pre-R6 prunings; right-sized like P3.
+Audited with the CLAUDE.md cycle-closure rot patterns
+(`stays in source`, `deletion in PR`, `until PR-`, stale
+`TODO`/`FIXME`, `SessionTuple`-as-if-current, present-tense-
+as-if-live pathway/`LinearTextStream`) — **all grep-empty**
+except **one** genuine offender: the `PassThroughProfile.fs`
+header comment asserted "the pathway owns the algorithm" in
+present tense while the *same* comment correctly stated the
+semantics moved to ContentHistory post-Cycle-45c (internally
+contradictory and misleading to a fresh reader). Fixed
+surgically — comment-only, reworded to retired-aware tense
+keeping the accurate ContentHistory mapping + the Layer 3/4
+framing.
+
+The remaining `StreamPathway`/`LinearTextStream` mentions are
+**accurate retired-machinery history** (the cycle-opening
+audit itself classified them "historical, keep"); a broad
+rewrite across ~8 core files would be negative-value churn
+(destroys archaeological context, high locally-unverifiable
+surface for zero correctness gain) and is **deliberately not
+done**. The dangerous transitional rot the discipline targets
+was already kept clean by the prior cycle-closure audits + the
+in-place comment corrections shipped with R4c/P1/P2. No
+behaviour change; `pathwayPump` naming unchanged (load-bearing
+routing, not rot). **P1–P5 pre-R6 pruning sequence complete**
+(P1/P2/P4/P5 shipped; P3 → no-op + deferred P3b). Playbook §5
+P5 marked done.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

@@ -335,17 +335,29 @@ PowerShell adapter is built against a pruned tree:
   `--- CANONICAL CORPUS RESULTS ---` section instead of the
   `corpus skipped: TOML parse error` `[WRN]` — diagnostic,
   behaviour-neutral, not a blocking manual test.
-- **P5 — comment-rot sweep (docs-class, low-risk).** Stale
-  references to deleted concepts in *comments only*:
-  `StreamPathway`/`TuiPathway`/`DisplayPathway`/
-  `LinearTextStream`/`SessionTuple`(old IOCell name)/
-  `selectPathwayForShell` across `Program.fs`,
-  `Config.fs`, `ContentHistory.fs`, `CanonicalState.fs`,
-  `Diagnostics.fs`. No runtime impact; fold into whichever
-  PR touches each file, or one dedicated sweep. The
-  `pathwayPump` *naming* stays for now (the pump is load-
-  bearing notification routing; only the comments describing
-  the deleted pathway layer are wrong).
+- **P5 — comment-rot sweep (DONE 2026-05-16, #382;
+  right-sized like P3).** Audited with the CLAUDE.md
+  cycle-closure rot patterns — `stays in source` /
+  `deletion in PR` / `until PR-` / stale-`TODO`/`FIXME` /
+  `SessionTuple`-as-if-current / present-tense-as-if-live
+  pathway·LinearTextStream — **all grep-empty** except
+  **one** genuine hit: `PassThroughProfile.fs` header said
+  "the pathway owns the algorithm" in present tense while
+  the same comment correctly noted the semantics moved to
+  ContentHistory post-Cycle-45c (internally contradictory /
+  misleading). Fixed surgically (comment-only; reworded to
+  retired-aware tense + the accurate ContentHistory
+  mapping). The remaining `StreamPathway`/`LinearTextStream`
+  mentions are **accurate retired-machinery history**
+  (the audit itself classified them "historical, keep") —
+  a broad rewrite would be negative-value churn (loses
+  archaeological context; high locally-unverifiable surface
+  across ~8 core files for zero correctness gain) and is
+  explicitly **NOT** done. The dangerous transitional rot
+  the discipline targets was already kept clean by the
+  cycle-closure audits + the R4c/P1/P2 in-place comment
+  corrections. `pathwayPump` naming unchanged (load-bearing
+  routing; not rot).
 
 **Vestigial screen-row plumbing** in `SessionModel.fs`
 (`oldPromptRowIndex`/`newPromptRowIndex`/`snapshot: Cell[][]`,
