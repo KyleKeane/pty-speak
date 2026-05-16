@@ -1013,53 +1013,26 @@ module Program =
         // bailed, shell crashed, etc.). It distinguishes a
         // command Enter from a sub-prompt-response Enter.
         //
-        // `lastEnterSeq` = ContentHistory.latestSeq captured at
-        // the most recent "user just acted, a result is about to
-        // print" boundary: every command Enter, every sub-prompt
-        // response Enter, AND every SubPromptIdle (covers single-
-        // key Y/N prompts like test-04 — no response Enter). The
-        // tuple-final announce slices from here, so the user
-        // never re-hears the command echo / preamble / question
-        // they already heard.
-        //
         // `commandEnterSeq` = ContentHistory.latestSeq captured
         // ONLY at the top-level command Enter (not a sub-prompt
         // response — the command's whole output region begins at
         // the original command Enter). Threaded into
         // SessionModel.extractIOCell so the persisted
         // command/output split is immune to history-scroll
-        // accumulation.
-        //
-        // Both reset to -1L on shell hot-switch (see
+        // accumulation. Resets to -1L on shell hot-switch (see
         // `ContentHistory.reset` call site in `switchToShell`).
+        //
+        // R3b (ADR 0005/0006) retired the `lastEnterSeq` announce
+        // watermark and the PR-Y / PR-AB sub-prompt-question /
+        // command-echo strips: the tuple-final announce now speaks
+        // the R2-sealed IOCell's OutputText directly (already
+        // cleanly ;B-anchored by extractIOCell), so no
+        // announce-side watermark or strip state remains.
+        // `awaitingSubPromptEnter` stays — it gates
+        // `commandEnterSeq` so a sub-prompt-response Enter does
+        // not move the top-level command watermark.
         let mutable awaitingSubPromptEnter : bool = false
-        let mutable lastEnterSeq : int64 = -1L
         let mutable commandEnterSeq : int64 = -1L
-        // Cycle 51 PR-Y — the sub-prompt question we last spoke at
-        // SubPromptIdle. For a single-key prompt (test-04 — no
-        // response Enter) the question row has no terminating
-        // newline when SubPromptIdle fires, so ContentHistory
-        // hasn't sealed it into an entry yet; `lastEnterSeq`
-        // captured then lands on the newline *before* the question
-        // and the tuple-final slice re-includes it. We strip this
-        // exact already-spoken prefix off the front of the delta.
-        // Empty when no sub-prompt is outstanding; cleared on every
-        // top-level command Enter + shell hot-switch.
-        let mutable lastSubPromptAnnounce : string = ""
-        // Cycle 51 PR-AB — the just-submitted top-level command
-        // text (UserInputBuffer.Capture() at the CR keystroke).
-        // `lastEnterSeq` is captured synchronously at CR; when
-        // the user types fast and hits Enter, cmd's echo of the
-        // command round-trips through the PTY and lands in
-        // ContentHistory at Seq > lastEnterSeq, so the tuple-final
-        // slice `[lastEnterSeq, tail]` begins with the command
-        // echo line instead of the output. We strip that exact
-        // already-on-screen command line off the front of the
-        // delta (same shape as PR-Y's question strip). Empty when
-        // no top-level command is outstanding; overwritten on
-        // every top-level command Enter; cleared on shell
-        // hot-switch.
-        let mutable lastSubmittedCommand : string = ""
         // Cycle 51 PR-AC — set true by `switchToShell` after a
         // shell hot-switch; consumed on the first post-switch
         // `PromptStart` to speak the new shell's startup banner.
@@ -1788,15 +1761,6 @@ module Program =
                             raiseTextChanged ()
                             lastAnnouncedText <- toSay
                             lastAnnouncedSeq <- ContentHistory.latestSeq contentHistory
-                            // Cycle 51 PR-Y — store ONLY the
-                            // question line (not the full
-                            // preamble+question). The tuple-final
-                            // slice begins at the question
-                            // (watermark sits just before it),
-                            // never at the preamble, so the
-                            // post-response strip must match the
-                            // question alone.
-                            lastSubPromptAnnounce <- questionLine
                         let readyEvent =
                             OutputEvent.create
                                 SemanticCategory.ReadyForInput
@@ -1804,23 +1768,17 @@ module Program =
                                 "shell-interaction-sub-prompt"
                                 ""
                         OutputDispatcher.dispatch readyEvent
-                    // Cycle 51 PR-X — Seq-watermark bookkeeping.
-                    // At SubPromptIdle the question has just been
-                    // announced; advance `lastEnterSeq` so the
-                    // tuple-final delta starts AFTER the question
-                    // (this is what fixes single-key Y/N prompts
-                    // like test-04, which have NO response
-                    // EnterPressed — the byte is consumed by cmd
-                    // without `\r`). The command / sub-prompt-
-                    // response EnterPressed watermark is set in
-                    // the byte-write CR branch. PromptDetected
-                    // clears the flag in case the user never
-                    // responded (script bailed mid sub-prompt).
+                    // R3b (ADR 0005/0006) — awaitingSubPromptEnter
+                    // bookkeeping. Gates `commandEnterSeq` so a
+                    // sub-prompt-response Enter doesn't move the
+                    // top-level command watermark; PromptDetected
+                    // clears it if the user never responded
+                    // (script bailed mid sub-prompt). The PR-X
+                    // `lastEnterSeq` announce-watermark capture
+                    // here was retired with the delta announce.
                     match outcome.Trigger with
                     | ShellInteraction.SubPromptIdle _ when isSubPromptTransition ->
                         awaitingSubPromptEnter <- true
-                        lastEnterSeq <-
-                            ContentHistory.latestSeq contentHistory
                     | ShellInteraction.PromptDetected _ ->
                         awaitingSubPromptEnter <- false
                     | ShellInteraction.EnterPressed _ when awaitingSubPromptEnter ->
@@ -2121,106 +2079,31 @@ module Program =
             // both streaming AND tuple-finalise are silent —
             // SpeechCursor manual navigation is the only way to
             // hear output.
-            // Cycle 51 PR-X — the audible tuple-final delta is the
-            // ContentHistory slice from `lastEnterSeq` (the most
-            // recent "user acted, a result is about to print"
-            // watermark — command Enter / sub-prompt-response
-            // Enter / sub-prompt question shown) to the tail,
-            // minus the trailing next-prompt path. Immune to
-            // history-scroll accumulation by construction (every
-            // Up/Down redraw sits at Seq < lastEnterSeq), and the
-            // user never re-hears the command echo / preamble /
-            // sub-prompt question they already heard. NB this is
-            // the ANNOUNCE delta; the persisted IOCell keeps the
-            // full command output (SessionModel.extractIOCell with
-            // `commandEnterSeq`).
+            // R3b (ADR 0005/0006) — the tuple-final announce is
+            // the R2-sealed IOCell's OutputText. extractIOCell's
+            // ;B-anchored arm already produced a clean
+            // command/output split (the prompt path + command
+            // echo are excluded by construction via the
+            // CommandStart marker), so the PR-X `lastEnterSeq`
+            // slice, the `MatchedRowText` EndsWith next-prompt
+            // trim, and the PR-Y / PR-AB sub-prompt-question /
+            // command-echo strips are all retired — no
+            // announce-side watermark or strip state remains.
+            // Gated on `TupleFinalOnly` (under LineByLine the
+            // per-TextSpan announces already covered the output;
+            // under Off both are silent — SpeechCursor only).
+            // The pre-first-prompt shell banner is NOT a finalised
+            // cell, so it stays on the separate PR-AA/AC
+            // `bannerAnnounce` path below (ADR 0006 R3 names only
+            // PR-AB/X/Y for deletion).
             let tupleFinaliseAnnounce =
                 match finalisedOpt, currentShellPolicy.Streaming with
-                | Some _, ShellPolicy.TupleFinalOnly ->
-                    // Cycle 51 PR-AA — when no command Enter has
-                    // happened yet (`lastEnterSeq < 0L`) the
-                    // finalising cell is the shell's startup /
-                    // post-switch banner ("Microsoft Windows
-                    // [Version …]"); slice from the start (0L) so
-                    // it gets spoken. PR-X's `>= 0L` guard
-                    // suppressed it entirely (regression the
-                    // maintainer caught: "when I switched to
-                    // command prompt it no longer reads the
-                    // banner"). Normal commands use the
-                    // command-Enter watermark, unchanged.
-                    let watermark =
-                        if lastEnterSeq >= 0L then lastEnterSeq else 0L
-                    let raw =
-                        ContentHistory.sliceText
-                            contentHistory watermark System.Int64.MaxValue
-                    let withoutNextPrompt =
-                        match augmented.MatchedRowText with
-                        | Some p when not (System.String.IsNullOrEmpty p)
-                                      && raw.EndsWith(p) ->
-                            raw.Substring(0, raw.Length - p.Length)
-                        | _ -> raw
-                    let delta =
-                        let d =
-                            (withoutNextPrompt.TrimStart('\r', '\n'))
-                                .TrimEnd('\r', '\n')
-                        // Cycle 51 PR-Y — for a single-key
-                        // sub-prompt the watermark is stuck before
-                        // the question (the question row hadn't
-                        // sealed into a ContentHistory entry when
-                        // SubPromptIdle fired, so latestSeq pointed
-                        // at the newline before it), so the slice
-                        // re-includes the question the user already
-                        // heard. Drop the exact already-spoken
-                        // question + the inline single-key response
-                        // char, through the first newline after it.
-                        // No-op for typed-Enter sub-prompts
-                        // (test-02 — the response Enter re-captured
-                        // the watermark past the question) and for
-                        // plain commands (no outstanding question).
-                        let afterQuestion =
-                            if not (System.String.IsNullOrEmpty lastSubPromptAnnounce)
-                               && d.StartsWith(lastSubPromptAnnounce) then
-                                let nl =
-                                    d.IndexOf('\n', lastSubPromptAnnounce.Length)
-                                let stripped =
-                                    if nl >= 0 then
-                                        (d.Substring(nl + 1)).TrimStart('\r', '\n')
-                                    else ""
-                                log.LogInformation(
-                                    "PR-Y stripped already-spoken sub-prompt question. QuestionLen={QLen} RawDeltaLen={RawLen} StrippedLen={StrLen}",
-                                    lastSubPromptAnnounce.Length, d.Length, stripped.Length)
-                                stripped
-                            else d
-                        // Cycle 51 PR-AB — fast-type race: when the
-                        // user types a command quickly and hits
-                        // Enter, the CR watermark is captured before
-                        // cmd's echo of the command round-trips
-                        // through the PTY, so the slice leads with
-                        // the command line, not its output. Drop
-                        // that exact already-on-screen command echo
-                        // through the first newline after it. No-op
-                        // when the user typed slowly (echo Seq <
-                        // watermark → slice already starts at the
-                        // output) and for sub-prompt deltas (the
-                        // command echo is far before the watermark).
-                        if not (System.String.IsNullOrEmpty lastSubmittedCommand)
-                           && afterQuestion.StartsWith(lastSubmittedCommand) then
-                            let nl =
-                                afterQuestion.IndexOf(
-                                    '\n', lastSubmittedCommand.Length)
-                            let stripped =
-                                if nl >= 0 then
-                                    (afterQuestion.Substring(nl + 1))
-                                        .TrimStart('\r', '\n')
-                                else ""
-                            log.LogInformation(
-                                "PR-AB stripped fast-type command echo. CmdLen={CmdLen} PreStripLen={PreLen} StrippedLen={StrLen}",
-                                lastSubmittedCommand.Length,
-                                afterQuestion.Length, stripped.Length)
-                            stripped
-                        else afterQuestion
-                    if System.String.IsNullOrWhiteSpace delta then None
-                    else Some delta
+                | Some cell, ShellPolicy.TupleFinalOnly ->
+                    let body =
+                        (cell.OutputText.TrimStart('\r', '\n'))
+                            .TrimEnd('\r', '\n')
+                    if System.String.IsNullOrWhiteSpace body then None
+                    else Some body
                 | _ -> None
             // Cycle 45f — pass `MatchedRowText` as the PromptStart
             // marker's payload so SpeechCursor.renderEntryWithPolicy
@@ -2410,13 +2293,13 @@ module Program =
                         else text.Substring(text.Length - OutputAnnounceCapChars)
                     if toSay.Length < text.Length then
                         log.LogInformation(
-                            "PR-X tuple-final delta truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
+                            "R3b tuple-final announce truncated. OriginalLen={Orig} CappedLen={Capped} Cap={Cap}",
                             text.Length, toSay.Length, OutputAnnounceCapChars)
                     log.LogInformation(
-                        "PR-X tuple-final delta. PreambleSeq={PreambleSeq} DeltaLen={Len}",
-                        lastEnterSeq, toSay.Length)
+                        "R3b tuple-final announce (sealed IOCell OutputText). Len={Len}",
+                        toSay.Length)
                     log.LogDebug(
-                        "PR-X tuple-final delta body. Announce={Announce}",
+                        "R3b tuple-final announce body. Announce={Announce}",
                         toSay)
                     window.TerminalSurface.Announce(toSay, ActivityIds.output)
                     // Cycle 49 PR-C — invalidate UIA Text-pattern
@@ -4437,19 +4320,7 @@ module Program =
                                 "UserInputBuffer captured on Enter: Length={Length} Text={Text}",
                                 captured.Length, captured)
                             // Cycle 51 PR-X — capture the
-                            // command-Enter Seq watermark. This is
-                            // the exact ContentHistory boundary
-                            // between everything the user composed
-                            // at the prompt (incl. every Up/Down
-                            // history-recall redraw cmd reprints in
-                            // place — they accumulate linearly in
-                            // ContentHistory) and what the command
-                            // then produces.
-                            //
-                            // `lastEnterSeq` advances on EVERY Enter
-                            // (top-level command AND sub-prompt
-                            // response) and drives the tuple-final
-                            // delta announce.
+                            // command-Enter Seq watermark.
                             // `commandEnterSeq` advances ONLY on the
                             // top-level command Enter — a
                             // sub-prompt-response Enter must not move
@@ -4459,26 +4330,17 @@ module Program =
                             // original command Enter. It is threaded
                             // into SessionModel.extractIOCell so the
                             // persisted command/output split is
-                            // immune to the history-scroll
-                            // accumulation.
-                            lastEnterSeq <-
-                                ContentHistory.latestSeq contentHistory
+                            // immune to history-scroll accumulation.
+                            // R3b (ADR 0005/0006) — the PR-X
+                            // `lastEnterSeq` announce watermark and
+                            // the PR-Y / PR-AB strip state were
+                            // retired; the tuple-final announce now
+                            // speaks the sealed IOCell OutputText.
                             if not awaitingSubPromptEnter then
                                 commandEnterSeq <-
                                     ContentHistory.latestSeq contentHistory
-                                // Cycle 51 PR-Y — a fresh top-level
-                                // command starts: any outstanding
-                                // sub-prompt question is stale.
-                                lastSubPromptAnnounce <- ""
-                                // Cycle 51 PR-AB — remember the
-                                // command text so the tuple-final
-                                // delta can strip its echo if the
-                                // fast-type race put it inside the
-                                // slice window.
-                                lastSubmittedCommand <- captured.Trim()
                             shellInteractionLog.LogInformation(
-                                "PR-X preamble watermark. PreambleSeq={PreambleSeq} CommandEnterSeq={CommandEnterSeq} SubPromptResponse={SubPromptResponse}",
-                                lastEnterSeq,
+                                "R3b command-Enter watermark. CommandEnterSeq={CommandEnterSeq} SubPromptResponse={SubPromptResponse}",
                                 commandEnterSeq,
                                 awaitingSubPromptEnter)
                             recordTransition
@@ -4851,16 +4713,16 @@ module Program =
                                         // skip narration.
                                         lastAnnouncedSeq <- -1L
                                         lastAnnouncedText <- ""
-                                        // Cycle 51 PR-X — the
-                                        // Seq watermarks reset
+                                        // R3b (ADR 0005/0006) —
+                                        // commandEnterSeq resets
                                         // with ContentHistory (a
                                         // stale Seq would slice
                                         // garbage from the fresh
-                                        // shell's history).
-                                        lastEnterSeq <- -1L
+                                        // shell's history). The
+                                        // PR-X lastEnterSeq +
+                                        // PR-Y/PR-AB strip state
+                                        // were retired.
                                         commandEnterSeq <- -1L
-                                        lastSubPromptAnnounce <- ""
-                                        lastSubmittedCommand <- ""
                                         // Cycle 51 PR-AC — speak
                                         // the new shell's banner on
                                         // its first prompt (the

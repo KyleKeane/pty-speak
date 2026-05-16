@@ -175,10 +175,25 @@ list** and folds 0005's mechanism into it.
   `CmdAdapter` (with the deferred R1.2 heuristic-namespace
   move) is a structural follow-on (R3c / R4-purify), behaviour
   first per the R1 precedent. **R3b — scaffolding deletion
-  (next):** delete the PR-X/Y/AA/AB announce-path
-  compensations and make the tuple-final announce
-  marker/Seq-driven like R2's `;B`-anchored `extractIOCell`
-  arm (the natural fix-home for KI-R2-1).
+  (implemented 2026-05-16, dogfood-pending):** the
+  tuple-final announce now speaks the R2-sealed IOCell
+  `OutputText` (extractIOCell's `;B`-anchored split);
+  PR-X (`lastEnterSeq`) / PR-Y / PR-AB deleted (≈ −200/+60
+  LOC, net-subtractive per this ADR's stated R3 shape) —
+  the structural fix for KI-R2-1. `commandEnterSeq` +
+  `awaitingSubPromptEnter` kept (load-bearing for
+  extractIOCell's split, not announce compensations).
+  **Scope refinement:** ADR R3 names only PR-AB/X/Y;
+  **PR-AA/AC banner deliberately preserved** (the
+  pre-first-prompt banner is not a finalised cell, so
+  sealed-`OutputText` can't carry it — deleting it
+  re-introduces the maintainer-flagged banner-silence
+  regression; orthogonal to the KI-R2-1 command-delta
+  fragility). Maintainer chose full deletion in one PR
+  (2026-05-16) accepting the sub-prompt re-derivation
+  risk; dogfood is the gate. R3c (heuristic→adapter
+  physical relocation + R1.2 namespace move) remains the
+  structural follow-on.
 - **R4 — purify + enforce.** Extend the existing portability-
   lint CI job to assert `Terminal.Core` has no shell strings
   / no WPF / no P/Invoke. **This is the enforcement that

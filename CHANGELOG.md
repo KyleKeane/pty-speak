@@ -13953,6 +13953,50 @@ shell-switch coordinator) — dogfood-gated, the diagnostic logs are
 the triage surface. The PR-X/Y/AA/AB announce-path compensation
 *deletion* is the separate R3b PR.
 
+### Cycle 52 R3b (2026-05-16): retire announce-path compensations — marker-driven tuple-final announce
+
+Second half of R3 (ADR 0005 Stage C / ADR 0006 R3) — the
+**scaffolding deletion**. The tuple-final announce now speaks the
+R2-sealed IOCell's `OutputText` directly. Because `extractIOCell`'s
+`;B`-anchored arm already produces a clean command/output split
+(prompt path + command echo excluded by construction via the
+shell-emitted CommandStart marker), the entire announce-side
+compensation pile is retired:
+
+- **PR-X** `lastEnterSeq` watermark + the `[lastEnterSeq, tail]`
+  slice and its `MatchedRowText` `EndsWith` next-prompt trim — the
+  exact mechanism behind **KI-R2-1** (the volume-triggered
+  path-leak). Fixed by construction: a Seq-sliced IOCell field has
+  no `EndsWith` heuristic to misfire.
+- **PR-Y** `lastSubPromptAnnounce` already-spoken-question strip.
+- **PR-AB** `lastSubmittedCommand` fast-type command-echo strip.
+
+Net-subtractive (≈ −200 / +60 LOC in `Program.fs`) — the brittle
+parts leave the core, per ADR 0006's stated R3 shape. `commandEnterSeq`
+and `awaitingSubPromptEnter` are **kept** (load-bearing: they feed
+`extractIOCell`'s split and gate it against sub-prompt-response
+Enters — not announce compensations). The 800-char audible cap is
+**kept** (a channel concern, not a compensation). The sub-prompt
+*question* real-time announce is **kept** (an affordance, not the
+PR-Y *strip*).
+
+**Scope refinement (flagged):** ADR 0006 R3 names only **PR-AB/X/Y**
+for deletion. **PR-AA/AC (the pre-first-prompt shell banner) is
+deliberately preserved** — the banner is not a finalised cell, so
+sealed-`OutputText` can't carry it; deleting it would silently
+re-introduce the maintainer-flagged "switch no longer reads the
+banner" regression, and it is orthogonal to the KI-R2-1
+command-delta fragility.
+
+Per the maintainer's 2026-05-16 decision (full deletion in one PR):
+sub-prompt cells now announce their `OutputText`, which may
+re-include the just-spoken sub-prompt question — the accepted
+single-step re-derivation risk, **dogfood-gated** (test-02 / test-04
+double-speech is the thing to listen for). Diagnostics: `R3b
+tuple-final announce (sealed IOCell OutputText). Len=…` (Info),
+body at Debug, plus `R3b command-Enter watermark …`. No unit seam
+(Program.fs composition-root path).
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
