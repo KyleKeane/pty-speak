@@ -194,9 +194,31 @@ list** and folds 0005's mechanism into it.
   regression; orthogonal to the KI-R2-1 command-delta
   fragility). Maintainer chose full deletion in one PR
   (2026-05-16) accepting the sub-prompt re-derivation
-  risk; dogfood is the gate. R3c (heuristic→adapter
-  physical relocation + R1.2 namespace move) remains the
-  structural follow-on.
+  risk; dogfood is the gate.
+  **R3c — spoken-watermark (done 2026-05-16, dogfood-pending):**
+  the R1–R4 foundation dogfood surfaced exactly the accepted
+  risk (#2 sub-prompt question re-read) plus a banner
+  regression (#1: R3b's deletion of the old PR-AA
+  `lastEnterSeq<0` path left fresh-launch with no banner
+  mechanism). Root cause = R3b substituted "tuple-final =
+  `cell.OutputText` verbatim", ignoring the spoken-watermark.
+  R3c re-wires the announce to the pre-existing
+  `SpeechCursor.LastSpokenSeq` / `lastAnnouncedSeq`
+  primitive: tuple-final + banner speak the un-spoken
+  `ContentHistory` Seq gap (`> lastAnnouncedSeq`), trailing
+  trim reusing `extractIOCell`'s bounded `MatchedRowText`
+  strip. #2 fixed *by construction* (no string strip — NOT
+  PR-Y/PR-X resurrection; the *settled* announce watermark
+  ≠ KI-R2-1's racy `lastEnterSeq`). Banner default-armed for
+  fresh launch. Incremental + tuple-final announces now
+  compose — the model R5/R6 require, zero new machinery for
+  R6 per-line streaming. The full single-rule unification
+  (delete the separate `bannerAnnounce` path) is a proven
+  follow-on once R3c is dogfood-validated. The
+  heuristic→adapter *physical* relocation (R1.2 namespace
+  move shipped in R4a; only the in-`CmdAdapter` placement
+  remains) is a separate deferred structural cleanup, not
+  blocking.
 - **R4 — purify + enforce.** Sequenced R4a → R4b. **R4a —
   purify (done 2026-05-16):** `HeuristicPromptDetector`
   namespace `Terminal.Core` → `Terminal.Shell` (+ explicit
