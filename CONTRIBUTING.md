@@ -44,6 +44,30 @@ to not relearn.
 
 See [`docs/BUILD.md`](docs/BUILD.md) for build instructions.
 
+### Build identity — confirming which commit you're dogfooding
+
+A local `dotnet build`/`publish` never passes `/p:Version` (only
+the release workflow does), so it **always** reports the
+`Directory.Build.props` default `0.0.1-preview.1` — every local
+build looks identical, and a dogfood can't tell whether it's
+running the commit under test or a stale one. To remove that
+ambiguity **automatically, with no per-PR manual step**, the
+`SetGitShortShaSourceRevision` MSBuild target in
+`Directory.Build.props` embeds the short git commit SHA as
+`SourceRevisionId`; the .NET SDK appends it to
+`AssemblyInformationalVersion`.
+
+**Canonical rule (no manual discipline required):** to confirm a
+build, press **`Ctrl+Shift+H`** — the health-check announce now
+leads with `Version 0.0.1-preview.1+<sha>` (and the startup log
+records the same). Match `<sha>` against `git rev-parse --short
+HEAD` of the tree you built. A release build instead shows the
+tag (`+<sha>` still appended) — also unambiguous. Prefer this over
+hard-coding PR numbers anywhere: the SHA is automatic, exists at
+commit time (a PR number does not), and maps directly to `git`.
+Degrades gracefully when git is unavailable (the `+<sha>` is
+simply absent — same as before this mechanism).
+
 ## Branching and pull requests
 
 - Default branch: `main`.
