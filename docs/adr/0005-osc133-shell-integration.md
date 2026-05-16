@@ -1,9 +1,15 @@
 # ADR 0005 — OSC 133 shell integration (the heuristic-screen-scrape exit)
 
 - **Status:** Accepted (2026-05-15; maintainer approved
-  ADR 0005 + ADR 0006 together). Supersedes the heuristic
-  prompt-detection model as the *primary* boundary source;
-  does not delete it (it becomes the fallback).
+  ADR 0005 + ADR 0006 together) / **cmd mechanism implemented
+  via ADR 0006 R2–R4** (#353–#357, 2026-05-16). Supersedes
+  the heuristic prompt-detection model as the *primary*
+  boundary source; does not delete it (it becomes the
+  fallback, now muted-once-OSC-seen per R3a). The **cmd**
+  emit strategy shipped as **Option B** (command-line
+  `prompt`; A/B only — `;C` realised consumer-side, `;D`
+  deferred; see §3 R2 status note). **PowerShell** (full
+  A/B/C/D) is R5, pending the R1–R4 foundation dogfood.
   Implementation proceeds via ADR 0006's R0–R7 stages.
 - **Status note (2026-05-15):** the "Walking-skeleton stages"
   A–F list below is **superseded by the R0–R7 stage list in

@@ -11,94 +11,103 @@ previous (multi-thousand-line) handoff is at
 [`docs/archive/pre-cycle-45/SESSION-HANDOFF-pre-cycle-45c-historical.md`](archive/pre-cycle-45/SESSION-HANDOFF-pre-cycle-45c-historical.md)
 and serves the decision-trail role this file used to overload.
 
-## Current state (2026-05-15)
+## Current state (2026-05-16)
 
 > **NEW SESSION START HERE →
 > [`adr/0006-three-layer-refoundation.md`](adr/0006-three-layer-refoundation.md)**
 > (**Accepted 2026-05-15**; reads ADR 0005 as its mechanism
-> spec). Cycle 51 is shipped; the CYCLE-51-PLAYBOOK is now
-> historical. **Cycle 52 R1 (R1.1–R1.4) complete & merged
-> (#347–#351)**; the gate before any R2 work is one
-> consolidated behaviour-identical NVDA dogfood
-> (preview.143), in progress.
+> spec). **Cycle 52 R1–R4 COMPLETE & merged (#347–#357)** —
+> the three-layer re-foundation is structurally done and
+> CI-enforced; KI-R2-1 is structurally fixed. **The gate
+> before R5 is one consolidated R1–R4 "foundation" dogfood**
+> (maintainer batching findings; 5 of those PRs are merged
+> but not yet maintainer-dogfooded, by explicit choice).
 
-- **`main` HEAD = `66ab95d`** (Cycle 52 R1.4, #351).
-- **Cycle 51 (IOCell pivot) — SHIPPED.** PR-V (ADR 0004) →
-  PR-W / PR-W2 (IOCell + schemaVersion-2 + round-trip
-  reader) → then the dogfood-driven sequence **PR-X**
-  (Seq-watermark narration, history-scroll + persisted-JSONL
-  fix) → **PR-Y** (single-key sub-prompt question strip) →
-  **PR-Z** (history-recall wrap) → **PR-AA** (sub-prompt
-  preamble + startup banner) → **PR-AB** (fast-type echo
-  strip) → **PR-AC** (switch banner) → **PR-AD** (SpeechCursor
-  fed from sealed IOCells) → **PR-AE** (cursor-anchored
-  prompt detection — the heuristic root-cause fix). All
-  merged #337–#344. Per-PR detail: [`CHANGELOG.md`](../CHANGELOG.md)
-  + `git log`. `CYCLE-51-PLAYBOOK.md` is now HISTORICAL.
-- **Cycle 51 outcome / why Cycle 52 pivots.** PR-AE removed
-  the acute corruption (phantom-`PromptStart` storms). The
-  2026-05-15 preview.141 dogfood confirmed the *residual*
-  issues (progress narrates only at completion;
-  history-recalled command capture is garbage; prompt-path
-  verbosity eats echo output) are the **heuristic
-  screen-scrape architectural ceiling**, not regressions —
-  cmd emits no boundary protocol. The maintainer chose to
-  **exit heuristic screen-scraping** rather than keep
-  patching the announce layer.
-- **Cycle 52 = three-layer re-foundation**
-  ([ADR 0006](adr/0006-three-layer-refoundation.md),
-  **Proposed 2026-05-15**) with OSC 133
-  ([ADR 0005](adr/0005-osc133-shell-integration.md))
-  folded in as its transport mechanism. The 2026-05-15
-  strategic review found the 51-cycle brittleness was
-  structural: shell-specific reconstruction
-  (`HeuristicPromptDetector`) leaked into `Terminal.Core`
-  and there is no single orchestration point. ADR 0006
-  locks a transport (`ShellAdapter`) / pure core /
-  accessibility-channel boundary + a one-file `SessionHost`.
-  **F# kept, WPF kept, MAUI explicitly out of scope**
-  (maintainer decision 2026-05-15 — channel stays an
-  interface for design hygiene only). ADR 0006's R0–R7
-  supersedes ADR 0005's A–F. **Accepted 2026-05-15; R1
-  (R1.1–R1.4) complete & merged** (#347 map+acceptance →
-  #348 R1.1 `Terminal.Shell` skeleton → #349 R1.2
-  `HeuristicPromptDetector` out of the Core assembly →
-  #350 R1.3 shell-resolution → `SessionHost` → #351 R1.4
-  reader loop through `CmdAdapter`, the **VtEvent** seam).
-  All behaviour-identical by construction + CI-green. Per
-  maintainer's 2026-05-16 choice the R1 adapter contract is
-  `VtEvent`-based; `ShellEvent`/`IShellAdapter` (R1.1) stay
-  untouched as the R2 boundary (meaningful with OSC-133).
-  The R1 gate is **one consolidated behaviour-identical
-  NVDA dogfood** (preview.143) before any R2 — not
-  per-substep.
-- **Cycle 49 + post-49 hotfixes (PRs #313–#331)** shipped
-  earlier; detail in [`CHANGELOG.md`](../CHANGELOG.md) /
-  `git log` per the
-  [DOC-MAP §"Archiving stale onboarding narrative"](DOC-MAP.md#archiving-stale-onboarding-narrative)
-  discipline.
+- **`main` HEAD = `cbf8d48`** (Cycle 52 R4b, #357).
+- **Cycle 52 R1–R4 — the full structural re-foundation —
+  COMPLETE.** Per-PR detail: [`CHANGELOG.md`](../CHANGELOG.md)
+  + `git log`. Summary:
+  - **R1** (#347–#352): `Terminal.Shell` assembly +
+    `HeuristicPromptDetector` out of the Core *assembly* +
+    shell-resolution → `SessionHost` + reader loop →
+    `CmdAdapter` (the **VtEvent** seam). Behaviour-identical;
+    **maintainer-dogfood-validated 2026-05-16**.
+  - **R2** (#353): cmd OSC-133 prompt injection — **Option B**
+    (adapter-owned command-line `cmd /K prompt
+    $e]133;A$e\$p$g$e]133;B$e\`, cmd-only-gated). Consume
+    side: `extractIOCell` gained a PromptStart+CommandStart
+    arm — ADR 0005 §3's "implicit C" realised **consumer-
+    side** (maintainer decision 2026-05-16). Core mechanism
+    dogfood-validated 2026-05-16 (~9 clean evals, no escape
+    leak); KI-R2-1 surfaced (see below).
+  - **R3a** (#354): OSC-133 precedence — a per-shell-session
+    `oscSeenThisSession` latch mutes the heuristic dispatch
+    once an `Osc133` boundary is seen (reset on shell-switch,
+    not alt-screen).
+  - **R3b** (#355): retired the PR-X / PR-Y / PR-AB
+    announce-path compensations; the tuple-final announce now
+    speaks the R2-sealed IOCell `OutputText` (Seq-sliced,
+    ≈ −200/+60 LOC). **KI-R2-1 structurally fixed by
+    construction.** `commandEnterSeq`/`awaitingSubPromptEnter`
+    kept (feed/gate `extractIOCell`); PR-AA/AC banner
+    deliberately **preserved** (ADR R3 names only PR-AB/X/Y;
+    the banner is not a finalised cell).
+  - **R4a** (#356): `HeuristicPromptDetector` namespace
+    `Terminal.Core` → `Terminal.Shell` (the deferred R1.2
+    tail). **Logger category restrung → bundle greps now use
+    `Terminal.Shell.HeuristicPromptDetector`.**
+  - **R4b** (#357): `portability-lint` CI now enforces
+    no-P/Invoke + no-`Terminal.Shell`-dependency in
+    `Terminal.Core`. The boundary is **structural, not
+    disciplinary** — the answer to "why 51 cycles stayed
+    brittle".
+- **Cycle 51 (IOCell pivot) — SHIPPED** (#337–#344). The
+  PR-X/Y/AA/AB announce compensations it added were the
+  heuristic-ceiling patches R3b has now retired. Detail:
+  `CHANGELOG.md` / `git log`. `CYCLE-51-PLAYBOOK.md` is
+  HISTORICAL.
+
+### Known issues for the R1–R4 foundation dogfood
+
+The maintainer is **batching dogfood findings** (explicit
+2026-05-16). Validate these against an installed preview of
+post-`cbf8d48` `main`:
+
+- **KI-R2-1 — should now be GONE.** R2 dogfood (2026-05-16)
+  surfaced: after ~9 commands the echo output + next input
+  path leaked into the announce; toggling path-suppression
+  recovered it. Root cause = the PR-X `lastEnterSeq` +
+  `EndsWith(MatchedRowText)` next-prompt trim. R3b deleted
+  that path (announce = Seq-sliced IOCell `OutputText`, no
+  `EndsWith` heuristic). **Confirm the leak no longer
+  reproduces under sustained command volume.**
+- **R3b sub-prompt double-speech — watch for it.** Sub-prompt
+  cells now announce their `OutputText`, which may re-include
+  the just-spoken sub-prompt question (the accepted
+  single-step re-derivation risk; PR-Y strip deleted). Listen
+  on `test-02` (typed-Enter) / `test-04` (single-key Y/N) —
+  if the question is spoken twice, that's the R3b-followup
+  signal.
+- **Banner must still read** on a shell switch (PR-AA/AC
+  preserved through R3b).
+- **R4a logger-category change** is maintainer-facing: any
+  bundle grep that targeted `Terminal.Core.HeuristicPrompt`
+  `Detector` must now use `Terminal.Shell.…`.
 
 ## Next stage
 
-**Cycle 52 — three-layer re-foundation.** Design + decision
-in [ADR 0006](adr/0006-three-layer-refoundation.md)
-(**Accepted 2026-05-15; R1 in progress**), with
-[ADR 0005](adr/0005-osc133-shell-integration.md) as the
-OSC-133 mechanism spec. Stages, once accepted: **R0** ADR
-(this) → **R1** extract `ShellAdapter` + `SessionHost`,
-**zero behaviour change** (gate: behaviour-identical
-regression dogfood) → **R2** cmd OSC-133 adapter → **R3**
-precedence + delete PR-AB / PR-X/Y core scaffolding → **R4**
-purify `Terminal.Core` + portability-lint enforcement (the
-structural anti-re-leak gate) → **R5** PowerShell adapter →
+**R5 — PowerShell adapter** (= ADR 0005 Stage D): full
+OSC-133 `A/B/C/D` + exit code via a generated profile /
+`-NoExit -Command`, as a second `Terminal.Shell` adapter.
+**Gated on the R1–R4 foundation dogfood** (maintainer
+decision 2026-05-16: checkpoint at R1–R4, validate the
+foundation before a second adapter builds on it). Then
 **R6** feature unlock (per-line progress, prompt-verbosity
-fix, clean SpeechCursor) → **R7** claude adapter decision +
-Cycle closure audit. **R0 + R1 (R1.1–R1.4) done & merged**
-(#347–#351); **next = the consolidated R1 NVDA dogfood
-(preview.143), then R2.** R1 + R4 are the structural gates;
-R2's cmd OSC-133 dogfood is the first semantic proof. NVDA
-matrix rows per stage in
-[`ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md).
+fix, clean SpeechCursor — trivial on the clean event
+stream) → **R7** claude adapter decision + Cycle closure
+audit. R1 + R4 were the structural gates; R5+ is net-
+additive on the now-enforced boundary. NVDA matrix rows per
+stage in [`ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md).
 
 **Dogfood operations (Cycle 52 R1, learned 2026-05-15/16).**
 Run R-stage dogfoods from an **installed preview release**

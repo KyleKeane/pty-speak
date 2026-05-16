@@ -102,9 +102,15 @@ before deviating.
    F# kept, WPF kept, **MAUI explicitly out of scope**
    (maintainer decision 2026-05-15). Read before any
    transport / core / channel / spawn work. **Accepted
-   2026-05-15; R1 in progress (architecture map →
-   behaviour-identical extraction). Each R-stage stays
-   independently CI- + dogfood-gated.**
+   2026-05-15; R1–R4 Implemented & CI-green (#347–#357,
+   2026-05-16) — the full structural re-foundation is
+   landed (R1 seam · R2 cmd OSC-133 · R3 precedence +
+   announce-compensation deletion, KI-R2-1 fixed · R4
+   namespace purify + portability-lint enforcement).
+   Checkpoint at R1–R4 (maintainer 2026-05-16): a
+   consolidated foundation dogfood gates R5 (PowerShell
+   adapter). Each R-stage stays independently CI- +
+   dogfood-gated.**
 10. **RFC 0001 (archived)** — Cycle 33 pivot-gate RFC, formalised
    the `LinearTextStream` substrate + streaming-emission protocol.
    The substrate it specified was replaced by `ContentHistory` +
@@ -891,14 +897,37 @@ points at the cycle headline.
   PR-I's screen-read approach. Cycle plan archived at
   [`docs/CYCLE-49-PLAN.md`](docs/CYCLE-49-PLAN.md) (now
   historical).
-- **Validation gate**: maintainer release-build dogfood of
-  the post-PR-I build. NVDA matrix Cycle 49 row in
+- **Cycle 51** (PRs #337–#344, 2026-05-14) — IOCell pivot
+  ([ADR 0004](docs/adr/0004-iocell-model-for-shell-interaction.md)):
+  `IOCell` + schemaVersion-2 JSONL + round-trip reader, then
+  the PR-X/Y/AA/AB/AC/AD/AE dogfood-driven announce-patch
+  sequence. SHIPPED; its compensations are what Cycle 52 R3b
+  retired. `CYCLE-51-PLAYBOOK.md` HISTORICAL.
+- **Cycle 52** (PRs #345–#357, 2026-05-15 → 2026-05-16) —
+  three-layer re-foundation
+  ([ADR 0005](docs/adr/0005-osc133-shell-integration.md) +
+  [ADR 0006](docs/adr/0006-three-layer-refoundation.md)).
+  **R1–R4 complete & CI-green:** R1 seam extraction
+  (`Terminal.Shell` / `SessionHost` / `CmdAdapter`,
+  behaviour-identical, dogfood-validated) → R2 cmd OSC-133
+  (Option B; "implicit C" consumer-side) → R3a OSC
+  precedence latch → R3b announce-compensation deletion
+  (**KI-R2-1 structurally fixed**) → R4a heuristic namespace
+  purify → R4b portability-lint *enforces* the boundary.
+  Net: the architectural boundary is structural, not
+  disciplinary.
+- **Validation gate**: one consolidated **R1–R4 foundation
+  dogfood** on an installed preview of post-`cbf8d48` `main`
+  (maintainer batching findings; checkpoint decision
+  2026-05-16). Confirm KI-R2-1 gone, no R3b sub-prompt
+  double-speech, banner still reads, R4a logger category.
+  NVDA matrix Cycle 52 R1–R4 row in
   [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md).
-- **Next-cycle candidates** (none block each other; pick by
-  priority): `EntrySource.DraftInputRecall` follow-up, 45g
-  `ShellPolicy` consolidation, 45d review-cursor focus,
-  spinner/red-tone refinements, Coalescer rename, UIA
-  semantic caret, LineByLine per-line streaming announces.
+- **Next** = **R5** PowerShell adapter (gated on the
+  foundation dogfood) → R6 feature unlock → R7 claude
+  adapter + closure. Other backlog (independent): 45g
+  `ShellPolicy` consolidation, `EntrySource.DraftInputRecall`,
+  backspace-to-empty path-announce (pre-existing, R2-backlog).
   Sequencing in
   [`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md).
 
