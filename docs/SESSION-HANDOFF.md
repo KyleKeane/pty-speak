@@ -212,6 +212,22 @@ verified to fully restore it on both build types.
   exactly this); if preview.141 says only `>`, it's an R1
   regression and blocks R2. Maintainer: "not worth fixing
   now, note for later."
+- **Fast-type command-echo leak** (observed 2026-05-16,
+  post-R4c local dogfood). Fast-typing `echo hi` + hitting
+  Enter quickly speaks the command (`echo hi`) *then* the
+  output (`hi`) instead of just `hi` — the `52-R3d` fail
+  signal under the fast-type window. R3d fixed normal-paced
+  typing; the fast-type race in the `commandEnterSeq`
+  byte-watermark (± an NVDA caret-read contribution) is
+  residual. **Not an R4c regression** (R4c didn't touch the
+  command/output watermark or the caret path); same root
+  cause as the deferred BOTH-edges region-cut work — see
+  [ADR 0006](adr/0006-three-layer-refoundation.md)
+  §"Deferred to R6+" item 1 (now covers the leading
+  command/output edge, not just the trailing edge).
+  Classification rule + bundle-disambiguation recorded
+  there. Eliminated by the clean event stream (R5 `;C` /
+  the R6 cmd region-cut); **deferred, do not report as new**.
 - **`EntrySource.DraftInputRecall`** (deferred from Cycle 49
   E3) — substrate refinement; no audible bug behind it
   after PR-I's screen-read approach.
