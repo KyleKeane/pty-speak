@@ -305,24 +305,53 @@ several of these solvable in a *whole-system* way rather
 than against cmd's quirks alone; designing them pre-R5
 would be premature.
 
-1. **Retire `stripNextPrompt` → one shell-agnostic
-   output-region cut.** Today the trailing-next-prompt edge
-   of an IOCell's output is reconstructed by string-suffix
-   subtraction (`SessionModel.extractIOCell` slices
-   `[…, Int64.MaxValue)` then strips the known prompt text)
-   — a residual reconstruction heuristic, exactly the
-   ADR-0006 anti-pattern. The clean form is a positional
-   region-cut: cmd via deferred-finalise / backtrack-insert
-   at the next `;A` Seq (the marker that isn't in
-   ContentHistory yet at `;D`-finalise time — see the R4c
-   consumer note + ADR 0005 §3 R4c); PowerShell via its
-   native `;C`/`;D`. R5 surfaces this cross-shell (the
-   `CleanOscAC` arm slices `[;C, MaxValue)` with **no**
-   strip — R5's dogfood reveals the general shape), so the
-   one model that is correct for both shells is designed
-   *then*. Until then `stripNextPrompt` stays (it works on
-   the golden path; the failure mode is output that
-   legitimately ends with text equal to the prompt path).
+1. **Retire byte-stream reconstruction on BOTH IOCell-output
+   edges → real marker boundaries.** Today *both* edges of an
+   IOCell's output region are reconstructed, not cut at a
+   marker:
+   - **Trailing edge (output / next-prompt).**
+     `SessionModel.extractIOCell` slices `[…, Int64.MaxValue)`
+     then string-strips the known prompt text
+     (`stripNextPrompt`). Failure mode: output that
+     legitimately ends with text equal to the prompt path.
+   - **Leading edge (command / output split).** cmd emits no
+     real `;C` OutputStart, so the command-vs-output split is
+     the **`commandEnterSeq` byte-level Enter watermark**, not
+     a marker. Failure mode: **fast-typing a command and
+     hitting Enter quickly races the watermark capture**, so
+     the echoed command leaks into the announce — observable
+     as "`echo hi` spoken, then `hi` spoken" instead of just
+     "`hi`" (the `52-R3d` fail signal). R3d's
+     `max(commandEnterSeq, lastAnnouncedSeq)` fixed
+     *normal-paced* typing; the **fast-type window is
+     residual** and is *not* an R4c regression (R4c changed
+     only which boundary finalises + the trailing-edge
+     augmentation; it did not touch `commandEnterSeq` or the
+     NVDA-caret path). A second contributor may be NVDA's own
+     caret-read of the echoed input line (ADR 0002 channel) —
+     a `Ctrl+Shift+D` bundle (`R3d tuple-final announce …
+     CommandEnterSeq=… FromSeq=…`) disambiguates; deferred,
+     not needed pre-R5. **Classification rule:** if a
+     *pre-R4c* preview does not show the fast-type leak but a
+     post-R4c one does, it is a regression and blocks —
+     otherwise pre-existing (the byte-watermark lineage of
+     KI-R2-1).
+
+   Both edges are the same root cause — byte-stream
+   reconstruction instead of real markers — and both have the
+   same clean form: a positional region-cut. cmd via
+   deferred-finalise / backtrack-insert at the next `;A` Seq
+   (the marker not in ContentHistory yet at `;D`-finalise
+   time — see the R4c consumer note + ADR 0005 §3 R4c) plus a
+   real command/output boundary (cmd has no `;C` hook, so
+   this is the harder half); PowerShell via its native
+   `;C`/`;D`. R5 surfaces this cross-shell (the `CleanOscAC`
+   arm slices `[;C, MaxValue)` with **no** strip — R5's
+   dogfood reveals the general shape), so the one model
+   correct for both shells is designed *then*. Until then the
+   `stripNextPrompt` + `commandEnterSeq` reconstruction stays
+   (golden path works; the two failure modes above are the
+   known residue).
 2. **Replace SpeechCursor manual history-navigation with
    canonical IOCell-history navigation + per-cell
    operations.** The SpeechCursor's navigable history and
