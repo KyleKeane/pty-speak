@@ -168,6 +168,22 @@ replaces the misplaced Cycle-47 synthetic compensation for
 cmd. Folded into the R1–R4 foundation dogfood (matrix
 `52-R4c`); same installed preview, one NVDA pass.
 
+> **cmd announce-heuristic FREEZE (maintainer decision
+> 2026-05-16, post-`5518f5c` bundle).** The foundation
+> bundle proved the IOCell substrate is sound; every
+> remaining cmd defect (path/echo bleed under history-
+> recall, "Terminal edit Blank" on fresh launch — cmd
+> emits no banner, confirmed) is in the racy announce-
+> reconstruction layer, not the substrate. **Do not push
+> further cmd announce-heuristic patches before R5.**
+> PowerShell's native `A/B/C/D` is the clean reference;
+> cmd's announce path is rebuilt to it afterward. Full
+> rationale + evidence in
+> [ADR 0006](adr/0006-three-layer-refoundation.md)
+> §"Deferred to R6+" decision note. cmd *substrate* work
+> (R4c-class) is still fine — only the announce-heuristic
+> layer is frozen.
+
 **R5 — PowerShell adapter** (= ADR 0005 Stage D): full
 OSC-133 `A/B/C/D` + exit code via a generated profile /
 `-NoExit -Command`, as a second `Terminal.Shell` adapter.
