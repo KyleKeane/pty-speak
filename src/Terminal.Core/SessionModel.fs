@@ -737,49 +737,48 @@ module SessionModel =
     /// silence beats stale-scrollback garbage). There is no
     /// row-walk fallback.
     ///
-    /// Two arms:
-    ///   * PromptStart + OutputStart present (OSC 133 shell):
-    ///     clean Seq-slice split.
-    ///   * PromptStart only (heuristic-only cmd / PowerShell):
-    ///     slice PromptStart→tail, trim the trailing
-    ///     new-prompt text, split on the first newline (cmd
-    ///     echoes the typed command, then `\r\n`, then
-    ///     output). `EntrySource` is NOT consulted — the
-    ///     2026-05-14 bundle showed it mis-tags post-response
-    ///     output in heuristic-only cmd (ADR 0004 Context).
+    /// Three arms (precedence top-to-bottom):
+    ///   * PromptStart + OutputStart (literal ;C — forward-
+    ///     compatible ideal; no shell emits ;C today): clean
+    ///     Seq-slice split [A,C) / [C,tail).
+    ///   * PromptStart + CommandStart, no OutputStart (R2 cmd
+    ///     OSC-133 A/B — ADR 0005/0006, Option B): the [A,B)
+    ///     region is the prompt path; anchor the PR-X
+    ///     watermark split at the CommandStart marker so the
+    ///     typed command + output (after ;B) split cleanly.
+    ///     Shell-emitted ;B ⇒ OSC-133 provenance, NOT the
+    ///     heuristic fallback.
+    ///   * PromptStart only (no OSC 133 at all — pre-R2 cmd /
+    ///     vanilla PowerShell / claude): slice PromptStart→
+    ///     tail, trim the trailing new-prompt text, PR-X
+    ///     watermark or first-newline split. `EntrySource` is
+    ///     NOT consulted — the 2026-05-14 bundle showed it
+    ///     mis-tags post-response output in heuristic-only cmd
+    ///     (ADR 0004 Context).
     let private extractIOCell
             (history: ContentHistory.T)
             (newPromptText: string option)
             (commandEnterSeq: int64)
             : (string * string) option
             =
-        match
-            ContentHistory.tryLatestMarker
-                history ContentHistory.MarkerKind.PromptStart,
-            ContentHistory.tryLatestMarker
-                history ContentHistory.MarkerKind.OutputStart
-        with
-        | Some promptStart, Some outputStart ->
-            // OSC 133 path — shell emitted both PromptStart and
-            // OutputStart, so we have a clean (command, output)
-            // split.
-            let commandText =
-                ContentHistory.sliceText
-                    history promptStart.Seq outputStart.Seq
-            let outputText =
-                ContentHistory.sliceText
-                    history outputStart.Seq System.Int64.MaxValue
-            Some (commandText, outputText)
-        | Some promptStart, None ->
-            // Heuristic-only path (cmd / vanilla PowerShell). No
-            // OSC 133 markers.
-            let stripNextPrompt (s: string) : string =
-                match newPromptText with
-                | Some p when not (System.String.IsNullOrEmpty p)
-                              && s.EndsWith(p) ->
-                    s.Substring(0, s.Length - p.Length)
-                | _ -> s
-            if commandEnterSeq > promptStart.Seq then
+        // The trailing-next-prompt trim is shared by the
+        // heuristic split regardless of which marker anchors
+        // the slice lower bound.
+        let stripNextPrompt (s: string) : string =
+            match newPromptText with
+            | Some p when not (System.String.IsNullOrEmpty p)
+                          && s.EndsWith(p) ->
+                s.Substring(0, s.Length - p.Length)
+            | _ -> s
+        // The PR-X watermark split, parameterised by the slice
+        // lower-bound Seq. Anchored at `promptStart.Seq` it is
+        // the pre-R2 heuristic-only behaviour (byte-identical);
+        // anchored at `commandStart.Seq` it is the R2 cmd
+        // OSC-133 A/B clean split (the [A,B) prompt-path region
+        // is excluded by construction, since the lower bound is
+        // the CommandStart marker that follows the path).
+        let heuristicSplit (lowerBound: int64) : (string * string) option =
+            if commandEnterSeq > lowerBound then
                 // Cycle 51 PR-X — Seq-watermark split. The
                 // command-Enter watermark (captured at the
                 // byte-level Enter in Program.fs) is the exact
@@ -797,7 +796,7 @@ module SessionModel =
                 // wholesale into OutputText.
                 let cmdRegion =
                     ContentHistory.sliceText
-                        history promptStart.Seq commandEnterSeq
+                        history lowerBound commandEnterSeq
                 let outRegion =
                     ContentHistory.sliceText
                         history commandEnterSeq System.Int64.MaxValue
@@ -824,7 +823,7 @@ module SessionModel =
                 // keystrokes back); the rest is shell output.
                 let raw =
                     ContentHistory.sliceText
-                        history promptStart.Seq System.Int64.MaxValue
+                        history lowerBound System.Int64.MaxValue
                 let withoutNewPrompt = stripNextPrompt raw
                 let trimmed =
                     (withoutNewPrompt.TrimStart('\r', '\n'))
@@ -843,6 +842,78 @@ module SessionModel =
                         let out =
                             trimmed.Substring(nlIdx + 1)
                         Some (cmd, out)
+        let lenOf (r: (string * string) option) : int * int =
+            match r with
+            | Some (c, o) -> c.Length, o.Length
+            | None -> 0, 0
+        match
+            ContentHistory.tryLatestMarker
+                history ContentHistory.MarkerKind.PromptStart,
+            ContentHistory.tryLatestMarker
+                history ContentHistory.MarkerKind.OutputStart,
+            ContentHistory.tryLatestMarker
+                history ContentHistory.MarkerKind.CommandStart
+        with
+        | Some promptStart, Some outputStart, _ ->
+            // OSC 133 path — shell emitted both PromptStart and
+            // OutputStart, so we have a clean (command, output)
+            // split. (No shell emits a literal ;C today; this
+            // arm is the forward-compatible ideal.)
+            let commandText =
+                ContentHistory.sliceText
+                    history promptStart.Seq outputStart.Seq
+            let outputText =
+                ContentHistory.sliceText
+                    history outputStart.Seq System.Int64.MaxValue
+            logger.LogDebug(
+                "extractIOCell arm. Arm={Arm} PromptSeq={PromptSeq} OutputSeq={OutputSeq} CmdLen={CmdLen} OutLen={OutLen}",
+                "CleanOscAC",
+                promptStart.Seq,
+                outputStart.Seq,
+                commandText.Length,
+                outputText.Length)
+            Some (commandText, outputText)
+        | Some promptStart, None, Some commandStart ->
+            // R2 (ADR 0005/0006, Option B) — cmd OSC-133 A/B
+            // clean arm. cmd's `prompt`-only integration emits
+            // PromptStart (;A) before the prompt path and
+            // CommandStart (;B) after it, but has no hook to
+            // emit OutputStart (;C) between Enter and the
+            // command's output. Per the maintainer's 2026-05-16
+            // decision the consumer realises ADR 0005 §3's
+            // "implicit C": anchor the command/output split at
+            // the authoritative CommandStart marker — the [A,B)
+            // region is the prompt path, the typed command +
+            // output follow ;B. Reuses the proven PR-X watermark
+            // split (history-scroll-immune) rather than the
+            // PromptStart-only first-line heuristic. Provenance
+            // is OSC 133 (the ;B marker is shell-emitted), so
+            // this is a clean arm, not the heuristic fallback.
+            let result = heuristicSplit commandStart.Seq
+            let cl, ol = lenOf result
+            logger.LogDebug(
+                "extractIOCell arm. Arm={Arm} PromptSeq={PromptSeq} CommandSeq={CommandSeq} CommandEnterSeq={CommandEnterSeq} CmdLen={CmdLen} OutLen={OutLen}",
+                "CmdOscAB",
+                promptStart.Seq,
+                commandStart.Seq,
+                commandEnterSeq,
+                cl,
+                ol)
+            result
+        | Some promptStart, None, None ->
+            // Heuristic-only path (no OSC 133 at all — pre-R2
+            // cmd / vanilla PowerShell / claude). Byte-identical
+            // to the pre-R2 `Some promptStart, None` arm.
+            let result = heuristicSplit promptStart.Seq
+            let cl, ol = lenOf result
+            logger.LogDebug(
+                "extractIOCell arm. Arm={Arm} PromptSeq={PromptSeq} CommandEnterSeq={CommandEnterSeq} CmdLen={CmdLen} OutLen={OutLen}",
+                "Heuristic",
+                promptStart.Seq,
+                commandEnterSeq,
+                cl,
+                ol)
+            result
         | _ -> None
 
     /// Cycle 45c / 51 — ContentHistory-driven finalize. The

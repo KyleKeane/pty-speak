@@ -9,13 +9,17 @@
   <ItemGroup>
     <Compile Include="ShellEvent.fs" />
     <Compile Include="ShellAdapter.fs" />
-    <Compile Include="SessionHost.fs" />
     <!--
       R1.4 (ADR 0006): the cmd transport adapter. Verbatim
-      VT-parser wrapper for now (byte[] -> VtEvent[]); no
-      intra-assembly dependency on the skeleton above.
+      VT-parser wrapper (byte[] -> VtEvent[]) plus, since R2,
+      the OSC-133 `prompt` injection helper. Compiled BEFORE
+      SessionHost: R2 wired SessionHost.ResolveStartupShell to
+      call CmdAdapter.IntegrateOsc133, so the adapter must
+      precede the orchestration point in F# compile order. No
+      dependency on ShellEvent / ShellAdapter above.
     -->
     <Compile Include="CmdAdapter.fs" />
+    <Compile Include="SessionHost.fs" />
     <!--
       R1.2: HeuristicPromptDetector relocated here from
       Terminal.Core (ADR 0006 — the detector leaves the core

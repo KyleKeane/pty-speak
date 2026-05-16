@@ -96,24 +96,43 @@ type SessionHost private () =
             match ShellRegistry.tryFind ShellRegistry.Cmd with
             | Some s -> s
             | None -> failwith "Cmd not registered in ShellRegistry.builtIns"
-        match ShellRegistry.tryFind requested with
-        | None ->
-            cmdShell, "cmd.exe"
-        | Some shell ->
-            match shell.Resolve() with
-            | Ok cmdLine ->
-                shell, cmdLine
-            | Error reason ->
-                log.LogWarning(
-                    "Shell {Shell} unavailable: {Reason}. Falling back to {Fallback}.",
-                    shell.DisplayName,
-                    reason,
-                    cmdShell.DisplayName)
-                let fallbackCmd =
-                    match cmdShell.Resolve() with
-                    | Ok c -> c
-                    | Error _ -> "cmd.exe"
-                cmdShell, fallbackCmd
+        let resolvedShell, resolvedCmdLine =
+            match ShellRegistry.tryFind requested with
+            | None ->
+                cmdShell, "cmd.exe"
+            | Some shell ->
+                match shell.Resolve() with
+                | Ok cmdLine ->
+                    shell, cmdLine
+                | Error reason ->
+                    log.LogWarning(
+                        "Shell {Shell} unavailable: {Reason}. Falling back to {Fallback}.",
+                        shell.DisplayName,
+                        reason,
+                        cmdShell.DisplayName)
+                    let fallbackCmd =
+                        match cmdShell.Resolve() with
+                        | Ok c -> c
+                        | Error _ -> "cmd.exe"
+                    cmdShell, fallbackCmd
+        // R2 (ADR 0005/0006, Option B) — cmd OSC-133 prompt
+        // injection. Applied once at the single orchestration
+        // return so all three resolution outcomes
+        // (registered-miss / resolved-cmd / fallback-to-cmd)
+        // get it, and non-cmd shells (claude / PowerShell)
+        // are byte-identical. The cmd transport adapter owns
+        // the injection (ADR 0006); SessionHost only gates it
+        // on the resolved ShellId.
+        if resolvedShell.Id = ShellRegistry.Cmd then
+            let integrated =
+                CmdAdapter.IntegrateOsc133 resolvedCmdLine
+            log.LogInformation(
+                "R2 cmd OSC-133 prompt injection applied (startup). Base={Base} Integrated={Integrated}",
+                resolvedCmdLine,
+                integrated)
+            resolvedShell, integrated
+        else
+            resolvedShell, resolvedCmdLine
 
     /// Placeholder factory. Real adapter selection + spawn
     /// wiring lands in a subsequent R1 step; the constructor

@@ -800,6 +800,60 @@ let ``CH path — OSC 133 PromptStart+OutputStart splits command vs output`` () 
     Assert.Equal(SessionModel.IOCellPhase.Sealed, cell.Phase)
 
 [<Fact>]
+let ``CH path — R2 cmd OSC-133 PromptStart+CommandStart (no OutputStart) splits at CommandStart, prompt path excluded`` () =
+    // R2 (ADR 0005/0006, Option B). cmd's prompt-only
+    // integration emits PromptStart (;A) before the prompt
+    // path and CommandStart (;B) after it, but no OutputStart
+    // (;C). The [A,B) region is the prompt path and MUST NOT
+    // leak into CommandText / OutputText — extractIOCell's R2
+    // arm anchors the command/output split at the
+    // shell-emitted CommandStart marker, not PromptStart.
+    let initial = SessionModel.create "cmd" 100
+    let history = freshHistory ()
+    let history =
+        appendHistoryMarker history t0 ContentHistory.MarkerKind.PromptStart
+    // The [A,B) prompt-path region (Seq < CommandStart →
+    // excluded by the R2 arm). Trailing newline seals it
+    // before the marker so the assertion is deterministic.
+    let history =
+        feedHistoryBytes
+            history (after 5)
+            (System.Text.Encoding.ASCII.GetBytes "C:\\dir>\n")
+    let history =
+        appendHistoryMarker
+            history (after 10) ContentHistory.MarkerKind.CommandStart
+    // After ;B: echoed command, its output, the next prompt.
+    let history =
+        feedHistoryBytes
+            history (after 15)
+            (System.Text.Encoding.ASCII.GetBytes "echo hi\nhi\nC:\\dir>")
+    let s1 =
+        SessionModel.applyWithContentHistory
+            initial
+            (boundaryWithText BoundaryKind.PromptStart t0 "C:\\dir>")
+            [||] history true (-1L)
+    let s2 =
+        SessionModel.applyWithContentHistory
+            s1 (boundary BoundaryKind.CommandStart (after 100))
+            [||] history true (-1L)
+    let _s3, finalisedOpt =
+        SessionModel.applyAndCaptureWithContentHistory
+            s2
+            (boundaryWithText
+                (BoundaryKind.CommandFinished (Some 0))
+                (after 200)
+                "C:\\dir>")
+            [||] history true (-1L)
+    Assert.True(finalisedOpt.IsSome)
+    let cell = finalisedOpt.Value
+    Assert.Equal("echo hi", cell.CommandText)
+    Assert.Equal("hi", cell.OutputText)
+    // The [A,B) prompt path must not leak into either field.
+    Assert.DoesNotContain("C:\\dir>", cell.CommandText)
+    Assert.DoesNotContain("C:\\dir>", cell.OutputText)
+    Assert.Equal(SessionModel.IOCellPhase.Sealed, cell.Phase)
+
+[<Fact>]
 let ``CH path — heuristic-only PromptStart-only slices the blob`` () =
     let initial = SessionModel.create "cmd" 100
     let _s, finalisedOpt =
