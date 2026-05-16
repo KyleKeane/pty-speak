@@ -376,6 +376,45 @@ pinning structure — kinds / order / segment count / boundary
 positions — rather than exact environment-dependent text
 keeps that residual small.)
 
+**D7 — Clean demarcation: the cell pipeline sources only
+from the typed IOCell layer; it does not depend on or extend
+the legacy review-cursor text materialisation.** (Maintainer
+strategic concern 2026-05-16.) The new pipeline (typed
+transcript D1 → operations D2 → list control D5a) reads its
+data **only** from the clean typed IOCell model
+(`SessionModel`), never *through* the ADR 0002 ContentHistory
+text-tail materialisation (the 256 KB-capped
+`ContentHistoryTextProvider` / keystroke-suppression
+patchwork that backs the live review-cursor document). That
+materialisation stays exactly as-is, serving the **live
+current-output** surface only; the cell pipeline neither
+reads from it nor adds to it. This is the operative
+expression of the ADR 0004/0006 thesis ("do not build clever
+things on a fragile substrate"): the demarcation is an
+*invariant*, not an aspiration. Concretely:
+
+- **Phase 0** removes the dead legacy Seq engine — the
+  redesign then has exactly one model in `SpeechCursor`.
+- **Phase 1**'s typed transcript is sourced from the
+  finalized `IOCell` at the seal boundary (the existing
+  `appendCell` site), *not* re-derived from a
+  `ContentHistory` text slice. The portability-lint /
+  namespace boundary (ADR 0006 R4) is the enforcement
+  surface; a Phase-1 check asserts no new dependency edge
+  from the cell pipeline onto the text-materialisation
+  module.
+- **D6's oracle** doubles as the coupling police: if a
+  later phase accidentally routes cell content through the
+  legacy text path, the structural drift the patchwork
+  introduces (cap truncation, keystroke-suppression gaps)
+  surfaces as a corpus-script structure mismatch.
+- The legacy materialisation is **not refactored by this
+  ADR**. Whether the review-cursor document should later
+  become a faithful verbatim record of shell output *or* a
+  nicer post-seal variant is a **Phase 6 fork** (recorded
+  in Open Decisions), explicitly *not* a near-term task —
+  the near-term value is the boundary, not the rework.
+
 ## Consequences — phased plan (walking-skeleton)
 
 One PR + NVDA dogfood per phase, in order; each phase is
@@ -504,6 +543,27 @@ changes the ADR 0004 IOCell schema.
   Claude. Decide in Phase 4 with a Claude dogfood.
 - **rerun-input safety** (Phase 3): confirm gesture,
   echo-before-run, and provenance marking on the new IOCell.
+- **Review-cursor document evolution** (Phase 6 fork; *not*
+  near-term): the legacy live review-cursor document
+  (ADR 0002) is a patchwork. Once the cell pipeline is the
+  primary history surface, the live document could become
+  (a) a faithful **verbatim** record of shell output exactly
+  as the shell presented it, or (b) a **nicer post-seal
+  variant** rendered after the cell finalizes. Recorded so
+  the fork is not re-discovered; deliberately deferred —
+  D7's demarcation means this can be decided independently,
+  later, without blocking the cell pipeline.
+- **Per-cell content exploration & display options**
+  (far-field aspiration; explicitly NOT next-steps,
+  maintainer 2026-05-16): line-by-line review *within* a
+  large cell's output, and user-requested alternate
+  renderings of a raw cell (as a list, as a table). The
+  typed cell + D5a list make this *possible* later (the
+  item can host a sub-navigation / a render-mode switch),
+  but it is far field and must not pull focus from the
+  near-term phases. Recorded only so the cell/list design
+  does not foreclose it (keep the item's content
+  addressable, not pre-flattened).
 
 ## Alternatives considered
 
@@ -549,7 +609,9 @@ changes the ADR 0004 IOCell schema.
 this ADR (in particular D5/D5a — the recommended history
 rendering is a focusable list control with a
 `Ctrl+Shift+Left/Right` pane switch and standard list-key
-navigation). On acceptance, R6c is replaced
+navigation; and D7 — the new pipeline is fenced off from the
+legacy review-cursor text materialisation rather than built
+on it). On acceptance, R6c is replaced
 by "ADR 0007 Phase 0…7", each its own PR + dogfood under the
 walking-skeleton discipline; the cmd announce-heuristic
 FREEZE is unaffected (this is the navigation / operations /

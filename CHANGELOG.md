@@ -14761,8 +14761,17 @@ structured jumps (first/last, prev-next input/output cell),
 user bookmarks + section markers, and operation-discovery
 menu surfaces — all deferred to Phase 6's sub-phases,
 validated against the real list once it exists, not built
-speculatively. Doc-only; **no code lands until the maintainer
-accepts the ADR (esp. D5/D5a)**. Pointers added in CLAUDE.md
+speculatively. **D7 (maintainer strategic concern): the new
+cell pipeline sources only from the typed IOCell layer and is
+fenced off from the legacy ContentHistory text-materialisation
+patchwork (ADR 0002) rather than built on it — an invariant
+enforced at Phase 0/1, policed by D6's oracle; the legacy
+review-cursor document is left as-is, its verbatim-vs-nicer
+evolution a deferred Phase 6 fork.** Per-cell line-by-line /
+list-or-table rendering recorded as an explicitly far-field
+aspiration (not next-steps). Doc-only; **no code lands until
+the maintainer accepts the ADR (esp. D5/D5a, D7)**. Pointers
+added in CLAUDE.md
 reading order, ADR 0006 deferred-cluster header,
 SESSION-HANDOFF, and the R5 playbook banner.
 
