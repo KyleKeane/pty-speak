@@ -708,10 +708,17 @@ let private expectSome (label: string) (o: (string * string) option) =
         Assert.True(false, sprintf "%s: expected Some, got None" label)
         "", ""
 
+// ADR 0007 Phase 1 — `appendCell` now carries the source cell's
+// identity. These behavioural tests don't assert on identity, so
+// a fresh Guid + sequence 0 keeps them focused on
+// navigation/whitespace/ordering exactly as pre-Phase-1.
+let private addCell (c: SpeechCursor.T) (cmd: string) (out: string) : unit =
+    SpeechCursor.appendCell c (System.Guid.NewGuid()) 0L cmd out
+
 [<Fact>]
 let ``appendCell adds command then output as separate items`` () =
     let c = freshCursor ()
-    SpeechCursor.appendCell c "echo hi" "hi"
+    addCell c "echo hi" "hi"
     // AutoDrive (default) parks on the latest item = the output.
     let t, a = expectSome "current" (SpeechCursor.cellCurrent c)
     Assert.Equal("hi", t)
@@ -725,19 +732,19 @@ let ``appendCell adds command then output as separate items`` () =
 [<Fact>]
 let ``appendCell skips whitespace-only command and output`` () =
     let c = freshCursor ()
-    SpeechCursor.appendCell c "   " "real output"
+    addCell c "   " "real output"
     let t, _ = expectSome "current" (SpeechCursor.cellCurrent c)
     Assert.Equal("real output", t)
     // Only one item (the output); no blank command item.
     Assert.Equal(None, SpeechCursor.cellPrevious c)
-    SpeechCursor.appendCell c "cmd-only" "  "
+    addCell c "cmd-only" "  "
     let t2, _ = expectSome "latest" (SpeechCursor.cellToLatest c)
     Assert.Equal("cmd-only", t2)
 
 [<Fact>]
 let ``appendCell command item is trimmed`` () =
     let c = freshCursor ()
-    SpeechCursor.appendCell c "  echo hi  " "hi"
+    addCell c "  echo hi  " "hi"
     let _ = SpeechCursor.cellPrevious c
     let tc, _ = expectSome "cmd" (SpeechCursor.cellCurrent c)
     Assert.Equal("echo hi", tc)
@@ -745,21 +752,21 @@ let ``appendCell command item is trimmed`` () =
 [<Fact>]
 let ``appendCell in AutoDrive follows the latest item`` () =
     let c = freshCursor ()
-    SpeechCursor.appendCell c "one" "out1"
-    SpeechCursor.appendCell c "two" "out2"
+    addCell c "one" "out1"
+    addCell c "two" "out2"
     let t, _ = expectSome "current" (SpeechCursor.cellCurrent c)
     Assert.Equal("out2", t)
 
 [<Fact>]
 let ``appendCell in Manual does not move the cursor`` () =
     let c = manualCursor ()
-    SpeechCursor.appendCell c "one" "out1"
+    addCell c "one" "out1"
     // Manual: cursor stays unparked (-1) on append.
     Assert.Equal(None, SpeechCursor.cellCurrent c)
     // Explicit navigation still works.
     let t, _ = expectSome "latest" (SpeechCursor.cellToLatest c)
     Assert.Equal("out1", t)
-    SpeechCursor.appendCell c "two" "out2"
+    addCell c "two" "out2"
     // Still parked on the old position (out1), not snapped to out2.
     let t2, _ = expectSome "current" (SpeechCursor.cellCurrent c)
     Assert.Equal("out1", t2)
@@ -767,8 +774,8 @@ let ``appendCell in Manual does not move the cursor`` () =
 [<Fact>]
 let ``cellPrevious walks back then stops at first`` () =
     let c = manualCursor ()
-    SpeechCursor.appendCell c "c1" "o1"
-    SpeechCursor.appendCell c "c2" "o2"
+    addCell c "c1" "o1"
+    addCell c "c2" "o2"
     // Items: [c1; o1; c2; o2]. First Previous from unparked → latest.
     Assert.Equal("o2", fst (expectSome "p1" (SpeechCursor.cellPrevious c)))
     Assert.Equal("c2", fst (expectSome "p2" (SpeechCursor.cellPrevious c)))
@@ -779,8 +786,8 @@ let ``cellPrevious walks back then stops at first`` () =
 [<Fact>]
 let ``cellNext walks forward then stops at latest`` () =
     let c = manualCursor ()
-    SpeechCursor.appendCell c "c1" "o1"
-    SpeechCursor.appendCell c "c2" "o2"
+    addCell c "c1" "o1"
+    addCell c "c2" "o2"
     let _ = SpeechCursor.cellToLatest c       // park on o2 (idx 3)
     let _ = SpeechCursor.cellPrevious c       // c2
     let _ = SpeechCursor.cellPrevious c       // o1
@@ -791,8 +798,8 @@ let ``cellNext walks forward then stops at latest`` () =
 [<Fact>]
 let ``cellToLatest jumps to the last item`` () =
     let c = manualCursor ()
-    SpeechCursor.appendCell c "c1" "o1"
-    SpeechCursor.appendCell c "c2" "o2"
+    addCell c "c1" "o1"
+    addCell c "c2" "o2"
     let _ = SpeechCursor.cellPrevious c
     let _ = SpeechCursor.cellPrevious c
     let t, _ = expectSome "latest" (SpeechCursor.cellToLatest c)
@@ -809,12 +816,12 @@ let ``cell nav on empty transcript returns None`` () =
 [<Fact>]
 let ``cellReset clears transcript and position`` () =
     let c = freshCursor ()
-    SpeechCursor.appendCell c "c1" "o1"
+    addCell c "c1" "o1"
     SpeechCursor.cellReset c
     Assert.Equal(None, SpeechCursor.cellCurrent c)
     Assert.Equal(None, SpeechCursor.cellToLatest c)
     // Fresh after reset.
-    SpeechCursor.appendCell c "c2" "o2"
+    addCell c "c2" "o2"
     Assert.Equal("o2", fst (expectSome "post" (SpeechCursor.cellCurrent c)))
 
 [<Fact>]
@@ -829,8 +836,58 @@ let ``Issue 1 and 3 — command and post-response output are navigable`` () =
     let out =
         "=== START ===\nThis test asks a yes/no question.\n"
         + "Continue? [Y,N]?Y\nYou chose Yes.\n=== END ==="
-    SpeechCursor.appendCell c cmd out
+    addCell c cmd out
     let tOut, _ = expectSome "out" (SpeechCursor.cellToLatest c)
     Assert.Contains("You chose Yes.", tOut)
     let tCmd, _ = expectSome "cmd" (SpeechCursor.cellPrevious c)
     Assert.Equal(cmd, tCmd)
+
+// ---------------------------------------------------------------------
+// ADR 0007 Phase 1 — typed CellTranscript (identity + kind carried)
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``appendCell carries the source cell identity and kind on each item`` () =
+    // D1: the transcript items are typed views, not anonymous
+    // string pairs. Command line = Input, output = Output, both
+    // sharing the originating IOCell's Id / CellSequence. The
+    // projected (text, activityId) stays byte-identical (asserted
+    // by every other cell test via cellCurrent/Next/Previous).
+    let c = manualCursor ()
+    let id = Guid.NewGuid()
+    SpeechCursor.appendCell c id 42L "echo hi" "hi"
+    // Latest item = the output cell.
+    let out =
+        match SpeechCursor.cellToLatest c with
+        | Some _ -> SpeechCursor.cellCurrentView c
+        | None -> None
+    match out with
+    | Some v ->
+        Assert.Equal(SpeechCursor.CellKind.Output, v.Kind)
+        Assert.Equal(id, v.CellId)
+        Assert.Equal(42L, v.CellSequence)
+        Assert.Equal("hi", v.Text)
+        Assert.Equal(ActivityIds.output, v.ActivityId)
+    | None -> Assert.True(false, "expected an output CellView")
+    // Step back to the command line: same identity, Input kind.
+    let cmd =
+        match SpeechCursor.cellPrevious c with
+        | Some _ -> SpeechCursor.cellCurrentView c
+        | None -> None
+    match cmd with
+    | Some v ->
+        Assert.Equal(SpeechCursor.CellKind.Input, v.Kind)
+        Assert.Equal(id, v.CellId)
+        Assert.Equal(42L, v.CellSequence)
+        Assert.Equal("echo hi", v.Text)
+    | None -> Assert.True(false, "expected an input CellView")
+
+[<Fact>]
+let ``cellCurrentView is None before any navigation and after cellReset`` () =
+    let c = manualCursor ()
+    Assert.Equal(None, SpeechCursor.cellCurrentView c)
+    SpeechCursor.appendCell c (Guid.NewGuid()) 0L "c1" "o1"
+    let _ = SpeechCursor.cellToLatest c
+    Assert.True((SpeechCursor.cellCurrentView c).IsSome)
+    SpeechCursor.cellReset c
+    Assert.Equal(None, SpeechCursor.cellCurrentView c)

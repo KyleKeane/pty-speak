@@ -2048,7 +2048,11 @@ module Program =
                 // (both filtered from the raw ContentHistory-Seq
                 // path as `UserInputEcho`; ADR 0004 §4a).
                 SpeechCursor.appendCell
-                    speechCursor tuple.CommandText tuple.OutputText
+                    speechCursor
+                    tuple.Id
+                    tuple.CellSequence
+                    tuple.CommandText
+                    tuple.OutputText
             | None -> ()
 
             // Cycle 45 Commit 2 — ContentHistory + SpeechCursor

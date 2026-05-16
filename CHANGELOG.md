@@ -14843,6 +14843,35 @@ regression-only check (cell navigation + AutoDrive unchanged).
 F# structure re-read; locally unverifiable (no sandbox
 `dotnet`) — CI is the build signal.
 
+### Cycle 52 — ADR 0007 Phase 1: typed CellTranscript (D1) (2026-05-16)
+
+Pure refactor; **byte-identical narration**. `SpeechCursor`'s
+Manual-navigation transcript was `ResizeArray<string *
+string>` — anonymous pairs that discarded the source cell's
+identity and kind (the layering problem ADR 0007 D1 names).
+It is now `ResizeArray<CellView>` where `CellView = { CellId:
+Guid; CellSequence: int64; Kind: CellKind; Text; ActivityId }`
+and `CellKind = Input | Output | SubPromptExchange |
+ProgressSegment` (`[<RequireQualifiedAccess>]`; v1 emits only
+`Input`/`Output`, the other two reserved for Phases 4/5).
+`appendCell` now takes the source cell's `Id` + `CellSequence`
+(sourced from the finalized `IOCell` at the Program.fs seal
+site — ADR 0007 D7, never a ContentHistory slice). The
+navigation accessors (`cellCurrent`/`cellPrevious`/`cellNext`/
+`cellToLatest`) project `(Text, ActivityId)` via a private
+`cellPair` so what AutoDrive/Manual narrate is **exactly**
+pre-Phase-1 (every existing cell test still asserts the same
+pairs, unchanged). New `cellCurrentView : T -> CellView
+option` exposes the typed cell — the D2 per-cell-operations
+enabler (Phase 2). Tests: existing cell tests routed through a
+3-arg `addCell` wrapper (identity not asserted there); two new
+tests pin the typed shape (kind + shared identity per item;
+`cellCurrentView` lifecycle). Net +149/-26. No new announce
+site or behaviour ⇒ no new diagnostic args; `52-ADR7-P1`
+is regression-only (same surface as `52-ADR7-P0`).
+Locally unverifiable — F# structure re-read; CI is the
+build signal.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

@@ -52,6 +52,34 @@ module SpeechCursor =
         | AutoDrive
         | Manual
 
+    /// ADR 0007 D1 — the kind of a navigable cell-history item.
+    /// v1 (Phase 1) emits only `Input` (the command line) and
+    /// `Output` (the command's output). `SubPromptExchange`
+    /// (Phase 5) and `ProgressSegment` (Phase 4) are reserved
+    /// so the discriminator is shape-stable now; later phases
+    /// drive them.
+    [<RequireQualifiedAccess>]
+    type CellKind =
+        | Input
+        | Output
+        | SubPromptExchange
+        | ProgressSegment
+
+    /// ADR 0007 D1 — a typed view of one navigable cell-history
+    /// item. Carries the source `IOCell` identity (`CellId` /
+    /// `CellSequence`) and `Kind` so navigation and (Phase 2+)
+    /// per-cell operations bind to a stable cell identity, not
+    /// a flattened `(string * string)` pair. `Text` /
+    /// `ActivityId` are exactly what AutoDrive / Manual narrate
+    /// (the navigation accessors project `(Text, ActivityId)`
+    /// so narration is byte-identical to pre-Phase-1).
+    type CellView =
+        { CellId: Guid
+          CellSequence: int64
+          Kind: CellKind
+          Text: string
+          ActivityId: string }
+
     /// Configuration knobs. All defaults chosen to match the
     /// architectural intent in `docs/CORE-ABSTRACTION-BOUNDARY.md`.
     type Parameters =
@@ -171,7 +199,7 @@ module SpeechCursor =
         /// were removed in ADR 0007 Phase 0 (2026-05-16), leaving
         /// a single navigation model.
         member val internal CellTranscript
-            : ResizeArray<string * string> = ResizeArray() with get
+            : ResizeArray<CellView> = ResizeArray() with get
         /// Index into `CellTranscript` the Manual cursor is parked
         /// on. -1 = before the first item (fresh / after
         /// `cellReset`).
@@ -598,27 +626,61 @@ module SpeechCursor =
     /// in Manual it stays put so an in-progress review isn't
     /// disturbed by new output (mirrors the legacy AutoDrive /
     /// Manual append semantics).
+    /// ADR 0007 D7 — `cellId` / `cellSequence` are sourced from
+    /// the finalized `IOCell` at the seal site (Program.fs), not
+    /// re-derived from a ContentHistory slice. v1 (Phase 1)
+    /// classifies the command line as `Input` and the output as
+    /// `Output`; both share the source cell's identity. The
+    /// whitespace-skip + `Trim` + `ActivityIds.output` are
+    /// unchanged from pre-Phase-1, so what the navigation
+    /// accessors return — and therefore what is narrated — is
+    /// byte-identical.
     let appendCell
             (state: T)
+            (cellId: Guid)
+            (cellSequence: int64)
             (commandText: string)
             (outputText: string)
             : unit =
         if not (String.IsNullOrWhiteSpace commandText) then
             state.CellTranscript.Add(
-                (commandText.Trim(), ActivityIds.output))
+                { CellId = cellId
+                  CellSequence = cellSequence
+                  Kind = CellKind.Input
+                  Text = commandText.Trim()
+                  ActivityId = ActivityIds.output })
         if not (String.IsNullOrWhiteSpace outputText) then
             state.CellTranscript.Add(
-                (outputText, ActivityIds.output))
+                { CellId = cellId
+                  CellSequence = cellSequence
+                  Kind = CellKind.Output
+                  Text = outputText
+                  ActivityId = ActivityIds.output })
         if state.Mode = AutoDrive then
             state.CellPos <- state.CellTranscript.Count - 1
 
-    /// The transcript item the Manual cursor is parked on, if any.
-    let cellCurrent (state: T) : (string * string) option =
+    /// Project a stored `CellView` to the `(text, activityId)`
+    /// pair the narration path consumes. Keeps `cellCurrent` /
+    /// `cellPrevious` / `cellNext` / `cellToLatest` returning
+    /// exactly what they returned pre-Phase-1 (byte-identical
+    /// narration); the typed view is reachable via
+    /// `cellCurrentView` for the Phase 2+ operations layer.
+    let private cellPair (v: CellView) : string * string =
+        (v.Text, v.ActivityId)
+
+    /// The typed cell the Manual cursor is parked on, if any.
+    /// ADR 0007 D2 enabler — per-cell operations bind to this
+    /// (identity + kind), not the projected pair.
+    let cellCurrentView (state: T) : CellView option =
         if state.CellPos >= 0
            && state.CellPos < state.CellTranscript.Count then
             Some state.CellTranscript.[state.CellPos]
         else
             None
+
+    /// The transcript item the Manual cursor is parked on, if any.
+    let cellCurrent (state: T) : (string * string) option =
+        cellCurrentView state |> Option.map cellPair
 
     /// Step the Manual cursor to the previous (older) transcript
     /// item. From the unparked state (-1) the first press lands on
@@ -634,7 +696,7 @@ module SpeechCursor =
             if target < 0 then None
             else
                 state.CellPos <- target
-                Some state.CellTranscript.[target]
+                Some (cellPair state.CellTranscript.[target])
 
     /// Step the Manual cursor to the next (newer) transcript item.
     /// From the unparked state (-1) the first press lands on the
@@ -650,7 +712,7 @@ module SpeechCursor =
             if target >= count then None
             else
                 state.CellPos <- target
-                Some state.CellTranscript.[target]
+                Some (cellPair state.CellTranscript.[target])
 
     /// Jump the Manual cursor to the latest transcript item.
     /// Returns it, or `None` if the transcript is empty.
@@ -659,7 +721,7 @@ module SpeechCursor =
         if count = 0 then None
         else
             state.CellPos <- count - 1
-            Some state.CellTranscript.[count - 1]
+            Some (cellPair state.CellTranscript.[count - 1])
 
     /// Clear the cell transcript. Called on shell hot-switch
     /// alongside `reset` (the previous shell's transcript is no
