@@ -304,8 +304,16 @@ list** and folds 0005's mechanism into it.
   SpeechCursor command items — trivially correct on the clean
   event stream. Sequenced R6a→R6d, one PR + dogfood each
   (walking-skeleton). **R6a — hybrid per-line progress
-  streaming: SHIPPED & CI-green 2026-05-16 (#383),
-  dogfood-pending** (matrix `52-R6a`). Maintainer chose the
+  streaming: SHIPPED, CI-green & DOGFOOD-VALIDATED
+  2026-05-16 (#383, matrix `52-R6a` ✅ PASSED)** — progress
+  loop announces each output line as it appears, echo/claude
+  unaffected; maintainer cleared the gate ("good to progress
+  to the next stage"). Two non-blocking observations: a
+  transient first-few-echoes prompt-path-after-output that
+  did not reproduce even on restart (watch-item, not chased);
+  and progress chunks *interrupt* in-flight speech — expected
+  v1 (`MostRecent` supersede by design), smoother queueing
+  deferred (see new item 9 below). Maintainer chose the
   *hybrid* model: the authoritative `TupleFinalOnly` seal
   read is unchanged (no edit-conflation risk — it stays the
   screen-authoritative `IOCell.OutputText`); R6a additionally
@@ -504,6 +512,25 @@ would be premature.
    byte-for-byte while `PathwayId`/resolver/`[pathway.*]`
    parsing are dropped + a deprecation note added. Low
    priority (inert; pure cleanliness); not gating R6.
+
+9. **Smoother progress-chunk delivery (R6a follow-on).**
+   Surfaced in the `52-R6a` dogfood 2026-05-16: an R6a
+   progress chunk uses `ActivityIds.output` + `MostRecent`,
+   so it **interrupts** whatever NVDA is currently speaking
+   (a prior chunk, an unrelated announce). The maintainer
+   confirmed this is **acceptable v1 behaviour** and the
+   correct supersede semantics for *output* (a later chunk
+   should win over a stale one) — but flagged that a more
+   sophisticated model (queue-and-coalesce rather than
+   hard-interrupt, or a chunk-cadence floor so closely-spaced
+   flushes don't stutter) is worth exploring "in the far
+   future". NOT a v1 defect; no behaviour change owed. Park
+   here so the design conversation has a home; revisit only
+   if real-use friction makes it a priority over the R6b–R7
+   primary track. Any future work here must preserve the
+   tuple-final seal as the screen-authoritative read and the
+   R3c/R3e watermark composition (the load-bearing invariants
+   R6a is built on).
 
 Each stage independently CI-gated and dogfood-validated. R1
 and R4 are the new structural gates that make the boundary

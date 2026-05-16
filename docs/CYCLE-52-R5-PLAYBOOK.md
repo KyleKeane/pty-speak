@@ -6,16 +6,24 @@
 > (#1 risk resolved positive — see §4 R5c/R5d). P1–P5
 > pre-R6 pruning done (P1/P2/P4/P5 shipped; P3 no-op +
 > deferred P3b — playbook §5). **R6a (hybrid per-line
-> progress streaming) shipped & CI-green — DOGFOOD-PENDING**
-> (the first R6 audible-behaviour change; matrix `52-R6a`;
-> the maintainer chose the hybrid model 2026-05-16: keep
-> the authoritative tuple-final seal read, ADD progress
+> progress streaming) shipped, CI-green & DOGFOOD-VALIDATED
+> 2026-05-16 (#383, matrix `52-R6a` ✅ PASSED)** — progress
+> loop announces each output line as it appears; echo/claude
+> unaffected; maintainer: "good to progress to the next
+> stage". Two non-blocking observations recorded on the
+> `52-R6a` row: (a) a transient first-few-echoes
+> prompt-path-after-output that did not reproduce even on
+> restart — watch-item, not chased; (b) progress chunks
+> *interrupt* in-flight speech — expected v1 (`MostRecent`
+> supersede by design); smoother queueing is deferred-R6+
+> item 9. The maintainer chose the hybrid model 2026-05-16:
+> keep the authoritative tuple-final seal read, ADD progress
 > announces on output-quiescence during Executing, reusing
-> the validated R3c/R3e watermark). **Next within R6: R6b
+> the validated R3c/R3e watermark. **Next within R6: R6b
 > prompt-path-verbosity → R6c clean SpeechCursor command
 > items → R6d PowerShell-diagnostics submenu** — each its
-> own PR + dogfood (walking-skeleton: R6a's `52-R6a`
-> dogfood gates R6b). cmd announce-heuristic FREEZE still
+> own PR + dogfood (walking-skeleton; R6a's gate is now
+> cleared so R6b is unblocked). cmd announce-heuristic FREEZE still
 > stands (R6a does NOT touch it — it reuses the clean R3c
 > slice, not raw per-TextSpan). This file stays the
 > start-here for R6 and recovery.
