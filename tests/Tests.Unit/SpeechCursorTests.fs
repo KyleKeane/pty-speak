@@ -13,8 +13,6 @@ open Terminal.Core
 //
 //   * AutoDrive advances + announces on append
 //   * Manual mode does NOT advance on append
-//   * Navigation (next / previous / toLatest / toMarker)
-//   * speakSince emits in seq order; updates LastSpokenSeq
 //   * SelectionShown suspends auto-drive; SelectionDismissed resumes
 //   * Spinner entries are skipped in AutoDrive (configurable)
 //   * Reset preserves Mode but clears Position / LastSpokenSeq
@@ -64,11 +62,9 @@ let private capture () =
 [<Fact>]
 let ``new cursor starts in AutoDrive at Position -1 with nothing spoken`` () =
     let cursor = freshCursor ()
-    let history = freshHistory ()
     Assert.Equal(SpeechCursor.AutoDrive, SpeechCursor.mode cursor)
     Assert.Equal(-1L, cursor.Position)
     Assert.Equal(-1L, cursor.LastSpokenSeq)
-    Assert.Equal(None, SpeechCursor.current cursor history)
 
 // ---------------------------------------------------------------------
 // AutoDrive announces on append
@@ -170,193 +166,6 @@ let ``setMode forces the specified mode`` () =
     Assert.Equal(SpeechCursor.Manual, SpeechCursor.mode cursor)
     SpeechCursor.setMode cursor SpeechCursor.AutoDrive
     Assert.Equal(SpeechCursor.AutoDrive, SpeechCursor.mode cursor)
-
-// ---------------------------------------------------------------------
-// Navigation: next / previous / toLatest
-// ---------------------------------------------------------------------
-
-[<Fact>]
-let ``next moves cursor to the next renderable entry skipping Newlines`` () =
-    // Cycle 49 PR-A — manual nav skips non-renderable entries
-    // (Newline, Overwrite, empty TextSpan, UserInputEcho).
-    // After "a\nb\n" the entries are TextSpan "a" (Seq 0),
-    // Newline (Seq 1), TextSpan "b" (Seq 2), Newline (Seq 3).
-    // From Position -1, `next` lands on Seq 0 then jumps over
-    // the Newline to Seq 2.
-    let cursor = freshCursor ()
-    SpeechCursor.setMode cursor SpeechCursor.Manual
-    let history = freshHistory ()
-    let _ = ContentHistory.appendFromEvent history t0 (printRune 'a')
-    let _ = ContentHistory.appendFromEvent history t0 lf
-    let _ = ContentHistory.appendFromEvent history t0 (printRune 'b')
-    let _ = ContentHistory.appendFromEvent history t0 lf
-    let n1 = SpeechCursor.next cursor history
-    Assert.True(n1.IsSome)
-    Assert.Equal(0L, cursor.Position)
-    let n2 = SpeechCursor.next cursor history
-    Assert.True(n2.IsSome)
-    Assert.Equal(2L, cursor.Position)
-    // No further renderable entry — the trailing Newline is
-    // skipped and `next` returns None.
-    let n3 = SpeechCursor.next cursor history
-    Assert.Equal(None, n3)
-    Assert.Equal(2L, cursor.Position)
-
-[<Fact>]
-let ``previous moves cursor backward skipping Newlines`` () =
-    // Cycle 49 PR-A — `previous` mirrors `next`'s renderable
-    // filter: from the latest TextSpan "b" (Seq 2), stepping
-    // back skips the Newline (Seq 1) and lands on TextSpan "a"
-    // (Seq 0).
-    let cursor = freshCursor ()
-    SpeechCursor.setMode cursor SpeechCursor.Manual
-    let history = freshHistory ()
-    let _ = ContentHistory.appendFromEvent history t0 (printRune 'a')
-    let _ = ContentHistory.appendFromEvent history t0 lf
-    let _ = ContentHistory.appendFromEvent history t0 (printRune 'b')
-    let _ = ContentHistory.appendFromEvent history t0 lf
-    let _ = SpeechCursor.toLatest cursor history
-    Assert.Equal(2L, cursor.Position)
-    let prev = SpeechCursor.previous cursor history
-    Assert.True(prev.IsSome)
-    Assert.Equal(0L, cursor.Position)
-    let prev2 = SpeechCursor.previous cursor history
-    Assert.Equal(None, prev2)
-    Assert.Equal(0L, cursor.Position)
-
-[<Fact>]
-let ``toLatest jumps to the latest renderable entry skipping trailing Newline`` () =
-    // Cycle 49 PR-A — `toLatest` follows the same renderable
-    // filter as `next`/`previous` so a trailing Newline (the
-    // common shape after a `dir`-style command) doesn't park
-    // the cursor on a Seq the user can't hear.
-    let cursor = freshCursor ()
-    SpeechCursor.setMode cursor SpeechCursor.Manual
-    let history = freshHistory ()
-    let _ = ContentHistory.appendFromEvent history t0 (printRune 'h')
-    let _ = ContentHistory.appendFromEvent history t0 lf
-    let latest = SpeechCursor.toLatest cursor history
-    Assert.True(latest.IsSome)
-    // Latest renderable entry is the TextSpan "h" (Seq 0); the
-    // trailing Newline (latestSeq = 1) is skipped.
-    Assert.Equal(0L, cursor.Position)
-    Assert.Equal(1L, ContentHistory.latestSeq history)
-
-[<Fact>]
-let ``toLatest on empty history returns None and leaves Position at -1`` () =
-    let cursor = freshCursor ()
-    let history = freshHistory ()
-    let result = SpeechCursor.toLatest cursor history
-    Assert.Equal(None, result)
-    Assert.Equal(-1L, cursor.Position)
-
-[<Fact>]
-let ``next skips UserInputEcho-sourced entries`` () =
-    // Cycle 49 PR-A — UserInputEcho entries render to None in
-    // `renderEntryWithPolicy` (Cycle 48 PR-E) and so are
-    // skipped by manual navigation. A typical sub-prompt
-    // sequence has the cmd-output TextSpan followed by the
-    // user's typed-then-Enter UserInputEcho TextSpan; `next`
-    // should jump over the echo entry.
-    let cursor = freshCursor ()
-    SpeechCursor.setMode cursor SpeechCursor.Manual
-    let history = freshHistory ()
-    // First batch: cmd output. SourceResolver defaults to
-    // Unknown which renders normally.
-    let _ = ContentHistory.appendFromEvent history t0 (printRune 'o')
-    let _ = ContentHistory.appendFromEvent history t0 (printRune 'k')
-    let _ = ContentHistory.appendFromEvent history t0 lf
-    // Flip the resolver to UserInputEcho before appending the
-    // typed-echo bytes.
-    ContentHistory.setSourceResolver
-        history
-        (fun () -> ContentHistory.EntrySource.UserInputEcho)
-    let _ = ContentHistory.appendFromEvent history (after 10) (printRune 'y')
-    let _ = ContentHistory.appendFromEvent history (after 10) (printRune 'o')
-    let _ = ContentHistory.appendFromEvent history (after 10) lf
-    let n1 = SpeechCursor.next cursor history
-    Assert.True(n1.IsSome)
-    // First renderable entry is the "ok" TextSpan at Seq 0.
-    Assert.Equal(0L, cursor.Position)
-    // No further renderable entry — the echo TextSpan + its
-    // surrounding Newlines are all filtered.
-    let n2 = SpeechCursor.next cursor history
-    Assert.Equal(None, n2)
-
-[<Fact>]
-let ``previous returns None when only Newlines precede the cursor`` () =
-    // Cycle 49 PR-A — if the only earlier entries are
-    // non-renderable, `previous` reports "already at the
-    // earliest renderable" rather than parking on a Newline.
-    let cursor = freshCursor ()
-    SpeechCursor.setMode cursor SpeechCursor.Manual
-    let history = freshHistory ()
-    let _ = ContentHistory.appendFromEvent history t0 lf
-    let _ = ContentHistory.appendFromEvent history t0 (printRune 'x')
-    let _ = ContentHistory.appendFromEvent history t0 lf
-    let _ = SpeechCursor.toLatest cursor history
-    // toLatest lands on TextSpan "x" (the leading Newline at
-    // Seq 0 sealed the empty active span without producing a
-    // renderable TextSpan).
-    let prev = SpeechCursor.previous cursor history
-    Assert.Equal(None, prev)
-
-// ---------------------------------------------------------------------
-// toMarker
-// ---------------------------------------------------------------------
-
-[<Fact>]
-let ``toMarker forward finds the next matching marker`` () =
-    let cursor = freshCursor ()
-    SpeechCursor.setMode cursor SpeechCursor.Manual
-    let history = freshHistory ()
-    let _ =
-        ContentHistory.appendMarker
-            history
-            ContentHistory.MarkerKind.PromptStart
-            t0
-            None
-    let _ = ContentHistory.appendFromEvent history t0 (printRune 'h')
-    let _ = ContentHistory.appendFromEvent history t0 lf
-    let _ =
-        ContentHistory.appendMarker
-            history
-            ContentHistory.MarkerKind.PromptStart
-            (after 10)
-            None
-    // Cursor is at -1; forward jump should land on Seq 0
-    // (the first PromptStart marker).
-    let found =
-        SpeechCursor.toMarker
-            cursor
-            history
-            ContentHistory.MarkerKind.PromptStart
-            SpeechCursor.Forward
-    Assert.True(found.IsSome)
-    match found with
-    | Some (ContentHistory.Marker m) ->
-        Assert.Equal(ContentHistory.MarkerKind.PromptStart, m.Kind)
-        Assert.Equal(0L, m.Seq)
-    | _ -> Assert.Fail("expected PromptStart marker at seq 0")
-
-[<Fact>]
-let ``toMarker with no matching kind returns None`` () =
-    let cursor = freshCursor ()
-    SpeechCursor.setMode cursor SpeechCursor.Manual
-    let history = freshHistory ()
-    let _ =
-        ContentHistory.appendMarker
-            history
-            ContentHistory.MarkerKind.PromptStart
-            t0
-            None
-    let found =
-        SpeechCursor.toMarker
-            cursor
-            history
-            ContentHistory.MarkerKind.SelectionShown
-            SpeechCursor.Forward
-    Assert.Equal(None, found)
 
 // ---------------------------------------------------------------------
 // SelectionShown / SelectionDismissed suspend/resume AutoDrive
@@ -788,34 +597,6 @@ let ``manual-nav render delegates to renderEntryWithPolicy for non-PromptStart e
         Assert.Equal(ActivityIds.output, activityId)
     | None -> Assert.Fail("expected TextSpan to render under manual nav")
 
-[<Fact>]
-let ``manual-nav previous lands on PromptStart marker as navigable entry`` () =
-    // End-to-end sanity: with a PromptStart sandwiched between
-    // two TextSpans, stepping back from the latest surfaces the
-    // prompt as its own stop. Without PR-D this would skip the
-    // PromptStart under the default `PromptPath = Suppress`.
-    let cursor = freshCursor ()
-    SpeechCursor.setMode cursor SpeechCursor.Manual
-    let history = freshHistory ()
-    let _ = ContentHistory.appendFromEvent history t0 (printRune 'a')
-    let _ = ContentHistory.appendFromEvent history t0 lf
-    let _ =
-        ContentHistory.appendMarker
-            history
-            ContentHistory.MarkerKind.PromptStart
-            (after 10)
-            (Some "C:\\Users\\Kyle\\Local>")
-    let _ = ContentHistory.appendFromEvent history (after 20) (printRune 'b')
-    let _ = ContentHistory.appendFromEvent history (after 20) lf
-    let _ = SpeechCursor.toLatest cursor history
-    // Latest renderable is TextSpan "b". Previous step lands on
-    // the PromptStart marker (newly renderable in PR-D).
-    let prev = SpeechCursor.previous cursor history
-    match prev with
-    | Some (ContentHistory.Marker m) ->
-        Assert.Equal(ContentHistory.MarkerKind.PromptStart, m.Kind)
-    | _ -> Assert.Fail("expected previous to land on PromptStart marker")
-
 // ---------------------------------------------------------------------
 // Cycle 45f — setParameters + LineByLine streaming + Off mode
 // ---------------------------------------------------------------------
@@ -876,40 +657,6 @@ let ``setParameters mid-stream only affects subsequent appends`` () =
     SpeechCursor.onAppend cursor history announce
     // No new announce — "b" was suppressed under the new policy.
     Assert.Equal<string list>([ "a" ], snap () |> List.map fst)
-
-// ---------------------------------------------------------------------
-// speakSince
-// ---------------------------------------------------------------------
-
-[<Fact>]
-let ``speakSince emits in seq order and advances LastSpokenSeq`` () =
-    let cursor = freshCursor ()
-    SpeechCursor.setMode cursor SpeechCursor.Manual
-    let history = freshHistory ()
-    let announce, snap = capture ()
-    let _ =
-        ContentHistory.appendFromEvent history t0 (printRune 'a')
-        @ ContentHistory.appendFromEvent history t0 lf
-    let _ =
-        ContentHistory.appendFromEvent history (after 10) (printRune 'b')
-        @ ContentHistory.appendFromEvent history (after 10) lf
-    let latest = ContentHistory.latestSeq history
-    let count =
-        SpeechCursor.speakSince cursor history announce latest
-    Assert.Equal(2, count)
-    let said = snap () |> List.map fst
-    Assert.Equal<string list>([ "a"; "b" ], said)
-    Assert.Equal(latest, cursor.LastSpokenSeq)
-
-[<Fact>]
-let ``speakSince emits nothing when there's nothing new`` () =
-    let cursor = freshCursor ()
-    SpeechCursor.setMode cursor SpeechCursor.Manual
-    let history = freshHistory ()
-    let announce, snap = capture ()
-    let count = SpeechCursor.speakSince cursor history announce 10L
-    Assert.Equal(0, count)
-    Assert.Empty(snap ())
 
 // ---------------------------------------------------------------------
 // Spinner skip — re-pinned in a future commit once ContentHistory has

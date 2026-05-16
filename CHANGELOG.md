@@ -14814,6 +14814,35 @@ behaviour change; the single-model precondition) as its own
 PR, followed by Phases 1→7 each independently CI- +
 dogfood-gated.
 
+### Cycle 52 — ADR 0007 Phase 0: delete the dead SpeechCursor Seq-navigation engine (2026-05-16)
+
+Net-subtractive single-model precondition for the ADR 0007
+work. `SpeechCursor` carried a legacy ContentHistory-Seq
+navigation engine — `current` / `toMarker` / `next` /
+`previous` / `toLatest` / `speakCurrent` / `speakSince`, the
+private `renderable` helper, and the `Direction`
+(`Forward`/`Backward`) type — superseded by the Cycle 51
+PR-AD `CellTranscript` model for user-facing Manual
+navigation and with **zero production callers** (verified
+across `src/` — test-only). All removed, along with their
+unit tests in `SpeechCursorTests.fs` (the next/previous/
+toLatest/toMarker section, the `manual-nav previous lands
+on PromptStart` test, the `speakSince` section, and the
+`current` assertion in the initial-state test). The live
+paths are untouched: AutoDrive `onAppend` +
+`Position`/`LastSpokenSeq` bookkeeping, selection-suspend,
+`renderEntryWithPolicy`, `renderEntryForManualNav` (still
+used by the Diagnostics navigability dump), the
+`CellTranscript` cell surface, and the Cycle 52 R6b/-followup
+on-change prompt-path resolution. Module + member docstrings
+tightened to describe the single remaining model (the stale
+"Commit 1 … no production callsite yet" note dropped).
+**No audible behaviour change** — the deleted functions were
+never invoked in production; the `52-ADR7-P0` matrix row is a
+regression-only check (cell navigation + AutoDrive unchanged).
+F# structure re-read; locally unverifiable (no sandbox
+`dotnet`) — CI is the build signal.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
