@@ -164,6 +164,54 @@ let ``SubPromptIdle while Composing is a no-op`` () =
     Assert.Equal(None, result)
 
 // ---------------------------------------------------------------------
+// SingleKeySubmitted (R3e, 2026-05-16) — a single-key sub-prompt
+// answer (cmd `choice`) has no `\r`, so `EnterPressed` never fires;
+// `SingleKeySubmitted` resumes Executing so post-answer output is
+// tagged CmdOutput and a 2nd sub-prompt re-detects (test-09).
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``SingleKeySubmitted from single-key Composing transitions to Executing`` () =
+    let prior =
+        ShellInteraction.Composing
+            { EnteredAt = t0
+              PromptText = ValueSome "Pick: [Y,N]?"
+              SinglekeySubmit = true }
+    let result =
+        ShellInteraction.tryTransition
+            prior ShellInteraction.SingleKeySubmitted (after 500)
+    match result with
+    | Some (ShellInteraction.Executing data) ->
+        Assert.Equal("", data.SubmittedCommand)
+        Assert.False(data.OutputLastByteIsLf)
+    | other -> Assert.Fail(sprintf "Expected Executing; got %A" other)
+
+[<Fact>]
+let ``SingleKeySubmitted from non-single-key Composing is a no-op`` () =
+    let prior =
+        ShellInteraction.Composing
+            { EnteredAt = t0
+              PromptText = ValueSome "C:\\>"
+              SinglekeySubmit = false }
+    let result =
+        ShellInteraction.tryTransition
+            prior ShellInteraction.SingleKeySubmitted (after 500)
+    Assert.Equal(None, result)
+
+[<Fact>]
+let ``SingleKeySubmitted while Executing is a no-op`` () =
+    let prior =
+        ShellInteraction.Executing
+            { EnteredAt = t0
+              SubmittedCommand = "ping localhost"
+              OutputLastByteIsLf = false
+              OutputLastByteAt = after 50 }
+    let result =
+        ShellInteraction.tryTransition
+            prior ShellInteraction.SingleKeySubmitted (after 500)
+    Assert.Equal(None, result)
+
+// ---------------------------------------------------------------------
 // isSingleKeySubmit
 // ---------------------------------------------------------------------
 
@@ -348,6 +396,7 @@ let ``describeTrigger produces non-empty single-line text for each variant`` () 
         [ ShellInteraction.EnterPressed "cmd"
           ShellInteraction.PromptDetected "C:\\>"
           ShellInteraction.SubPromptIdle "Enter:"
+          ShellInteraction.SingleKeySubmitted
           ShellInteraction.AltScreenEntered
           ShellInteraction.AltScreenExited ]
     for t in triggers do

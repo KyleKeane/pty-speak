@@ -188,6 +188,16 @@ module ShellInteraction =
         /// `SinglekeySubmit` flagged if the sub-prompt text
         /// matches a single-key pattern.
         | SubPromptIdle of subPromptText : string
+        /// R3e (2026-05-16) — the user answered a SINGLE-KEY
+        /// sub-prompt (e.g. cmd `choice /c YN`): a keystroke
+        /// with no `\r`, so `EnterPressed` never fires. Drives
+        /// `Composing(SinglekeySubmit=true) → Executing` so cmd's
+        /// resumed output is tagged `CmdOutput` (not
+        /// `UserInputEcho`) and a SUBSEQUENT sub-prompt in the
+        /// same command can be re-detected. No-op for a
+        /// non-single-key `Composing` (normal command typing) or
+        /// `Executing`.
+        | SingleKeySubmitted
         /// Alt-screen modulation (vim, less, full-TUI). Suspends
         /// the state machine; entry/exit toggle the suspension.
         /// PR-B logs but does not suspend (modulation lands
@@ -390,6 +400,27 @@ module ShellInteraction =
         | Composing _, SubPromptIdle _ ->
             None
 
+        // [d] R3e — single-key sub-prompt answered. Only a
+        // `Composing` whose prompt matched the single-key
+        // pattern resumes Executing; this is what lets cmd's
+        // post-answer output be tagged `CmdOutput` and a 2nd
+        // sub-prompt in the same command re-detect (test-09).
+        | Composing data, SingleKeySubmitted when data.SinglekeySubmit ->
+            Some
+                (Executing
+                    { EnteredAt = at
+                      SubmittedCommand = ""
+                      OutputLastByteIsLf = false
+                      OutputLastByteAt = at })
+
+        // Normal command typing (`Composing`, not single-key)
+        // or already `Executing`: a keystroke is not a
+        // single-key sub-prompt answer. No-op.
+        | Composing _, SingleKeySubmitted ->
+            None
+        | Executing _, SingleKeySubmitted ->
+            None
+
         // Alt-screen modulation: PR-B no-op.
         | _, AltScreenEntered
         | _, AltScreenExited ->
@@ -529,5 +560,6 @@ module ShellInteraction =
                 if p.Length > 40 then p.Substring(0, 40) + "..."
                 else p
             sprintf "SubPromptIdle(%s)" s
+        | SingleKeySubmitted -> "SingleKeySubmitted"
         | AltScreenEntered -> "AltScreenEntered"
         | AltScreenExited -> "AltScreenExited"

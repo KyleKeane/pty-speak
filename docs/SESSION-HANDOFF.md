@@ -76,13 +76,26 @@ State after the maintainer's batched dogfood of post-`cab2a0d`
   echo+next-path leak is gone (R3b deleted the PR-X
   `lastEnterSeq`/`EndsWith` pile; R3c made the announce a
   settled-watermark Seq-gap). Confirmed by the maintainer.
-- **#2 sub-prompt double-speech — FIXED & validated.** The
-  question is announced once in real-time, then only the
-  post-response output at finalise. Maintainer confirmed
-  ("first half until input, then only the second half").
-  `test-09-multi-interrupt` (matrix `52-R3c-multi`) pins the
-  MULTI-incremental composition case R5/R6 depend on. Stays
-  fixed under R3d (below).
+- **#2 sub-prompt double-speech — FIXED & validated** (single
+  sub-prompt, e.g. `test-04`). The question is announced once
+  in real-time, then only the post-response output at finalise.
+  Maintainer confirmed ("first half until input, then only the
+  second half"). Stays fixed under R3d/R3e.
+- **test-09 multi-sub-prompt — FIXED by R3e.** The
+  SHA-confirmed bundle (build `62fdc2d`, validating R3d)
+  exposed a structural defect on `test-09-multi-interrupt`
+  (matrix `52-R3c-multi`): after the **first** single-key
+  answer the 2nd sub-prompt was never announced and the
+  resumed output (Seq 145–163) was mis-tagged `UserInputEcho`.
+  Root cause (bundle-definitive): a `choice`-style answer is a
+  single keystroke with **no `\r`**, so `EnterPressed` never
+  fires; the state stayed stuck `Composing(SinglekeySubmit=
+  true)`. **R3e** adds a `SingleKeySubmitted` transition (the
+  byte-write path emits it on the first keystroke in that
+  state) driving `Composing → Executing` → post-answer output
+  tagged `CmdOutput` + the 2nd `Executing,SubPromptIdle →
+  Composing` re-detects. This is the MULTI-incremental
+  composition case R5/R6 depend on.
 - **R3c plain-command echo regression — FIXED by R3d.** The
   SHA-confirmed bundle (build `09321e7`) proved R3c re-spoke
   the typed command on every plain command (`echo X` → "echo
