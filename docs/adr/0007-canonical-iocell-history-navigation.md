@@ -783,10 +783,18 @@ instruction, not buried in chat text.
   confirmed). Surfaced the clean-command argument
   truncation → ADR 0006 deferred item 1 "Tracked
   variant 2".
-- **Phase 2c** — Implemented & CI-green (menu-only
-  jump-to-last-error; `CellView.ExitCode` added;
-  completes the Phase 2 per-cell-ops set). Dogfood row
-  `52-ADR7-P2c` pending the maintainer's NVDA pass.
+- **Phase 2c** — Implemented, CI-green, **dogfood
+  feature-PASSED 2026-05-17** under PowerShell
+  (`cmd /c exit 7` → Jump to Last Error jumps to it).
+  Scope clarified: exit-code failure detection sees
+  **external-process non-zero exits under PowerShell**
+  only — cmd transports no exit code (documented
+  limitation) and PowerShell *cmdlet* errors don't set
+  `$LASTEXITCODE`. Follow-up shipped: cmd now speaks an
+  honest shell-gated capability message instead of the
+  misleading "No failed command in history." The
+  test-surfaced boundary confusion = the already-tracked
+  ADR 0006 item-1 variants 1 & 2, not a Phase 2c bug.
 - **Phase 3** — Implemented & CI-green (menu-only
   rerun-input; two-step arm/confirm + echo-before-run;
   `TerminalView.InjectCommand` via the Ctrl+L `_writeBytes`
