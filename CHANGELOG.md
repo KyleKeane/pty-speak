@@ -15011,6 +15011,43 @@ instead of a real `;B`/`;C` marker), distinct symptom
 (maintainer 2026-05-17): track + continue phases, no
 speculative patch (cmd announce-heuristic FREEZE). Doc-only.
 
+### Cycle 52 — ADR 0007 Phase 2c: jump to last failed cell (2026-05-17)
+
+Behavioural (D2 — completes the Phase 2 per-cell operations
+set). New **menu-only** item **Output History → Jump to Last
+Error**: parks the speech (Manual) cursor on the most recent
+cell whose source IOCell exited non-zero, and narrates it
+(`ActivityIds.diagnostic`, same as the other Manual-nav
+announces); "No failed command in history." when nothing
+failed. `SpeechCursor.CellView` now carries the cell's
+`ExitCode: int option` (set on every item of the cell, like
+`CellId`; `appendCell` gained the param, fed `tuple.ExitCode`
+at the seal site in `Program.fs`). New
+`SpeechCursor.jumpToLastError` scans the transcript
+newest-first for the first non-zero-exit item (the failed
+cell's Output item when it has one — Output has the higher
+index — else its Input item) and parks `CellPos` there.
+Mode is intentionally left untouched, matching
+`cellPrevious`/`cellToLatest` (navigation does not flip
+AutoDrive↔Manual; that focus-vs-live policy is a Phase 6 D5a
+open decision, deliberately not Phase 2c's to make).
+Menu-only, same D5a hotkey-surface rationale as 2a/2b.
+Counts-only Information log (`Found` + landed `CellSeq`; no
+command/output text — logging discipline). Wired through
+`HotkeyRegistry` (`JumpToLastError`, `Key = None` +
+`nameOf` + `builtIns` + `allCommands`), `Program.fs`
+(handler + bind), `MainWindow.xaml` (auto-wired menu item),
+`HotkeyRegistryTests` `expected` set, four new
+`SpeechCursorTests` (empty / no-failure / latest-failure /
+multi-failure). `Ctrl+Shift+Y/O/A` are documented as the
+existing all/last specialisations of the per-cell ops (no
+code change — relationship note only). **Deferred still:**
+numeric `jump-to-cell-N` (needs a screen-reader-friendly
+number-entry affordance — later); kind-filtered jumps are
+Phase 6b. Behavioural ⇒ NVDA dogfood row `52-ADR7-P2c`.
+Locally unverifiable — F# structure re-read; CI is the
+build signal.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
