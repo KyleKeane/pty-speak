@@ -470,6 +470,33 @@ would be premature.
    `stripNextPrompt` + `commandEnterSeq` reconstruction stays
    (golden path works; the two failure modes above are the
    known residue).
+
+   **Tracked variant — command-line-edit input/output desync
+   (maintainer dogfood 2026-05-17, `52-ADR7-P2a`).** Editing
+   the command line before Enter (e.g. typing, **backspace**,
+   retyping, Enter) makes cmd reprint/reflow the line, so
+   `ContentHistory` accumulates `TextSpan → Overwrite →
+   TextSpan`. `ContentHistory.sliceText` treats an `Overwrite`
+   as *appended* text rather than "replaces the prior visual
+   region", and `commandEnterSeq` was not captured at a clean
+   boundary, so `SessionModel.extractIOCell`'s heuristic split
+   attributes the *pre-edit* fragment as one cell's command
+   while the *real* command's output binds to it — shifting
+   command/output pairing by one for every subsequent cell (a
+   phantom input cell). **Same root cause as the leading-edge
+   residue above** (byte-stream reconstruction, no real cmd
+   `;C`; plus the `Overwrite`-semantics gap in `sliceText`);
+   **not an ADR 0007 Phase 0/1/2a regression** — Phase 2a's
+   copy faithfully copied an already-wrong cell. ADR 0007's
+   navigable history made this *deterministically diagnosable*
+   instead of "sounds haywire" — the ADR 0008 / ADR 0007 D6
+   premise validating itself. **Decision (maintainer
+   2026-05-17): record as this pre-existing residual and
+   continue the ADR 0007 phases; do NOT speculative-patch the
+   heuristic.** The clean fix is this item's
+   marker/`Overwrite`-aware reconstruction; ADR 0007 Phase 7's
+   oracle is designed to pin exactly this off-by-one once the
+   harness exists.
 2. **Replace SpeechCursor manual history-navigation with
    canonical IOCell-history navigation + per-cell
    operations.** The SpeechCursor's navigable history and

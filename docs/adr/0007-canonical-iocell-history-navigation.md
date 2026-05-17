@@ -715,6 +715,24 @@ changes the ADR 0004 IOCell schema.
   TextEdit channel — Phase 6 structures *within* it), ADR
   0004 (IOCell data model + `schemaVersion=2` — untouched).
 
+## Known issue surfaced (not introduced)
+
+The cell history is a faithful projection of upstream
+`SessionModel.extractIOCell`. A **pre-existing** substrate
+residue therefore shows through it: editing the command line
+before Enter (backspace / reflow) desyncs command/output
+pairing by one (a phantom input cell). Root cause + the
+maintainer's 2026-05-17 `52-ADR7-P2a` dogfood finding +
+the "continue phases, track it, no speculative patch"
+decision are recorded in **ADR 0006 §"Deferred to R6+"
+item 1 ("Tracked variant — command-line-edit input/output
+desync")**. This *validates* the ADR's premise: the
+navigable history turned a "sounds haywire" defect into a
+deterministic off-by-one. **Phase 7's oracle is designed to
+pin exactly this** once its harness exists; the clean fix is
+ADR 0006 item 1's marker/`Overwrite`-aware reconstruction,
+not anything in the ADR 0007 navigation/ops layer.
+
 ## Status / next
 
 **Accepted (2026-05-16).** The maintainer co-authored

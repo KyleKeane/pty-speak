@@ -14914,6 +14914,27 @@ regression-only**: matrix row `52-ADR7-P2a`. Locally
 unverifiable — F# structure re-read; CI is the build
 signal.
 
+### Cycle 52 — known issue recorded: command-line-edit IOCell desync (2026-05-17)
+
+The `52-ADR7-P2a` dogfood passed the Phase 2a *feature*
+(hotkey + menu) and **surfaced a pre-existing substrate
+residue** (not an ADR 0007 regression): editing the command
+line before Enter (backspace/reflow → cmd reprints the line →
+`ContentHistory` `TextSpan/Overwrite/TextSpan`) desyncs
+command/output cell pairing by one, because
+`ContentHistory.sliceText` treats `Overwrite` as appended
+text and `commandEnterSeq` isn't a clean boundary (cmd emits
+no `;C`). Recorded + the maintainer's decision (continue ADR
+0007 phases, track it, **no speculative heuristic patch**) in
+**ADR 0006 §"Deferred to R6+" item 1** ("Tracked variant —
+command-line-edit input/output desync") with a cross-pointer
+from ADR 0007's new "Known issue surfaced" section and the
+`52-ADR7-P2a` matrix row marked feature-PASSED. The
+navigable history turning a "sounds haywire" defect into a
+deterministic off-by-one validates the ADR 0007 D6 / ADR
+0008 premise; Phase 7's oracle is designed to pin it. Doc-
+only.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
