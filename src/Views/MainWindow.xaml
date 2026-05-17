@@ -413,8 +413,30 @@
                      x:Name="CellHistoryList"
                      x:FieldModifier="public"
                      SelectionMode="Single"
+                     FontSize="16"
+                     Background="White"
+                     Foreground="Black"
                      AutomationProperties.Name="Cell history"
-                     AutomationProperties.AutomationId="pty-speak.CellHistoryList" />
+                     AutomationProperties.AutomationId="pty-speak.CellHistoryList">
+                <!-- ADR 0007 Phase 6a-2b follow-up (maintainer
+                     dogfood 2026-05-17, low-vision): the list IS
+                     drawn on screen (real Grid column); make the
+                     SELECTED row obvious so a low-vision user can
+                     see where the NVDA cursor is. Recolour the
+                     selection highlight via the canonical
+                     SystemColors brush-key override (robust — does
+                     not fight the default item template) so it is
+                     high-contrast whether or not the list has
+                     keyboard focus, plus a large readable font.
+                     Visual-only: the UIA `List` semantics NVDA
+                     reads are unchanged (D8 stays ratified). -->
+                <ListBox.Resources>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#FF0033CC" />
+                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White" />
+                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#FF0033CC" />
+                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="White" />
+                </ListBox.Resources>
+            </ListBox>
         </Grid>
     </DockPanel>
 </Window>

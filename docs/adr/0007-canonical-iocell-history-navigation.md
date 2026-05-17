@@ -4,9 +4,10 @@
   implementation to proceed after extensive co-authoring —
   "this is as much conceptualization as I can do … progress
   on implementation"). D1–D9 + D5a adopted; D5a is the
-  adopted resolution of the former-open D5; D8's `Tree`-vs-
-  `List` control type is ratified by the Phase 6a dogfood;
-  the D9 principle is elevated to
+  adopted resolution of the former-open D5; **D8's control
+  type is RATIFIED = flat `ListBox` → UIA `List` (Phase 6a-2b
+  dogfood `52-ADR7-P6a` PASSED 2026-05-17; Tree = deferred
+  Phase-4/5 growth path)**; the D9 principle is elevated to
   [ADR 0008](0008-maximal-semantic-surfacing.md).
 - **Date**: 2026-05-16
 - **Deciders**: maintainer (KyleKeane)
@@ -799,10 +800,12 @@ requested — the full Phase 0…7 is in force.
 
 Adopted specifics: **D5a** is the adopted resolution of the
 former-open D5 (history = focusable standard control + pane
-switch); **D8** recommends `TreeView`/UIA `Tree`
-(`List` fallback) with the **Phase 6a NVDA dogfood as the
-control-type ratification gate** — `Tree` is not locked until
-6a confirms it under NVDA; **D9**'s project-wide principle is
+switch); **D8 — RATIFIED 2026-05-17: flat `ListBox` → UIA
+`List`** (the Phase 6a-2b NVDA dogfood `52-ADR7-P6a` PASSED;
+it read cleanly as a standard list — Tree was the *recommended*
+primary but the deliberately-flat 6a cut ratified `List`; Tree
+stays the deferred Phase-4/5 growth path, typed model
+unchanged); **D9**'s project-wide principle is
 elevated to [ADR 0008](0008-maximal-semantic-surfacing.md)
 (Accepted). **D6/Phase 7 changes the economics of the whole
 plan**: once the cell history is an assertable on-send
@@ -888,19 +891,35 @@ maintainer's standing instruction, not buried in chat text.
     Terminal.App; `appendCell` signature unchanged). Purely
     additive, no audible change, no dogfood; unit-tested. **The
     entire pure D9 cell-event substrate is now complete.**
-  - **6a-2b — NEXT (not started).** The focusable WPF history
-    list + `Ctrl+Shift+Left/Right` pane switch. **One cohesive
-    PR** (the gesture is meaningless — a reserved dead key —
-    without the pane; not further splittable without shipping
-    a half-feature). **Control type RATIFIED = flat `ListBox`
-    → UIA `List`** (maintainer decision 2026-05-17, per D8's
-    deliberately-flat-first conditional; Tree is the deferred
-    Phase-4/5 growth path, typed model unchanged). Its NVDA
-    dogfood **is** the hard D8 control-type ratification gate.
-    Precise per-file implementation touchpoints recorded in
-    [`docs/SESSION-HANDOFF.md`](../SESSION-HANDOFF.md) "6a
-    progress (2026-05-17)". Conservative D5a Q1/Q2/Q3 defaults
-    for the first cut; dogfood refines.
+  - **6a-2b — Implemented, CI-green, dogfood FEATURE-PASSED
+    2026-05-17 (the hard D8 gate — CLEARED).** The focusable
+    WPF history list + `Ctrl+Shift+Left/Right` pane switch
+    (#408, one cohesive PR; one CI fixup — an FS0025 in the
+    `AppReservedHotkeysMirrorTests` `HotkeyKey` mirror).
+    Maintainer NVDA dogfood (`52-ADR7-P6a`): **the flat
+    `ListBox` → UIA `List` reads cleanly as a standard list —
+    D8 control type RATIFIED**; pane switch works both
+    directions, SpeechCursor manual nav independent, startup
+    focus on the terminal, no double-speak. Tree remains the
+    deferred Phase-4/5 growth path (typed model unchanged);
+    the parallel focus-marker (native SR announce + parallel
+    `CellEventBus.Focused`) behaved as designed. **Surfaced
+    (NOT a D8-blocker — it's the pane-switch focus plumbing,
+    not the `List`):** after the WPF `Menu` (its own focus
+    scope) had been entered, a plain `element.Focus()` did
+    not pull the keyboard-focus device out of the Menu scope —
+    arrows kept driving the menu, unrecoverable; and the
+    selected row needs to be visibly obvious for low-vision
+    users (the list IS drawn — real Grid column — but the
+    default selection visual is faint). **6a-2b follow-up
+    (in flight):** `Keyboard.Focus` cross-scope in both pane
+    handlers + select-the-latest-row on entering the history
+    pane + a high-contrast `SystemColors` selection recolor +
+    larger font. Locally unverifiable (no WPF/NVDA) → carries
+    a **re-dogfood `52-ADR7-P6a-fix`**. **D8 stays RATIFIED**
+    (the control type read cleanly; the follow-up is focus
+    plumbing + visuals, not the list semantics). **Phase-6+
+    proceed is gated on the follow-up's re-dogfood.**
 
     **Architectural conformance — maintainer deep-review
     2026-05-17 (binding constraints on the 6a-2b build; this
@@ -960,27 +979,27 @@ maintainer's standing instruction, not buried in chat text.
        typed and the item a projection (no logic that a Tree
        swap would have to unpick).
 
-    **OPEN DECISION (maintainer) — single universal bus vs.
-    two typed sources.** #404 settled the cell pipeline as a
-    *dedicated* `CellEventBus` **parallel to** the byte-
-    oriented `OutputDispatcher` (rationale: typed `CellView`s
-    vs. rendered-text `OutputEvent`s; ADR 0008 "don't
-    re-derive"). That preserves the *principle* (typed
-    events, composable sinks) and is **extensible** to a
-    unified tap, but it is **not literally one bus**: an
-    auxiliary peripheral / spatial-audio sink today would
-    subscribe to *two* sources. The maintainer's vision is a
-    **single universal tap-point for every interaction + app
-    event**. Reconciliation options (not to be built as a
-    sidetrack — recorded for the maintainer to rule on before
-    6a-2b's focus dispatch is finalised): (a) accept two
-    specialised typed sources + add a thin uniform
-    aggregation/façade sink later; (b) make `CellEventBus`
-    feed `OutputDispatcher` (or vice-versa) so there is one
-    physical tap; (c) a neutral `UniversalEventBus` both
-    publish into. Decision gates only the *publish target* of
-    6a-2b's list-focus handler; the parallel-marker pattern
-    above holds regardless.
+    **RESOLVED 2026-05-17 (maintainer) — single universal bus
+    vs. two typed sources → option (a).** #404 settled the
+    cell pipeline as a *dedicated* `CellEventBus` **parallel
+    to** the byte-oriented `OutputDispatcher` (rationale:
+    typed `CellView`s vs. rendered-text `OutputEvent`s;
+    ADR 0008 "don't re-derive"). After a deep-review
+    discussion the maintainer ratified: **keep the two
+    specialised typed sources** (the by-event-shape split is
+    principled and load-bearing — collapsing them would force
+    typed cell events back through the byte-classification
+    pipeline, the ADR 0008 anti-pattern) **and add a thin
+    uniform aggregation/façade sink *only when a real second
+    universal sink exists*** (the spatial-audio work) — not
+    speculatively before (YAGNI; keeps the core clean now,
+    delivers the single tap-point exactly when something needs
+    it). Consequently **6a-2b's list-focus handler publishes
+    `CellEventBus.Focused`** to the cell bus (done, #408); the
+    façade is a future additive layer that does not change the
+    parallel-marker pattern. The "captured necessity" for the
+    universal-tap property remains ADR 0008 / ADR 0004 D4 /
+    D9 / ADR 0001.
 - **Phases 4/4b/5 → 7** — sequence after Phase 6a + the
   boundary-diagnostic track (5 = intra-cell segments on the
   settled model; 7's oracle asserts it). Each lands as its

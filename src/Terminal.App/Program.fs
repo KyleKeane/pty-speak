@@ -4538,13 +4538,36 @@ module Program =
         // (ADR 0007 6a-2b conformance #1: "at most a brief
         // distinct pane-change marker"; the conservative
         // first-cut default is no manual cue, dogfood refines).
+        // ADR 0007 Phase 6a-2b follow-up (maintainer dogfood
+        // 2026-05-17): the WPF `Menu` is its own *focus scope*.
+        // After the menu had been entered, a plain
+        // `element.Focus()` set logical focus but did not pull
+        // the **keyboard focus device** out of the Menu scope —
+        // arrows kept driving the menu, unrecoverable. Force the
+        // keyboard focus across scopes with `Keyboard.Focus`
+        // (textbook FocusScope fix; locally unverifiable — no
+        // WPF/NVDA in the sandbox — so it carries a re-dogfood,
+        // `52-ADR7-P6a-fix`). Entering the history pane also
+        // selects the latest row when nothing is selected, so
+        // there is an immediate visible + spoken anchor (the
+        // SelectionChanged handler then publishes
+        // `CellEventBus.Focused` and the screen reader announces
+        // it natively — no manual announce, conformance #1).
         let runFocusHistoryPane () : unit =
+            if window.CellHistoryList.Items.Count > 0
+               && window.CellHistoryList.SelectedIndex < 0 then
+                window.CellHistoryList.SelectedIndex <-
+                    window.CellHistoryList.Items.Count - 1
             window.CellHistoryList.Focus() |> ignore
+            Keyboard.Focus(window.CellHistoryList :> IInputElement)
+            |> ignore
             cellPaneLog.LogInformation(
                 "ADR 0007 Phase 6a-2b pane switch. Target={Target}",
                 "history")
         let runFocusTerminalPane () : unit =
             window.TerminalSurface.Focus() |> ignore
+            Keyboard.Focus(window.TerminalSurface :> IInputElement)
+            |> ignore
             cellPaneLog.LogInformation(
                 "ADR 0007 Phase 6a-2b pane switch. Target={Target}",
                 "terminal")

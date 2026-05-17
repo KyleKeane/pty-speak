@@ -47,49 +47,51 @@ and serves the decision-trail role this file used to overload.
 > Phase 6a's NVDA dogfood remains the hard D8 ratification
 > gate.
 >
-> **⇒ 6a progress (2026-05-17, this session):** the
-> **entire pure D9 cell-event substrate is shipped &
-> CI-green** — **6a-1 (#404)** `CellEventBus` (the canonical
-> typed cell pipeline; settled the `pty-speak.cell.*`
-> taxonomy as a *dedicated typed bus*, parallel to the
-> byte-`OutputDispatcher`) + `cell.focused` off the four
-> user-nav handlers; **6a-2a (#405)** `cell.appended` off
-> the `appendCell` seal site (+ pure `cellCount` /
-> `cellViewsFrom` accessors). Both **purely additive, no
-> audible change, no dogfood** (no sink renders the events
-> yet); fully unit-tested. **NEXT = 6a-2b** — the focusable
-> WPF history list + `Ctrl+Shift+Left/Right` pane switch.
-> It is **one cohesive PR** (the gesture is a dead key
-> without the pane — not further splittable without
-> shipping a half-feature) and is **THE D8 control-type
-> ratification dogfood** that gates everything after
-> Phase 6. **Control type ratified = flat `ListBox` → UIA
-> `List`** (maintainer decision 2026-05-17, per D8's
-> deliberately-flat-first conditional — segments/Tree are
-> the deferred Phase-4/5 growth path; typed model
-> unchanged). 6a-2b touchpoints (all patterns already
-> proven in-repo — mirror exactly): `HotkeyRegistry.fs`
-> (`HotkeyKey` +`Left`/`Right`; `AppCommand`
-> +`FocusHistoryPane`/`FocusTerminalPane`; `nameOf`;
-> `builtIns` record table; the bare `allCommands` list
-> ending `SpeechCursorToggleMode ]`; `gestureText`) ·
-> `Program.fs` `translateHotkeyKey` (+`Left`/`Right`) +
-> two `bind`+handler calls (mirror the `SpeechCursor*`
-> block ~4440) + a `CellEventBus.subscribe` marshalled to
-> the WPF `Dispatcher` populating an `ObservableCollection`
-> · `TerminalView.cs` `AppReservedHotkeys` (+two rows; the
-> reserved-match loop at ~798 is generic — rows suffice,
-> per the Up/Down/End precedent) · `MainWindow.xaml`
-> (DockPanel fill child → `Grid` 3-col: TerminalSurface /
-> `GridSplitter` / a public-named `ListBox`; preserve the
-> load-bearing `TerminalSurface.Focus()` on `Loaded`) +
-> 2 menu items under `_Interface` · `HotkeyRegistryTests`
-> (`allCommands`/`builtIns` exhaustive pins) · a new
-> `docs/ACCESSIBILITY-TESTING.md` `52-ADR7-P6a` matrix row
-> (the D8-ratification dogfood procedure). Conservative
-> D5a Q1/Q2/Q3 defaults for the first cut (history browse
-> = Manual-like; appends don't move focus/selection;
-> standard `ListBox` virtualisation), dogfood refines.
+> **⇒ Phase 6a COMPLETE & VALIDATED (2026-05-17).** All
+> three sub-PRs shipped CI-green and the **hard D8 gate is
+> CLEARED**: **6a-1 (#404)** `CellEventBus` (the canonical
+> *dedicated typed cell bus*, parallel to the
+> byte-`OutputDispatcher`; settled the `pty-speak.cell.*`
+> taxonomy) + `cell.focused`; **6a-2a (#405)**
+> `cell.appended` off the `appendCell` seal site (+ pure
+> `cellCount`/`cellViewsFrom`); **6a-2b (#408)** the
+> focusable **flat `ListBox` → UIA `List`** + the
+> `Ctrl+Shift+Left/Right` pane switch + Interface→Pane menu.
+> **`52-ADR7-P6a` dogfood PASSED → D8 control type RATIFIED
+> = flat `List`** (reads cleanly under NVDA; pane switch
+> both directions; SpeechCursor manual nav independent;
+> startup focus = terminal; no double-speak — the parallel
+> focus-marker behaved as designed). `Tree` = deferred
+> Phase-4/5 growth path (typed model unchanged).
+> **Surfaced (NOT a D8-blocker — pane-switch focus plumbing):**
+> after the WPF `Menu` (its own focus scope) was entered,
+> focus could get trapped in the menu (arrows drove menu
+> items, unrecoverable); plus a low-vision request to make
+> the selected row visibly obvious. **6a-2b follow-up
+> shipped** (`Keyboard.Focus` cross-scope in both pane
+> handlers + select-latest-on-enter + high-contrast
+> `SystemColors` selection recolor + larger font) →
+> **re-dogfood `52-ADR7-P6a-fix` PENDING; Phase-6+ proceed
+> is gated on it** (D8 itself stays ratified).
+> **Bus architecture RESOLVED (maintainer 2026-05-17):**
+> keep the **two specialised typed sources** (`CellEventBus`
+> + `OutputDispatcher` — collapsing them = the ADR 0008
+> anti-pattern); add a thin universal-tap façade **only
+> when a real second universal sink exists** (the
+> spatial-audio work), not speculatively. Canonical detail:
+> [ADR 0007 6a-2b "Architectural conformance" + the resolved
+> open-decision](adr/0007-canonical-iocell-history-navigation.md)
+> + ship log.
+> **NEXT per the ratified re-sequencing ([#403 amendment](adr/0007-canonical-iocell-history-navigation.md#re-sequencing-amendment-2026-05-17-maintainer-ratified)):**
+> the **boundary-diagnostic-capture track** (a
+> high-resolution-timestamped record of every shell /
+> Claude-CLI event → determine begin/end-of-evaluation
+> boundary signals from recorded data, cmd/PowerShell
+> first, Claude deferred) → then Phase 4/4b/5 (segments,
+> informed by the capture) → Phase 6b+ filtering / Phase 7
+> oracle. The boundary track's detailed design is itself a
+> scoped work item — specify when taken up (ADR 0007),
+> deliberately not built speculatively.
 > **BINDING (maintainer deep-review 2026-05-17 — see
 > [ADR 0007 6a-2b "Architectural conformance"](adr/0007-canonical-iocell-history-navigation.md)):**
 > list-item focus → screen reader announces **natively**;
