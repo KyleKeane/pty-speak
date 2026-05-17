@@ -385,14 +385,38 @@
              focus between the two; the screen reader announces
              the newly-focused control natively. -->
         <Grid>
+            <!-- ADR 0007 Phase 6a-2b follow-up (maintainer
+                 direction 2026-05-17): both panes share ONE
+                 background colour, each with a strong outline,
+                 so the boundary is obvious without per-pane
+                 colour differences. `PanelBackgroundBrush` is
+                 deliberately a single resource — the one place
+                 a future high-contrast / dark-mode / user
+                 theme will swap (not built now; just kept to a
+                 single swap point). Black matches the terminal
+                 grid's own fill (TerminalView `_background`),
+                 so the panes are uniform today. -->
+            <Grid.Resources>
+                <SolidColorBrush x:Key="PanelBackgroundBrush" Color="Black" />
+                <SolidColorBrush x:Key="PanelOutlineBrush" Color="White" />
+            </Grid.Resources>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="2*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-            <views:TerminalView Grid.Column="0"
-                                x:Name="TerminalSurface"
-                                x:FieldModifier="public" />
+            <!-- TerminalSurface keeps its x:Name + public field
+                 modifier so the load-bearing MainWindow.xaml.cs
+                 `Loaded += TerminalSurface.Focus()` is
+                 unchanged; the Border just supplies the uniform
+                 background + strong panel outline. -->
+            <Border Grid.Column="0"
+                    Background="{StaticResource PanelBackgroundBrush}"
+                    BorderBrush="{StaticResource PanelOutlineBrush}"
+                    BorderThickness="2">
+                <views:TerminalView x:Name="TerminalSurface"
+                                    x:FieldModifier="public" />
+            </Border>
             <GridSplitter Grid.Column="1"
                           Width="4"
                           HorizontalAlignment="Center"
@@ -408,34 +432,59 @@
                  ListItem is announced natively on arrow-nav while
                  the SelectionChanged handler publishes
                  CellEventBus.Focused in parallel (no manual
-                 Announce — ADR 0007 6a-2b conformance #1). -->
+                 Announce — ADR 0007 6a-2b conformance #1).
+
+                 Selection visibility (2026-05-17 dogfood): the
+                 prior SystemColors brush-key override did not
+                 render on the maintainer's theme — the default
+                 ListBoxItem template paints its own selection
+                 element and ignores those keys. Replaced with a
+                 minimal own ControlTemplate so the strong-blue
+                 selected row renders independent of OS theme and
+                 PERSISTS when focus leaves the pane (no
+                 keyboard-focus condition — the maintainer needs
+                 the last selection still visible after
+                 Ctrl+Shift+Left). Each item also carries a thin
+                 bottom rule as a low-vision per-row demarcation.
+                 Deliberately minimal — this list is temporary
+                 scaffolding (Tree is the Phase-4/5 path), so no
+                 further styling investment. -->
             <ListBox Grid.Column="2"
                      x:Name="CellHistoryList"
                      x:FieldModifier="public"
                      SelectionMode="Single"
                      FontSize="16"
-                     Background="White"
-                     Foreground="Black"
+                     Background="{StaticResource PanelBackgroundBrush}"
+                     Foreground="White"
+                     BorderBrush="{StaticResource PanelOutlineBrush}"
+                     BorderThickness="2"
                      AutomationProperties.Name="Cell history"
                      AutomationProperties.AutomationId="pty-speak.CellHistoryList">
-                <!-- ADR 0007 Phase 6a-2b follow-up (maintainer
-                     dogfood 2026-05-17, low-vision): the list IS
-                     drawn on screen (real Grid column); make the
-                     SELECTED row obvious so a low-vision user can
-                     see where the NVDA cursor is. Recolour the
-                     selection highlight via the canonical
-                     SystemColors brush-key override (robust — does
-                     not fight the default item template) so it is
-                     high-contrast whether or not the list has
-                     keyboard focus, plus a large readable font.
-                     Visual-only: the UIA `List` semantics NVDA
-                     reads are unchanged (D8 stays ratified). -->
-                <ListBox.Resources>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#FF0033CC" />
-                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White" />
-                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#FF0033CC" />
-                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="White" />
-                </ListBox.Resources>
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Foreground" Value="White" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <Border x:Name="Bd"
+                                            Background="Transparent"
+                                            BorderBrush="#FF555555"
+                                            BorderThickness="0,0,0,1"
+                                            Padding="4,2">
+                                        <ContentPresenter />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="Bd" Property="Background" Value="#FF0033CC" />
+                                            <Setter Property="Foreground" Value="White" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ListBox.ItemContainerStyle>
             </ListBox>
         </Grid>
     </DockPanel>

@@ -15272,6 +15272,51 @@ with a larger font. Visual/focus-plumbing only — the UIA
 Carries a re-dogfood (`52-ADR7-P6a-fix`); Phase-6+ proceed is
 gated on it.
 
+### Cycle 52 ADR 0007 Phase 6b (2026-05-17): pane-switch + visible-selection + per-cell-source corrections
+
+Post-`52-ADR7-P6a` dogfood (longer session) surfaced three
+foundational regressions the earlier "PASSED" did not catch,
+all fixed here:
+
+- **Menu focus-trap recurred.** The menu-invoked pane switch
+  was re-trapped in the WPF `Menu` focus scope after a few
+  round-trips (synchronous `Keyboard.Focus` undone by the
+  menu's own post-close focus restore). The focus move is now
+  posted to the dispatcher at `Input` priority (runs after
+  the menu closes) and targets the selected `ListBoxItem`
+  container, not the `ListBox` shell — so a screen reader's
+  focus rectangle (NVDA's visual highlight) has a real
+  focused UIA element.
+- **Selected row had no visible highlight.** The
+  `SystemColors` brush-key override did not render on the
+  maintainer's theme. Replaced with a minimal own
+  `ListBoxItem` `ControlTemplate` that renders the
+  strong-blue selection independent of OS theme and
+  **persists when focus leaves the pane**. Both panes now
+  share one background with a strong per-panel outline
+  (single `PanelBackgroundBrush` resource — the future
+  theming swap point) and each row carries a thin bottom
+  rule for low-vision demarcation (deliberately minimal —
+  the flat list is scaffolding).
+- **`Ctrl+Shift+Left/Right` were spatially reversed.**
+  Corrected (terminal = left pane, history = right). Each
+  pane switch now publishes `CellEventBus.PaneSwitched`; a
+  distinct earcon per pane (`pane-terminal` 1600 Hz /
+  `pane-history` 2600 Hz) is the non-speech cue (the tone
+  carries which pane — ADR 0008), off the UI thread and
+  respecting the global earcon mute.
+- **Per-cell ops followed SpeechCursor, not the list.**
+  `Ctrl+Shift+C` copy / copy-command / copy-output / menu
+  rerun-input now resolve the target through a single
+  forward-declared "focused-cell source" seam, flipped to
+  the cell-history list's selected cell **by `CellId`**
+  (reorder/delete-safe). SpeechCursor stays alive for
+  navigation; full removal is a later phase.
+
+Locally unverifiable (no WPF/NVDA in the sandbox) — carries
+the re-dogfood gate `52-ADR7-P6b`; Phase-6+ proceed is gated
+on it.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

@@ -62,10 +62,25 @@ module CellEventBus =
     ///     item actually added, in append order.
     ///
     /// Later: `Operated` (Phase 6 D2 ops) / `Segment` (Phase 4)
-    /// / `PaneSwitched` (6a-2b) — added when their phase ships.
+    /// — added when their phase ships.
+    ///
+    ///   * `PaneSwitched` (6a-2b, 2026-05-17) — keyboard focus
+    ///     moved between the two top-level panes (terminal ⇄
+    ///     cell-history list). Published by the pane-switch
+    ///     handlers; the screen reader still announces the
+    ///     newly-focused control natively, so this is the
+    ///     parallel non-speech cue source — an earcon sink maps
+    ///     each `Pane` to a distinct tone (ADR 0008: the sound
+    ///     itself carries which pane). WPF-free: the pane is a
+    ///     neutral `Terminal.Core` DU, never a WPF control ref.
+    type Pane =
+        | TerminalPane
+        | HistoryPane
+
     type CellEvent =
         | Focused of SpeechCursor.CellView
         | Appended of SpeechCursor.CellView
+        | PaneSwitched of Pane
 
     let private log =
         Logger.get "Terminal.Core.CellEventBus"

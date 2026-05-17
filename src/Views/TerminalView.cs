@@ -716,8 +716,8 @@ public class TerminalView : FrameworkElement
             // Up/Down/End rows above). NVDA collision check:
             // review-cursor defaults are the Numpad cluster;
             // Ctrl+Shift+arrow is free.
-            (Key.Left, ModifierKeys.Control | ModifierKeys.Shift, "Focus cell-history pane"),
-            (Key.Right, ModifierKeys.Control | ModifierKeys.Shift, "Focus terminal pane"),
+            (Key.Left, ModifierKeys.Control | ModifierKeys.Shift, "Focus terminal pane (left)"),
+            (Key.Right, ModifierKeys.Control | ModifierKeys.Shift, "Focus cell-history pane (right)"),
 
             // Future entries (NOT yet bound; commented for
             // forward-planning):

@@ -30,8 +30,9 @@ module EarconPalette =
     /// compatibility (Phase 2).
     type EarconId = string
 
-    /// Default palette. Four entries — the audio side of the
-    /// 8d sub-stages plus the Cycle 45 ready-for-input cue.
+    /// Default palette. Six entries — the audio side of the
+    /// 8d sub-stages, the Cycle 45 ready-for-input cue, and the
+    /// ADR 0007 6a-2b pane-switch pair.
     /// - `bell-ping` (800Hz × 100ms): triggered by BEL (0x07).
     /// - `error-tone` (400Hz × 150ms): triggered by future
     ///   colour-detection (red rows). Currently unused by any
@@ -57,6 +58,15 @@ module EarconPalette =
     ///   other earcon. If the click is still disruptive, the
     ///   existing Display → Earcons → Muted toggle silences
     ///   all earcons globally; per-earcon mute is a follow-up.
+    /// - `pane-terminal` (1600Hz × 25ms) / `pane-history`
+    ///   (2600Hz × 25ms): ADR 0007 6a-2b (2026-05-17). The
+    ///   non-speech cue for the Ctrl+Shift+Left/Right pane
+    ///   switch — distinct pitches so the sound itself tells
+    ///   the user which pane took focus (terminal lower, the
+    ///   list higher), played by a CellEventBus.PaneSwitched
+    ///   sink. Click-like (0ms attack, near ready-prompt's
+    ///   character) so it never masks NVDA's native focus
+    ///   announce of the new control.
     /// All earcons stay shorter than the StreamProfile's 200ms
     /// debounce window so consecutive earcons don't overlap.
     /// Tunable in Phase 2 via TOML.
@@ -77,4 +87,12 @@ module EarconPalette =
               "ready-prompt",
               { FrequencyHz = 3000.0
                 DurationMs = 15
+                AttackMs = 0 }
+              "pane-terminal",
+              { FrequencyHz = 1600.0
+                DurationMs = 25
+                AttackMs = 0 }
+              "pane-history",
+              { FrequencyHz = 2600.0
+                DurationMs = 25
                 AttackMs = 0 } ]

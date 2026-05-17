@@ -930,6 +930,24 @@ module Program =
         let mutable speechCursor =
             SpeechCursor.create SpeechCursor.defaultParameters
 
+        // ADR 0007 Phase 6b (2026-05-17) — the single
+        // "focused-cell source" the per-cell operations
+        // (Ctrl+Shift+C copy / copy-command / copy-output /
+        // menu rerun-input) resolve through. SpeechCursor is
+        // being deprecated in favour of the static navigable
+        // cell-history list (ADR 0007 D5a); this seam lets the
+        // ops follow the list's selected cell *by CellId*
+        // (reorder/delete-safe — a list index would not be)
+        // without ripping SpeechCursor out yet. Default is the
+        // legacy SpeechCursor resolver; `compose()` reassigns
+        // it to the list resolver once the cell-history list is
+        // wired (below). Forward-declared `mutable` so the
+        // handlers (defined before the list) close over the
+        // seam, not the source.
+        let mutable focusedCellSource
+            : unit -> SpeechCursor.FocusedCell option =
+            fun () -> SpeechCursor.focusedCell speechCursor
+
         // Cycle 47 follow-up (2026-05-13) — idle-flush watermark.
         // Declared at compose-top alongside `contentHistory` so
         // both the boundary handler (further down in compose) and
@@ -3389,10 +3407,10 @@ module Program =
                     "Terminal.App.Program.runCopyFocusedCell"
             log.LogInformation(
                 "Ctrl+Shift+C pressed — copying the focused cell to clipboard.")
-            match SpeechCursor.focusedCell speechCursor with
+            match focusedCellSource () with
             | None ->
                 window.TerminalSurface.Announce(
-                    "No focused cell. Press Ctrl+Shift+Up or Down to focus a cell first.",
+                    "No cell selected. Press Ctrl+Shift+Right to focus the cell history, then arrow to a cell.",
                     ActivityIds.diagnostic)
             | Some cell ->
                 let parts =
@@ -3492,10 +3510,10 @@ module Program =
             log.LogInformation(
                 "Phase 2b — copying the focused cell's {Side} to clipboard.",
                 sideName)
-            match SpeechCursor.focusedCell speechCursor with
+            match focusedCellSource () with
             | None ->
                 window.TerminalSurface.Announce(
-                    "No focused cell. Press Ctrl+Shift+Up or Down to focus a cell first.",
+                    "No cell selected. Press Ctrl+Shift+Right to focus the cell history, then arrow to a cell.",
                     ActivityIds.diagnostic)
             | Some cell ->
                 match pick cell with
@@ -4408,10 +4426,10 @@ module Program =
         // bundle; logging discipline).
         let runRerunInput () : unit =
             let log = Logger.get "Terminal.App.Program.runRerunInput"
-            match SpeechCursor.focusedCell speechCursor with
+            match focusedCellSource () with
             | None ->
                 window.TerminalSurface.Announce(
-                    "No focused cell. Navigate to a command cell first.",
+                    "No cell selected. Press Ctrl+Shift+Right to focus the cell history, then arrow to a command cell.",
                     ActivityIds.diagnostic)
             | Some fc ->
                 match fc.Command with
@@ -4518,7 +4536,8 @@ module Program =
                             (sprintf "%A" cv.Kind),
                             cellHistoryItems.Count)))
                 |> ignore
-            | CellEventBus.Focused _ -> ())
+            | CellEventBus.Focused _ -> ()
+            | CellEventBus.PaneSwitched _ -> ())
         |> ignore
         // Parallel focus-marker: native SR announce + our typed
         // event. NO manual `Announce` here (double-speak).
@@ -4533,44 +4552,138 @@ module Program =
                     cell.CellSequence,
                     (sprintf "%A" cell.Kind)))
 
-        // Pane switch. Move keyboard focus only — the screen
-        // reader announces the newly-focused control natively
-        // (ADR 0007 6a-2b conformance #1: "at most a brief
-        // distinct pane-change marker"; the conservative
-        // first-cut default is no manual cue, dogfood refines).
-        // ADR 0007 Phase 6a-2b follow-up (maintainer dogfood
-        // 2026-05-17): the WPF `Menu` is its own *focus scope*.
-        // After the menu had been entered, a plain
-        // `element.Focus()` set logical focus but did not pull
-        // the **keyboard focus device** out of the Menu scope —
-        // arrows kept driving the menu, unrecoverable. Force the
-        // keyboard focus across scopes with `Keyboard.Focus`
-        // (textbook FocusScope fix; locally unverifiable — no
-        // WPF/NVDA in the sandbox — so it carries a re-dogfood,
-        // `52-ADR7-P6a-fix`). Entering the history pane also
-        // selects the latest row when nothing is selected, so
-        // there is an immediate visible + spoken anchor (the
-        // SelectionChanged handler then publishes
-        // `CellEventBus.Focused` and the screen reader announces
-        // it natively — no manual announce, conformance #1).
+        // ADR 0007 Phase 6b — per-cell ops follow the navigable
+        // list, resolved by `CellId` (reorder/delete-safe; a
+        // list index would not be). Gathers both sides of the
+        // selected row's cell from the same row-aligned
+        // projection the list renders, into the existing
+        // `SpeechCursor.FocusedCell` shape the ops already
+        // consume. Flips the compose-top seam off the
+        // SpeechCursor resolver — SpeechCursor stays alive for
+        // navigation; full removal is a later phase.
+        let listSelectedFocusedCell ()
+            : SpeechCursor.FocusedCell option =
+            let lb = window.CellHistoryList
+            let i = lb.SelectedIndex
+            if i < 0 || i >= cellHistoryCells.Count then None
+            else
+                let v = cellHistoryCells.[i]
+                let textOf (k: SpeechCursor.CellKind) =
+                    cellHistoryCells
+                    |> Seq.tryFind (fun c ->
+                        c.CellId = v.CellId && c.Kind = k)
+                    |> Option.map (fun c -> c.Text)
+                Some
+                    ({ CellId = v.CellId
+                       CellSequence = v.CellSequence
+                       Command = textOf SpeechCursor.CellKind.Input
+                       Output = textOf SpeechCursor.CellKind.Output }
+                     : SpeechCursor.FocusedCell)
+        focusedCellSource <- listSelectedFocusedCell
+
+        // ADR 0007 Phase 6a-2b — non-speech pane-switch cue.
+        // Distinct earcon per pane (ADR 0008: the tone itself
+        // carries which pane). Played off the UI thread so the
+        // focus path stays snappy; `CellEventBus.publish`
+        // already exception-guards subscribers. Respects the
+        // global earcon mute (Display → Earcons → Muted). The
+        // log line ships with the feature so a Ctrl+Shift+D
+        // bundle confirms the cue fired and which id.
+        CellEventBus.subscribe (fun ev ->
+            match ev with
+            | CellEventBus.PaneSwitched pane ->
+                let earconId =
+                    match pane with
+                    | CellEventBus.TerminalPane -> "pane-terminal"
+                    | CellEventBus.HistoryPane -> "pane-history"
+                let muted = EarconChannel.isMuted ()
+                cellPaneLog.LogInformation(
+                    "ADR 0007 Phase 6a-2b pane earcon. Pane={Pane} Muted={Muted} EarconId={EarconId}",
+                    (sprintf "%A" pane),
+                    muted,
+                    earconId)
+                if not muted then
+                    System.Threading.Tasks.Task.Run(
+                        System.Action(fun () ->
+                            EarconPlayer.play
+                                EarconPalette.defaultPalette
+                                earconId))
+                    |> ignore
+            | CellEventBus.Focused _ -> ()
+            | CellEventBus.Appended _ -> ())
+        |> ignore
+
+        // Pane switch (ADR 0007 Phase 6a-2b; revised after the
+        // 2026-05-17 dogfood — the prior synchronous
+        // `Keyboard.Focus` did not hold). Two compounding bugs
+        // were found and are fixed here:
+        //
+        //   1. Menu focus-scope steal. Invoked from the Menu
+        //      item, WPF's `Menu` is its own focus scope and
+        //      re-asserts the keyboard-focus device into itself
+        //      *after* the click handler returns — undoing a
+        //      synchronous `Keyboard.Focus` and leaving arrows
+        //      driving the menu (the recurring trap). Fix: post
+        //      the focus move to the dispatcher at `Input`
+        //      priority so it runs after the menu has fully
+        //      closed and relinquished focus.
+        //   2. Focus landed on the `ListBox`, not a
+        //      `ListBoxItem`. A screen reader's focus rectangle
+        //      (NVDA's visual highlight) wraps the element with
+        //      UIA keyboard focus; a `ListBox` whose item is
+        //      only *selected*, not *focused*, gives it nothing
+        //      to wrap and the low-vision selection reads as
+        //      absent. Fix: focus the selected `ListBoxItem`
+        //      container (generated via the item-container
+        //      generator after `ScrollIntoView` + `UpdateLayout`
+        //      so it exists under virtualization).
+        //
+        // Still no manual `Announce` — the screen reader speaks
+        // the newly-focused control natively (conformance #1);
+        // the parallel non-speech cue is the `PaneSwitched`
+        // earcon sink above. Locally unverifiable (no WPF/NVDA
+        // in the sandbox) — carries the re-dogfood gate
+        // `52-ADR7-P6b`.
+        let focusSelectedHistoryItem () : unit =
+            let lb = window.CellHistoryList
+            if lb.Items.Count > 0 && lb.SelectedIndex < 0 then
+                lb.SelectedIndex <- lb.Items.Count - 1
+            lb.Focus() |> ignore
+            Keyboard.Focus(lb :> IInputElement) |> ignore
+            let idx = lb.SelectedIndex
+            if idx >= 0 && idx < lb.Items.Count then
+                lb.ScrollIntoView(lb.Items.[idx])
+                lb.UpdateLayout()
+                match lb.ItemContainerGenerator.ContainerFromIndex(idx) with
+                | :? ListBoxItem as item ->
+                    item.Focus() |> ignore
+                    Keyboard.Focus(item :> IInputElement) |> ignore
+                | _ -> ()
         let runFocusHistoryPane () : unit =
-            if window.CellHistoryList.Items.Count > 0
-               && window.CellHistoryList.SelectedIndex < 0 then
-                window.CellHistoryList.SelectedIndex <-
-                    window.CellHistoryList.Items.Count - 1
-            window.CellHistoryList.Focus() |> ignore
-            Keyboard.Focus(window.CellHistoryList :> IInputElement)
+            window.Dispatcher.InvokeAsync(
+                System.Action(fun () ->
+                    focusSelectedHistoryItem ()
+                    CellEventBus.publish
+                        (CellEventBus.PaneSwitched CellEventBus.HistoryPane)
+                    cellPaneLog.LogInformation(
+                        "ADR 0007 Phase 6a-2b pane switch. Target={Target}",
+                        "history")),
+                System.Windows.Threading.DispatcherPriority.Input)
             |> ignore
-            cellPaneLog.LogInformation(
-                "ADR 0007 Phase 6a-2b pane switch. Target={Target}",
-                "history")
         let runFocusTerminalPane () : unit =
-            window.TerminalSurface.Focus() |> ignore
-            Keyboard.Focus(window.TerminalSurface :> IInputElement)
+            window.Dispatcher.InvokeAsync(
+                System.Action(fun () ->
+                    window.TerminalSurface.Focus() |> ignore
+                    Keyboard.Focus(
+                        window.TerminalSurface :> IInputElement)
+                    |> ignore
+                    CellEventBus.publish
+                        (CellEventBus.PaneSwitched CellEventBus.TerminalPane)
+                    cellPaneLog.LogInformation(
+                        "ADR 0007 Phase 6a-2b pane switch. Target={Target}",
+                        "terminal")),
+                System.Windows.Threading.DispatcherPriority.Input)
             |> ignore
-            cellPaneLog.LogInformation(
-                "ADR 0007 Phase 6a-2b pane switch. Target={Target}",
-                "terminal")
 
         bind HotkeyRegistry.SpeechCursorNext runSpeechCursorNext
         bind HotkeyRegistry.SpeechCursorPrevious runSpeechCursorPrevious

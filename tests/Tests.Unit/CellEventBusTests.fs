@@ -28,14 +28,16 @@ let private mkCell (seq: int64) : SpeechCursor.CellView =
       ActivityId = ActivityIds.output
       ExitCode = None }
 
-// Both cases carry the typed `CellView`; the bus contract is
-// kind-agnostic, so the helper extracts the sequence from
-// either (the OR-pattern also keeps the match exhaustive as
-// cases are added).
+// The cell-carrying cases share the typed `CellView`; the bus
+// contract is kind-agnostic, so the helper extracts the
+// sequence from either. `PaneSwitched` carries a `Pane`, not a
+// cell — it is not exercised by these tests, so it maps to a
+// sentinel to keep the match exhaustive.
 let private cellSeq (ev: CellEventBus.CellEvent) : int64 =
     match ev with
     | CellEventBus.Focused cv
     | CellEventBus.Appended cv -> cv.CellSequence
+    | CellEventBus.PaneSwitched _ -> -1L
 
 [<Fact>]
 let ``subscribe receives a published Focused event`` () =
@@ -114,7 +116,8 @@ let ``one subscriber receives both Focused and Appended`` () =
         CellEventBus.subscribe (fun ev ->
             match ev with
             | CellEventBus.Focused _ -> kinds.Add "focused"
-            | CellEventBus.Appended _ -> kinds.Add "appended")
+            | CellEventBus.Appended _ -> kinds.Add "appended"
+            | CellEventBus.PaneSwitched _ -> ())
     CellEventBus.publish (CellEventBus.Appended(mkCell 1L))
     CellEventBus.publish (CellEventBus.Focused(mkCell 1L))
     Assert.Equal<string list>(
