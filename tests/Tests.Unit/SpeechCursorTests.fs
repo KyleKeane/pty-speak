@@ -749,6 +749,41 @@ let ``appendCell command item is trimmed`` () =
     let tc, _ = expectSome "cmd" (SpeechCursor.cellCurrent c)
     Assert.Equal("echo hi", tc)
 
+// ADR 0007 Phase 6a-2a — the pure seal-site delta accessors
+// (`cellCount` / `cellViewsFrom`) the Terminal.App seal site
+// uses to publish one `CellEventBus.Appended` per item
+// `appendCell` added (the `CellTranscript` field is `internal`,
+// so the delta is computed via these rather than reaching in).
+[<Fact>]
+let ``cellCount reflects the appended item count`` () =
+    let c = freshCursor ()
+    Assert.Equal(0, SpeechCursor.cellCount c)
+    addCell c "echo hi" "hi" // Input + Output = 2
+    Assert.Equal(2, SpeechCursor.cellCount c)
+    addCell c "cmd-only" "   " // whitespace output skipped = +1
+    Assert.Equal(3, SpeechCursor.cellCount c)
+
+[<Fact>]
+let ``cellViewsFrom slices from the index and clamps out of range`` () =
+    let c = freshCursor ()
+    addCell c "c1" "o1" // indices 0,1
+    let before = SpeechCursor.cellCount c
+    addCell c "c2" "o2" // indices 2,3
+    // The just-appended delta = exactly the second cell's items.
+    let delta = SpeechCursor.cellViewsFrom c before
+    Assert.Equal<string list>(
+        [ "c2"; "o2" ], delta |> List.map (fun v -> v.Text))
+    Assert.Equal<SpeechCursor.CellKind list>(
+        [ SpeechCursor.CellKind.Input
+          SpeechCursor.CellKind.Output ],
+        delta |> List.map (fun v -> v.Kind))
+    // From 0 = the whole transcript.
+    Assert.Equal(4, (SpeechCursor.cellViewsFrom c 0).Length)
+    // Past the end = empty (no bounds bookkeeping needed).
+    Assert.Empty(SpeechCursor.cellViewsFrom c 99)
+    // Negative clamps to 0 (the whole transcript).
+    Assert.Equal(4, (SpeechCursor.cellViewsFrom c (-5)).Length)
+
 [<Fact>]
 let ``appendCell in AutoDrive follows the latest item`` () =
     let c = freshCursor ()

@@ -683,6 +683,27 @@ module SpeechCursor =
         if state.Mode = AutoDrive then
             state.CellPos <- state.CellTranscript.Count - 1
 
+    /// ADR 0007 Phase 6a-2a — number of items in the cell
+    /// transcript. Pure read-only accessor; the `CellTranscript`
+    /// field is `internal`, so the seal site (Terminal.App, not
+    /// in the `InternalsVisibleTo` set) computes the
+    /// just-appended delta via `cellCount` before / after
+    /// `appendCell` rather than reaching into the collection.
+    let cellCount (state: T) : int =
+        state.CellTranscript.Count
+
+    /// ADR 0007 Phase 6a-2a — the transcript items at indices
+    /// `[fromIndex .. Count-1]`, in order, as a list. Used at
+    /// the seal site to publish one `CellEventBus.Appended` per
+    /// item `appendCell` just added (it adds 0/1/2 items). A
+    /// negative / out-of-range `fromIndex` clamps to a safe
+    /// window (empty when `fromIndex >= Count`) so the caller
+    /// needs no bounds bookkeeping. Pure read-only.
+    let cellViewsFrom (state: T) (fromIndex: int) : CellView list =
+        let count = state.CellTranscript.Count
+        let start = max 0 fromIndex
+        [ for i in start .. count - 1 -> state.CellTranscript.[i] ]
+
     /// Project a stored `CellView` to the `(text, activityId)`
     /// pair the narration path consumes. Keeps `cellCurrent` /
     /// `cellPrevious` / `cellNext` / `cellToLatest` returning
