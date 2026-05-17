@@ -14972,6 +14972,28 @@ re-litigated. Behavioural ⇒ real NVDA dogfood row
 `52-ADR7-P2b`. Locally unverifiable — F# structure re-read;
 CI is the build signal.
 
+### Cycle 52 — ADR 0007 dogfood-doc fix: AutoDrive auto-follow precondition (2026-05-17)
+
+Doc-only. Maintainer dogfood surfaced that the `52-ADR7-P2a`
+/ `52-ADR7-P2b` "no focused cell until you navigate"
+precondition was a wrong test narrative: in the default
+**AutoDrive** mode `SpeechCursor.appendCell` auto-advances
+the Manual cursor to the newest cell after *every* command
+(ADR 0007 D3 live-trickle — `SpeechCursor.fs:674-675`), so
+after any command there is always a focused cell (the
+latest) with no `Ctrl+Shift+Up`. The no-focus guard is
+reachable only on an **empty transcript** (fresh session
+before the first command, or just after a shell hot-switch).
+Corrected both `ACCESSIBILITY-TESTING.md` matrix rows:
+`52-ADR7-P2a` gets a precondition-correction note (the
+**feature PASS stands** — the run exercised the
+auto-followed-latest path); `52-ADR7-P2b`'s procedure is
+re-sequenced (no-focus test FIRST on an empty transcript;
+copy-latest with no nav; an explicit Manual-nav step that
+copies an *older* cell to prove the op binds to the Manual
+cursor). No code change — AutoDrive auto-follow is correct,
+intended behaviour.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
