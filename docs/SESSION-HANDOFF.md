@@ -448,6 +448,19 @@ verified to fully restore it on both build types.
   `CellView option` collection 1:1 with the displayed items;
   retired the parallel-array + placeholder hack). (a)/(b)
   remain the open computational-accuracy items.
+- **Cell-history focused-item outline-on-blur** (future
+  feature, deferred to the stable Tree representation per
+  maintainer 2026-05-17): when focus leaves the cell-history
+  pane the selected row should switch from a filled
+  background to an outline-only indication. Not built now —
+  revisit with the Tree (ADR 0007 Phase 4/5 / D8 growth
+  path); the menu's enabled `(not yet implemented)`
+  placeholders are the parallel op-set sketch.
+- **Output Verbosity** is **NOT** deprecated (checked
+  2026-05-17): it still gates the live output-announce path
+  (`ShellPolicy.Streaming`); distinct from the post-hoc
+  cell-history review, so it stays. Recorded so the question
+  isn't re-litigated.
 
 See [`docs/PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md)
 for sequencing rationale + risks.

@@ -15399,6 +15399,41 @@ so this is a single-file edit):
 
 No behaviour change to any existing wired command.
 
+### Cycle 52 ADR 0007 Phase 6b: menu refinement round 2 (2026-05-17)
+
+Maintainer dogfood round 2 (XAML-only — items wired by
+`x:Name`, not tree position):
+
+- **Top-level order** is now Interface · Terminal · Cell
+  History · Diagnostics · **About** (Help renamed About).
+- **Prompt Path** moved from Interface into the **Terminal**
+  menu (a shell/terminal concern).
+- **Open Data Folder** moved from Interface into
+  **Diagnostics** (a troubleshooting affordance).
+- **Cell History › "Output and Session"** renamed **"Session"**.
+- **Navigation** placeholders simplified to Move to
+  First / Previous / Next / Last, and **all
+  `(not yet implemented)` placeholders are now enabled**
+  (disabled menu items were not being announced by the
+  screen reader, so the target op-set was inaudible — they
+  are enabled no-ops now).
+- **About › Acknowledgment** submenu added: "Made by Dr.
+  Kyle Keane, University of Bristol" and a note that use is
+  governed by the license / terms of use on the GitHub
+  repository.
+
+Findings recorded (no code): **Output Verbosity is still
+live and relevant** — it gates the live output-announce path
+(`ShellPolicy.Streaming` = TupleFinalOnly / LineByLine / Off)
+and is NOT supplanted by the cell history (which is
+post-hoc review), so it is not dead scaffolding and no
+deprecation is taken. The **focused-item outline-on-blur**
+visual idea is deferred to the future tree representation
+per the maintainer's own conclusion. A follow-up adds an
+**Open GitHub Repo** command to the About menu (its own
+change — needs a wired command + HotkeyRegistry/test
+updates).
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
