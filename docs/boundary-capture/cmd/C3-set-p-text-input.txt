@@ -1,0 +1,17 @@
+=== pty-speak raw shell trace — started 2026-05-17 14:13:06.857 UTC ===
+=== 14 events; IN 6 bytes; OUT 481 bytes ===
+=== format: +<elapsed_us>us <DIR> <nbytes>B | <escaped>  (\e=ESC \r \n \t \a \xHH) ===
++3715105us IN  1B | \r
++3715310us OUT 2B | \r\n
++3734234us OUT 254B | === PTYSPEAK-TEST-START: test-02-text-input ===\r\nThis test prompts for a text string and echoes it back.\r\nEnter your name:\e]0;C:\WINDOWS\SYSTEM32\cmd.exe - "C:\Users\Kyle\git\pty-speak\src\Terminal.App\publish\scripts\cmd-tests\test-02-text-input.cmd"  \a
++15749828us IN  1B | N
++15750186us OUT 1B | N
++16259982us IN  1B | A
++16260256us OUT 1B | A
++16678243us IN  1B | M
++16679073us OUT 1B | M
++17491122us IN  1B | E
++17491401us OUT 1B | E
++19562364us IN  1B | \r
++19562798us OUT 2B | \r\n
++19565694us OUT 219B | \e[?25lHello, NAME! Your name has N as its first letter.\r\n=== PTYSPEAK-TEST-END: test-02-text-input ===\e[18;1H\e]0;C:\WINDOWS\SYSTEM32\cmd.exe\a\e[?25h\e]133;D\e\\e]133;A\e\C:\Users\Kyle\git\pty-speak\src\Terminal.App>\e]133;B\e\
