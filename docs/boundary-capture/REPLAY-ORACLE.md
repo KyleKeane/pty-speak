@@ -92,11 +92,13 @@ defences, both shipped R-B1:
 - **R-A:** harness + the **C3** (`set /p`) scenario —
   deterministically retro-validated P2′ (#423) on the real
   defect bytes. `tests/Tests.Unit/BoundaryReplayOracle.fs`.
-- **R-B1 (this):** externalised per-trace `*.expected` files;
+- **R-B1:** externalised per-trace `*.expected` files;
   **C1/C2** scenarios added (locks the prompt-path-bleed fix +
-  the slow/fast determinism on the real echo traces); a
-  dedicated **"Boundary replay oracle" CI job** (a boundary
-  regression is now a distinct red signal).
+  the slow/fast determinism on the real echo traces). Runs as
+  part of the standard **Build and test** job — the oracle
+  facts are plain `Tests.Unit` xUnit cases (~2 s); a separate
+  CI job would only duplicate the .NET runner/restore/build
+  infra for no coverage gain (R-B1-followup removed it).
 - **R-B2 (awaiting maintainer captures):** **C5**
   backspace/retype (deleted chars must not reappear in
   `CommandText`) and **C6** long-idle mid-compose; the
