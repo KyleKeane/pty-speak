@@ -1,11 +1,13 @@
 # ADR 0009 — Canonical cell metadata & typed outcome (schemaVersion 3)
 
-- **Status**: **Proposed** (2026-05-17; maintainer requested
-  the design be drafted into an ADR for review — option "A".
-  **NOT accepted, NOT implemented; no schema change until
-  ratified.** Not in the autonomous-sprint scope.)
+- **Status**: **Accepted** (2026-05-17; maintainer ratified
+  — "I am happy with the ADR additions and you can mark those
+  resolved". Design is locked; **still NOT implemented** — no
+  code or schema change yet. P-A is the start (independently
+  landable; does not block or depend on ADR 0007 Phase 4).
+  Not in the autonomous-sprint scope.)
 - **Date**: 2026-05-17
-- **Deciders**: maintainer (KyleKeane) — pending ratification
+- **Deciders**: maintainer (KyleKeane) — ratified 2026-05-17
 - **Authoring item**: Cycle 52, during the ADR 0007 phase
   sprint. The maintainer asked whether the canonical cell
   history includes "a mechanism for arbitrary tags and
@@ -192,9 +194,12 @@ sequence (this slots alongside, it does not gate Phase 4).
 
 ## Status / next
 
-**Proposed 2026-05-17, awaiting maintainer ratification.**
-Drafted at maintainer request (option "A") for review — *no
-code, no schema change* until accepted. On acceptance, P-A is
-the start (independently landable; does not block or depend
-on ADR 0007 Phase 4). The autonomous sprint does **not**
-implement this.
+**Accepted 2026-05-17 (maintainer ratified).** Design locked;
+**not yet implemented** — no code or schema change has
+landed. **P-A** is the start (typed `CellOutcome` + derivation
++ `CellView` projection + `jumpToLastError` reframed +
+`schemaVersion 3` serializer & round-trip reader); it is
+independently landable and does **not** block or depend on
+ADR 0007 Phase 4. Sequencing of P-A vs the remaining ADR 0007
+phases is the maintainer's call (raise when ready). The
+autonomous sprint does **not** implement this.

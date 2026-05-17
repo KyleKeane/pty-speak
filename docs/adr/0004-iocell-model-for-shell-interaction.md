@@ -493,11 +493,11 @@ schemaVersion bump.
 
 > **Forward note (2026-05-17):**
 > [ADR 0009](0009-canonical-cell-metadata-and-typed-outcome.md)
-> (**Proposed**, not accepted) would extend this same
-> hand-rolled discipline `schemaVersion 2 → 3` to add a typed
-> `CellOutcome` + a disciplined (closed/bounded, *not* free
-> blob) metadata facility. No schema change until that ADR is
-> ratified.
+> (**Accepted** 2026-05-17; not yet implemented) extends this
+> same hand-rolled discipline `schemaVersion 2 → 3` to add a
+> typed `CellOutcome` + a disciplined (closed/bounded, *not*
+> free blob) metadata facility. The v3 bump + round-trip
+> reader land together in ADR 0009 phase P-A when scheduled.
 
 ### In-memory representation
 
