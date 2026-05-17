@@ -47,14 +47,25 @@ open Microsoft.Extensions.Logging
 /// Manual-navigation path that published the event.
 module CellEventBus =
 
-    /// A typed cell event. 6a-1: `Focused` only — the user moved
-    /// the Manual cursor onto a cell (the typed `CellView` it
-    /// landed on is carried so sinks never re-derive it from
-    /// rendered text). Later cases (`Appended` 6a-2, `Operated`
-    /// Phase 6 D2, `Segment` Phase 4, `PaneSwitched` 6a-2) are
-    /// added by the phase that wires them — not pre-declared.
+    /// A typed cell event; the typed `CellView` is carried so
+    /// sinks never re-derive cell meaning from rendered text
+    /// (ADR 0008). Cases are added by the phase that wires them
+    /// (not pre-declared — D9 "single-purpose"):
+    ///
+    ///   * `Focused` (6a-1) — the user moved the Manual cursor
+    ///     onto a cell (off the four user-nav handlers).
+    ///   * `Appended` (6a-2a) — a cell item was sealed into the
+    ///     transcript (off the canonical `appendCell` seal site;
+    ///     D8's list-update event). `appendCell` adds up to two
+    ///     items per cell (Input then Output, whitespace-skipped)
+    ///     sharing one `CellId`; one `Appended` is published per
+    ///     item actually added, in append order.
+    ///
+    /// Later: `Operated` (Phase 6 D2 ops) / `Segment` (Phase 4)
+    /// / `PaneSwitched` (6a-2b) — added when their phase ships.
     type CellEvent =
         | Focused of SpeechCursor.CellView
+        | Appended of SpeechCursor.CellView
 
     let private log =
         Logger.get "Terminal.Core.CellEventBus"

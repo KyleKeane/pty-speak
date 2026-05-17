@@ -2047,6 +2047,22 @@ module Program =
                 // line itself and post-single-key-response output
                 // (both filtered from the raw ContentHistory-Seq
                 // path as `UserInputEcho`; ADR 0004 §4a).
+                //
+                // ADR 0007 Phase 6a-2a — this `appendCell` call
+                // IS the canonical seal site (D8 "event-driven
+                // off the canonical seal event"). Capture the
+                // transcript length before/after so each item
+                // `appendCell` just added (0/1/2: Input then
+                // Output, whitespace-skipped, sharing one
+                // `CellId`) is published as a typed
+                // `CellEventBus.Appended` on the D9 cell
+                // pipeline, in append order. PURELY ADDITIVE: no
+                // sink renders `Appended` yet (6a-2b's focusable
+                // history list is the first subscriber), so this
+                // is CI-only with no audible change — the
+                // dogfood-validated narration path is untouched.
+                let beforeCount =
+                    SpeechCursor.cellCount speechCursor
                 SpeechCursor.appendCell
                     speechCursor
                     tuple.Id
@@ -2054,6 +2070,11 @@ module Program =
                     tuple.CommandText
                     tuple.OutputText
                     tuple.ExitCode
+                for cv in
+                    SpeechCursor.cellViewsFrom
+                        speechCursor beforeCount do
+                    CellEventBus.publish (
+                        CellEventBus.Appended cv)
             | None -> ()
 
             // Cycle 45 Commit 2 — ContentHistory + SpeechCursor

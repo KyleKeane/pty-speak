@@ -28,9 +28,14 @@ let private mkCell (seq: int64) : SpeechCursor.CellView =
       ActivityId = ActivityIds.output
       ExitCode = None }
 
-let private focusedSeq (ev: CellEventBus.CellEvent) : int64 =
+// Both cases carry the typed `CellView`; the bus contract is
+// kind-agnostic, so the helper extracts the sequence from
+// either (the OR-pattern also keeps the match exhaustive as
+// cases are added).
+let private cellSeq (ev: CellEventBus.CellEvent) : int64 =
     match ev with
-    | CellEventBus.Focused cv -> cv.CellSequence
+    | CellEventBus.Focused cv
+    | CellEventBus.Appended cv -> cv.CellSequence
 
 [<Fact>]
 let ``subscribe receives a published Focused event`` () =
@@ -38,7 +43,7 @@ let ``subscribe receives a published Focused event`` () =
     let received = ResizeArray<int64>()
     use _sub =
         CellEventBus.subscribe (fun ev ->
-            received.Add(focusedSeq ev))
+            received.Add(cellSeq ev))
     CellEventBus.publish (CellEventBus.Focused(mkCell 7L))
     Assert.Equal<int64 list>([ 7L ], List.ofSeq received)
 
@@ -48,7 +53,7 @@ let ``dispose stops further delivery`` () =
     let received = ResizeArray<int64>()
     let sub =
         CellEventBus.subscribe (fun ev ->
-            received.Add(focusedSeq ev))
+            received.Add(cellSeq ev))
     CellEventBus.publish (CellEventBus.Focused(mkCell 1L))
     sub.Dispose()
     CellEventBus.publish (CellEventBus.Focused(mkCell 2L))
@@ -59,8 +64,8 @@ let ``multiple subscribers each receive the event`` () =
     CellEventBus.clearForTests ()
     let a = ResizeArray<int64>()
     let b = ResizeArray<int64>()
-    use _sa = CellEventBus.subscribe (fun ev -> a.Add(focusedSeq ev))
-    use _sb = CellEventBus.subscribe (fun ev -> b.Add(focusedSeq ev))
+    use _sa = CellEventBus.subscribe (fun ev -> a.Add(cellSeq ev))
+    use _sb = CellEventBus.subscribe (fun ev -> b.Add(cellSeq ev))
     CellEventBus.publish (CellEventBus.Focused(mkCell 5L))
     Assert.Equal<int64 list>([ 5L ], List.ofSeq a)
     Assert.Equal<int64 list>([ 5L ], List.ofSeq b)
@@ -69,7 +74,7 @@ let ``multiple subscribers each receive the event`` () =
 let ``clearForTests drops all subscribers`` () =
     CellEventBus.clearForTests ()
     let received = ResizeArray<int64>()
-    CellEventBus.subscribe (fun ev -> received.Add(focusedSeq ev))
+    CellEventBus.subscribe (fun ev -> received.Add(cellSeq ev))
     |> ignore
     CellEventBus.clearForTests ()
     CellEventBus.publish (CellEventBus.Focused(mkCell 9L))
@@ -84,8 +89,33 @@ let ``a throwing subscriber does not break publish for the others`` () =
             raise (InvalidOperationException("sink boom")))
     use _good =
         CellEventBus.subscribe (fun ev ->
-            received.Add(focusedSeq ev))
+            received.Add(cellSeq ev))
     // publish must not propagate the subscriber exception …
     CellEventBus.publish (CellEventBus.Focused(mkCell 3L))
     // … and the well-behaved subscriber still got the event.
     Assert.Equal<int64 list>([ 3L ], List.ofSeq received)
+
+[<Fact>]
+let ``Appended events are delivered in publish order`` () =
+    CellEventBus.clearForTests ()
+    let received = ResizeArray<int64>()
+    use _sub =
+        CellEventBus.subscribe (fun ev ->
+            received.Add(cellSeq ev))
+    CellEventBus.publish (CellEventBus.Appended(mkCell 1L))
+    CellEventBus.publish (CellEventBus.Appended(mkCell 2L))
+    Assert.Equal<int64 list>([ 1L; 2L ], List.ofSeq received)
+
+[<Fact>]
+let ``one subscriber receives both Focused and Appended`` () =
+    CellEventBus.clearForTests ()
+    let kinds = ResizeArray<string>()
+    use _sub =
+        CellEventBus.subscribe (fun ev ->
+            match ev with
+            | CellEventBus.Focused _ -> kinds.Add "focused"
+            | CellEventBus.Appended _ -> kinds.Add "appended")
+    CellEventBus.publish (CellEventBus.Appended(mkCell 1L))
+    CellEventBus.publish (CellEventBus.Focused(mkCell 1L))
+    Assert.Equal<string list>(
+        [ "appended"; "focused" ], List.ofSeq kinds)
