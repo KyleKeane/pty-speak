@@ -140,14 +140,16 @@ before deviating.
    before any SpeechCursor / IOCell-history / channel /
    substrate work.
 9a. **[`docs/adr/0009-canonical-cell-metadata-and-typed-outcome.md`](docs/adr/0009-canonical-cell-metadata-and-typed-outcome.md)**
-   — Cycle 52 **Proposed** (2026-05-17, maintainer-requested
-   draft). Would add a typed `CellOutcome` (ADR 0008 applied:
-   honest `Indeterminate` where no signal is transported —
-   the `52-ADR7-P2c` lesson) + a disciplined (closed/bounded,
+   — Cycle 52 **Accepted** (2026-05-17, maintainer ratified).
+   Adds a typed `CellOutcome` (ADR 0008 applied: honest
+   `Indeterminate` where no signal is transported — the
+   `52-ADR7-P2c` lesson) + a disciplined (closed/bounded,
    *not* free-blob) metadata/tag facility, bumping the
    ADR 0004 wire format `schemaVersion 2 → 3`; generalises
-   ADR 0007 Phase 6b/6c. **Not accepted; no code/schema
-   change until ratified.** Read before any cell-metadata /
+   ADR 0007 Phase 6b/6c. **Accepted but NOT yet implemented**
+   — P-A (typed outcome + v3 + round-trip reader) is the
+   start, independently landable, scheduled at the
+   maintainer's call. Read before any cell-metadata /
    outcome / schema-version / tag-search work.
 10. **RFC 0001 (archived)** — Cycle 33 pivot-gate RFC, formalised
    the `LinearTextStream` substrate + streaming-emission protocol.

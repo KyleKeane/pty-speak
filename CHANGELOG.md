@@ -15161,6 +15161,17 @@ ADR 0007 ship-log, CLAUDE.md reading order. **Not accepted;
 no code or schema change until ratified; independent of
 Phase 4; not in the autonomous sprint.**
 
+### Cycle 52 — ADR 0009 Accepted (2026-05-17)
+
+Doc-only. Maintainer ratified ADR 0009 ("I am happy with the
+ADR additions and you can mark those resolved"): **Proposed →
+Accepted**. Design locked (typed `CellOutcome` + disciplined
+metadata/tags + `schemaVersion 3`); **not yet implemented** —
+P-A is the independently-landable start, scheduled at the
+maintainer's call, independent of ADR 0007 Phase 4.
+Status/cross-refs updated in ADR 0009, ADR 0004 forward-note,
+ADR 0007 ship-log, CLAUDE.md reading order.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
