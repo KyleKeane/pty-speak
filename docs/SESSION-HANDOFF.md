@@ -435,6 +435,18 @@ verified to fully restore it on both build types.
   Cycle 51 proves the extensibility surface; the actual
   sink impls are their own projects.
 - **Velopack staleness investigation** (PR-M).
+- **Phase 6b dogfood round 2 known limitations** (2026-05-17;
+  detail in [ADR 0007](adr/0007-canonical-iocell-history-navigation.md)
+  Phase 6b note). NOT cell-history-list bugs — the list
+  faithfully projects `CellEventBus.Appended` off the seal
+  site: (a) no live output trickle (= Phase 4, by design);
+  (b) the input-test seals no command cell (ADR 0004
+  drop-on-None / Cycle 52 boundary detection, upstream); (c)
+  history not reset on shell hot-switch — accepted, the
+  planned follow-up is a shell-switch **marker row** (its own
+  change; unify the parallel-index row arrays into one typed
+  row list first — also retires the empty-list placeholder
+  hack).
 
 See [`docs/PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md)
 for sequencing rationale + risks.

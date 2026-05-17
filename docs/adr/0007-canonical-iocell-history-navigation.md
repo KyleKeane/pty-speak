@@ -628,6 +628,37 @@ changes the ADR 0004 IOCell schema.
     would not be). SpeechCursor stays alive for navigation;
     its full removal in favour of the list (ADR 0007 D5a
     intent) is a later, separate phase.
+  - **6b dogfood round 2 (2026-05-17).** Navigation
+    confirmed working. Three further UI items addressed: (1)
+    an empty `ListBox` cannot hold keyboard focus (arrows
+    escaped to the menu) — a single non-cell placeholder row
+    ("No cell history yet.") is seeded and dropped on the
+    first real append; (2) a visible bold title above each
+    panel for low-vision orientation; (3) both panels'
+    colours inverted to a light scheme (white bg / black
+    text / black outline) on the maintainer's
+    low-vision-friend test machine — an explicit *temporary*
+    swap kept to the `Panel*Brush` resources + the
+    TerminalView default-colour pair, NOT the future
+    theme-management framework.
+  - **Known limitations surfaced, deferred to the
+    computational-accuracy stage (NOT list bugs).** The list
+    is a faithful projection of `CellEventBus.Appended`,
+    published only at the canonical *seal* site (`Program.fs`
+    `finalisedOpt = Some`). Consequently: (a) output
+    sub-portions do **not** trickle in live — that is ADR
+    0007 **Phase 4 (live in-flight trickle)**, deferred by
+    design; (b) the canonical input-test produces **no
+    sealed command cell** because the cell is dropped
+    upstream (ADR 0004 drop-on-None / Cycle 52
+    boundary-detection), not lost between the bus and the
+    list. Both are upstream computational-accuracy items,
+    explicitly out of scope here. (c) Cell history is **not
+    reset on shell hot-switch** — accepted as correct
+    (maintainer 2026-05-17); the planned follow-up is a
+    shell-switch **marker row** inserted into the history
+    (its own change; needs the row model unified off the
+    current parallel-index arrays first).
 
 - **Phase 7 — automated cell-structure diagnostics (D6).**
   Extend the existing test corpus + `Diagnostics → Test …`

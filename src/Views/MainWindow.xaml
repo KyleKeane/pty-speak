@@ -385,37 +385,58 @@
              focus between the two; the screen reader announces
              the newly-focused control natively. -->
         <Grid>
-            <!-- ADR 0007 Phase 6a-2b follow-up (maintainer
-                 direction 2026-05-17): both panes share ONE
-                 background colour, each with a strong outline,
-                 so the boundary is obvious without per-pane
-                 colour differences. `PanelBackgroundBrush` is
-                 deliberately a single resource — the one place
-                 a future high-contrast / dark-mode / user
-                 theme will swap (not built now; just kept to a
-                 single swap point). Black matches the terminal
-                 grid's own fill (TerminalView `_background`),
-                 so the panes are uniform today. -->
+            <!-- ADR 0007 Phase 6b follow-up (maintainer dogfood
+                 2026-05-17): both panes share ONE background
+                 colour with a strong outline + a visible title
+                 above each, so a low-vision user can orient.
+                 Colours INVERTED to a light scheme (white
+                 background / black text / black outline) on the
+                 maintainer's low-vision-friend test machine —
+                 explicitly a temporary swap, NOT the future
+                 theme-management framework. `PanelBackgroundBrush`
+                 / `PanelForegroundBrush` / `PanelOutlineBrush`
+                 stay the single swap point that framework will
+                 later own. The terminal grid's own default fill
+                 / text (TerminalView `_background` + the
+                 ResolveBrush default-spec branch) are inverted
+                 in lock-step so the panes stay uniform. -->
             <Grid.Resources>
-                <SolidColorBrush x:Key="PanelBackgroundBrush" Color="Black" />
-                <SolidColorBrush x:Key="PanelOutlineBrush" Color="White" />
+                <SolidColorBrush x:Key="PanelBackgroundBrush" Color="White" />
+                <SolidColorBrush x:Key="PanelForegroundBrush" Color="Black" />
+                <SolidColorBrush x:Key="PanelOutlineBrush" Color="Black" />
             </Grid.Resources>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="2*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-            <!-- TerminalSurface keeps its x:Name + public field
-                 modifier so the load-bearing MainWindow.xaml.cs
-                 `Loaded += TerminalSurface.Focus()` is
-                 unchanged; the Border just supplies the uniform
-                 background + strong panel outline. -->
+            <!-- Each panel = Border (uniform bg + strong
+                 outline) → DockPanel → a docked title header +
+                 the content. TerminalSurface keeps its x:Name +
+                 public field modifier so the load-bearing
+                 MainWindow.xaml.cs `Loaded +=
+                 TerminalSurface.Focus()` is unchanged. The title
+                 Border/TextBlock is decorative (non-focusable,
+                 not in the tab order) — pure sighted
+                 orientation; NVDA still reads the list's
+                 AutomationProperties.Name on focus. -->
             <Border Grid.Column="0"
                     Background="{StaticResource PanelBackgroundBrush}"
                     BorderBrush="{StaticResource PanelOutlineBrush}"
                     BorderThickness="2">
-                <views:TerminalView x:Name="TerminalSurface"
-                                    x:FieldModifier="public" />
+                <DockPanel>
+                    <Border DockPanel.Dock="Top"
+                            BorderBrush="{StaticResource PanelOutlineBrush}"
+                            BorderThickness="0,0,0,1">
+                        <TextBlock Text="Terminal"
+                                   FontWeight="Bold"
+                                   FontSize="14"
+                                   Padding="4,2"
+                                   Foreground="{StaticResource PanelForegroundBrush}" />
+                    </Border>
+                    <views:TerminalView x:Name="TerminalSurface"
+                                        x:FieldModifier="public" />
+                </DockPanel>
             </Border>
             <GridSplitter Grid.Column="1"
                           Width="4"
@@ -434,58 +455,68 @@
                  CellEventBus.Focused in parallel (no manual
                  Announce — ADR 0007 6a-2b conformance #1).
 
-                 Selection visibility (2026-05-17 dogfood): the
-                 prior SystemColors brush-key override did not
-                 render on the maintainer's theme — the default
-                 ListBoxItem template paints its own selection
-                 element and ignores those keys. Replaced with a
-                 minimal own ControlTemplate so the strong-blue
-                 selected row renders independent of OS theme and
-                 PERSISTS when focus leaves the pane (no
-                 keyboard-focus condition — the maintainer needs
-                 the last selection still visible after
-                 Ctrl+Shift+Left). Each item also carries a thin
-                 bottom rule as a low-vision per-row demarcation.
+                 Selection visibility: the list owns a minimal
+                 ControlTemplate so the strong-blue selected row
+                 renders independent of OS theme and PERSISTS
+                 when focus leaves the pane. Blue selection +
+                 white text stays high-contrast on the inverted
+                 (white) panel. Each item carries a thin bottom
+                 rule as a low-vision per-row demarcation. The
+                 outer Border owns the panel bg + outline, so the
+                 ListBox itself is transparent / borderless.
                  Deliberately minimal — this list is temporary
-                 scaffolding (Tree is the Phase-4/5 path), so no
-                 further styling investment. -->
-            <ListBox Grid.Column="2"
-                     x:Name="CellHistoryList"
-                     x:FieldModifier="public"
-                     SelectionMode="Single"
-                     FontSize="16"
-                     Background="{StaticResource PanelBackgroundBrush}"
-                     Foreground="White"
-                     BorderBrush="{StaticResource PanelOutlineBrush}"
-                     BorderThickness="2"
-                     AutomationProperties.Name="Cell history"
-                     AutomationProperties.AutomationId="pty-speak.CellHistoryList">
-                <ListBox.ItemContainerStyle>
-                    <Style TargetType="ListBoxItem">
-                        <Setter Property="Foreground" Value="White" />
-                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                        <Setter Property="Template">
-                            <Setter.Value>
-                                <ControlTemplate TargetType="ListBoxItem">
-                                    <Border x:Name="Bd"
-                                            Background="Transparent"
-                                            BorderBrush="#FF555555"
-                                            BorderThickness="0,0,0,1"
-                                            Padding="4,2">
-                                        <ContentPresenter />
-                                    </Border>
-                                    <ControlTemplate.Triggers>
-                                        <Trigger Property="IsSelected" Value="True">
-                                            <Setter TargetName="Bd" Property="Background" Value="#FF0033CC" />
-                                            <Setter Property="Foreground" Value="White" />
-                                        </Trigger>
-                                    </ControlTemplate.Triggers>
-                                </ControlTemplate>
-                            </Setter.Value>
-                        </Setter>
-                    </Style>
-                </ListBox.ItemContainerStyle>
-            </ListBox>
+                 scaffolding (Tree is the Phase-4/5 path). -->
+            <Border Grid.Column="2"
+                    Background="{StaticResource PanelBackgroundBrush}"
+                    BorderBrush="{StaticResource PanelOutlineBrush}"
+                    BorderThickness="2">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top"
+                            BorderBrush="{StaticResource PanelOutlineBrush}"
+                            BorderThickness="0,0,0,1">
+                        <TextBlock Text="Cell history"
+                                   FontWeight="Bold"
+                                   FontSize="14"
+                                   Padding="4,2"
+                                   Foreground="{StaticResource PanelForegroundBrush}" />
+                    </Border>
+                    <ListBox x:Name="CellHistoryList"
+                             x:FieldModifier="public"
+                             SelectionMode="Single"
+                             FontSize="16"
+                             Background="Transparent"
+                             Foreground="{StaticResource PanelForegroundBrush}"
+                             BorderThickness="0"
+                             AutomationProperties.Name="Cell history"
+                             AutomationProperties.AutomationId="pty-speak.CellHistoryList">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Foreground" Value="{StaticResource PanelForegroundBrush}" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border x:Name="Bd"
+                                                    Background="Transparent"
+                                                    BorderBrush="#FF999999"
+                                                    BorderThickness="0,0,0,1"
+                                                    Padding="4,2">
+                                                <ContentPresenter />
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="#FF0033CC" />
+                                                    <Setter Property="Foreground" Value="White" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                    </ListBox>
+                </DockPanel>
+            </Border>
         </Grid>
     </DockPanel>
 </Window>

@@ -4505,6 +4505,20 @@ module Program =
             System.Collections.ObjectModel.ObservableCollection<string>()
         let cellHistoryCells =
             ResizeArray<SpeechCursor.CellView>()
+        // ADR 0007 Phase 6b follow-up (dogfood 2026-05-17): an
+        // empty ListBox cannot hold keyboard focus — arrows
+        // escape to the menu. Seed one non-cell placeholder row
+        // so the pane always has a focusable item; it is dropped
+        // the first time a real cell is appended (the list is
+        // append-only for the app lifetime, so it never returns
+        // to empty — no re-add path needed). Index safety: while
+        // the placeholder is the only row `cellHistoryCells` is
+        // empty, and every row→cell lookup (SelectionChanged
+        // publish, `listSelectedFocusedCell`) is already
+        // bounds-checked against `cellHistoryCells`, so a
+        // selected placeholder resolves to "no cell".
+        let cellHistoryPlaceholder = "No cell history yet."
+        let mutable cellHistoryPlaceholderPresent = false
         let cellKindLabel (k: SpeechCursor.CellKind) : string =
             match k with
             | SpeechCursor.CellKind.Input -> "Command"
@@ -4516,6 +4530,8 @@ module Program =
                 cv.Text.Replace("\r", " ").Replace("\n", " ").Trim()
             sprintf "%s: %s" (cellKindLabel cv.Kind) oneLine
         window.CellHistoryList.ItemsSource <- cellHistoryItems
+        cellHistoryItems.Add(cellHistoryPlaceholder)
+        cellHistoryPlaceholderPresent <- true
         // Subscribe the list to the canonical cell pipeline.
         // `Appended` → add a projected row (marshalled to the
         // UI thread; the publish fires on the reader/seal
@@ -4528,6 +4544,9 @@ module Program =
             | CellEventBus.Appended cv ->
                 window.Dispatcher.InvokeAsync(
                     System.Action(fun () ->
+                        if cellHistoryPlaceholderPresent then
+                            cellHistoryItems.Clear()
+                            cellHistoryPlaceholderPresent <- false
                         cellHistoryItems.Add(cellHistoryDisplay cv)
                         cellHistoryCells.Add(cv)
                         cellPaneLog.LogInformation(
