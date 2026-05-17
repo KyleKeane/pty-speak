@@ -46,6 +46,54 @@ and serves the decision-trail role this file used to overload.
 > [ADR 0007 § Re-sequencing amendment — 2026-05-17](adr/0007-canonical-iocell-history-navigation.md#re-sequencing-amendment-2026-05-17-maintainer-ratified).
 > Phase 6a's NVDA dogfood remains the hard D8 ratification
 > gate.
+>
+> **⇒ 6a progress (2026-05-17, this session):** the
+> **entire pure D9 cell-event substrate is shipped &
+> CI-green** — **6a-1 (#404)** `CellEventBus` (the canonical
+> typed cell pipeline; settled the `pty-speak.cell.*`
+> taxonomy as a *dedicated typed bus*, parallel to the
+> byte-`OutputDispatcher`) + `cell.focused` off the four
+> user-nav handlers; **6a-2a (#405)** `cell.appended` off
+> the `appendCell` seal site (+ pure `cellCount` /
+> `cellViewsFrom` accessors). Both **purely additive, no
+> audible change, no dogfood** (no sink renders the events
+> yet); fully unit-tested. **NEXT = 6a-2b** — the focusable
+> WPF history list + `Ctrl+Shift+Left/Right` pane switch.
+> It is **one cohesive PR** (the gesture is a dead key
+> without the pane — not further splittable without
+> shipping a half-feature) and is **THE D8 control-type
+> ratification dogfood** that gates everything after
+> Phase 6. **Control type ratified = flat `ListBox` → UIA
+> `List`** (maintainer decision 2026-05-17, per D8's
+> deliberately-flat-first conditional — segments/Tree are
+> the deferred Phase-4/5 growth path; typed model
+> unchanged). 6a-2b touchpoints (all patterns already
+> proven in-repo — mirror exactly): `HotkeyRegistry.fs`
+> (`HotkeyKey` +`Left`/`Right`; `AppCommand`
+> +`FocusHistoryPane`/`FocusTerminalPane`; `nameOf`;
+> `builtIns` record table; the bare `allCommands` list
+> ending `SpeechCursorToggleMode ]`; `gestureText`) ·
+> `Program.fs` `translateHotkeyKey` (+`Left`/`Right`) +
+> two `bind`+handler calls (mirror the `SpeechCursor*`
+> block ~4440) + a `CellEventBus.subscribe` marshalled to
+> the WPF `Dispatcher` populating an `ObservableCollection`
+> · `TerminalView.cs` `AppReservedHotkeys` (+two rows; the
+> reserved-match loop at ~798 is generic — rows suffice,
+> per the Up/Down/End precedent) · `MainWindow.xaml`
+> (DockPanel fill child → `Grid` 3-col: TerminalSurface /
+> `GridSplitter` / a public-named `ListBox`; preserve the
+> load-bearing `TerminalSurface.Focus()` on `Loaded`) +
+> 2 menu items under `_Interface` · `HotkeyRegistryTests`
+> (`allCommands`/`builtIns` exhaustive pins) · a new
+> `docs/ACCESSIBILITY-TESTING.md` `52-ADR7-P6a` matrix row
+> (the D8-ratification dogfood procedure). Conservative
+> D5a Q1/Q2/Q3 defaults for the first cut (history browse
+> = Manual-like; appends don't move focus/selection;
+> standard `ListBox` virtualisation), dogfood refines.
+> The session checkpointed here deliberately: 6a-2b is the
+> single locally-unverifiable (no NVDA / no compiler)
+> dogfood-gating PR and warrants a fresh full-rigor pass,
+> not a rushed tail-of-session one.
 > Original recovery brief continues below.
 
 > **NEW / RECOVERED SESSION START HERE →
