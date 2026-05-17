@@ -13,6 +13,27 @@ and serves the decision-trail role this file used to overload.
 
 ## Current state (2026-05-16)
 
+> **⇒ 2026-05-17 autonomous-sprint update (read this first
+> for the latest):** ADR 0007 **Phases 0, 1, 2a, 2b, 2c, 3
+> shipped CI-green** (`main` past `5ccbd6c`). 2a/2b dogfood
+> **feature-PASSED**; **2c (`52-ADR7-P2c`) and 3
+> (`52-ADR7-P3`) dogfood rows are pending the maintainer's
+> NVDA pass**. Two pre-existing cmd-substrate issues were
+> surfaced and recorded (not patched, FREEZE): ADR 0006
+> §"Deferred to R6+" item 1 **"Tracked variant 1"**
+> (command-line-edit input/output desync) and **"Tracked
+> variant 2"** (clean-command argument truncation). **The
+> sprint deliberately STOPPED at Phase 4** — it is a
+> multi-stage architecture decision (segment model cascades
+> into 5/7/6a) with a maintainer-Claude-dogfood-gated open
+> decision; see
+> [ADR 0007 "Phase 4 readiness brief"](adr/0007-canonical-iocell-history-navigation.md)
+> for the resolved (granularity) vs maintainer-gated
+> (Claude interplay; segments↔sealed-cell model) decisions
+> and the one-word unblock ("C1, proceed"). Phase 6a's
+> NVDA dogfood remains the hard D8 ratification gate.
+> Original recovery brief continues below.
+
 > **NEW / RECOVERED SESSION START HERE →
 > [`CYCLE-52-R5-PLAYBOOK.md`](CYCLE-52-R5-PLAYBOOK.md)** — the
 > self-contained R5 brief + pruning sequence + ops playbook
