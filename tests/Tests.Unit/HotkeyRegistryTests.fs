@@ -69,6 +69,9 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               HotkeyRegistry.OpenGitHubRepo
               HotkeyRegistry.OpenFeatureRequest
               HotkeyRegistry.OpenSubmitIssue
+              // Cycle 52 boundary-diagnostic-capture — raw PTY
+              // byte trace toggle (Ctrl+Shift+T).
+              HotkeyRegistry.ToggleRawTrace
               // Cycle 25b-1a — CopyLatestLog removed (D's bundle
               // subsumes it).
               // Cycle 27 — `ToggleDebugLog` and `MuteEarcons`

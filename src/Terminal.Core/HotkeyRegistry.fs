@@ -101,6 +101,9 @@ module HotkeyRegistry =
         | OpenGitHubRepo
         | OpenFeatureRequest
         | OpenSubmitIssue
+        // Cycle 52 boundary-diagnostic-capture (Instrument B) —
+        // Ctrl+Shift+T toggles the raw PTY byte recorder.
+        | ToggleRawTrace
         // Stage 7-followup PR-F + PR-J liveness probe — health check.
         | HealthCheck
         // Stage 7-followup PR-F — incident marker.
@@ -268,6 +271,7 @@ module HotkeyRegistry =
         | OpenGitHubRepo -> "OpenGitHubRepo"
         | OpenFeatureRequest -> "OpenFeatureRequest"
         | OpenSubmitIssue -> "OpenSubmitIssue"
+        | ToggleRawTrace -> "ToggleRawTrace"
         | HealthCheck -> "HealthCheck"
         | IncidentMarker -> "IncidentMarker"
         | SwitchToCmd -> "SwitchToCmd"
@@ -382,6 +386,10 @@ module HotkeyRegistry =
             Key = None
             Modifiers = None
             Description = "Open the GitHub new-issue page in the default browser (menu-only; About menu)" }
+          { Command = ToggleRawTrace
+            Key = Some (Letter 'T')
+            Modifiers = Some ctrlShift
+            Description = "Toggle the raw PTY byte trace recorder (Cycle 52 boundary-diagnostic-capture; on = announce + record every byte in/out, off = write file + copy to clipboard)" }
           { Command = HealthCheck
             Key = Some (Letter 'H')
             Modifiers = Some ctrlShift
@@ -711,6 +719,7 @@ module HotkeyRegistry =
           OpenGitHubRepo
           OpenFeatureRequest
           OpenSubmitIssue
+          ToggleRawTrace
           HealthCheck
           IncidentMarker
           SwitchToCmd

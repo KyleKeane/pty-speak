@@ -15475,6 +15475,30 @@ cell-seal / boundary computational-accuracy work (the
 input-test seals no command cell — ADR 0004 drop-on-None /
 boundary detection); see SESSION-HANDOFF § Next stage.
 
+### Cycle 52 boundary-diagnostic-capture B1 (2026-05-17): raw PTY byte recorder
+
+First instrument of the cell-seal / boundary track. New
+`Ctrl+Shift+T` **toggles** a raw PTY byte recorder
+(`Terminal.Core/RawShellRecorder.fs`) — explicitly start/stop,
+**not** always-on, so a long session never accumulates an
+unbounded buffer. Records every byte in (keystrokes) and out
+(shell output) with a microsecond elapsed timestamp +
+direction, into an in-RAM buffer that exists only for the
+capture window. Start announces a warning that all keystrokes
+(including secrets) are recorded. Stop: formats a
+one-event-per-line escaped trace (`\e`/`\r`/`\n`/`\t`/`\xHH`,
+so OSC-133 reads as `\e]133;A\e\\`), **always** writes
+`%LOCALAPPDATA%\PtySpeak\extracts\rawtrace-<ts>.txt`, copies
+to the clipboard capped at 60 KB, and announces the path +
+whether the clipboard copy was truncated. Two additive PTY
+taps (the `Stdout` reader consumer and the single
+`host.WriteBytes` funnel) — no behaviour change to the seal
+path. Surfaced as `Diagnostics → Toggle Raw Shell Trace`
+(same `RoutedCommand`). The Open / Copy most-recent menu
+items + Instrument A (always-on bounded boundary-decision
+ring) follow.
+
+## [0.0.1-preview.18] — 2026-04-28
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

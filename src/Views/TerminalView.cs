@@ -722,6 +722,9 @@ public class TerminalView : FrameworkElement
             // Ctrl+Shift+arrow is free.
             (Key.Left, ModifierKeys.Control | ModifierKeys.Shift, "Focus terminal pane (left)"),
             (Key.Right, ModifierKeys.Control | ModifierKeys.Shift, "Focus cell-history pane (right)"),
+            // Cycle 52 boundary-diagnostic-capture — raw PTY
+            // byte trace recorder toggle.
+            (Key.T, ModifierKeys.Control | ModifierKeys.Shift, "Toggle raw PTY byte trace recorder"),
 
             // Future entries (NOT yet bound; commented for
             // forward-planning):
