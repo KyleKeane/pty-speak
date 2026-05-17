@@ -597,20 +597,23 @@ module HotkeyRegistry =
             Key = None
             Modifiers = None
             Description = "Speech Cursor: toggle AutoDrive / Manual mode (menu-only)" }
-          // ADR 0007 Phase 6a-2b — pane switch. Left → focus
-          // the cell-history list; Right → focus the terminal.
-          // NVDA announces the newly-focused control natively;
-          // the list's own focus handler publishes
-          // CellEventBus.Focused in parallel (no manual
-          // announce — see ADR 0007 6a-2b conformance).
-          { Command = FocusHistoryPane
+          // ADR 0007 Phase 6a-2b — pane switch. Spatially
+          // correct (maintainer dogfood 2026-05-17): the
+          // terminal is the LEFT pane (Grid.Column 0), the
+          // cell-history list the RIGHT pane (Grid.Column 2),
+          // so Ctrl+Shift+Left → terminal, Ctrl+Shift+Right →
+          // history. NVDA announces the newly-focused control
+          // natively; the handlers publish
+          // CellEventBus.PaneSwitched in parallel for the
+          // non-speech (earcon) cue (ADR 0007 6a-2b conformance).
+          { Command = FocusTerminalPane
             Key = Some Left
             Modifiers = Some ctrlShift
-            Description = "Focus the cell-history pane" }
-          { Command = FocusTerminalPane
+            Description = "Focus the terminal pane (left)" }
+          { Command = FocusHistoryPane
             Key = Some Right
             Modifiers = Some ctrlShift
-            Description = "Focus the terminal pane" } ]
+            Description = "Focus the cell-history pane (right)" } ]
 
     /// Look up the default Hotkey for a command. Throws
     /// `KeyNotFoundException` if the registry is incomplete —

@@ -592,6 +592,43 @@ changes the ADR 0004 IOCell schema.
   operation-discovery menu. Nothing past 6a is built until
   6a's NVDA dogfood confirms the control type.
 
+  - **Phase 6a-2b corrections (2026-05-17, gate
+    `52-ADR7-P6b`).** The post-`52-ADR7-P6a` dogfood
+    surfaced three foundational regressions the earlier
+    "PASSED" note did not catch (the maintainer re-ran a
+    longer session): (1) the menu-invoked pane switch was
+    re-trapped in the WPF `Menu` focus scope after a few
+    round-trips — fixed by posting the focus move to the
+    dispatcher (after menu close) and focusing the selected
+    `ListBoxItem` container, not the `ListBox` shell, so a
+    screen reader's focus rectangle has a real focused UIA
+    element; (2) the selected row had no visible highlight
+    (the `SystemColors` brush-key override did not render
+    on the maintainer's theme) — fixed with a minimal own
+    `ListBoxItem` `ControlTemplate` that renders the
+    strong-blue selection independent of OS theme and
+    **persists when focus leaves the pane**, plus a uniform
+    panel background + strong per-panel outline + a thin
+    per-row rule (maintainer direction; deliberately minimal
+    — the flat list is scaffolding); (3) `Ctrl+Shift+
+    Left/Right` were spatially reversed — corrected (terminal
+    is the left pane, history the right) and each pane switch
+    now publishes `CellEventBus.PaneSwitched`, with a
+    distinct earcon per pane (ADR 0008: the tone carries
+    which pane).
+  - **Per-cell-operation source flip (Phase 2 / D2
+    follow-through, same gate).** `Ctrl+Shift+C` copy /
+    copy-command / copy-output / the menu rerun-input
+    resolved their target through `SpeechCursor.focusedCell`
+    — decoupled from the navigable list, so operating on a
+    *different* cell than the one the user navigated to. A
+    single forward-declared "focused-cell source" seam is
+    introduced and flipped to resolve the list's selected
+    cell **by `CellId`** (reorder/delete-safe; a list index
+    would not be). SpeechCursor stays alive for navigation;
+    its full removal in favour of the list (ADR 0007 D5a
+    intent) is a later, separate phase.
+
 - **Phase 7 — automated cell-structure diagnostics (D6).**
   Extend the existing test corpus + `Diagnostics → Test …`
   menu so each scripted scenario carries an **expected
