@@ -197,6 +197,83 @@ module ShellPolicy =
             // every field defaults to the cmd profile.
             { defaults.["cmd"] with ShellKey = shellKey }
 
+    /// Cycle 52 boundary-fix P1 — per-shell OSC-133 boundary
+    /// interpretation contract. Distinct from the narration
+    /// knobs on `T`: this captures *how a shell's injected
+    /// OSC-133 integration behaves* so the IOCell extractor can
+    /// track boundaries deterministically (record the
+    /// ContentHistory Seq at each marker as it arrives) instead
+    /// of reconstructing them after the fact by "latest marker"
+    /// search — the C1/C2 prompt-path-bleed + C3 no-seal root
+    /// cause (`docs/boundary-capture/`).
+    ///
+    /// Kept a SEPARATE type (not a field on `T`) deliberately:
+    /// adding a field to `T` would churn every `T` record
+    /// literal (config loader, 30+ tests) for no behaviour gain.
+    /// This is zero-blast-radius — P1 only adds the type + the
+    /// lookup; nothing consumes it yet (P2/P3 do).
+    ///
+    /// Per-shell + parallel: PowerShell / claude get their own
+    /// rows; shells are never intermingled (ADR 0006 — the
+    /// shell-specific knowledge is resolved at this string-keyed
+    /// seam, `Terminal.Core` stays shell-agnostic).
+    type BoundaryContract =
+        { /// `;D` (CommandFinished) is emitted by the *prompt*
+          /// template at next-prompt render, NOT when the
+          /// command actually finishes — so `;D ;A <path> ;B`
+          /// arrive bundled in one write: the `;D` closes the
+          /// just-finished cell, the following `;A…;B` opens the
+          /// NEXT cell. The extractor must HARD-STOP the sealed
+          /// cell's output at the `;D` Seq so the trailing
+          /// next-prompt is fenced out by construction (fixes the
+          /// C1/C2 bleed). True for cmd (`CmdAdapter.fs:76`) and
+          /// PowerShell (`PowerShellAdapter.fs:79`).
+          DeferredCommandFinished: bool
+          /// The shell emits `;C` (OutputStart) before command
+          /// output. No injected integration emits `;C` today
+          /// (cmd has no post-exec hook); output-start is
+          /// synthesised from the post-`;B` Enter watermark.
+          /// Reserved for a future richer injection.
+          EmitsOutputStart: bool
+          /// `;B` (CommandStart) marks the end of the prompt
+          /// path and the start of the user's input region, so
+          /// the `[;A,;B)` span is prompt text excluded from the
+          /// cell body by construction. True for cmd's `$p$g`
+          /// between `;A` and `;B`.
+          CommandStartIsInputStart: bool }
+
+    /// Per-shell boundary contracts. cmd is the trace-verified
+    /// row (`docs/boundary-capture/cmd/`). PowerShell's injected
+    /// template is structurally the same design (deferred `;D`
+    /// at next-prompt, no `;C`, `;B`=input-start) so it carries
+    /// the same contract *data* — but the P2/P3 extraction
+    /// change is gated cmd-only; PowerShell is revisited (and
+    /// trace-verified) in its own cycle, not intermingled here.
+    /// claude has no OSC-133 injection (heuristic path) → all
+    /// false.
+    let private boundaryContracts : Map<string, BoundaryContract> =
+        Map.ofList
+            [ "cmd",
+              { DeferredCommandFinished = true
+                EmitsOutputStart = false
+                CommandStartIsInputStart = true }
+              "powershell",
+              { DeferredCommandFinished = true
+                EmitsOutputStart = false
+                CommandStartIsInputStart = true }
+              "claude",
+              { DeferredCommandFinished = false
+                EmitsOutputStart = false
+                CommandStartIsInputStart = false } ]
+
+    /// Resolve the boundary contract for a shell key. Unknown
+    /// shells fall back to cmd's contract (mirrors `forShell` —
+    /// a typo / future-shell never returns a degenerate record).
+    let boundaryContractFor (shellKey: string) : BoundaryContract =
+        match Map.tryFind shellKey boundaryContracts with
+        | Some contract -> contract
+        | None -> boundaryContracts.["cmd"]
+
     /// Trim a prompt-text payload to the format dictated by the
     /// `PromptPathMode`. Returns `None` to suppress the announce
     /// entirely; returns `Some text` to announce that text.
