@@ -128,6 +128,15 @@ module HotkeyRegistry =
         // (last): this acts on whichever cell the Manual
         // cursor (Ctrl+Shift+Up/Down/End) is parked on.
         | CopyFocusedCell
+        // ADR 0007 Phase 2b (2026-05-17) — copy just one side
+        // of the focused cell (command-only / output-only).
+        // Menu-only (no accelerator): the maintainer's stated
+        // hotkey-surface concern + the D5a "shrink the custom
+        // hotkey surface" note — Ctrl+Shift+C (whole cell) is
+        // the keyboarded common case; these are the precise
+        // menu variants.
+        | CopyFocusedCellCommand
+        | CopyFocusedCellOutput
         // Cycle 47 — CMD interaction tests. Each menu item
         // writes a quoted invocation of the corresponding
         // `scripts/cmd-tests/*.cmd` script to the PTY input
@@ -240,6 +249,8 @@ module HotkeyRegistry =
         | OpenLastOutput -> "OpenLastOutput"
         | AnnounceLastOutput -> "AnnounceLastOutput"
         | CopyFocusedCell -> "CopyFocusedCell"
+        | CopyFocusedCellCommand -> "CopyFocusedCellCommand"
+        | CopyFocusedCellOutput -> "CopyFocusedCellOutput"
         | CmdTestEcho -> "CmdTestEcho"
         | CmdTestTextInput -> "CmdTestTextInput"
         | CmdTestNumericInput -> "CmdTestNumericInput"
@@ -374,6 +385,16 @@ module HotkeyRegistry =
             Key = Some (Letter 'C')
             Modifiers = Some ctrlShift
             Description = "Copy the focused cell (command + output) to the clipboard (ADR 0007 Phase 2a)" }
+          // ADR 0007 Phase 2b (2026-05-17) — copy one side of
+          // the focused cell. Menu-only (Key = None).
+          { Command = CopyFocusedCellCommand
+            Key = None
+            Modifiers = None
+            Description = "Copy the focused cell's command to the clipboard (ADR 0007 Phase 2b)" }
+          { Command = CopyFocusedCellOutput
+            Key = None
+            Modifiers = None
+            Description = "Copy the focused cell's output to the clipboard (ADR 0007 Phase 2b)" }
           // Cycle 47 — CMD interaction test corpus. All menu-
           // only (no keyboard accelerators). Each item writes
           // an invocation of the corresponding `.cmd` script
@@ -621,6 +642,8 @@ module HotkeyRegistry =
           OpenLastOutput
           AnnounceLastOutput
           CopyFocusedCell
+          CopyFocusedCellCommand
+          CopyFocusedCellOutput
           CmdTestEcho
           CmdTestTextInput
           CmdTestNumericInput

@@ -14935,6 +14935,43 @@ deterministic off-by-one validates the ADR 0007 D6 / ADR
 0008 premise; Phase 7's oracle is designed to pin it. Doc-
 only.
 
+### Cycle 52 — ADR 0007 Phase 2b: copy one side of the focused cell (2026-05-17)
+
+Behavioural (D2 — per-cell operations). Two new **menu-only**
+items under **Output History → Copy Focused Cell Command /
+Copy Focused Cell Output**: copy just the command (or just
+the output) of the SpeechCursor cell the Manual cursor is
+parked on. Menu-only (no accelerator) per the maintainer's
+hotkey-surface concern + the D5a "shrink the custom-hotkey
+surface" note — `Ctrl+Shift+C` (whole cell, Phase 2a) stays
+the keyboarded common case; these are the precise variants.
+
+Both reuse `SpeechCursor.focusedCell` (Command/Output already
+exposed) via a small `runCopyFocusedCellSide sideName pick`
+helper (parametrised by which side to pick + the noun for the
+announce) with two thin wrappers — additive; the merged,
+dogfood-passed Phase 2a handler is untouched. "No focused
+cell. …" when unparked; "The focused cell has no command /
+output." when that side was whitespace-only; "Cell N command
+/ output copied to clipboard, B bytes." on success. Same
+bounded STA-thread `Clipboard.SetText` pattern; success logs
+single-line templated `Side/CellSeq/Len/Bytes` — **counts
+only**, never the text (logging discipline). Wired through
+`HotkeyRegistry` (`CopyFocusedCellCommand` /
+`CopyFocusedCellOutput` AppCommands, `Key = None` menu-only +
+`nameOf` + `builtIns` + `allCommands`), `Program.fs`
+(handlers + binds), `MainWindow.xaml` (two auto-wired menu
+items). `HotkeyRegistryTests` `expected` set updated.
+
+**Deferred within Phase 2:** `jump-to-last-error` →
+**Phase 2c** (needs `ExitCode` carried on the cell view — a
+focused Phase-1-shaped data extension); `jump-to-cell-N` →
+later (needs a screen-reader-friendly numeric-entry
+affordance, not a GUI dialog). Recorded so the split isn't
+re-litigated. Behavioural ⇒ real NVDA dogfood row
+`52-ADR7-P2b`. Locally unverifiable — F# structure re-read;
+CI is the build signal.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
