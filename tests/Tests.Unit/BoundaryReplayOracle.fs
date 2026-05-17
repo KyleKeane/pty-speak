@@ -99,9 +99,25 @@ let private parseTrace (path: string) : TraceEvent list =
                     | _ -> Out
                 match Int64.TryParse us with
                 | true, v ->
+                    let bytes = unescape payload
+                    // Loud guard: the recorder declares the byte
+                    // count; a lone printable 0x20 renders as
+                    // trailing whitespace and is silently stripped
+                    // in a paste→commit round-trip (C1/C2 line 12/13
+                    // hit exactly this). Without this check the byte
+                    // just vanishes and the failure surfaces three
+                    // layers away as a confusing cmd-text assertion.
+                    let declared =
+                        match Int32.TryParse(parts.[2].TrimEnd 'B') with
+                        | true, n -> n
+                        | _ -> -1
+                    if declared >= 0 && declared <> bytes.Length then
+                        failwithf
+                            "%s: declared %dB but decoded %dB on '%s' — payload likely whitespace-stripped in a paste/commit round-trip; repair the fixture (escape a lone 0x20 as \\x20)"
+                            path declared bytes.Length (head.Trim())
                     Some { ElapsedUs = v
                            Dir = dir
-                           Bytes = unescape payload }
+                           Bytes = bytes }
                 | _ -> None)
     |> Array.toList
 

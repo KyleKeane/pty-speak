@@ -66,6 +66,23 @@ Command/Output boundary text is slice-semantics-sensitive (P3's
 concern); the oracle pins the load-bearing invariants (seal
 count, phase, no prompt-path bleed).
 
+## Fixture hygiene — lone 0x20 payloads
+
+A recorder line whose entire payload is one printable space
+(`... 1B | ` + 0x20) is **all trailing whitespace** and is
+silently stripped in a paste→chat→commit round-trip (C1/C2
+line 12/13 — the space in `ECHO HI` — hit exactly this; the
+oracle caught it as a `"ECHOHI"` cmd-text mismatch). Two
+defences, both shipped R-B1:
+
+- **Normalise** a lone 0x20 payload to `\x20` in committed
+  traces (`unescape`-equivalent, immune to whitespace
+  stripping). Apply to any future capture before committing.
+- **Loud guard** in `parseTrace`: the recorder declares the
+  byte count; a decode-length mismatch `failwith`s naming the
+  file + line, so corruption fails at the parser, not three
+  layers away as a confusing assertion.
+
 ## Status
 
 - **R-A:** harness + the **C3** (`set /p`) scenario —
