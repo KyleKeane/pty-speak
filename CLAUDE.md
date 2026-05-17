@@ -1007,20 +1007,34 @@ points at the cycle headline.
   patch cmd announce heuristics before R5 (ADR 0006
   §"Deferred to R6+" decision note). Per-PR detail:
   CHANGELOG Cycle 52 + ADR 0006 R-stage list.
-- **Validation gate**: one consolidated **R1–R4 + R4c
-  foundation dogfood** (installed preview of post-`b14667f`
-  `main`; matrix rows `52-1`/`R3c`/`R3c-multi`/`R3d`/`R3e`/
-  `R4c` in
-  [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)).
-  Blocks R5 start; maintainer's court.
-- **Next** = **R5 PowerShell adapter** → R6 feature unlock
-  → R7 claude + closure. **Start-here for active work:
-  [`docs/CYCLE-52-R5-PLAYBOOK.md`](docs/CYCLE-52-R5-PLAYBOOK.md)**
-  — the self-contained R5 brief (R5a wire-the-seam → R5b
-  PowerShellAdapter → R5c exit-code/`;C` → R5d closure) +
-  the P1–P5 pre-R5 old-code pruning sequence + ops. Other
-  backlog (independent): 45g `ShellPolicy` consolidation;
-  full deferral list in ADR 0006 §"Deferred to R6+".
+- **Cycle 52 continued (2026-05-16 → 2026-05-17)** — R5
+  PowerShell adapter + R6a/R6b SHIPPED & dogfood-PASSED;
+  then **ADR 0007** (SpeechCursor → canonical navigable
+  IOCell history) Phases 0–3 + the **Phase 6a-2b → 6b
+  correction round (#410–#415)** shipped CI-green &
+  maintainer-dogfood-validated 2026-05-17 (pane keys +
+  per-pane earcon · per-cell-source seam by `CellId` ·
+  persistent visible selection · empty-list placeholder ·
+  panel titles + light-scheme · shell-switch marker +
+  row-model unification · menu reorg ×2 → Interface ·
+  Terminal · Cell History · Diagnostics · About · About
+  GitHub links + Version). Consolidated matrix gate
+  `52-ADR7-P6b` ✅. Findings: Output Verbosity still live
+  (not deprecated); focused-item outline-on-blur deferred
+  to the stable Tree.
+- **Next** = the **cell-seal / boundary computational-
+  accuracy track** (maintainer-chosen 2026-05-17): the
+  input-test seals **no command cell** (ADR 0004
+  drop-on-None / Cycle-52 boundary detection) — a
+  boundary-diagnostic-capture pass first, then the
+  seal/boundary fix; ADR 0007 Phase 4/4b/5 + 6c/6d + the
+  real cell-nav/per-cell-op implementations behind the
+  enabled menu placeholders follow once cells reliably
+  seal. **Start-here: [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)
+  § Current state + § Next stage** (post-#415 closure block
+  is authoritative). Other backlog (independent): 45g
+  `ShellPolicy` consolidation; full deferral list in ADR
+  0006 §"Deferred to R6+".
 
 ## When in doubt
 

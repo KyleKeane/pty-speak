@@ -15458,6 +15458,23 @@ The three links are menu-only `HotkeyRegistry` commands
 allCommands + the `allCommands` expected-set test updated
 accordingly.
 
+### Cycle 52 ADR 0007 Phase 6b — cycle closure (2026-05-17)
+
+Closure marker for the Phase 6a-2b → 6b correction round
+(#410–#415): pane-switch + per-pane earcon, per-cell-source
+seam (ops follow the list by `CellId`), persistent visible
+selection, empty-list placeholder, panel titles + light
+scheme, shell-switch marker + row-model unification, menu
+reorganization ×2 (Interface · Terminal · Cell History ·
+Diagnostics · About) and the About-menu GitHub links +
+Version display. Shipped CI-green and maintainer-dogfood-
+validated; consolidated accessibility gate `52-ADR7-P6b`
+✅. SESSION-HANDOFF / ADR 0007 / ACCESSIBILITY-TESTING /
+CLAUDE.md reconciled to this state. **Next track**: the
+cell-seal / boundary computational-accuracy work (the
+input-test seals no command cell — ADR 0004 drop-on-None /
+boundary detection); see SESSION-HANDOFF § Next stage.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

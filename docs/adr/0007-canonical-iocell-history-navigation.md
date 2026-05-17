@@ -9,6 +9,20 @@
   dogfood `52-ADR7-P6a` PASSED 2026-05-17; Tree = deferred
   Phase-4/5 growth path)**; the D9 principle is elevated to
   [ADR 0008](0008-maximal-semantic-surfacing.md).
+- **Accepted / Implemented** — Phases 0–3 + the Phase
+  6a-2b → 6b correction round shipped CI-green and
+  maintainer-dogfood-validated 2026-05-17 (#410–#415;
+  consolidated matrix gate `52-ADR7-P6b` ✅ PASSED). The
+  per-cell-operation source is flipped to the navigable
+  list by `CellId`; SpeechCursor remains for navigation
+  only (full removal deferred). **Next per the
+  [#403 re-sequencing amendment](#re-sequencing-amendment-2026-05-17-maintainer-ratified):**
+  the cell-seal / boundary-diagnostic-capture track —
+  the input-test does not yet seal a command cell
+  (ADR 0004 drop-on-None); Phase 4/4b/5 + 6c/6d + the
+  real cell-nav/per-cell-op implementations behind the
+  enabled menu placeholders follow once cells reliably
+  seal. See SESSION-HANDOFF § Next stage.
 - **Date**: 2026-05-16
 - **Deciders**: maintainer (KyleKeane)
 - **Authoring item**: Cycle 52. The maintainer redirected

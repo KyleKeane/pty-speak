@@ -11,7 +11,77 @@ previous (multi-thousand-line) handoff is at
 [`docs/archive/pre-cycle-45/SESSION-HANDOFF-pre-cycle-45c-historical.md`](archive/pre-cycle-45/SESSION-HANDOFF-pre-cycle-45c-historical.md)
 and serves the decision-trail role this file used to overload.
 
-## Current state (2026-05-16)
+## Current state (2026-05-17)
+
+> **⇒ 2026-05-17 evening — CYCLE CLOSURE (post-#415; read
+> THIS first, it supersedes every earlier block in this
+> section).** ADR 0007 **Phase 6a-2b → the full Phase-6b
+> correction round shipped CI-green and maintainer-dogfood-
+> validated** ("everything seems good", 2026-05-17). The
+> previously-PENDING `52-ADR7-P6a-fix` re-dogfood is
+> **RESOLVED** — superseded and expanded by the consolidated
+> `52-ADR7-P6b` round below (matrix row marked PASSED).
+> Cycle-level PR block (all squash-merged to `main`,
+> `1e63a0d` tip):
+> - **#410** spatial pane keys (Ctrl+Shift+Left=terminal /
+>   Right=history) + per-pane earcon (`CellEventBus.PaneSwitched`)
+>   + **per-cell-source seam** (Ctrl+Shift+C copy / copy-cmd /
+>   copy-output / rerun resolve the **list's selected cell by
+>   `CellId`**, not SpeechCursor — SpeechCursor stays alive
+>   for *navigation only*; full removal deferred) + persistent
+>   visible selection via an own `ListBoxItem` ControlTemplate
+>   (theme-independent; the prior `SystemColors` override
+>   didn't render) + dispatcher-deferred focus onto the
+>   selected `ListBoxItem` (fixes the menu focus-trap; gives
+>   NVDA a real focused element).
+> - **#411** empty-list placeholder (an empty `ListBox`
+>   couldn't hold focus) + bold per-panel titles + light-
+>   scheme colour inversion (temporary, low-vision test
+>   machine — not the theme framework).
+> - **#412** shell-switch **marker notice row** (history is
+>   deliberately *not* reset on hot-switch) + **row-model
+>   unification**: `cellHistoryRows : ResizeArray<CellView
+>   option>` strictly 1:1 with the items (Some=cell,
+>   None=notice) — retired the fragile parallel-array +
+>   placeholder hack.
+> - **#413 / #414** menu reorganization ×2 → top-level order
+>   **Interface · Terminal · Cell History · Diagnostics ·
+>   About**; Shell nested under Terminal; Prompt Path →
+>   Terminal; Open Data Folder → Diagnostics; Window → under
+>   Interface; "Output and Session" → "Session"; Help →
+>   About; all `(not yet implemented)` placeholders ENABLED
+>   (disabled items weren't announced by the screen reader)
+>   as the living D2/Phase-6 op-set sketch.
+> - **#415** About-menu browser links (Open GitHub Repo /
+>   Submit a Feature Request / Submit an Issue — one shared
+>   `runOpenUrlInBrowser`) + a **Version** item showing the
+>   build version + git short SHA at runtime.
+>
+> **Findings recorded (no code, maintainer-confirmed):**
+> Output Verbosity is **NOT** deprecated — it still gates the
+> live output-announce path (`ShellPolicy.Streaming`),
+> distinct from the post-hoc cell history. The focused-item
+> **outline-on-blur** visual is deferred to the stable Tree
+> (see Deferred list). Both are logged so they aren't
+> re-litigated.
+>
+> **NEXT (maintainer-chosen 2026-05-17): the cell-seal /
+> boundary computational-accuracy track.** The navigable
+> history UI is now structurally solid, BUT it does not
+> populate for interactive scenarios — the canonical
+> input-test produces **no sealed command cell** because the
+> cell is dropped upstream (ADR 0004 drop-on-None /
+> Cycle-52 boundary detection), not lost between the bus and
+> the list. This is the "boundary-diagnostic-capture track"
+> the [#403 re-sequencing amendment](adr/0007-canonical-iocell-history-navigation.md#re-sequencing-amendment-2026-05-17-maintainer-ratified)
+> already named; it is now the active focus (see § Next
+> stage). Phase 6c/6d + the real cell-nav/per-cell-op
+> implementations behind the enabled placeholders follow
+> once cells reliably seal.
+>
+> *(Earlier 2026-05-17 blocks below are retained as the
+> narrative trail; the block above is the authoritative
+> current state.)*
 
 > **⇒ 2026-05-17 autonomous-sprint update (read this first
 > for the latest):** ADR 0007 **Phases 0, 1, 2a, 2b, 2c, 3
@@ -296,8 +366,36 @@ State after the maintainer's batched dogfood of post-`cab2a0d`
 
 ## Next stage
 
-**R4c — cmd CommandFinished completion (pre-R5; this PR):**
-prepend a *boundary-only* deferred `;D` (`$e]133;D$e\`) to
+**CURRENT next stage (2026-05-17, post-#415 — maintainer-
+chosen): the cell-seal / boundary computational-accuracy
+track.** Symptom: the canonical input-test runs but produces
+**no sealed command cell** in the navigable history — the
+cell is dropped upstream (ADR 0004 *drop-on-None*: no
+`PromptStart` Seq ⇒ `extractIOCell` returns `None` ⇒ cell
+dropped) and/or the prompt boundary is never detected for
+that scenario (Cycle-52 OSC-133 / `HeuristicPromptDetector`
+fallback). It is **not** a cell-history-list bug — the list
+faithfully projects `CellEventBus.Appended` off the seal
+site; nothing seals, so nothing appears. Goal of this track:
+make interactive command/output reliably **seal into typed
+IOCells** so the (now structurally-solid) history UI
+populates. Approach per the [#403 re-sequencing amendment](adr/0007-canonical-iocell-history-navigation.md#re-sequencing-amendment-2026-05-17-maintainer-ratified):
+a **boundary-diagnostic-capture** pass first (high-resolution
+timestamped record of every shell event → analyse the
+real begin/end-of-evaluation signals from data, cmd /
+PowerShell first, Claude deferred) before changing the
+seal/boundary logic — design the capture as its own scoped
+work item, do not patch the heuristic speculatively. ADR
+0007 Phase 4/4b/5 (segments) + 6c/6d + the real
+cell-nav/per-cell-op implementations behind the enabled
+`(not yet implemented)` placeholders follow once cells
+reliably seal.
+
+*Historical (shipped) — R4c / R5 / R6 below are DONE; kept
+as the build-order trail, not "next":*
+
+**R4c — cmd CommandFinished completion (SHIPPED, pre-R5):**
+prepended a *boundary-only* deferred `;D` (`$e]133;D$e\`) to
 the cmd `prompt` template so cmd emits
 `BoundaryKind.CommandFinished None` at the head of every
 prompt — completing the cmd OSC-133 event stream (`;B`→`;D`
@@ -306,9 +404,9 @@ core. No exit code: cmd has no native `%errorlevel%`-in-
 prompt mechanism (clink/doskey rejected — dependency / patch
 class); the boundary is what R6 needs, the code is an
 OS-level cmd limitation. Net-corrective — the real `;D`
-replaces the misplaced Cycle-47 synthetic compensation for
+replaced the misplaced Cycle-47 synthetic compensation for
 cmd. Folded into the R1–R4 foundation dogfood (matrix
-`52-R4c`); same installed preview, one NVDA pass.
+`52-R4c`).
 
 > **cmd announce-heuristic FREEZE (maintainer decision
 > 2026-05-16, post-`5518f5c` bundle).** The foundation

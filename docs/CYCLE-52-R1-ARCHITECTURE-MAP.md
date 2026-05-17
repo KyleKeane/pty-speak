@@ -11,9 +11,13 @@
 >   *Core assembly*") — **done in R4a (#356)**:
 >   `HeuristicPromptDetector` is `namespace Terminal.Shell`,
 >   logger category `Terminal.Shell.HeuristicPromptDetector`.
-> - Any "deferred to R2/R3/R4" / "in progress" framing —
->   R1–R4 all shipped; R5 (PowerShell adapter) is next,
->   gated on the consolidated R1–R4 foundation dogfood.
+> - Any "deferred to R2/R3/R4" / "R5 is next" framing is
+>   STALE: R1–R6 (incl. R5 PowerShell adapter) shipped &
+>   dogfood-validated, and ADR 0007 Phases 0–3 + the Phase
+>   6a-2b/6b correction round (#410–#415) shipped 2026-05-17.
+>   The active track is the cell-seal / boundary
+>   computational-accuracy work — see
+>   [`SESSION-HANDOFF.md`](SESSION-HANDOFF.md) § Next stage.
 > - `file:line` anchors predate the R2–R4 edits (announce
 >   path rewritten in R3b, `Terminal.Shell` namespace in
 >   R4a) and will have drifted — re-derive against current
