@@ -370,6 +370,8 @@ module Program =
         | HotkeyRegistry.Up -> Key.Up
         | HotkeyRegistry.Down -> Key.Down
         | HotkeyRegistry.End -> Key.End
+        | HotkeyRegistry.Left -> Key.Left
+        | HotkeyRegistry.Right -> Key.Right
         | HotkeyRegistry.Digit n ->
             failwithf
                 "HotkeyRegistry.Digit %d out of supported range 1-9 \
@@ -4437,12 +4439,124 @@ module Program =
                 | SpeechCursor.Manual -> "Speech cursor mode: Manual."
             window.TerminalSurface.Announce(label, ActivityIds.diagnostic)
 
+        // ADR 0007 Phase 6a-2b — the focusable cell-history
+        // list + Ctrl+Shift+Left/Right pane switch. Binding
+        // constraints: ADR 0007 6a-2b "Architectural
+        // conformance" (maintainer deep-review 2026-05-17).
+        //
+        //  * The list is a *projection* driven by the canonical
+        //    `CellEventBus` (D8 "event-driven off the seal
+        //    event"; D7-clean — sourced from the typed cell
+        //    layer, never the legacy text materialisation).
+        //  * Parallel focus-marker, NO double-speak: when a
+        //    list item gets focus the screen reader announces
+        //    it NATIVELY via the standard UIA `ListItem`; we do
+        //    NOT manually `Announce`. The list's own
+        //    `SelectionChanged` publishes `CellEventBus.Focused`
+        //    *in parallel* so the universal cell bus still
+        //    feeds the non-SR sinks (earcon / spatial audio /
+        //    braille / a future separate-process UI).
+        //  * SpeechCursor manual nav stays separate code — this
+        //    list neither routes through it nor is driven by
+        //    it; the list model's `Focused` source is THIS
+        //    handler (the #404 `runSpeechCursor*` publish is
+        //    the legacy keyboard model's source; both coexist
+        //    decoupled).
+        //  * Frontend/backend separation: `Terminal.Core` stays
+        //    WPF-free; the frontend only subscribes to
+        //    lifecycle events and publishes interaction events
+        //    via the neutral bus contract.
+        //  * Flat `ListBox` is a temporary scaffold (control
+        //    type ratified 2026-05-17); the item is a typed
+        //    projection so the Tree swap stays trivial.
+        //
+        // Item display is single-line ("<Kind>: <text>"); the
+        // parallel `cellHistoryCells` keeps each row's typed
+        // `CellView` so `SelectionChanged` can publish the
+        // typed event (sinks never re-derive from text —
+        // ADR 0008).
+        // Diagnostic triggers (ship-with-the-feature rule):
+        // counts/enums only, never cell text (logging
+        // discipline) — so a `Ctrl+Shift+D` bundle confirms
+        // the list-append, the parallel focus-marker publish,
+        // and the pane switch each fired, and the universal
+        // bus was fed.
+        let cellPaneLog =
+            Logger.get "Terminal.App.Program.CellHistoryPane"
+        let cellHistoryItems =
+            System.Collections.ObjectModel.ObservableCollection<string>()
+        let cellHistoryCells =
+            ResizeArray<SpeechCursor.CellView>()
+        let cellKindLabel (k: SpeechCursor.CellKind) : string =
+            match k with
+            | SpeechCursor.CellKind.Input -> "Command"
+            | SpeechCursor.CellKind.Output -> "Output"
+            | SpeechCursor.CellKind.SubPromptExchange -> "Sub-prompt"
+            | SpeechCursor.CellKind.ProgressSegment -> "Progress"
+        let cellHistoryDisplay (cv: SpeechCursor.CellView) : string =
+            let oneLine =
+                cv.Text.Replace("\r", " ").Replace("\n", " ").Trim()
+            sprintf "%s: %s" (cellKindLabel cv.Kind) oneLine
+        window.CellHistoryList.ItemsSource <- cellHistoryItems
+        // Subscribe the list to the canonical cell pipeline.
+        // `Appended` → add a projected row (marshalled to the
+        // UI thread; the publish fires on the reader/seal
+        // path). `Focused` is published BY this list (below),
+        // not consumed here — the legacy keyboard model's
+        // `Focused` is a separate concern (ADR 0007 6a-2b
+        // conformance #2/#3). App-lifetime subscription.
+        CellEventBus.subscribe (fun ev ->
+            match ev with
+            | CellEventBus.Appended cv ->
+                window.Dispatcher.InvokeAsync(
+                    System.Action(fun () ->
+                        cellHistoryItems.Add(cellHistoryDisplay cv)
+                        cellHistoryCells.Add(cv)
+                        cellPaneLog.LogInformation(
+                            "ADR 0007 Phase 6a-2b list append. CellSeq={CellSeq} Kind={Kind} Count={Count}",
+                            cv.CellSequence,
+                            (sprintf "%A" cv.Kind),
+                            cellHistoryItems.Count)))
+                |> ignore
+            | CellEventBus.Focused _ -> ())
+        |> ignore
+        // Parallel focus-marker: native SR announce + our typed
+        // event. NO manual `Announce` here (double-speak).
+        window.CellHistoryList.SelectionChanged.Add(fun _ ->
+            let i = window.CellHistoryList.SelectedIndex
+            if i >= 0 && i < cellHistoryCells.Count then
+                let cell = cellHistoryCells.[i]
+                CellEventBus.publish (CellEventBus.Focused cell)
+                cellPaneLog.LogInformation(
+                    "ADR 0007 Phase 6a-2b list focus-marker. Index={Index} CellSeq={CellSeq} Kind={Kind}",
+                    i,
+                    cell.CellSequence,
+                    (sprintf "%A" cell.Kind)))
+
+        // Pane switch. Move keyboard focus only — the screen
+        // reader announces the newly-focused control natively
+        // (ADR 0007 6a-2b conformance #1: "at most a brief
+        // distinct pane-change marker"; the conservative
+        // first-cut default is no manual cue, dogfood refines).
+        let runFocusHistoryPane () : unit =
+            window.CellHistoryList.Focus() |> ignore
+            cellPaneLog.LogInformation(
+                "ADR 0007 Phase 6a-2b pane switch. Target={Target}",
+                "history")
+        let runFocusTerminalPane () : unit =
+            window.TerminalSurface.Focus() |> ignore
+            cellPaneLog.LogInformation(
+                "ADR 0007 Phase 6a-2b pane switch. Target={Target}",
+                "terminal")
+
         bind HotkeyRegistry.SpeechCursorNext runSpeechCursorNext
         bind HotkeyRegistry.SpeechCursorPrevious runSpeechCursorPrevious
         bind HotkeyRegistry.SpeechCursorJumpToLatest runSpeechCursorJumpToLatest
         bind HotkeyRegistry.SpeechCursorToggleMode runSpeechCursorToggleMode
         bind HotkeyRegistry.JumpToLastError runJumpToLastError
         bind HotkeyRegistry.RerunFocusedInput runRerunInput
+        bind HotkeyRegistry.FocusHistoryPane runFocusHistoryPane
+        bind HotkeyRegistry.FocusTerminalPane runFocusTerminalPane
 
         // Stage 7-followup PR-F — background heartbeat. Every 5
         // seconds, log a single Information-level "Heartbeat" line

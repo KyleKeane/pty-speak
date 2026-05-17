@@ -709,6 +709,16 @@ public class TerminalView : FrameworkElement
             (Key.Down, ModifierKeys.Control | ModifierKeys.Shift, "Speech Cursor: next entry"),
             (Key.End, ModifierKeys.Control | ModifierKeys.Shift, "Speech Cursor: jump to latest"),
 
+            // ADR 0007 Phase 6a-2b — pane switch (cell-history
+            // list <-> terminal). Reserved so this generic
+            // match short-circuits WITHOUT e.Handled and the
+            // Window InputBinding fires (same mechanism as the
+            // Up/Down/End rows above). NVDA collision check:
+            // review-cursor defaults are the Numpad cluster;
+            // Ctrl+Shift+arrow is free.
+            (Key.Left, ModifierKeys.Control | ModifierKeys.Shift, "Focus cell-history pane"),
+            (Key.Right, ModifierKeys.Control | ModifierKeys.Shift, "Focus terminal pane"),
+
             // Future entries (NOT yet bound; commented for
             // forward-planning):
             //   (Key.R, ModifierKeys.Alt | ModifierKeys.Shift,

@@ -101,6 +101,20 @@
                               x:FieldModifier="public"
                               Header="Toggle _Mode (AutoDrive / Manual)" />
                 </MenuItem>
+                <!-- ADR 0007 Phase 6a-2b — pane switch. Menu-
+                     surfaced for discoverability (the maintainer's
+                     standing "menu = NVDA discoverability" rule);
+                     same RoutedCommand as Ctrl+Shift+Left/Right.
+                     compose() auto-wires MenuItem_<nameOf cmd> by
+                     reflection + sets InputGestureText. -->
+                <MenuItem Header="P_ane">
+                    <MenuItem x:Name="MenuItem_FocusHistoryPane"
+                              x:FieldModifier="public"
+                              Header="Focus _History Pane" />
+                    <MenuItem x:Name="MenuItem_FocusTerminalPane"
+                              x:FieldModifier="public"
+                              Header="Focus _Terminal Pane" />
+                </MenuItem>
                 <MenuItem x:Name="MenuItem_OutputVerbosity"
                           x:FieldModifier="public"
                           Header="_Output Verbosity">
@@ -359,6 +373,48 @@
                           Header="Draft New _Release" />
             </MenuItem>
         </Menu>
-        <views:TerminalView x:Name="TerminalSurface" x:FieldModifier="public" />
+        <!-- ADR 0007 Phase 6a-2b — the live terminal and the
+             focusable cell-history list, side by side, joined by
+             a GridSplitter. The DockPanel's fill child is now
+             this Grid (was the bare TerminalView). TerminalSurface
+             keeps its x:Name + public field modifier so the
+             load-bearing MainWindow.xaml.cs `Loaded +=
+             TerminalSurface.Focus()` is unchanged. The
+             Ctrl+Shift+Left/Right pane switch (HotkeyRegistry
+             FocusHistoryPane / FocusTerminalPane) moves keyboard
+             focus between the two; the screen reader announces
+             the newly-focused control natively. -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <views:TerminalView Grid.Column="0"
+                                x:Name="TerminalSurface"
+                                x:FieldModifier="public" />
+            <GridSplitter Grid.Column="1"
+                          Width="4"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Stretch"
+                          Background="Gray" />
+            <!-- Standard ListBox -> UIA List (control type
+                 ratified 2026-05-17, the deliberately-flat-first
+                 cut; Tree is the deferred Phase-4/5 growth path).
+                 ItemsSource + SelectionChanged are wired in
+                 Program.fs compose() off the canonical
+                 CellEventBus. AutomationProperties.Name is what
+                 NVDA reads when the pane receives focus; each
+                 ListItem is announced natively on arrow-nav while
+                 the SelectionChanged handler publishes
+                 CellEventBus.Focused in parallel (no manual
+                 Announce — ADR 0007 6a-2b conformance #1). -->
+            <ListBox Grid.Column="2"
+                     x:Name="CellHistoryList"
+                     x:FieldModifier="public"
+                     SelectionMode="Single"
+                     AutomationProperties.Name="Cell history"
+                     AutomationProperties.AutomationId="pty-speak.CellHistoryList" />
+        </Grid>
     </DockPanel>
 </Window>

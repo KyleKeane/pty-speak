@@ -150,7 +150,10 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               HotkeyRegistry.SpeechCursorNext
               HotkeyRegistry.SpeechCursorPrevious
               HotkeyRegistry.SpeechCursorJumpToLatest
-              HotkeyRegistry.SpeechCursorToggleMode ]
+              HotkeyRegistry.SpeechCursorToggleMode
+              // ADR 0007 Phase 6a-2b — pane switch.
+              HotkeyRegistry.FocusHistoryPane
+              HotkeyRegistry.FocusTerminalPane ]
     let actual = Set.ofList HotkeyRegistry.allCommands
     Assert.Equal<Set<HotkeyRegistry.AppCommand>>(expected, actual)
 

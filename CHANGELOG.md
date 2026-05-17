@@ -15226,6 +15226,31 @@ assertive "Esc clears the line" wording corrected), and the
 clear is an explicit non-fail tracked gap). Comment-only +
 docs.
 
+### Cycle 52 — ADR 0007 Phase 6a-2b: focusable cell-history pane + pane switch (2026-05-17)
+
+A focusable **cell-history list** now sits beside the terminal
+(a standard `ListBox` → UIA `List`; control type ratified
+2026-05-17 — the deliberately-flat first cut, Tree deferred to
+Phase 4/5). It mirrors the canonical computational history: one
+row per sealed cell item (`Command: …` / `Output: …`), driven
+off the typed `CellEventBus` (D9) — never the legacy text
+materialisation (D7-clean). **`Ctrl+Shift+Left`** focuses the
+history pane, **`Ctrl+Shift+Right`** returns to the terminal
+(also surfaced under **Interface → Pane** for discoverability,
+with the shortcut announced). The screen reader announces each
+list item **natively** as you arrow through it (standard UIA
+list semantics — no bespoke peer); in parallel the list
+publishes `CellEventBus.Focused` so the universal cell bus also
+feeds the non-screen-reader sinks (earcon / spatial audio /
+braille / a future separate-process UI) — no double-speak
+(maintainer deep-review conformance, ADR 0007 6a-2b). The
+existing `Ctrl+Shift+Up/Down/End` SpeechCursor manual review is
+unchanged and independent (separate code). Counts-only
+diagnostic logs (list append / focus-marker / pane switch) ship
+with the feature. Its NVDA dogfood (`52-ADR7-P6a`) **is the
+hard D8 control-type ratification gate** and gates everything
+after Phase 6.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
