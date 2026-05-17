@@ -99,11 +99,20 @@ defences, both shipped R-B1:
   facts are plain `Tests.Unit` xUnit cases (~2 s); a separate
   CI job would only duplicate the .NET runner/restore/build
   infra for no coverage gain (R-B1-followup removed it).
-- **R-B2 (awaiting maintainer captures):** **C5**
-  backspace/retype (deleted chars must not reappear in
-  `CommandText`) and **C6** long-idle mid-compose; the
-  CMD-test scripts. Capture with `Ctrl+Shift+T` toggled
-  *before* the prompt for a full lifecycle (no seed needed).
+- **R-B2 (in progress):** **C5** backspace/retype landed —
+  real capture (`ECHO HELLOXX` → 2×Backspace → `ECHO HELLO`);
+  asserts the deleted `XX` never reaches `CommandText`
+  (`commandNotContains=X` — only the two deleted bytes contain
+  X). Added the `commandNotContains` schema key. **C5 caught a
+  real defect on first run** (sealed `CommandText` is
+  `ECHO HELLOXX` — cmd's `\x08 \x08` erase is Screen-level but
+  extraction reads linear ContentHistory per ADR 0004, which
+  doesn't apply `\x08`). The fact ships **`Skip`-with-reason**
+  (maintainer decision 2026-05-17): the trace + `.expected`
+  stay in the corpus so it flips to an active regression guard
+  once the ADR-0004-level substrate fix lands. Tracked:
+  [#428](https://github.com/KyleKeane/pty-speak/issues/428).
+  **C6** long-idle mid-compose still awaiting capture.
 - **R-C onward:** P3 (inline sub-prompt) and all further
   boundary work gated by this oracle, never manual dogfood.
 

@@ -1,0 +1,34 @@
+=== pty-speak raw shell trace — started 2026-05-17 20:36:32.619 UTC ===
+=== 31 events; IN 15 bytes; OUT 116 bytes ===
+=== format: +<elapsed_us>us <DIR> <nbytes>B | <escaped>  (\e=ESC \r \n \t \a \xHH) ===
++2519847us IN  1B | E
++2520078us OUT 1B | E
++3560334us IN  1B | C
++3560682us OUT 1B | C
++4509907us IN  1B | H
++4510290us OUT 1B | H
++5232949us IN  1B | O
++5233453us OUT 1B | O
++6119285us IN  1B | \x20
++6120260us OUT 1B | \x20
++7298348us IN  1B | H
++7299024us OUT 1B | H
++8529131us IN  1B | E
++8530325us OUT 1B | E
++9240898us IN  1B | L
++9241145us OUT 1B | L
++9777767us IN  1B | L
++9778178us OUT 1B | L
++10529183us IN  1B | O
++10529432us OUT 1B | O
++13457143us IN  1B | X
++13457399us OUT 1B | X
++14074875us IN  1B | X
++14075129us OUT 1B | X
++16280244us IN  1B | \x7F
++16280531us OUT 3B | \x08 \x08
++17034356us IN  1B | \x7F
++17034875us OUT 3B | \x08 \x08
++18732897us IN  1B | \r
++18733270us OUT 2B | \r\n
++18734819us OUT 96B | \e[?25lHELLO\e[18;1H\e[?25h\e]133;D\e\\e]133;A\e\C:\Users\Kyle\git\pty-speak\src\Terminal.App>\e]133;B\e\

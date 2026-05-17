@@ -1,0 +1,21 @@
+# Boundary replay oracle expectation — schema v1 (R-B2).
+# C5: typed `ECHO HELLOXX`, two Backspaces (each \x7F →
+# `\x08 \x08` erase), ran `ECHO HELLO`. THE C5 invariant: the
+# deleted `XX` must NOT survive into CommandText. The only `X`
+# bytes in the whole interaction are the two deleted ones, so
+# `commandNotContains=X` is the tightest correctness assertion
+# (a single stray X from an off-by-one in backspace handling
+# fails it too). Plus the standing invariants: exactly one
+# sealed cell, the result in OutputText, no next-prompt-path
+# bleed. Joined mid-prompt → seedPrompt is the stable cmd
+# prompt the trace exhibits (same as C1–C3).
+# NB: parseExpected is a Map (last dup key wins) — one
+# *NotContains per field; the prompt-path bleed guard is the
+# load-bearing output assertion, kept over a redundant no-X.
+schemaVersion=1
+seedPrompt=C:\Users\Kyle\git\pty-speak\src\Terminal.App>
+cellCount=1
+cell0.phase=Sealed
+cell0.commandNotContains=X
+cell0.outputContains=HELLO
+cell0.outputNotContains=C:\Users\Kyle\git\pty-speak\src\Terminal.App>

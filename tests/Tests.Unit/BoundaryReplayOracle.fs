@@ -326,6 +326,9 @@ let private assertScenario (traceName: string) (expectedName: string) =
         match g "commandContains" with
         | Some s -> Assert.Contains(s, c.CommandText)
         | None -> ()
+        match g "commandNotContains" with
+        | Some s -> Assert.DoesNotContain(s, c.CommandText)
+        | None -> ()
         match g "outputContains" with
         | Some s -> Assert.Contains(s, c.OutputText)
         | None -> ()
@@ -349,3 +352,16 @@ let ``replay oracle: C2 echo fast — byte-identical, same invariants`` () =
 let ``replay oracle: C3 set/p — seals (was drop-on-None), no bleed`` () =
     assertScenario
         "C3-set-p-text-input.txt" "C3-set-p-text-input.expected"
+
+// SKIPPED: caught a real defect (#428). cmd echoes the in-line
+// erase as `\x08 \x08`, a Screen-level destructive edit; extraction
+// reads linear ContentHistory (ADR 0004) which doesn't apply `\x08`,
+// so backspaced chars survive in the sealed CommandText
+// ("ECHO HELLOXX" not "ECHO HELLO"). The substrate fix is an
+// ADR-0004-level follow-up (maintainer decision 2026-05-17); the
+// trace + .expected stay in the corpus so this flips to an active
+// regression guard once #428 lands. Remove the Skip then.
+[<Fact(Skip = "known defect #428: backspace not applied to ContentHistory CommandText (ADR-0004 substrate follow-up)")>]
+let ``replay oracle: C5 backspace/retype — deleted chars gone from CommandText`` () =
+    assertScenario
+        "C5-backspace-retype.txt" "C5-backspace-retype.expected"
