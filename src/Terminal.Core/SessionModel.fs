@@ -764,12 +764,78 @@ module SessionModel =
         // The trailing-next-prompt trim is shared by the
         // heuristic split regardless of which marker anchors
         // the slice lower bound.
+        // Cycle 52 boundary-fix P2′ — whitespace/render-tolerant
+        // trailing-next-prompt strip. The deferred-`;D` flush
+        // (`HI ;D ;A <path> ;B`) arrives as ONE PTY chunk, so the
+        // reader thread appends the command output AND the next
+        // prompt's path text to ContentHistory together, before
+        // any boundary is handled (Program.fs startReaderLoop) —
+        // and this boundary's own marker is appended AFTER
+        // extractIOCell runs. So at thunk time there is no marker
+        // or Seq that fences the trailing prompt; the only signal
+        // is `newPromptText` (the boundary's MatchedRowText).
+        // The pre-P2′ exact `s.EndsWith(p)` bled the path into
+        // OutputText because MatchedRowText is a SNAPSHOT-rendered
+        // row (padded / render-variant) while the slice is raw
+        // bytes — the suffix never matched exactly (C1/C2 bleed,
+        // docs/boundary-capture/). Strip tolerantly: trim trailing
+        // CR/LF/space/tab from the slice, then drop a trailing
+        // occurrence of the trimmed prompt text (allowing a few
+        // residual control bytes after it).
         let stripNextPrompt (s: string) : string =
             match newPromptText with
-            | Some p when not (System.String.IsNullOrEmpty p)
-                          && s.EndsWith(p) ->
-                s.Substring(0, s.Length - p.Length)
+            | Some p when not (System.String.IsNullOrWhiteSpace p) ->
+                let pt = p.Trim()
+                let st = s.TrimEnd('\r', '\n', ' ', '\t')
+                if pt.Length > 0 && st.EndsWith(pt) then
+                    st.Substring(0, st.Length - pt.Length)
+                elif pt.Length > 0 then
+                    let idx = st.LastIndexOf(pt)
+                    if idx >= 0 && idx >= st.Length - pt.Length - 4 then
+                        st.Substring(0, idx)
+                    else s
+                else s
             | _ -> s
+        // P2′ — timing-independent cmd OSC-133 A/B split. Anchor
+        // at the reliable `;B` (CommandStart) marker of THIS
+        // cell's prompt (it is in ContentHistory at thunk time —
+        // appended when this cell's prompt boundary was handled;
+        // the next prompt's markers are NOT yet appended, so
+        // `commandStart.Seq` is correct, not the next prompt's).
+        // The `[;A,;B)` prompt path is excluded by construction.
+        // Robust-strip the trailing next-prompt FIRST, then split
+        // the typed command from output at the first CRLF; the
+        // command is the LAST non-empty CR-segment of that first
+        // line so doskey / PSReadLine in-place history-scroll
+        // reprints (bare `\r`) resolve to the line that actually
+        // ran. NO `commandEnterSeq` dependency → immune to the
+        // slow/fast echo-timing race that truncated the command
+        // (`ECHO H`) and produced the nondeterministic bleed.
+        let cmdAbSplit (csSeq: int64) : (string * string) option =
+            let raw =
+                ContentHistory.sliceText
+                    history csSeq System.Int64.MaxValue
+            let body =
+                ((stripNextPrompt raw).TrimStart('\r', '\n'))
+                    .TrimEnd('\r', '\n')
+            let lastCrSeg (seg: string) : string =
+                seg.Split('\r')
+                |> Array.map (fun l -> l.Trim())
+                |> Array.filter (fun l -> l.Length > 0)
+                |> Array.tryLast
+                |> Option.defaultValue ""
+            if System.String.IsNullOrWhiteSpace body then None
+            else
+                match body.IndexOf('\n') with
+                | -1 ->
+                    // No newline — `cd`-style command with no
+                    // output. Attribute to CommandText.
+                    Some (lastCrSeg body, "")
+                | i ->
+                    let cmd = lastCrSeg (body.Substring(0, i))
+                    let out =
+                        body.Substring(i + 1).Trim([| '\r'; '\n' |])
+                    Some (cmd, out)
         // The PR-X watermark split, parameterised by the slice
         // lower-bound Seq. Anchored at `promptStart.Seq` it is
         // the pre-R2 heuristic-only behaviour (byte-identical);
@@ -889,11 +955,17 @@ module SessionModel =
             // PromptStart-only first-line heuristic. Provenance
             // is OSC 133 (the ;B marker is shell-emitted), so
             // this is a clean arm, not the heuristic fallback.
-            let result = heuristicSplit commandStart.Seq
+            // P2′ — timing-independent split anchored at the
+            // reliable `;B` CommandStart marker (see `cmdAbSplit`).
+            // Replaces the racy `commandEnterSeq` watermark that
+            // truncated the command under slow typing (`ECHO H`)
+            // and the exact-`EndsWith` strip that bled the prompt
+            // path into OutputText.
+            let result = cmdAbSplit commandStart.Seq
             let cl, ol = lenOf result
             logger.LogDebug(
                 "extractIOCell arm. Arm={Arm} PromptSeq={PromptSeq} CommandSeq={CommandSeq} CommandEnterSeq={CommandEnterSeq} CmdLen={CmdLen} OutLen={OutLen}",
-                "CmdOscAB",
+                "CmdAbTI",
                 promptStart.Seq,
                 commandStart.Seq,
                 commandEnterSeq,

@@ -1503,3 +1503,110 @@ let ``formatHistoryForClipboard history entries appear oldest first`` () =
     Assert.Contains("--- Entry 1 ---", text)
     Assert.Contains("--- Entry 2 ---", text)
     Assert.Contains("--- Entry 3 ---", text)
+
+// ---- Cycle 52 boundary-fix P2′: timing-independent cmd split
+//
+// Models the PRODUCTION ordering the other hand-built histories
+// do NOT: the reader thread appends the WHOLE deferred-`;D`
+// chunk's TEXT (command echo + output + the next prompt's path)
+// to ContentHistory BEFORE any boundary is handled, and this
+// boundary's own marker is appended AFTER extractIOCell runs
+// (Program.fs). So at thunk time only THIS cell's `;A`/`;B`
+// markers are present; the next prompt's path is trailing TEXT
+// with no marker. P2′ anchors the split at the reliable `;B`
+// CommandStart marker and strips the trailing prompt tolerantly
+// — no `commandEnterSeq` dependency (the slow/fast `ECHO H`
+// race) and no exact-`EndsWith` (the C1/C2 bleed).
+// docs/boundary-capture/.
+
+[<Fact>]
+let ``P2′ — C1-shape echo seals, command intact, NO prompt-path bleed`` () =
+    let initial = SessionModel.create "cmd" 100
+    let history = freshHistory ()
+    // THIS cell's prompt: ;A marker, prompt-path text, ;B marker.
+    let history =
+        appendHistoryMarker history t0 ContentHistory.MarkerKind.PromptStart
+    let history =
+        feedHistoryBytes
+            history (after 1)
+            (System.Text.Encoding.ASCII.GetBytes "C:\\dir>")
+    let history =
+        appendHistoryMarker
+            history (after 2) ContentHistory.MarkerKind.CommandStart
+    // Reader thread appends the WHOLE deferred chunk's TEXT in one
+    // go: echoed command, CRLF, output, CRLF, then the NEXT
+    // prompt's path — and NO further markers yet (they lag).
+    let history =
+        feedHistoryBytes
+            history (after 3)
+            (System.Text.Encoding.ASCII.GetBytes
+                "echo hi\r\nhi\r\nC:\\dir>")
+    let s1 =
+        SessionModel.applyWithContentHistory
+            initial
+            (boundaryWithText BoundaryKind.PromptStart t0 "C:\\dir>")
+            [||] history true (-1L)
+    let s2 =
+        SessionModel.applyWithContentHistory
+            s1 (boundary BoundaryKind.CommandStart (after 2))
+            [||] history true (-1L)
+    let _s3, finalisedOpt =
+        SessionModel.applyAndCaptureWithContentHistory
+            s2
+            (boundaryWithText
+                (BoundaryKind.CommandFinished None) (after 5) "C:\\dir>")
+            [||] history true (-1L)
+    Assert.True(finalisedOpt.IsSome)
+    let cell = finalisedOpt.Value
+    // Command intact (no `ECHO H` truncation — timing-independent
+    // split, no commandEnterSeq).
+    Assert.Contains("echo hi", cell.CommandText)
+    Assert.Contains("hi", cell.OutputText)
+    // Tolerant strip fences the trailing next-prompt path out.
+    Assert.DoesNotContain("C:\\dir>", cell.OutputText)
+    Assert.Equal(SessionModel.IOCellPhase.Sealed, cell.Phase)
+
+[<Fact>]
+let ``P2′ — C3-shape set/p interaction SEALS (was drop-on-None)`` () =
+    let initial = SessionModel.create "cmd" 100
+    let history = freshHistory ()
+    let history =
+        appendHistoryMarker history t0 ContentHistory.MarkerKind.PromptStart
+    let history =
+        feedHistoryBytes
+            history (after 1)
+            (System.Text.Encoding.ASCII.GetBytes "C:\\dir>")
+    let history =
+        appendHistoryMarker
+            history (after 2) ContentHistory.MarkerKind.CommandStart
+    // Launch + an UNMARKED set/p sub-prompt + echoed response +
+    // result, then the NEXT prompt's path — all TEXT, one chunk,
+    // no markers (exactly the C3 trace shape; one terminal `;D`).
+    let history =
+        feedHistoryBytes
+            history (after 3)
+            (System.Text.Encoding.ASCII.GetBytes
+                "test02\r\nEnter your name:NAME\r\nHello, NAME!\r\n=== END ===\r\nC:\\dir>")
+    let s1 =
+        SessionModel.applyWithContentHistory
+            initial
+            (boundaryWithText BoundaryKind.PromptStart t0 "C:\\dir>")
+            [||] history true (-1L)
+    let s2 =
+        SessionModel.applyWithContentHistory
+            s1 (boundary BoundaryKind.CommandStart (after 2))
+            [||] history true (-1L)
+    let _s3, finalisedOpt =
+        SessionModel.applyAndCaptureWithContentHistory
+            s2
+            (boundaryWithText
+                (BoundaryKind.CommandFinished None) (after 5) "C:\\dir>")
+            [||] history true (-1L)
+    // The C3 defect: this sealed NO cell (drop-on-None). P2′
+    // seals it — the unmarked sub-prompt is just body text
+    // between `;B` and end-of-output.
+    Assert.True(finalisedOpt.IsSome)
+    let cell = finalisedOpt.Value
+    Assert.Contains("Hello, NAME!", cell.OutputText)
+    Assert.DoesNotContain("C:\\dir>", cell.OutputText)
+    Assert.Equal(SessionModel.IOCellPhase.Sealed, cell.Phase)
