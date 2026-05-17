@@ -326,6 +326,9 @@ let private assertScenario (traceName: string) (expectedName: string) =
         match g "commandContains" with
         | Some s -> Assert.Contains(s, c.CommandText)
         | None -> ()
+        match g "commandNotContains" with
+        | Some s -> Assert.DoesNotContain(s, c.CommandText)
+        | None -> ()
         match g "outputContains" with
         | Some s -> Assert.Contains(s, c.OutputText)
         | None -> ()
@@ -349,3 +352,8 @@ let ``replay oracle: C2 echo fast — byte-identical, same invariants`` () =
 let ``replay oracle: C3 set/p — seals (was drop-on-None), no bleed`` () =
     assertScenario
         "C3-set-p-text-input.txt" "C3-set-p-text-input.expected"
+
+[<Fact>]
+let ``replay oracle: C5 backspace/retype — deleted chars gone from CommandText`` () =
+    assertScenario
+        "C5-backspace-retype.txt" "C5-backspace-retype.expected"
