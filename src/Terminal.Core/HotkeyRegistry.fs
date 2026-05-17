@@ -68,6 +68,12 @@ module HotkeyRegistry =
         | Up
         | Down
         | End
+        /// ADR 0007 Phase 6a-2b — `Ctrl+Shift+Left`/`Right`
+        /// pane switch (cell-history list ⇄ terminal). NVDA
+        /// collision check: NVDA's review-cursor defaults are
+        /// the Numpad cluster; `Ctrl+Shift+arrow` is free.
+        | Left
+        | Right
 
     /// Identity of every app-reserved hotkey command. New
     /// hotkeys append a case here and add a corresponding
@@ -235,6 +241,12 @@ module HotkeyRegistry =
         | SpeechCursorPrevious
         | SpeechCursorJumpToLatest
         | SpeechCursorToggleMode
+        // ADR 0007 Phase 6a-2b — pane switch between the live
+        // terminal surface and the focusable cell-history list.
+        // Gesture-bearing (Ctrl+Shift+Left / Ctrl+Shift+Right)
+        // AND menu-surfaced for discoverability.
+        | FocusHistoryPane
+        | FocusTerminalPane
 
     /// Stable string name for a command, used as the
     /// `RoutedCommand` name passed to WPF and as a TOML key
@@ -293,6 +305,8 @@ module HotkeyRegistry =
         | SpeechCursorPrevious -> "SpeechCursorPrevious"
         | SpeechCursorJumpToLatest -> "SpeechCursorJumpToLatest"
         | SpeechCursorToggleMode -> "SpeechCursorToggleMode"
+        | FocusHistoryPane -> "FocusHistoryPane"
+        | FocusTerminalPane -> "FocusTerminalPane"
 
     /// Default key binding for a command. Mirrors the
     /// `AppReservedHotkeys` table in
@@ -582,7 +596,21 @@ module HotkeyRegistry =
           { Command = SpeechCursorToggleMode
             Key = None
             Modifiers = None
-            Description = "Speech Cursor: toggle AutoDrive / Manual mode (menu-only)" } ]
+            Description = "Speech Cursor: toggle AutoDrive / Manual mode (menu-only)" }
+          // ADR 0007 Phase 6a-2b — pane switch. Left → focus
+          // the cell-history list; Right → focus the terminal.
+          // NVDA announces the newly-focused control natively;
+          // the list's own focus handler publishes
+          // CellEventBus.Focused in parallel (no manual
+          // announce — see ADR 0007 6a-2b conformance).
+          { Command = FocusHistoryPane
+            Key = Some Left
+            Modifiers = Some ctrlShift
+            Description = "Focus the cell-history pane" }
+          { Command = FocusTerminalPane
+            Key = Some Right
+            Modifiers = Some ctrlShift
+            Description = "Focus the terminal pane" } ]
 
     /// Look up the default Hotkey for a command. Throws
     /// `KeyNotFoundException` if the registry is incomplete —
@@ -640,6 +668,8 @@ module HotkeyRegistry =
                 | Up -> "Up"
                 | Down -> "Down"
                 | End -> "End"
+                | Left -> "Left"
+                | Right -> "Right"
             Some (System.String.Join("+", modParts @ [ keyText ]))
         | _ -> None
 
@@ -699,7 +729,9 @@ module HotkeyRegistry =
           SpeechCursorNext
           SpeechCursorPrevious
           SpeechCursorJumpToLatest
-          SpeechCursorToggleMode ]
+          SpeechCursorToggleMode
+          FocusHistoryPane
+          FocusTerminalPane ]
 
     // ---------------------------------------------------------------
     // Cycle 27 — Multi-state command paradigm
