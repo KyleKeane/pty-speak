@@ -90,6 +90,27 @@ and serves the decision-trail role this file used to overload.
 > D5a Q1/Q2/Q3 defaults for the first cut (history browse
 > = Manual-like; appends don't move focus/selection;
 > standard `ListBox` virtualisation), dogfood refines.
+> **BINDING (maintainer deep-review 2026-05-17 — see
+> [ADR 0007 6a-2b "Architectural conformance"](adr/0007-canonical-iocell-history-navigation.md)):**
+> list-item focus → screen reader announces **natively**;
+> we do **NOT** manually `Announce` items (double-speak) —
+> instead the list's focus/selection handler publishes
+> `CellEventBus.Focused` *in parallel* (universal bus still
+> fed for earcon / spatial-audio / braille / separate-
+> process sinks). SpeechCursor manual tooling stays
+> **separate** code (the #404 `Focused`-off-`runSpeechCursor*`
+> publish is the *legacy keyboard model's* source; the list
+> model's source is its own focus handler — both coexist,
+> decoupled). Core never depends on WPF (frontend
+> publishes interaction events / subscribes lifecycle
+> events via the bus contract → interface is
+> separate-process-capable). Flat list is a temporary
+> scaffold; Tree swap stays trivial (typed event → future
+> "N sub-components" earcon, no list computation). **Plus
+> an OPEN DECISION for the maintainer** (recorded in the
+> ADR, NOT a sidetrack): single universal tap-point vs.
+> `CellEventBus`-alongside-`OutputDispatcher` — gates only
+> 6a-2b's focus-handler publish target.
 > The session checkpointed here deliberately: 6a-2b is the
 > single locally-unverifiable (no NVDA / no compiler)
 > dogfood-gating PR and warrants a fresh full-rigor pass,
