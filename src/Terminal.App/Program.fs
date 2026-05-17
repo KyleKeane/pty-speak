@@ -3729,20 +3729,41 @@ module Program =
         // `AppContext.BaseDirectory` is the install dir at
         // runtime.
         // ADR 0007 Phase 3 (2026-05-17, maintainer UX
-        // direction) — the shared "replace the current prompt
-        // line with this text, do NOT auto-run" primitive.
-        // Prepends `Esc` (0x1B): cmd's cooked-mode line editor
-        // treats Esc as "clear the current input buffer", so
-        // whatever the user had partially typed is wiped and
-        // the line is fully replaced (the maintainer's "delete
-        // whatever is in the current input to completely
-        // replace that line" requirement). NO trailing `\r` —
-        // the user reviews the inserted line and presses Enter
-        // themselves; that explicit human submit is the safety
-        // affordance (no auto-run on a gesture). Used by BOTH
-        // the diagnostic test-script insertion and
-        // rerun-focused-input so the two are provably the same
-        // path.
+        // direction) — the shared "insert this text at the
+        // prompt, do NOT auto-run" primitive. Prepends `Esc`
+        // (0x1B) with the *intent* of clearing the current
+        // input line first (so the line is fully replaced, the
+        // maintainer's "delete whatever is in the current input
+        // to completely replace that line" requirement). NO
+        // trailing `\r` — the user reviews the inserted text
+        // and presses Enter themselves; that explicit human
+        // submit is the safety affordance (no auto-run on a
+        // gesture). Used by BOTH the diagnostic test-script
+        // insertion and rerun-focused-input so the two are
+        // provably the same path.
+        //
+        // KNOWN ISSUE (tracked, deferred — maintainer dogfood
+        // 2026-05-17; pre-existing since Cycle 47 when the
+        // Esc-prefix was introduced for the diagnostic-test
+        // insertion). The `Esc` prefix does NOT actually clear
+        // the line in practice: the text inserts correctly at
+        // the cursor but prior partially-typed input is left
+        // intact. Likely cause (locally unverifiable — no
+        // ConPTY/dotnet here): a lone `0x1B` immediately
+        // followed by bytes is not delivered to the shell's
+        // line editor as an "Escape key / clear-line" action —
+        // ConPTY's escape-sequence disambiguation drops it (or
+        // metafies it as `Alt+<char>`), so cmd's cooked-mode
+        // editor never sees the Escape keypress. The behaviour
+        // is also shell-line-editor-specific (the assumption is
+        // documented as cmd cooked-mode; PowerShell/PSReadLine
+        // would differ regardless). A correct fix needs a
+        // ConPTY-input dogfood-iteration loop + confirming the
+        // shell-at-test-time; deferred so it does not block the
+        // ADR 0007 phase sequence. Insertion (the core
+        // capability) works; the missing clear is a polish gap.
+        // See ADR 0007 §"Known issue surfaced" + the
+        // `52-ADR7-P3` matrix row.
         let insertAtPromptClearingLine (textToInsert: string) : unit =
             let bytes =
                 Array.append
