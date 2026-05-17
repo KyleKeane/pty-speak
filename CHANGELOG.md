@@ -15317,6 +15317,38 @@ Locally unverifiable (no WPF/NVDA in the sandbox) — carries
 the re-dogfood gate `52-ADR7-P6b`; Phase-6+ proceed is gated
 on it.
 
+### Cycle 52 ADR 0007 Phase 6b dogfood round 2 (2026-05-17): empty-list focus, panel titles, light-scheme inversion
+
+`52-ADR7-P6b` dogfood: navigation confirmed working; three UI
+items addressed:
+
+- **Empty list could not hold keyboard focus** — arrows
+  escaped to the menu. A single non-cell placeholder row
+  ("No cell history yet.") is seeded and dropped the first
+  time a real cell is appended (the list is append-only for
+  the app lifetime; row→cell lookups were already
+  bounds-checked, so a selected placeholder safely resolves
+  to "no cell").
+- **No visual orientation** — a bold title is now drawn above
+  each panel ("Terminal" / "Cell history"); decorative and
+  non-focusable, NVDA still reads the list name on focus.
+- **Colours inverted to a light scheme** (white background /
+  black text / black outline) on the maintainer's
+  low-vision-friend test machine — kept to the
+  `Panel{Background,Foreground,Outline}Brush` resources and
+  the TerminalView default-colour pair, in lock-step so the
+  panes stay uniform. Explicitly a *temporary* swap, not the
+  future theme-management framework.
+
+Flagged, deferred to the computational-accuracy stage (NOT
+list bugs — the list faithfully projects `CellEventBus.Appended`
+off the seal site): output sub-portions do not trickle live
+(ADR 0007 Phase 4, by design); the input-test produces no
+sealed command cell (ADR 0004 drop-on-None / Cycle 52
+boundary detection, upstream); cell history is not reset on
+shell hot-switch (accepted — a shell-switch marker row is the
+planned follow-up).
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

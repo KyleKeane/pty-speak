@@ -172,7 +172,11 @@ public class TerminalView : FrameworkElement
     /// <summary>Default background fill for the terminal grid.
     /// FrameworkElement (unlike Control / Panel) does not expose
     /// `Background` itself, so we keep our own.</summary>
-    private readonly Brush _background = Brushes.Black;
+    // Inverted to a light scheme (maintainer dogfood 2026-05-17,
+    // low-vision-friend test machine) — kept in lock-step with
+    // MainWindow.xaml PanelBackgroundBrush. Temporary; the future
+    // theme-management framework will own this.
+    private readonly Brush _background = Brushes.White;
 
     public TerminalView()
     {
@@ -1524,7 +1528,7 @@ public class TerminalView : FrameworkElement
     {
         if (spec.IsDefault)
         {
-            return isForeground ? Brushes.White : Brushes.Black;
+            return isForeground ? Brushes.Black : Brushes.White;
         }
         if (spec.IsIndexed)
         {
@@ -1536,7 +1540,7 @@ public class TerminalView : FrameworkElement
             var rgb = (ColorSpec.Rgb)spec;
             return new SolidColorBrush(Color.FromRgb(rgb.Item1, rgb.Item2, rgb.Item3));
         }
-        return isForeground ? Brushes.White : Brushes.Black;
+        return isForeground ? Brushes.Black : Brushes.White;
     }
 
     private static Brush Ansi16ToBrush(byte idx)
