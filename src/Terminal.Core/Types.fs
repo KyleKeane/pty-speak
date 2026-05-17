@@ -534,3 +534,33 @@ module ActivityIds =
     /// ActivityId so consecutive presses dedupe at the
     /// NVDA-channel layer.
     let processCleanup = "pty-speak.process-cleanup"
+
+    /// ADR 0007 D9 / Phase 6a — the canonical, modality-agnostic
+    /// cell-event family. Cell lifecycle / navigation / operation
+    /// events flow as typed `CellEventBus.CellEvent`s; the
+    /// `pty-speak.cell.*` ids are the unambiguous, single-purpose
+    /// routing/per-tag-config tags a sink (speech / earcon /
+    /// future braille / the Phase 6a history list) uses when it
+    /// renders one — distinct from a cell's *content* ActivityId
+    /// (`output`), exactly as `shellSwitch` / `inputAssistant`
+    /// are distinct from streaming output. The full planned set
+    /// (ADR 0007 "`pty-speak.cell.*` ActivityId taxonomy" open
+    /// decision, settled here in 6a — kept single-purpose, grown
+    /// per phase): `cell.focused` (6a-1, user navigated the
+    /// Manual cursor to a cell), `cell.appended` (6a-2, a cell
+    /// sealed into the transcript — the D8 list's update event),
+    /// later `cell.operated` (Phase 6 D2 ops) / `cell.segment`
+    /// (Phase 4) / `cell.pane` (6a-2 pane switch). Only the ids
+    /// a shipped phase wires are defined; speculative ones are
+    /// not pre-declared (ADR 0007 D9 "keep ids unambiguous and
+    /// single-purpose"; the guideline "don't build beyond what
+    /// the task requires").
+    ///
+    /// 6a-1 wires `cell.focused` only. No sink renders it yet —
+    /// the existing dogfood-validated Manual-nav direct announce
+    /// (`runSpeechCursor*` → `Announce(text, diagnostic)`) is
+    /// untouched and stays byte-identical; the typed event is
+    /// emitted in parallel for 6a-2's list (and future
+    /// composable sinks) to subscribe to, so 6a-1 ships CI-only
+    /// (no audible change → no dogfood).
+    let cellFocused = "pty-speak.cell.focused"

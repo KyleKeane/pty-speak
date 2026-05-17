@@ -74,6 +74,7 @@
     -->
     <Compile Include="ContentHistoryTests.fs" />
     <Compile Include="SpeechCursorTests.fs" />
+    <Compile Include="CellEventBusTests.fs" />
     <!--
       Cycle 48 PR-B (ADR 0003) — ShellInteraction state machine
       pure-function tests. Slot after ContentHistory because the
