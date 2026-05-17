@@ -15251,6 +15251,27 @@ with the feature. Its NVDA dogfood (`52-ADR7-P6a`) **is the
 hard D8 control-type ratification gate** and gates everything
 after Phase 6.
 
+### Cycle 52 — ADR 0007 Phase 6a-2b follow-up: pane-focus-scope fix + low-vision visible selection (2026-05-17)
+
+The `52-ADR7-P6a` dogfood **ratified the flat List control
+type** (it reads cleanly under NVDA and speaks each row's
+"N of M" position) but surfaced two items, now fixed: (1)
+**pane-switch focus-scope trap** — the WPF `Menu` is its own
+focus scope; once it had been entered, a plain
+`element.Focus()` didn't pull the keyboard-focus device back
+out, so arrows kept driving the menu, unrecoverable. Both
+pane handlers now use `Keyboard.Focus` (cross-scope) and
+entering the history pane selects the latest row when nothing
+is selected (immediate visible + spoken anchor). (2)
+**low-vision visibility** — the list is drawn on screen (real
+Grid column) but the default selection visual is faint; the
+selected row is now high-contrast (a `SystemColors`
+selection-brush recolor that survives focus leaving the list)
+with a larger font. Visual/focus-plumbing only — the UIA
+`List` semantics NVDA reads are unchanged (D8 stays ratified).
+Carries a re-dogfood (`52-ADR7-P6a-fix`); Phase-6+ proceed is
+gated on it.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
