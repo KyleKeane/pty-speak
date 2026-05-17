@@ -1,0 +1,20 @@
+=== pty-speak raw shell trace — started 2026-05-17 14:02:14.992 UTC ===
+=== 17 events; IN 8 bytes; OUT 101 bytes ===
+=== format: +<elapsed_us>us <DIR> <nbytes>B | <escaped>  (\e=ESC \r \n \t \a \xHH) ===
++14302167us IN  1B | E
++14302820us OUT 1B | E
++15705164us IN  1B | C
++15705543us OUT 1B | C
++17112162us IN  1B | H
++17112344us OUT 1B | H
++19053315us IN  1B | O
++19053824us OUT 1B | O
++20449300us IN  1B |
++20449679us OUT 1B |
++21939633us IN  1B | H
++21939952us OUT 1B | H
++23419744us IN  1B | I
++23420194us OUT 1B | I
++30873769us IN  1B | \r
++30874038us OUT 2B | \r\n
++30876502us OUT 92B | \e[?25lHI\e[5;1H\e[?25h\e]133;D\e\\e]133;A\e\C:\Users\Kyle\git\pty-speak\src\Terminal.App>\e]133;B\e\
