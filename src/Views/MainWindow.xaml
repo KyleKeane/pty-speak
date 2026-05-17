@@ -410,6 +410,25 @@
                 <MenuItem x:Name="MenuItem_DraftNewRelease"
                           x:FieldModifier="public"
                           Header="Draft New _Release" />
+                <MenuItem x:Name="MenuItem_OpenGitHubRepo"
+                          x:FieldModifier="public"
+                          Header="Open _GitHub Repo" />
+                <MenuItem x:Name="MenuItem_OpenFeatureRequest"
+                          x:FieldModifier="public"
+                          Header="Submit a _Feature Request" />
+                <MenuItem x:Name="MenuItem_OpenSubmitIssue"
+                          x:FieldModifier="public"
+                          Header="Submit an _Issue" />
+                <!-- Version value is set at runtime in compose()
+                     from resolveInformationalVersion() (version
+                     + git short SHA). The child item is
+                     informational (no command); a screen reader
+                     reads the version when it receives focus. -->
+                <MenuItem Header="_Version">
+                    <MenuItem x:Name="MenuItem_VersionValue"
+                              x:FieldModifier="public"
+                              Header="(version unavailable)" />
+                </MenuItem>
                 <MenuItem Header="_Acknowledgment">
                     <MenuItem Header="Made by Dr. Kyle Keane, University of Bristol" />
                     <MenuItem Header="Use is governed by the license and terms of use on the GitHub repository" />

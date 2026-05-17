@@ -96,6 +96,11 @@ module HotkeyRegistry =
         // Cycle 25a — auto-create config.toml with defaults if
         // missing, then open in default app.
         | OpenConfig
+        // Cycle 52 Phase 6b round 2 — About-menu links opened in
+        // the default browser (all menu-only).
+        | OpenGitHubRepo
+        | OpenFeatureRequest
+        | OpenSubmitIssue
         // Stage 7-followup PR-F + PR-J liveness probe — health check.
         | HealthCheck
         // Stage 7-followup PR-F — incident marker.
@@ -260,6 +265,9 @@ module HotkeyRegistry =
         | DraftNewRelease -> "DraftNewRelease"
         | OpenDataFolder -> "OpenDataFolder"
         | OpenConfig -> "OpenConfig"
+        | OpenGitHubRepo -> "OpenGitHubRepo"
+        | OpenFeatureRequest -> "OpenFeatureRequest"
+        | OpenSubmitIssue -> "OpenSubmitIssue"
         | HealthCheck -> "HealthCheck"
         | IncidentMarker -> "IncidentMarker"
         | SwitchToCmd -> "SwitchToCmd"
@@ -362,6 +370,18 @@ module HotkeyRegistry =
             Key = Some (Letter 'E')
             Modifiers = Some ctrlShift
             Description = "Edit config.toml (Cycle 25a; auto-creates with defaults if missing)" }
+          { Command = OpenGitHubRepo
+            Key = None
+            Modifiers = None
+            Description = "Open the pty-speak GitHub repository in the default browser (menu-only; About menu)" }
+          { Command = OpenFeatureRequest
+            Key = None
+            Modifiers = None
+            Description = "Open the GitHub feature request form in the default browser (menu-only; About menu)" }
+          { Command = OpenSubmitIssue
+            Key = None
+            Modifiers = None
+            Description = "Open the GitHub new-issue page in the default browser (menu-only; About menu)" }
           { Command = HealthCheck
             Key = Some (Letter 'H')
             Modifiers = Some ctrlShift
@@ -688,6 +708,9 @@ module HotkeyRegistry =
           DraftNewRelease
           OpenDataFolder
           OpenConfig
+          OpenGitHubRepo
+          OpenFeatureRequest
+          OpenSubmitIssue
           HealthCheck
           IncidentMarker
           SwitchToCmd
