@@ -4263,11 +4263,29 @@ module Program =
         // keeps the `diagnostic` activity id so users can
         // per-tag-mute explicit navigation separately from live
         // output.
+        // ADR 0007 D9 / Phase 6a-1 — emit the typed `Focused`
+        // cell event on the canonical cell pipeline
+        // (`CellEventBus`) after a successful user navigation.
+        // PURELY ADDITIVE: the dogfood-validated direct announce
+        // in each handler below is untouched and byte-identical;
+        // no sink renders this event yet (6a-2's history list is
+        // the first subscriber), so 6a-1 is CI-only with no
+        // audible change. `cellCurrentView` resolves the typed
+        // cell the cursor just landed on — every nav accessor
+        // sets `CellPos` to it on a `Some`, so this is `Some`
+        // exactly when navigation moved (no event on the
+        // edge/empty `None`, where focus did not move).
+        let publishCellFocused () : unit =
+            match SpeechCursor.cellCurrentView speechCursor with
+            | Some cv -> CellEventBus.publish (CellEventBus.Focused cv)
+            | None -> ()
+
         let runSpeechCursorNext () : unit =
             match SpeechCursor.cellNext speechCursor with
             | Some (text, _) ->
                 window.TerminalSurface.Announce(
                     text, ActivityIds.diagnostic)
+                publishCellFocused ()
             | None ->
                 window.TerminalSurface.Announce(
                     "Already at the latest entry.",
@@ -4278,6 +4296,7 @@ module Program =
             | Some (text, _) ->
                 window.TerminalSurface.Announce(
                     text, ActivityIds.diagnostic)
+                publishCellFocused ()
             | None ->
                 window.TerminalSurface.Announce(
                     "Already at the first entry.",
@@ -4288,6 +4307,7 @@ module Program =
             | Some (text, _) ->
                 window.TerminalSurface.Announce(
                     text, ActivityIds.diagnostic)
+                publishCellFocused ()
             | None ->
                 window.TerminalSurface.Announce(
                     "History is empty.", ActivityIds.diagnostic)
@@ -4311,6 +4331,7 @@ module Program =
                     landedSeq)
                 window.TerminalSurface.Announce(
                     text, ActivityIds.diagnostic)
+                publishCellFocused ()
             | None ->
                 // ADR 0007 Phase 2c follow-up (2026-05-17,
                 // maintainer dogfood). Exit-code failure

@@ -45,6 +45,12 @@
       Placed after ShellPolicy so both deps are in scope.
     -->
     <Compile Include="SpeechCursor.fs" />
+    <!--
+      ADR 0007 D9 / Phase 6a-1 — the canonical typed cell-event
+      bus. Depends only on `SpeechCursor.CellView`; placed
+      immediately after SpeechCursor.fs so that dep is in scope.
+    -->
+    <Compile Include="CellEventBus.fs" />
     <Compile Include="SelectionDetector.fs" />
     <Compile Include="Config.fs" />
     <Compile Include="EarconChannel.fs" />
