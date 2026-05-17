@@ -15140,6 +15140,27 @@ already-tracked ADR 0006 deferred item 1 variants 1 & 2 —
 **not** a Phase 2c bug, nothing new recorded. Locally
 unverifiable — F# structure re-read; CI is the build signal.
 
+### Cycle 52 — ADR 0009 (Proposed): canonical cell metadata & typed outcome (2026-05-17)
+
+Doc-only. Drafted at maintainer request (option "A") for
+review: a new **Proposed** ADR 0009 specifying a typed
+`CellOutcome` (`Succeeded | Failed of FailureSignal |
+Indeterminate` — ADR 0008 applied: honest `Indeterminate`
+where no signal is transported, the `52-ADR7-P2c` lesson;
+FREEZE-safe, reconstructs nothing) plus a disciplined
+metadata/tag facility (closed/typed known tags + a bounded,
+sanitised `UserTags` set — explicitly **not** a free
+`Map<string,string>` blob, preserving the ADR 0004 anti-drift
+intent), bumping the hand-rolled JSONL wire format
+`schemaVersion 2 → 3` (round-trip reader updated in the same
+PR; v2 stays readable). Ratifies the existing
+`CellId`-as-focus-key contract (ADR 0007 D9 / Phase 6a) and
+generalises Phase 6b kind-filtered jumps to outcome/tag
+search + Phase 6c bookmarks. Cross-refs added to ADR 0004,
+ADR 0007 ship-log, CLAUDE.md reading order. **Not accepted;
+no code or schema change until ratified; independent of
+Phase 4; not in the autonomous sprint.**
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

@@ -820,6 +820,15 @@ instruction, not buried in chat text.
   ratification gate** regardless. Each will land as its
   own CI-green PR + `52-ADR7-P*` dogfood row once Phase 4
   is unblocked.
+- **Cell metadata / typed outcome** (maintainer ask
+  2026-05-17) — drafted as
+  [ADR 0009](0009-canonical-cell-metadata-and-typed-outcome.md)
+  (**Proposed**). Its D5 generalises **Phase 6b**
+  kind-filtered jumps to outcome/tag-filtered search; its
+  P-B backs **Phase 6c** bookmarks; D3 ratifies the
+  D9/Phase-6a `CellId`-as-focus-key contract. Independent
+  of Phase 4; not in the autonomous sprint; no code until
+  ratified.
 
 ## Phase 4 readiness brief (autonomous-sprint stop point, 2026-05-17)
 

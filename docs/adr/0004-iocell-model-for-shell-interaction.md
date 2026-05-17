@@ -491,6 +491,14 @@ shipped in Cycle 24b. Locked decisions per
 The hand-rolled byte-stable discipline survives the
 schemaVersion bump.
 
+> **Forward note (2026-05-17):**
+> [ADR 0009](0009-canonical-cell-metadata-and-typed-outcome.md)
+> (**Proposed**, not accepted) would extend this same
+> hand-rolled discipline `schemaVersion 2 → 3` to add a typed
+> `CellOutcome` + a disciplined (closed/bounded, *not* free
+> blob) metadata facility. No schema change until that ADR is
+> ratified.
+
 ### In-memory representation
 
 **F# records + discriminated unions.** Idiomatic F#;
