@@ -15198,6 +15198,34 @@ ship-log + `52-ADR7-P3` row updated for the new behaviour
 (re-dogfood pending). Locally unverifiable — F#/C# structure
 re-read; CI is the build signal.
 
+### Cycle 52 — known issue recorded: Esc line-clear ineffective (2026-05-17)
+
+Maintainer dogfood (post the Phase 3 simplification):
+`insertAtPromptClearingLine` (shared by rerun-focused-input
+and the diagnostic test-script insertion) inserts text
+correctly at the prompt cursor but the intended `0x1B`/Esc
+**line-clear does NOT clear pre-typed input** — the line is
+appended-to, not replaced. Real bug, **pre-existing since
+Cycle 47** (the Esc-prefix assumption was introduced for the
+diagnostic-test insertion then and never separately
+verified; the Phase 3 simplification surfaced it). Likely
+cause (locally unverifiable — no ConPTY/dotnet): a lone
+`0x1B` followed immediately by bytes is not delivered to the
+shell line editor as an Escape "clear-line" keypress
+(ConPTY disambiguation drops/metafies it); also
+shell-line-editor-specific (cmd cooked-mode vs PSReadLine;
+shell-at-test-time not captured). **Maintainer decision:
+track + defer** — insertion (core capability) works, the
+clear is a polish gap, and a correct fix needs a
+ConPTY-input dogfood-iteration loop (not a safe blind
+patch); it must not block the ADR 0007 phase sequence.
+Recorded in ADR 0007 §"Known issue surfaced", the
+`insertAtPromptClearingLine` code comment (the previously
+assertive "Esc clears the line" wording corrected), and the
+`52-ADR7-P3` matrix row (PASSED for insert/no-auto-run; the
+clear is an explicit non-fail tracked gap). Comment-only +
+docs.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

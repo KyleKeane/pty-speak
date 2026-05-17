@@ -746,6 +746,35 @@ pin exactly this** once its harness exists; the clean fix is
 ADR 0006 item 1's marker/`Overwrite`-aware reconstruction,
 not anything in the ADR 0007 navigation/ops layer.
 
+### Esc line-clear ineffective in `insertAtPromptClearingLine` (Phase 3; tracked, deferred)
+
+Maintainer dogfood 2026-05-17 (post the Phase 3
+simplification): both rerun-focused-input and the diagnostic
+test-script insertion **insert their text correctly at the
+prompt cursor but do NOT clear the user's existing
+partially-typed input first** — contrary to the code's
+intent (`insertAtPromptClearingLine` prepends a `0x1B`/Esc
+specifically to clear the line). This is therefore a real
+bug, **pre-existing since Cycle 47** (2026-05-13, when the
+Esc-prefix was introduced for the diagnostic-test
+insertion — the assumption was never separately verified;
+the Phase 3 simplification merely surfaced it by exercising
+the clear explicitly). Likely cause (locally unverifiable —
+no ConPTY/dotnet in the dev sandbox): a lone `0x1B`
+immediately followed by bytes is not delivered to the
+shell's line editor as an "Escape key / clear-line" action
+(ConPTY escape-sequence disambiguation drops it or metafies
+it as `Alt+<char>`); also shell-line-editor-specific (the
+assumption is documented as *cmd cooked-mode*; PSReadLine
+differs regardless — the shell-at-test-time was not captured
+and must be confirmed on the eventual fix dogfood). **Decision
+(maintainer 2026-05-17): track + defer; do not block the ADR
+0007 phase sequence.** The insert (core capability) works;
+the missing clear is a polish gap. A correct fix needs a
+ConPTY-input dogfood-iteration loop and is *not* a safe blind
+patch. Recorded here, in the `insertAtPromptClearingLine`
+code comment, the `52-ADR7-P3` matrix row, and CHANGELOG.
+
 ## Status / next
 
 **Accepted (2026-05-16).** The maintainer co-authored
