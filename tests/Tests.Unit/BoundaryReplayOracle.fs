@@ -365,3 +365,8 @@ let ``replay oracle: C3 set/p — seals (was drop-on-None), no bleed`` () =
 let ``replay oracle: C5 backspace/retype — deleted chars gone from CommandText`` () =
     assertScenario
         "C5-backspace-retype.txt" "C5-backspace-retype.expected"
+
+[<Fact>]
+let ``replay oracle: C6 long-idle mid-compose — one cell, command spans the gap`` () =
+    assertScenario
+        "C6-long-idle-midcompose.txt" "C6-long-idle-midcompose.expected"

@@ -112,7 +112,12 @@ defences, both shipped R-B1:
   stay in the corpus so it flips to an active regression guard
   once the ADR-0004-level substrate fix lands. Tracked:
   [#428](https://github.com/KyleKeane/pty-speak/issues/428).
-  **C6** long-idle mid-compose still awaiting capture.
+  **C6** long-idle mid-compose landed — real capture (`ECHO`,
+  ~54s idle with no Enter, then ` DONE`); asserts the gap
+  neither splits the in-flight command nor seals early
+  (exactly one cell, `commandContains=ECHO DONE` spanning the
+  gap, output `DONE`, no next-prompt bleed). The R-B corpus
+  (C1/C2/C3/C5/C6) is now complete.
 - **R-C onward:** P3 (inline sub-prompt) and all further
   boundary work gated by this oracle, never manual dogfood.
 

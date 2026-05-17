@@ -1,0 +1,23 @@
+# Boundary replay oracle expectation — schema v1 (R-B2).
+# C6: typed `ECHO`, idled ~54s MID-COMPOSE (no Enter yet),
+# then typed ` DONE` and ran it. THE C6 invariant: the long
+# idle gap inside the prompt must NOT split the in-flight
+# command or seal early — exactly ONE cell seals, and its
+# CommandText spans the gap intact (`ECHO DONE`, not a
+# truncated `ECHO` nor a post-idle-only ` DONE`). The idle is
+# reproduced as a 54s virtual-clock jump between the `O` and
+# the space echo; no flush timer runs in the harness, so this
+# pins that nothing in the parser → ContentHistory → Screen
+# (OSC-133) → SessionModel path keys off the wall-clock gap.
+# Plus the standing invariants: result in OutputText, no
+# next-prompt-path bleed. Joined mid-prompt → seedPrompt is
+# the stable cmd prompt the trace exhibits (same as C1–C5).
+# Substring assertions on purpose (exact boundary text is
+# slice-semantics-sensitive — P3's concern).
+schemaVersion=1
+seedPrompt=C:\Users\Kyle\git\pty-speak\src\Terminal.App>
+cellCount=1
+cell0.phase=Sealed
+cell0.commandContains=ECHO DONE
+cell0.outputContains=DONE
+cell0.outputNotContains=C:\Users\Kyle\git\pty-speak\src\Terminal.App>
