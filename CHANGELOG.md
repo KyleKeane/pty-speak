@@ -15349,6 +15349,26 @@ boundary detection, upstream); cell history is not reset on
 shell hot-switch (accepted — a shell-switch marker row is the
 planned follow-up).
 
+### Cycle 52 ADR 0007 Phase 6b: shell-switch marker row + row-model unification (2026-05-17)
+
+Shell hot-switch (`Ctrl+Shift+1/2/3`) now appends a marker
+notice row ("Shell switched to <name>.") to the cell history,
+so the transcript stays continuous while the shell boundary is
+visible and screen-reader-announced (accepted maintainer
+decision: the history is deliberately not reset on switch).
+
+Landed with a small row-model unification that makes notice
+rows clean rather than an index hack: the parallel
+`cellHistoryItems` (display strings) + `cellHistoryCells`
+(shorter `CellView` array + bounds-check) pair is replaced by
+`cellHistoryItems` + `cellHistoryRows : ResizeArray<CellView
+option>` kept strictly 1:1 — `Some cv` for a cell row, `None`
+for a non-cell notice row. The empty-state placeholder is now
+just the first notice row through the same path; per-cell ops
+on any notice row resolve to "no cell" and publish no
+`Focused` event. No behaviour change to cell rows; NVDA still
+reads each row as a standard ListItem.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
