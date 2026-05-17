@@ -90,6 +90,10 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               // ADR 0007 Phase 2a — copy the focused cell
               // (command + output) to clipboard (Ctrl+Shift+C).
               HotkeyRegistry.CopyFocusedCell
+              // ADR 0007 Phase 2b — copy one side of the
+              // focused cell (menu-only).
+              HotkeyRegistry.CopyFocusedCellCommand
+              HotkeyRegistry.CopyFocusedCellOutput
               // Cycle 47 — CMD interaction test corpus (eight
               // menu-only items under Diagnostics → CMD
               // Interaction Tests; each inserts a quoted
