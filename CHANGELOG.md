@@ -15084,6 +15084,34 @@ bundle). Wired: `HotkeyRegistry` (`RerunFocusedInput`,
 dogfood row `52-ADR7-P3`. Locally unverifiable — F#/C#
 structure re-read; CI is the build signal.
 
+### Cycle 52 — ADR 0007 autonomous sprint: Phase 4 readiness brief + stop (2026-05-17)
+
+Doc-only. The maintainer-authorised autonomous sprint shipped
+ADR 0007 **Phases 0, 1, 2a, 2b, 2c, 3** CI-green and
+**deliberately stopped at Phase 4**. Phase 4's deliverable is
+inherently a multi-stage architecture decision — the
+ProgressSegment↔sealed-cell model cascades into Phases 5
+(intra-cell segments), 7 (the oracle asserts the segment
+structure) and 6a (depends on the segment model being
+settled) — and one of its open decisions (the Claude
+`IdleFlushMs = None` interplay) explicitly requires a
+maintainer Claude dogfood the agent cannot run. Per the
+standing "don't decide multi-stage architecture unilaterally"
+rule, the agent stopped rather than guess a cascading
+foundation with no compiler/dogfood feedback. Added a **Phase
+4 readiness brief** to ADR 0007: open decision A (segment
+granularity = one per idle-flush chunk) **resolved**
+(conservative agent default, no R3c/R3e watermark regression);
+open decision B (Claude segment derivation) and C
+(segments↔sealed-cell model relationship, recommended **C1**
+= keep both, `appendCell` untouched) framed for maintainer
+ratification with the exact Claude dogfood spelled out; the
+proposed Phase 4a/4b split recorded. `SESSION-HANDOFF.md`
+"Current state" updated with the sprint outcome + the
+one-word unblock path ("C1, proceed"). The two pre-existing
+cmd-substrate issues surfaced this sprint stay tracked-only
+(ADR 0006 deferred item 1 variants 1 & 2; FREEZE).
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

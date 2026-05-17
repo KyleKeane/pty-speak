@@ -792,10 +792,95 @@ instruction, not buried in chat text.
   `TerminalView.InjectCommand` via the Ctrl+L `_writeBytes`
   precedent; provenance at announce+log level since the
   v2 schema is frozen). Dogfood row `52-ADR7-P3` pending.
-- **Phases 4 → 7** — in the autonomous sprint
-  (maintainer-authorised 2026-05-17 to progress as far
-  as the **Phase 6a D8 control-type ratification gate**,
-  which is a hard stop: nothing past 6a is built until
-  6a's NVDA dogfood confirms `Tree` vs `List`). Each
-  lands as its own CI-green PR with a `52-ADR7-P*`
-  dogfood row for the maintainer to validate on return.
+- **Phase 4** — **autonomous-sprint stop point (2026-05-17).**
+  NOT implemented. Phase 4's deliverable is inherently the
+  in-flight live-feed integration *and* the
+  ProgressSegment↔sealed-cell model relationship — a
+  multi-stage architecture decision (Phases 5/7/6a build on
+  the segment model) — *and* one of its open decisions (the
+  Claude `IdleFlushMs = None` interplay) explicitly requires
+  a maintainer Claude dogfood that the agent cannot run.
+  Per the standing "don't decide multi-stage architecture
+  unilaterally" rule, the agent stopped here rather than
+  guess a cascading foundation. See **"Phase 4 readiness
+  brief"** below for the resolved/blocked open decisions and
+  the proposed 4a/4b split.
+- **Phases 5 → 7** — gated behind Phase 4's segment model
+  being settled (5 = intra-cell segments on it; 7's oracle
+  asserts it; 6a depends on D1+D2+segment-model). The
+  Phase 6a NVDA dogfood remains the **hard D8 control-type
+  ratification gate** regardless. Each will land as its
+  own CI-green PR + `52-ADR7-P*` dogfood row once Phase 4
+  is unblocked.
+
+## Phase 4 readiness brief (autonomous-sprint stop point, 2026-05-17)
+
+Phases 0–3 shipped CI-green this sprint (2a/2b dogfood
+feature-PASSED; 2c/3 dogfood rows pending). Phase 4 is the
+deliberate stop. This brief is what the maintainer needs to
+unblock it.
+
+**Open decision A — ProgressSegment granularity — RESOLVED
+(agent, conservative default).** Recommendation: **one
+ProgressSegment per idle-flush chunk** (cmd/PowerShell
+`IdleFlushMs = Some 350`), i.e. reuse the *existing* idle-flush
+boundary as the segment boundary. Rationale: it introduces no
+new coalescing layer, so it **cannot regress the R3c/R3e
+watermark composition** (the explicit constraint in the open
+decision); coalesced-cadence is a later refinement once real
+navigation feel is known. This needs no maintainer input —
+adopt unless overridden.
+
+**Open decision B — Claude `IdleFlushMs = None` interplay —
+BLOCKED on a maintainer Claude dogfood.** Claude emits no
+idle-flush boundary, so option-A's segment boundary does not
+exist for the Claude shell. The ADR's two candidates:
+(B1) derive ProgressSegment boundaries from Claude's own
+newline/turn structure, or (B2) revisit `IdleFlushMs` for
+Claude. **The dogfood needed:** run a multi-line / streaming
+Claude response under the current build and report whether
+the *announce cadence* already chunks at usable points
+(favours B1 — segment on the same boundaries the announce
+already uses) or arrives as one undifferentiated blob
+(favours B2 — give Claude a non-`None` `IdleFlushMs`). This
+is recorded as **Phase 4b**.
+
+**Open decision C — ProgressSegment ↔ sealed-cell model
+relationship — needs maintainer design ratification (it
+cascades into Phases 5/7).** When the cell seals, `appendCell`
+already adds the authoritative `Output` item. If live
+ProgressSegments were also appended during Executing, the
+transcript holds *both* the per-chunk segments and the final
+consolidated Output for one cell. Candidates: (C1) keep both
+— segments are the immutable live-trickle record, the sealed
+`Output` is the authoritative consolidation (lowest-risk:
+`appendCell` untouched, zero regression to Phases 0–3 + the
+dogfood-validated narration; the agent's recommendation);
+(C2) on seal, replace the segments with the consolidated
+`Output`; (C3) on seal, suppress the `Output` item when
+segments cover it. **Only a dogfood answers which feels
+right** (does hearing segments-then-a-final-Output read as
+redundant or as a useful recap?). Phases 5 (intra-cell
+segments) and 7 (the oracle asserts the segment structure)
+are built on whichever model is chosen — hence this is the
+maintainer's call, not the agent's.
+
+**Proposed split for maintainer review:**
+
+- **Phase 4a** = ProgressSegment data primitive
+  (`SpeechCursor.appendProgressSegment`, pure + unit-tested)
+  + the idle-flush→segment feed for cmd/PowerShell, under
+  the **C1** model (recommended) — *contingent on the
+  maintainer ratifying C1*. Kind-agnostic navigation
+  (`cellPrevious/cellNext/cellToLatest`) already makes
+  appended segments navigable with no accessor change.
+- **Phase 4b** = Claude segment derivation, decided by the
+  decision-B dogfood.
+
+The agent did **not** pre-build 4a because (a) C1 is a
+ratification, not an agent default — wrong choice cascades
+into 5/7; (b) shipping an `appendProgressSegment` with a
+guessed live-feed integration and no compiler/dogfood
+feedback is exactly the half-finished speculative scaffolding
+the guidelines forbid. One word from the maintainer ("C1,
+proceed") unblocks 4a immediately.
