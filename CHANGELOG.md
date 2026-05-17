@@ -15369,6 +15369,36 @@ on any notice row resolve to "no cell" and publish no
 `Focused` event. No behaviour change to cell rows; NVDA still
 reads each row as a standard ListItem.
 
+### Cycle 52 ADR 0007 Phase 6b: menu reorganization (2026-05-17)
+
+Maintainer-directed menu restructure (XAML-only — every
+actionable item is wired by `x:Name`, never by tree position,
+so this is a single-file edit):
+
+- **New top-level `Terminal`** menu; the `Shell` menu
+  (Cmd / PowerShell / Claude) is now a submenu of it.
+- **`Window`** (Close Window / Exit) moved from a top-level
+  menu to a submenu of `Interface`.
+- **New top-level `Cell History`** menu (name matches the
+  cell-history panel title), grouped into `Navigation`,
+  `Focused Cell Operations`, and `Output and Session`. The
+  real wired items (copy focused cell / command / output,
+  rerun focused input, last output, copy session history,
+  announce session log path) moved here out of the old
+  `Interface › Output History` submenu.
+- **SpeechCursor discipline**: `Jump to Last Error` is a
+  SpeechCursor navigation command, so it moved into
+  `Interface › Speech Cursor` with the rest of that set. The
+  `Pane` focus commands stay under `Interface › Pane` (main
+  UI navigation, not cell-history navigation).
+- **`(not yet implemented)` placeholders**: disabled,
+  unwired menu entries sketching the ideal comprehensive
+  op-set (cell navigation, per-cell operations, session
+  export) — a clear target for the later ADR 0007 D2 /
+  Phase 6 cell-operation + navigation work.
+
+No behaviour change to any existing wired command.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
