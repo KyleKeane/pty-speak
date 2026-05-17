@@ -22,16 +22,30 @@ and serves the decision-trail role this file used to overload.
 > surfaced and recorded (not patched, FREEZE): ADR 0006
 > §"Deferred to R6+" item 1 **"Tracked variant 1"**
 > (command-line-edit input/output desync) and **"Tracked
-> variant 2"** (clean-command argument truncation). **The
-> sprint deliberately STOPPED at Phase 4** — it is a
-> multi-stage architecture decision (segment model cascades
-> into 5/7/6a) with a maintainer-Claude-dogfood-gated open
-> decision; see
-> [ADR 0007 "Phase 4 readiness brief"](adr/0007-canonical-iocell-history-navigation.md)
-> for the resolved (granularity) vs maintainer-gated
-> (Claude interplay; segments↔sealed-cell model) decisions
-> and the one-word unblock ("C1, proceed"). Phase 6a's
-> NVDA dogfood remains the hard D8 ratification gate.
+> variant 2"** (clean-command argument truncation).
+> **RE-SEQUENCED 2026-05-17 (maintainer-ratified) — this
+> supersedes the earlier "STOPPED at Phase 4 / one-word
+> unblock (C1, proceed)" framing.** The maintainer
+> re-sequenced rather than just unblocking 4a:
+> **Phase 6a (the cell-history interface scaffolding) is
+> pulled forward and STARTS NOW** on cmd/PowerShell —
+> decoupled from the segment model; it depends only on D1+D2
+> (both shipped) and renders fine with imperfect cell
+> boundaries (an orthogonal, already-tracked concern).
+> Open decisions: **C = C1 ratified** (keep both live
+> `ProgressSegment`s + the sealed `Output`) **+** a
+> first-class **differentiable-`CellKind` / cell-history
+> filtering** requirement; **A deferred** (granularity is a
+> Phase-4-implementation detail, not now); **B + Claude
+> complexity deferred**, folded into a new
+> **boundary-diagnostic-capture track** (timestamped record
+> of every shell/Claude-CLI event → analyse boundary signals
+> from data, cmd/PowerShell first). Order:
+> **Phase 6a now → boundary-diagnostic track → Phase 4/4b/5
+> → Phase 6b+ filtering / Phase 7 oracle.** Canonical detail:
+> [ADR 0007 § Re-sequencing amendment — 2026-05-17](adr/0007-canonical-iocell-history-navigation.md#re-sequencing-amendment-2026-05-17-maintainer-ratified).
+> Phase 6a's NVDA dogfood remains the hard D8 ratification
+> gate.
 > Original recovery brief continues below.
 
 > **NEW / RECOVERED SESSION START HERE →
@@ -65,11 +79,13 @@ and serves the decision-trail role this file used to overload.
 > / D8 standard UIA control, `Tree`-rec, 6a-dogfood-gated /
 > D9 cell events on the canonical pipeline). D9's principle
 > elevated to **[ADR 0008](adr/0008-maximal-semantic-surfacing.md)**
-> (Accepted). **Implementation in progress: full Phase 0…7,
-> each its own PR + dogfood. Phase 0 = delete the 7 dead Seq
-> functions (net-subtractive, no audible change) — STARTS
-> NOW.** Next = Phase 0 → 1…7 → R6d (PS-diagnostics submenu)
-> → R7 (claude + closure).**
+> (Accepted). **Implementation: Phase 0→3 shipped CI-green;
+> re-sequenced 2026-05-17 (see the top banner) — Phase 6a now
+> → boundary-diagnostic track → Phase 4/4b/5 → Phase 6b+ /
+> Phase 7**, then R6d (PS-diagnostics submenu) → R7 (claude +
+> closure). *(Superseded next-step text — the top
+> 2026-05-17 banner is authoritative; this line kept for
+> recovery context.)*
 > The maintainer-flagged "prompt announce interrupts the
 > output read" is parked as ADR 0006 §"Deferred to R6+"
 > item 10 (NOT addressed now, maintainer's call). The cmd

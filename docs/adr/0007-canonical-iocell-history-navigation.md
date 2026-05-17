@@ -576,9 +576,12 @@ changes the ADR 0004 IOCell schema.
   section markers; the operation-discovery menu surfaces) —
   each validated against real navigation feel once the basic
   list works, not built speculatively. Largest channel-side
-  change; sequenced last because it depends on the typed
+  change; ~~sequenced last because it depends on the typed
   model (D1), the per-cell ops (D2 — items host them), and
-  the segment model (Phases 4–5) being settled. Splits into
+  the segment model (Phases 4–5) being settled~~ **— amended
+  2026-05-17: 6a is decoupled from the segment model and
+  pulled forward; it depends only on D1 + D2 (both shipped).
+  See § Re-sequencing amendment 2026-05-17.** Splits into
   sub-phases: **6a** basic control (D8: `TreeView`/UIA `Tree`
   primary, `ListBox`/UIA `List` fallback) + `Ctrl+Shift+
   Left/Right` pane switch + the D9 `pty-speak.cell.*` event
@@ -637,12 +640,19 @@ changes the ADR 0004 IOCell schema.
 - **ProgressSegment granularity** (Phase 4): one segment per
   idle-flush chunk vs coalesced cadence. Tie to ADR 0006
   deferred item 9 (queue-and-coalesce); must not regress the
-  R3c/R3e watermark composition.
+  R3c/R3e watermark composition. **DEFERRED (amendment
+  2026-05-17): not a now-decision; the one-per-idle-flush
+  default stands to be revisited at Phase 4 implementation,
+  informed by the boundary-diagnostic capture.**
 - **Claude `IdleFlushMs = None` interplay** (Phase 4):
   Claude emits no idle-flush boundary today. Either derive
   `ProgressSegment` boundaries from Claude's own
   newline/turn structure, or revisit `IdleFlushMs` for
-  Claude. Decide in Phase 4 with a Claude dogfood.
+  Claude. ~~Decide in Phase 4 with a Claude dogfood.~~
+  **SUBSUMED (amendment 2026-05-17) into the
+  boundary-diagnostic-capture track; Claude explicitly
+  deferred until cmd/PowerShell interface + methodology
+  settled.**
 - **rerun-input safety** (Phase 3): **RESOLVED 2026-05-17
   (maintainer, post-`52-ADR7-P3` dogfood).** The shipped
   two-step arm/confirm was the conservative reading; the
@@ -801,13 +811,15 @@ self-check the agent runs, with only a thin audible-delivery
 confirmation left to the maintainer — so the walking-skeleton
 loop gets materially cheaper as the phases progress.
 
-**Implementation order**: Phase 0 (delete the dead Seq
-engine — net-subtractive, no audible change, the single-model
-precondition) starts immediately as its own PR; Phases 1→7
-follow, each gated by its own CI + dogfood. CI failures and
-essential blocking questions are raised via `AskUserQuestion`
-(phone notification), per the maintainer's standing
-instruction, not buried in chat text.
+**Implementation order**: Phase 0 → 1 → 2 → 3 shipped
+CI-green. **Re-sequenced 2026-05-17** (see
+[§ Re-sequencing amendment](#re-sequencing-amendment-2026-05-17-maintainer-ratified)):
+**Phase 6a now → boundary-diagnostic track → Phase 4/4b/5 →
+Phase 6b+ / Phase 7**, each gated by its own CI + dogfood
+(6a's NVDA dogfood = the hard D8 control-type ratification
+gate). CI failures and essential blocking questions are
+raised via `AskUserQuestion` (phone notification), per the
+maintainer's standing instruction, not buried in chat text.
 
 **Ship log (per-phase, updated as phases land):**
 
@@ -848,26 +860,27 @@ instruction, not buried in chat text.
   test-script insertion uses; `InjectCommand` deleted as
   dead code). Re-dogfood row `52-ADR7-P3` (new behaviour)
   pending.
-- **Phase 4** — **autonomous-sprint stop point (2026-05-17).**
-  NOT implemented. Phase 4's deliverable is inherently the
-  in-flight live-feed integration *and* the
-  ProgressSegment↔sealed-cell model relationship — a
-  multi-stage architecture decision (Phases 5/7/6a build on
-  the segment model) — *and* one of its open decisions (the
-  Claude `IdleFlushMs = None` interplay) explicitly requires
-  a maintainer Claude dogfood that the agent cannot run.
-  Per the standing "don't decide multi-stage architecture
-  unilaterally" rule, the agent stopped here rather than
-  guess a cascading foundation. See **"Phase 4 readiness
-  brief"** below for the resolved/blocked open decisions and
-  the proposed 4a/4b split.
-- **Phases 5 → 7** — gated behind Phase 4's segment model
-  being settled (5 = intra-cell segments on it; 7's oracle
-  asserts it; 6a depends on D1+D2+segment-model). The
-  Phase 6a NVDA dogfood remains the **hard D8 control-type
-  ratification gate** regardless. Each will land as its
-  own CI-green PR + `52-ADR7-P*` dogfood row once Phase 4
-  is unblocked.
+- **Phase 4** — **deferred by the 2026-05-17 re-sequencing
+  amendment** (was the autonomous-sprint stop point). Open
+  decision A's default stands to be revisited here; B is
+  subsumed into the new boundary-diagnostic-capture track;
+  **C is RESOLVED — C1** + the differentiable-kind / filtering
+  requirement. Phase 4/4b/5 now sequence *after* Phase 6a +
+  the boundary-diagnostic track. See
+  [§ Re-sequencing amendment](#re-sequencing-amendment-2026-05-17-maintainer-ratified)
+  (it supersedes the "Phase 4 readiness brief" below, which is
+  retained as the decision trail).
+- **Phase 6a** — **pulled forward; STARTS NOW** per the
+  re-sequencing amendment. Decoupled from the segment model;
+  depends only on D1 + D2 (both shipped). Kind-generic
+  focusable history list (D8) + `Ctrl+Shift+Left/Right` pane
+  switch + the D9 `pty-speak.cell.*` event family, on existing
+  cmd/PowerShell cells. Its NVDA dogfood remains the **hard
+  D8 control-type ratification gate**.
+- **Phases 4/4b/5 → 7** — sequence after Phase 6a + the
+  boundary-diagnostic track (5 = intra-cell segments on the
+  settled model; 7's oracle asserts it). Each lands as its
+  own CI-green PR + `52-ADR7-P*` dogfood row.
 - **Cell metadata / typed outcome** (maintainer ask
   2026-05-17) —
   [ADR 0009](0009-canonical-cell-metadata-and-typed-outcome.md)
@@ -880,6 +893,20 @@ instruction, not buried in chat text.
   maintainer schedules it.
 
 ## Phase 4 readiness brief (autonomous-sprint stop point, 2026-05-17)
+
+> **⚠ SUPERSEDED 2026-05-17 by
+> [§ Re-sequencing amendment](#re-sequencing-amendment-2026-05-17-maintainer-ratified).**
+> Retained as the decision trail (the delta between this
+> proposal and the ratified re-sequencing is itself a useful
+> artifact, per the project's mark-historical-don't-delete
+> discipline). Things this brief says that are now untrue:
+> "Phase 4 is the deliberate stop / one word ('C1, proceed')
+> unblocks 4a" — the maintainer instead re-sequenced (Phase 6a
+> pulled forward; A deferred; B folded into the
+> boundary-diagnostic track; C = C1 + a differentiable-kind /
+> filtering requirement). Read the amendment for the live
+> plan; the A/B/C analysis below remains accurate as the
+> *input* to that decision.
 
 Phases 0–3 shipped CI-green this sprint (2a/2b dogfood
 feature-PASSED; 2c/3 dogfood rows pending). Phase 4 is the
@@ -950,3 +977,151 @@ guessed live-feed integration and no compiler/dogfood
 feedback is exactly the half-finished speculative scaffolding
 the guidelines forbid. One word from the maintainer ("C1,
 proceed") unblocks 4a immediately.
+
+## Re-sequencing amendment 2026-05-17 (maintainer-ratified)
+
+The maintainer reviewed the Phase 4 readiness brief and,
+rather than simply unblocking 4a, **re-sequenced the plan**.
+Verbatim intent (2026-05-17): keep every piece of the
+interaction and tag each with a clearly-differentiable kind so
+the user can *skip or filter* segments in the interface; take a
+comprehensive, timestamped diagnostic record of every event
+from each shell (the Claude Code CLI especially — spinner +
+time-interval chunks into an ongoing thread) so boundary
+markers are derived from real signal analysis, not guesswork;
+**focus cmd + PowerShell first and get the cell-history
+interface + navigation scaffolding in place before engaging
+other-shell (Claude) boundary complexity.** The maintainer
+explicitly asked whether the interface can be scaffolded now
+even with imperfect cell boundaries — it can (rationale
+below) — and confirmed "proceed with autonomy" (2026-05-17).
+This amendment is the ratified record; it does **not** change
+the IOCell data model (ADR 0004 stands) or D1–D9/D5a.
+
+### Open decisions A / B / C — resolved by this amendment
+
+- **A — ProgressSegment granularity — DEFERRED, not a
+  now-decision.** The maintainer's question ("do you really
+  need this right now?") is correct: granularity only bites
+  when segment *generation* is implemented (Phase 4), which
+  this amendment defers behind the interface scaffolding and
+  the boundary-diagnostic track. The brief's conservative
+  default (one segment per idle-flush chunk; no new coalescing
+  layer; cannot regress the R3c/R3e watermark) **stands as the
+  default to revisit at Phase 4 implementation**, informed by
+  the boundary-diagnostic capture — not decided now.
+
+- **B — Claude `IdleFlushMs = None` interplay — remains
+  blocked, now subsumed into the boundary-diagnostic track.**
+  Claude's complexity (spinner + interval chunks into an
+  ongoing thread) is **explicitly deferred** until the
+  cmd/PowerShell interface and the boundary-determination
+  methodology are settled. The B1-vs-B2 dogfood the brief
+  asked for is replaced by — and folded into — the
+  comprehensive event-capture track defined below: the
+  capture *is* the analysis B needs, done from recorded
+  signal rather than a single listen-and-report pass.
+
+- **C — ProgressSegment ↔ sealed-cell model — RESOLVED:
+  C1, with an added differentiable-kind / filtering
+  requirement.** The maintainer ratified **C1** (keep both:
+  the immutable live-trickle `ProgressSegment`s *and* the
+  sealed consolidated `Output` — `appendCell` untouched, zero
+  regression to Phases 0–3 and the dogfood-validated
+  narration). Added requirement: `ProgressSegment` **must be
+  a clearly-differentiable `CellKind`** so the interface can
+  let the user skip it, or later choose to show / hide it, or
+  show only the final result. This is satisfiable **by
+  construction** — `CellKind.ProgressSegment` is already a
+  distinct case in D1's discriminator, separate from
+  `Input` / `Output` / `SubPromptExchange`. Consequently:
+
+  > **Cell-history filtering is elevated to a first-class
+  > requirement.** The pipeline keeps and distinctly tags
+  > everything; the *interface* decides what to show. Filter
+  > axes: by `CellKind` (e.g. hide `ProgressSegment`, show
+  > only `Input`/`Output`, "final result only"), and — once
+  > [ADR 0009](0009-canonical-cell-metadata-and-typed-outcome.md)
+  > lands — by `CellOutcome` / tag. This is the same surface
+  > as **Phase 6b** kind-filtered jumps and **ADR 0009 D5**
+  > outcome/tag-filtered search; they are now drawn together
+  > under one explicit requirement rather than treated as
+  > independent niceties. No model change is needed for it —
+  > only that the list (Phase 6a) is built kind-generically
+  > (it renders *any* `CellView` by `Kind`), which the
+  > re-sequencing requires anyway.
+
+### The interface scaffolding is decoupled from boundary correctness
+
+The original Phase 6 description sequenced 6a "last because it
+depends on the typed model (D1), the per-cell ops (D2), **and
+the segment model (Phases 4–5) being settled**." The middle
+clause was conservative over-coupling. Phase 6a — the
+focusable cell-history list control (D8), the
+`Ctrl+Shift+Left/Right` pane switch, and the D9
+`pty-speak.cell.*` event family — depends only on **D1
+(Phase 1, shipped)** and **D2 (Phase 2, shipped)**. It renders
+*any* `CellView` by its `Kind`; `ProgressSegment` is simply
+another kind it will render once segments exist. **Imperfect
+cell boundaries do not block it**: a mis-split cell still
+renders, is still navigable, still hosts per-cell ops — the
+boundary bugs are an orthogonal, already-tracked track (ADR
+0006 §"Deferred to R6+" item 1 variants 1 & 2), and improving
+them later only improves the *content inside* an
+already-working list, with no interface rework. **No extra
+exemplars are needed for the interface component itself** —
+it is structural (a standard UIA control bound to
+`CellTranscript` + the pane-switch gesture + cell events).
+The hard **D8 control-type NVDA-dogfood ratification gate is
+unchanged**: nothing past 6a is built until 6a's dogfood
+confirms `Tree` (or falls back to `List`).
+
+### New work item — boundary-diagnostic-capture track
+
+The maintainer's diagnostic-record idea is adopted as a
+**distinct track**, parallel to / after the interface
+scaffolding and feeding Phase 4 + Phase 7:
+
+> Capture a comprehensive, high-resolution-**timestamped**
+> record of every event observed from each shell transport
+> (and the Claude Code CLI) — bytes/chunks in, idle-flush
+> ticks, OSC-133 boundaries, state-machine transitions,
+> announce sends, seal events — with whatever metadata is
+> available, so reliable **begin/end-of-evaluation** signals
+> are determined by *analysing real recorded signal*, not
+> inferred by ear. **cmd / PowerShell first** (the clean
+> OSC-133 reference); **Claude deferred** until the interface
+> and the methodology on the simpler shells are settled.
+
+This is the ADR-0008-aligned, D6-oracle-feeding successor to
+"the maintainer eventually notices it sounds wrong": it turns
+boundary determination into a data exercise. Its **detailed
+design** (exact event set, capture format, the offline /
+in-app analysis surface, retention) is itself a scoped work
+item to be specified when the track is taken up — **recorded
+here, deliberately not built speculatively now** (per the
+half-finished-scaffolding guideline). It graduates to its own
+ADR if it grows past a tracked work item.
+
+### Net implementation order (supersedes the brief's "C1, proceed → 4a")
+
+1. **Phase 6a — interface scaffolding, NOW.** Kind-generic
+   focusable history list (D8 `Tree`-primary / `List`-fallback)
+   + `Ctrl+Shift+Left/Right` pane switch + the D9
+   `pty-speak.cell.*` event family on the canonical pipeline,
+   on existing cmd/PowerShell `Input`/`Output` cells. Its NVDA
+   dogfood **is** the D8 control-type ratification gate.
+2. **Boundary-diagnostic-capture track** — parallel/after;
+   cmd/PowerShell first, Claude deferred.
+3. **Phase 4 / 4b / 5 — segment model**, layered into the
+   now-proven list, informed by the capture (A's default
+   revisited here; B decided from recorded signal).
+4. **Phase 6b+ filtering** (kind / outcome / tag) layered on
+   6a per the elevated first-class requirement; **Phase 7
+   oracle** asserts the settled segment structure.
+
+Phases 0–3 status in the Ship log is unchanged. The cmd
+announce-heuristic FREEZE is unaffected (this is the
+navigation / interface / channel layer). Phase 6a starts
+immediately as its own CI-gated PR + NVDA dogfood under the
+walking-skeleton discipline.
