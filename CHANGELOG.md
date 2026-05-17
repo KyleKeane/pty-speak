@@ -15172,6 +15172,32 @@ maintainer's call, independent of ADR 0007 Phase 4.
 Status/cross-refs updated in ADR 0009, ADR 0004 forward-note,
 ADR 0007 ship-log, CLAUDE.md reading order.
 
+### Cycle 52 — ADR 0007 Phase 3: rerun-input simplified to clear-line + insert (2026-05-17)
+
+Maintainer UX direction after the `52-ADR7-P3` mechanics
+dogfood passed: the two-step arm/confirm was the conservative
+reading of the ADR "confirm gesture" open decision; the
+maintainer (product owner) resolved it in favour of the
+simple flow. **Rerun Focused Input** now **clears the current
+prompt line and inserts the focused cell's command at the
+prompt — NOT auto-run**; the user reviews and presses Enter
+themselves (their explicit Enter is the safety affordance —
+still "no auto-run on a gesture"). Removed: the
+`rerunArm`/`rerunConfirmWindow` state, the 15 s window, and
+`TerminalView.InjectCommand` (deleted as dead code). New
+shared `insertAtPromptClearingLine` primitive (Esc-clear of
+cmd's cooked-mode line, no `\r`); the diagnostic
+test-script insertion (`runCmdTest`) was refactored onto the
+**same** primitive so the maintainer's "the same clearing
+should also happen with the diagnostic manual test
+insertion" is guaranteed by construction (behaviour
+unchanged there — it already Esc-cleared; now provably
+identical). Counts-only log (`SourceCellSeq` + `CmdLen`).
+ADR 0007 "rerun-input safety" open decision marked RESOLVED;
+ship-log + `52-ADR7-P3` row updated for the new behaviour
+(re-dogfood pending). Locally unverifiable — F#/C# structure
+re-read; CI is the build signal.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

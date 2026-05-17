@@ -643,8 +643,21 @@ changes the ADR 0004 IOCell schema.
   `ProgressSegment` boundaries from Claude's own
   newline/turn structure, or revisit `IdleFlushMs` for
   Claude. Decide in Phase 4 with a Claude dogfood.
-- **rerun-input safety** (Phase 3): confirm gesture,
-  echo-before-run, and provenance marking on the new IOCell.
+- **rerun-input safety** (Phase 3): **RESOLVED 2026-05-17
+  (maintainer, post-`52-ADR7-P3` dogfood).** The shipped
+  two-step arm/confirm was the conservative reading; the
+  maintainer (product owner) resolved it in favour of the
+  simple flow: rerun **clears the current prompt line and
+  inserts the command at the prompt, NOT auto-run** — the
+  user's own Enter is the safety affordance (still "no
+  auto-run on a gesture", just satisfied by the human Enter
+  rather than a second menu invocation). Echo-before-run =
+  the command visible on the prompt line. Provenance =
+  announce + counts-only Information log (no new IOCell
+  schema field; ADR 0004 v2 unchanged — ADR 0009's typed
+  outcome/metadata is the place richer provenance lands if
+  ever wanted). Same `insertAtPromptClearingLine` path as
+  the diagnostic test-script insertion.
 - **Review-cursor document evolution** (Phase 6 fork; *not*
   near-term): the legacy live review-cursor document
   (ADR 0002) is a patchwork. Once the cell pipeline is the
@@ -795,11 +808,17 @@ instruction, not buried in chat text.
   misleading "No failed command in history." The
   test-surfaced boundary confusion = the already-tracked
   ADR 0006 item-1 variants 1 & 2, not a Phase 2c bug.
-- **Phase 3** — Implemented & CI-green (menu-only
-  rerun-input; two-step arm/confirm + echo-before-run;
-  `TerminalView.InjectCommand` via the Ctrl+L `_writeBytes`
-  precedent; provenance at announce+log level since the
-  v2 schema is frozen). Dogfood row `52-ADR7-P3` pending.
+- **Phase 3** — Implemented & CI-green. Mechanics
+  dogfood-PASSED 2026-05-17; **behaviour then simplified
+  per maintainer UX direction** (the "rerun-input safety"
+  open decision, resolved above): the two-step arm/confirm
+  + `TerminalView.InjectCommand` (auto-run) were removed;
+  rerun now **clears the prompt line + inserts the command,
+  no auto-run** via the shared `insertAtPromptClearingLine`
+  primitive (the same Esc-clear path the diagnostic
+  test-script insertion uses; `InjectCommand` deleted as
+  dead code). Re-dogfood row `52-ADR7-P3` (new behaviour)
+  pending.
 - **Phase 4** — **autonomous-sprint stop point (2026-05-17).**
   NOT implemented. Phase 4's deliverable is inherently the
   in-flight live-feed integration *and* the
