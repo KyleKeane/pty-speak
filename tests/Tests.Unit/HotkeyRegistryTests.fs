@@ -64,6 +64,11 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               // and OpenConfig take its slot.
               HotkeyRegistry.OpenDataFolder
               HotkeyRegistry.OpenConfig
+              // Cycle 52 Phase 6b round 2 — About-menu browser
+              // links (all menu-only).
+              HotkeyRegistry.OpenGitHubRepo
+              HotkeyRegistry.OpenFeatureRequest
+              HotkeyRegistry.OpenSubmitIssue
               // Cycle 25b-1a — CopyLatestLog removed (D's bundle
               // subsumes it).
               // Cycle 27 — `ToggleDebugLog` and `MuteEarcons`

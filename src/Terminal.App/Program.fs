@@ -561,6 +561,44 @@ module Program =
             }
         ()
 
+    /// Cycle 52 Phase 6b round 2 — open a URL in the default
+    /// browser. Menu-only (About menu): GitHub repo / feature
+    /// request form / new issue page. Mirrors
+    /// `runOpenDataFolder`'s announce-before-launch + STA-safe
+    /// dispatch shape; opens a URL instead of a folder. `what`
+    /// is the screen-reader-friendly noun phrase for announces.
+    let private runOpenUrlInBrowser
+            (window: MainWindow)
+            (url: string)
+            (what: string)
+            : unit =
+        let log = Logger.get "Terminal.App.Program.runOpenUrlInBrowser"
+        log.LogInformation(
+            "Open-URL menu item — launching {What} {Url}.",
+            what,
+            url)
+        window.TerminalSurface.Announce(
+            sprintf "Opening %s in your browser." what,
+            ActivityIds.openDataFolder)
+        let _ =
+            task {
+                do! Task.Delay(700)
+                let action () =
+                    try
+                        let psi = System.Diagnostics.ProcessStartInfo()
+                        psi.FileName <- url
+                        psi.UseShellExecute <- true
+                        System.Diagnostics.Process.Start(psi) |> ignore
+                    with ex ->
+                        let safe = AnnounceSanitiser.sanitise ex.Message
+                        window.TerminalSurface.Announce(
+                            sprintf "Could not open %s: %s" what safe,
+                            ActivityIds.error)
+                do! window.Dispatcher.InvokeAsync(Action(action)).Task
+                ()
+            }
+        ()
+
     /// Cycle 25a — auto-create `config.toml` with sensible
     /// defaults if no file exists, then open in the default app
     /// (Notepad on a stock Windows install). Triggered by
@@ -1278,6 +1316,27 @@ module Program =
         bind HotkeyRegistry.DraftNewRelease (fun () -> runOpenNewRelease window)
         bind HotkeyRegistry.OpenDataFolder (fun () -> runOpenDataFolder window)
         bind HotkeyRegistry.OpenConfig (fun () -> runOpenConfig window)
+        bind HotkeyRegistry.OpenGitHubRepo (fun () ->
+            runOpenUrlInBrowser
+                window
+                "https://github.com/KyleKeane/pty-speak"
+                "the pty-speak GitHub repository")
+        bind HotkeyRegistry.OpenFeatureRequest (fun () ->
+            runOpenUrlInBrowser
+                window
+                "https://github.com/KyleKeane/pty-speak/issues/new/choose"
+                "the feature request form")
+        bind HotkeyRegistry.OpenSubmitIssue (fun () ->
+            runOpenUrlInBrowser
+                window
+                "https://github.com/KyleKeane/pty-speak/issues/new"
+                "the new issue page")
+        // ADR 0007 Phase 6b round 2 — surface the build version
+        // + git short SHA as a readable About > Version item
+        // (the only thing distinguishing local builds; same
+        // string the Ctrl+Shift+H health check speaks).
+        window.MenuItem_VersionValue.Header <-
+            box (resolveInformationalVersion ())
         // Cycle 27 — `ToggleDebugLog` and `MuteEarcons` migrated
         // to `MultiStateCommand` as `LoggingLevel` and
         // `EarconsMode`. Their wiring lives in the

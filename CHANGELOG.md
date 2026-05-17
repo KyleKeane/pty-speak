@@ -15434,6 +15434,30 @@ per the maintainer's own conclusion. A follow-up adds an
 change — needs a wired command + HotkeyRegistry/test
 updates).
 
+### Cycle 52 ADR 0007 Phase 6b: About-menu GitHub links + version (2026-05-17)
+
+The About menu gains three browser-link commands and a
+version display:
+
+- **Open GitHub Repo** → `https://github.com/KyleKeane/pty-speak`
+- **Submit a Feature Request** → the repo's new-issue chooser
+  (`/issues/new/choose`, surfacing any feature-request
+  template)
+- **Submit an Issue** → the repo's blank new-issue page
+  (`/issues/new`)
+- **Version** submenu — a single informational item whose
+  header is set at startup to the build version + git short
+  SHA (`resolveInformationalVersion ()`, the same string the
+  `Ctrl+Shift+H` health check speaks); a screen reader reads
+  it on focus. No command (display only).
+
+The three links are menu-only `HotkeyRegistry` commands
+(Key=None) bound to one shared `runOpenUrlInBrowser` helper
+(announce-before-launch + STA-safe dispatch, mirroring
+`runOpenDataFolder`). HotkeyRegistry DU / nameOf / builtIns /
+allCommands + the `allCommands` expected-set test updated
+accordingly.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
