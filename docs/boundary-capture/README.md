@@ -48,7 +48,7 @@ typed, including anything sensitive. Per
 | ID | Shell | Scenario | Why | Expected | Status | Trace |
 |----|-------|----------|-----|----------|--------|-------|
 | C1 | cmd | `echo hi`, slow, deliberate pauses, wait for output | clean single IOCell, generous timing — the reference "correct" trace | seals 1 cell | **captured 2026-05-17** | [`cmd/C1-echo-hi-slow.txt`](cmd/C1-echo-hi-slow.txt) |
-| C2 | cmd | `echo hi`, typed as fast as possible | same logical cell, timing-stressed — isolates timing-sensitivity vs C1 | seals 1 cell | _pending_ | — |
+| C2 | cmd | `echo hi`, typed as fast as possible | same logical cell, timing-stressed — isolates timing-sensitivity vs C1 | seals 1 cell; user heard repeated speech at start | **captured 2026-05-17** | [`cmd/C2-echo-hi-fast.txt`](cmd/C2-echo-hi-fast.txt) |
 | C3 | cmd | `Diagnostics → CMD Interaction Tests → Text Input` (`set /p`) | **the defect** — this scenario seals no cell | currently seals 0 (bug) | _pending_ | — |
 | C4 | cmd | multi-line echo / `dir` interaction test (optional) | a cell that *does* seal but with output volume — brackets C3 | seals 1 cell | _pending_ | — |
 
@@ -114,11 +114,52 @@ Outstanding for the record (non-blocking): the C1 in-app result
 `Ctrl+Shift+H` Version line (confirm the dogfood ran `de74a3f`
 or later, not a stale build).
 
-### C2 — `echo hi` fast (timing stress)
+### C2 — `echo hi` fast (timing stress) — captured 2026-05-17 14:05 UTC
 
-_Awaiting trace._ Diff against C1: does faster keystroke delivery
-change byte interleaving or coalesce reads such that the boundary
-detector sees a different stream?
+Trace: [`cmd/C2-echo-hi-fast.txt`](cmd/C2-echo-hi-fast.txt).
+Maintainer-observed symptom: **repeated speech at the beginning**
+when typing fast.
+
+**C2 is byte-identical to the C1 baseline.** Same 17 events,
+same IN 8 B / OUT 101 B, same strict per-keystroke 1:1 local
+echo, same `IN \r` → `OUT \r\n`, same 92-byte OSC-133 flush
+(`ESC[?25l HI ESC[5;1H ESC[?25h ;D ;A <prompt> ;B`). The only
+difference is the `+elapsed_us` timestamps:
+
+| | inter-keystroke gap | pre-Enter gap |
+|---|---|---|
+| C1 (slow) | ~1.4–1.9 s | ~7.5 s |
+| C2 (fast) | ~0.13–0.24 s | ~0.24 s |
+
+~6–30× faster, **zero byte-stream difference**. No coalescing,
+no merged reads, no reordering — cmd's local echo emits one
+discrete `IN`/`OUT` pair per keystroke irrespective of speed,
+and the post-Enter OSC-133 flush is unchanged.
+
+Findings:
+
+1. **The repeated-speech artifact is not in the transport / byte
+   layer.** `RawShellRecorder` taps the `Terminal.Core` PTY
+   seam; identical bytes enter, so the duplication is produced
+   *above* the tap — in the accessibility channel / announce
+   path. Fast-arriving per-keystroke `UserInputEcho` bytes drive
+   the SpeechCursor / review-cursor to re-read early content
+   before the `Composing → Executing` classification settles
+   (ADR 0003 / ADR 0008 territory). A timing-sensitive
+   re-announce, not a boundary parse.
+2. **Distinct bug from the C3 cell-seal defect.** C2 = channel
+   re-announce under fast input (fix lives in the accessibility
+   channel); C3 = boundary never seals the cell (fix lives at
+   the transport boundary). They must not be conflated.
+3. Consistent with the Cycle-52 "substrate sound" posture: the
+   bytes are deterministic and the OSC-133 mechanism (C1-proven
+   well-formed) is byte-identical here. The regression is
+   downstream channel behaviour, not the boundary mechanism.
+
+Outstanding for the record (non-blocking): the exact NVDA
+utterance heard — which words, how many repeats — to localise
+the announce site (prompt re-read vs per-char echo re-read), and
+the `Ctrl+Shift+H` Version line.
 
 ### C3 — `set /p` input-test (the defect)
 
