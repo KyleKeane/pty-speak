@@ -27,8 +27,8 @@
              (c) <MenuItem x:Name="MenuItem_<NewCmd>" /> here.
              Compose's reflection-driven wiring auto-picks it up.
 
-             Top-level mnemonics: _Terminal, _Interface,
-             _Cell History, Dia_gnostics, _Help (all unique;
+             Top-level order + mnemonics: _Interface, _Terminal,
+             _Cell History, Dia_gnostics, _About (all unique;
              non-conflicting with AppReservedHotkeys's
              Ctrl+Shift+letter gestures since different modifier
              sets are different gestures).
@@ -49,46 +49,16 @@
         <Menu DockPanel.Dock="Top"
               AutomationProperties.Name="Application menu"
               AutomationProperties.AutomationId="pty-speak.AppMenu">
-            <MenuItem Header="_Terminal">
-                <MenuItem Header="_Shell">
-                    <MenuItem x:Name="MenuItem_SwitchToCmd"
-                              x:FieldModifier="public"
-                              Header="_Cmd" />
-                    <MenuItem x:Name="MenuItem_SwitchToPowerShell"
-                              x:FieldModifier="public"
-                              Header="_PowerShell" />
-                    <MenuItem x:Name="MenuItem_SwitchToClaude"
-                              x:FieldModifier="public"
-                              Header="C_laude" />
-                </MenuItem>
-            </MenuItem>
-            <!-- Cycle 27 — multi-state menu paradigm. The two
-                 children are parent menu items whose sub-items
-                 are the discrete options. Each option's
-                 IsCheckable + IsChecked is wired in
-                 Program.fs's compose() multi-state pass; the
-                 parent's SubmenuOpened handler refreshes
-                 IsChecked on every open so the active option
-                 always reflects current state.
-
-                 Naming convention: `MenuItem_<Cmd>` for the
-                 parent and `MenuItem_<Cmd>_<OptionId>` for each
-                 option, matching `multiStateNameOf` and the
-                 stable `OptionId`s in
-                 `HotkeyRegistry.multiStateBuiltIns`. -->
-            <!-- Cycle 38a-followup — renamed from "View" to
-                 "Display"; Logging Level moved to Diagnostics
-                 (it's a diagnostic-relevant control, not a
-                 display setting). Display now hosts only the
-                 Earcons multi-state. -->
-            <!-- Cycle 48 post-PR-F (2026-05-13) — top-level
-                 "Display" renamed to "Interface" + the previous
-                 top-level "Data" menu nested inside it as a
-                 child submenu. Per maintainer dogfood of
-                 preview.118: top-level had too many siblings;
-                 grouping all interface-presentation + data-
-                 storage concerns under one umbrella reduces
-                 menu-bar scanning. -->
+            <!-- Multi-state paradigm: a parent MenuItem whose
+                 sub-items are the discrete options;
+                 IsCheckable/IsChecked wired in compose()'s
+                 multi-state pass (SubmenuOpened refreshes the
+                 active option). Naming: MenuItem_<Cmd> parent +
+                 MenuItem_<Cmd>_<OptionId> per
+                 HotkeyRegistry.multiStateBuiltIns. Cycle 52
+                 Phase 6b round 2 (2026-05-17): top-level order
+                 Interface · Terminal · Cell History ·
+                 Diagnostics · About. -->
             <MenuItem Header="_Interface">
                 <MenuItem x:Name="MenuItem_EarconsMode"
                           x:FieldModifier="public"
@@ -149,6 +119,45 @@
                               x:FieldModifier="public"
                               Header="O_ff" />
                 </MenuItem>
+                <!-- Cycle 52 Phase 6b round 2 — Prompt Path
+                     moved to Terminal (shell concern); Open Data
+                     Folder moved to Diagnostics (troubleshooting
+                     affordance). Edit Config + Window stay. -->
+                <MenuItem x:Name="MenuItem_OpenConfig"
+                          x:FieldModifier="public"
+                          Header="Edit _Config" />
+                <!-- Cycle 28 — Window items are menu-only (no
+                     HotkeyRegistry accelerator). Close Window's
+                     InputGestureText="Alt+F4" is purely visual
+                     (the OS-level Alt+F4 is handled by WPF Window
+                     natively). Cycle 52 Phase 6b: nested under
+                     Interface (was its own top-level menu). -->
+                <MenuItem Header="_Window">
+                    <MenuItem x:Name="MenuItem_CloseWindow"
+                              x:FieldModifier="public"
+                              Header="_Close Window"
+                              InputGestureText="Alt+F4" />
+                    <MenuItem x:Name="MenuItem_ExitApp"
+                              x:FieldModifier="public"
+                              Header="E_xit" />
+                </MenuItem>
+            </MenuItem>
+            <!-- Terminal top-level (after Interface). Hosts the
+                 Shell switcher + Prompt Path verbosity (a
+                 shell/terminal concern; moved from Interface
+                 per maintainer 2026-05-17). -->
+            <MenuItem Header="_Terminal">
+                <MenuItem Header="_Shell">
+                    <MenuItem x:Name="MenuItem_SwitchToCmd"
+                              x:FieldModifier="public"
+                              Header="_Cmd" />
+                    <MenuItem x:Name="MenuItem_SwitchToPowerShell"
+                              x:FieldModifier="public"
+                              Header="_PowerShell" />
+                    <MenuItem x:Name="MenuItem_SwitchToClaude"
+                              x:FieldModifier="public"
+                              Header="C_laude" />
+                </MenuItem>
                 <MenuItem x:Name="MenuItem_PromptPathVerbosity"
                           x:FieldModifier="public"
                           Header="_Prompt Path">
@@ -174,63 +183,25 @@
                               x:FieldModifier="public"
                               Header="Fina_l Dir On Change, Silent When Same" />
                 </MenuItem>
-                <!-- Cycle 52 Phase 6b (2026-05-17) — open data
-                     folder + edit config stay at Interface level
-                     (where pty-speak's app data lives). The
-                     last-command / session-history /
-                     per-cell-operation items moved OUT to the
-                     new top-level "Cell History" menu; Window
-                     nested here (was a top-level sibling). -->
-                <MenuItem x:Name="MenuItem_OpenDataFolder"
-                          x:FieldModifier="public"
-                          Header="Open _Data Folder" />
-                <MenuItem x:Name="MenuItem_OpenConfig"
-                          x:FieldModifier="public"
-                          Header="Edit _Config" />
-                <!-- Cycle 28 — Window items are menu-only (no
-                     HotkeyRegistry accelerator). Close Window's
-                     InputGestureText="Alt+F4" is purely visual
-                     (the OS-level Alt+F4 is handled by WPF Window
-                     natively). Cycle 52 Phase 6b: nested under
-                     Interface (was its own top-level menu). -->
-                <MenuItem Header="_Window">
-                    <MenuItem x:Name="MenuItem_CloseWindow"
-                              x:FieldModifier="public"
-                              Header="_Close Window"
-                              InputGestureText="Alt+F4" />
-                    <MenuItem x:Name="MenuItem_ExitApp"
-                              x:FieldModifier="public"
-                              Header="E_xit" />
-                </MenuItem>
             </MenuItem>
-<!-- Cycle 52 Phase 6b (2026-05-17) — "Cell History"
-                 promoted to its own top-level menu (matches the
-                 cell-history panel title). Real wired items keep
-                 their x:Name (relocated only; compose() wiring
-                 is by-name, unaffected). "(not yet implemented)"
-                 entries are disabled placeholders (no x:Name, no
-                 wiring) sketching the ideal comprehensive op-set
-                 — a clear target for the later cell-operation /
-                 navigation phases (ADR 0007 D2 / Phase 6). -->
+            <!-- "Cell History" top-level (matches the panel
+                 title). Real wired items keep their x:Name
+                 (relocated only; compose() wiring is by-name).
+                 "(not yet implemented)" entries are ENABLED
+                 (so a screen reader announces them) no-op
+                 placeholders sketching the ideal op-set — a
+                 target for ADR 0007 D2 / Phase 6. -->
             <MenuItem Header="_Cell History">
                 <MenuItem Header="_Navigation">
                     <!-- Cell-history-native navigation (distinct
-                         from SpeechCursor review-nav, which lives
-                         under Interface > Speech Cursor). All
-                         placeholders today. -->
-                    <MenuItem Header="Next Cell (not yet implemented)" IsEnabled="False" />
-                    <MenuItem Header="Previous Cell (not yet implemented)" IsEnabled="False" />
-                    <MenuItem Header="First Cell (not yet implemented)" IsEnabled="False" />
-                    <MenuItem Header="Last Cell (not yet implemented)" IsEnabled="False" />
-                    <Separator />
-                    <MenuItem Header="Next Input Cell (not yet implemented)" IsEnabled="False" />
-                    <MenuItem Header="Previous Input Cell (not yet implemented)" IsEnabled="False" />
-                    <MenuItem Header="Next Output Cell (not yet implemented)" IsEnabled="False" />
-                    <MenuItem Header="Previous Output Cell (not yet implemented)" IsEnabled="False" />
-                    <Separator />
-                    <MenuItem Header="Next Failed Command (not yet implemented)" IsEnabled="False" />
-                    <MenuItem Header="Previous Failed Command (not yet implemented)" IsEnabled="False" />
-                    <MenuItem Header="Jump to Bookmarked Cell (not yet implemented)" IsEnabled="False" />
+                         from SpeechCursor review-nav under
+                         Interface > Speech Cursor). Enabled no-op
+                         placeholders so a screen reader announces
+                         the target set; wired in a later phase. -->
+                    <MenuItem Header="Move to First (not yet implemented)" />
+                    <MenuItem Header="Move to Previous (not yet implemented)" />
+                    <MenuItem Header="Move to Next (not yet implemented)" />
+                    <MenuItem Header="Move to Last (not yet implemented)" />
                 </MenuItem>
                 <MenuItem Header="_Focused Cell Operations">
                     <MenuItem x:Name="MenuItem_CopyFocusedCell"
@@ -246,15 +217,13 @@
                               x:FieldModifier="public"
                               Header="_Rerun Focused Input" />
                     <Separator />
-                    <MenuItem Header="Insert Focused Command at Prompt (not yet implemented)" IsEnabled="False" />
-                    <MenuItem Header="Copy Focused Cell as Markdown (not yet implemented)" IsEnabled="False" />
-                    <MenuItem Header="Save Focused Cell Output to File (not yet implemented)" IsEnabled="False" />
-                    <MenuItem Header="Bookmark Focused Cell (not yet implemented)" IsEnabled="False" />
-                    <MenuItem Header="Remove Bookmark (not yet implemented)" IsEnabled="False" />
-                    <MenuItem Header="Delete Focused Cell from History (not yet implemented)" IsEnabled="False" />
-                    <MenuItem Header="Expand / Collapse Focused Cell (not yet implemented)" IsEnabled="False" />
+                    <MenuItem Header="Insert Focused Command at Prompt (not yet implemented)" />
+                    <MenuItem Header="Copy Focused Cell as Markdown (not yet implemented)" />
+                    <MenuItem Header="Save Focused Cell Output to File (not yet implemented)" />
+                    <MenuItem Header="Bookmark Focused Cell (not yet implemented)" />
+                    <MenuItem Header="Delete Focused Cell from History (not yet implemented)" />
                 </MenuItem>
-                <MenuItem Header="_Output and Session">
+                <MenuItem Header="_Session">
                     <MenuItem Header="_Last Output">
                         <MenuItem x:Name="MenuItem_OpenLastOutput"
                                   x:FieldModifier="public"
@@ -270,7 +239,7 @@
                               x:FieldModifier="public"
                               Header="Announce _Session Log Path" />
                     <Separator />
-                    <MenuItem Header="Export Session History to File (not yet implemented)" IsEnabled="False" />
+                    <MenuItem Header="Export Session History to File (not yet implemented)" />
                 </MenuItem>
             </MenuItem>
             <!-- Cycle 48 post-PR-F (2026-05-13) — Diagnostics
@@ -290,6 +259,13 @@
                               x:FieldModifier="public"
                               Header="_Debug" />
                 </MenuItem>
+                <!-- Open Data Folder moved here from Interface
+                     (maintainer 2026-05-17): it is a
+                     troubleshooting affordance — the parent of
+                     \logs, \sessions, config.toml. -->
+                <MenuItem x:Name="MenuItem_OpenDataFolder"
+                          x:FieldModifier="public"
+                          Header="Open _Data Folder" />
                 <!-- Probe — quick "fire an action and watch what
                      happens" probes: health check, incident
                      marker, the diagnostic battery. The
@@ -421,13 +397,23 @@
                 </MenuItem>
                 </MenuItem><!-- /Inspect -->
             </MenuItem>
-            <MenuItem Header="_Help">
+            <!-- Cycle 52 Phase 6b round 2 — "Help" renamed
+                 "About" (maintainer 2026-05-17). Acknowledgment
+                 items are enabled, no-op informational entries
+                 (so a screen reader reads them). "Open GitHub
+                 Repo" is added in a follow-up (needs a wired
+                 command). -->
+            <MenuItem Header="_About">
                 <MenuItem x:Name="MenuItem_CheckForUpdates"
                           x:FieldModifier="public"
                           Header="Check for _Updates" />
                 <MenuItem x:Name="MenuItem_DraftNewRelease"
                           x:FieldModifier="public"
                           Header="Draft New _Release" />
+                <MenuItem Header="_Acknowledgment">
+                    <MenuItem Header="Made by Dr. Kyle Keane, University of Bristol" />
+                    <MenuItem Header="Use is governed by the license and terms of use on the GitHub repository" />
+                </MenuItem>
             </MenuItem>
         </Menu>
         <!-- ADR 0007 Phase 6a-2b — the live terminal and the

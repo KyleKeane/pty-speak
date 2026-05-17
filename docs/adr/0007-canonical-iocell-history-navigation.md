@@ -677,6 +677,22 @@ changes the ADR 0004 IOCell schema.
     export) — an early, low-cost stand-in for the Phase 6d
     operation-discovery menu and a concrete target for the
     later phases. XAML-only (items wired by `x:Name`).
+  - **Menu refinement round 2 (2026-05-17).** Top-level
+    order Interface · Terminal · Cell History · Diagnostics
+    · About (Help→About); Prompt Path → Terminal; Open Data
+    Folder → Diagnostics; "Output and Session" → "Session";
+    Acknowledgment submenu under About. Crucially the
+    `(not yet implemented)` placeholders were **flipped from
+    disabled to enabled** — disabled menu items were not
+    being announced by the screen reader, defeating their
+    purpose as the perceivable op-set target. **Deferred
+    future feature** (maintainer-recorded): when focus
+    leaves the cell-history pane the selected row should
+    degrade from filled background to an outline-only
+    indication — revisit with the stable Tree (Phase 4/5 /
+    D8 growth path), not built now. Output Verbosity
+    confirmed still-live (gates the live announce path), not
+    deprecated.
 
 - **Phase 7 — automated cell-structure diagnostics (D6).**
   Extend the existing test corpus + `Diagnostics → Test …`
