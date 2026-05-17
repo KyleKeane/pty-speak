@@ -27,27 +27,40 @@
              (c) <MenuItem x:Name="MenuItem_<NewCmd>" /> here.
              Compose's reflection-driven wiring auto-picks it up.
 
-             Top-level mnemonics: _Shell, _View, _Data,
-             Dia_gnostics, _Help (all unique; non-conflicting with
-             AppReservedHotkeys's Ctrl+Shift+letter gestures since
-             different modifier sets are different gestures).
+             Top-level mnemonics: _Terminal, _Interface,
+             _Cell History, Dia_gnostics, _Help (all unique;
+             non-conflicting with AppReservedHotkeys's
+             Ctrl+Shift+letter gestures since different modifier
+             sets are different gestures).
 
-             Future menus (Window, Display, Preferences/Settings)
-             will slot in cleanly per the maintainer's
-             extensibility directive (see PROJECT-PLAN-2026-05-09.md). -->
+             Cycle 52 Phase 6b (2026-05-17) reorg: Shell nested
+             under a new Terminal top-level; the standalone
+             Window menu nested under Interface; the
+             cell-history command set promoted to its own
+             top-level "Cell History" (matches the panel title),
+             grouped Navigation / Focused Cell Operations /
+             Output and Session. "(not yet implemented)" entries
+             are disabled placeholders sketching the ideal
+             comprehensive op-set for later phases. The whole
+             reorg is XAML-only — every actionable item is wired
+             by x:Name (reflection + explicit handlers in
+             compose()), never by tree position — so menu
+             structure stays a single-file edit. -->
         <Menu DockPanel.Dock="Top"
               AutomationProperties.Name="Application menu"
               AutomationProperties.AutomationId="pty-speak.AppMenu">
-            <MenuItem Header="_Shell">
-                <MenuItem x:Name="MenuItem_SwitchToCmd"
-                          x:FieldModifier="public"
-                          Header="_Cmd" />
-                <MenuItem x:Name="MenuItem_SwitchToPowerShell"
-                          x:FieldModifier="public"
-                          Header="_PowerShell" />
-                <MenuItem x:Name="MenuItem_SwitchToClaude"
-                          x:FieldModifier="public"
-                          Header="C_laude" />
+            <MenuItem Header="_Terminal">
+                <MenuItem Header="_Shell">
+                    <MenuItem x:Name="MenuItem_SwitchToCmd"
+                              x:FieldModifier="public"
+                              Header="_Cmd" />
+                    <MenuItem x:Name="MenuItem_SwitchToPowerShell"
+                              x:FieldModifier="public"
+                              Header="_PowerShell" />
+                    <MenuItem x:Name="MenuItem_SwitchToClaude"
+                              x:FieldModifier="public"
+                              Header="C_laude" />
+                </MenuItem>
             </MenuItem>
             <!-- Cycle 27 — multi-state menu paradigm. The two
                  children are parent menu items whose sub-items
@@ -100,6 +113,14 @@
                     <MenuItem x:Name="MenuItem_SpeechCursorToggleMode"
                               x:FieldModifier="public"
                               Header="Toggle _Mode (AutoDrive / Manual)" />
+                    <!-- Cycle 52 Phase 6b — jump-to-last-error is
+                         a SpeechCursor navigation command, so it
+                         lives here with the rest of the
+                         SpeechCursor set (moved out of the old
+                         Output History submenu). -->
+                    <MenuItem x:Name="MenuItem_JumpToLastError"
+                              x:FieldModifier="public"
+                              Header="Jump to Last _Error" />
                 </MenuItem>
                 <!-- ADR 0007 Phase 6a-2b — pane switch. Menu-
                      surfaced for discoverability (the maintainer's
@@ -153,21 +174,87 @@
                               x:FieldModifier="public"
                               Header="Fina_l Dir On Change, Silent When Same" />
                 </MenuItem>
-                <!-- Cycle 48 post-PR-F (2026-05-13) — infrastructure
-                     items (open data folder, edit config) lifted
-                     from the old Data submenu to Interface direct
-                     level per maintainer feedback. They're not
-                     about command output; they're about where
-                     pty-speak's app data lives. The
-                     last-command + session-history items kept
-                     together under "Output History". -->
+                <!-- Cycle 52 Phase 6b (2026-05-17) — open data
+                     folder + edit config stay at Interface level
+                     (where pty-speak's app data lives). The
+                     last-command / session-history /
+                     per-cell-operation items moved OUT to the
+                     new top-level "Cell History" menu; Window
+                     nested here (was a top-level sibling). -->
                 <MenuItem x:Name="MenuItem_OpenDataFolder"
                           x:FieldModifier="public"
                           Header="Open _Data Folder" />
                 <MenuItem x:Name="MenuItem_OpenConfig"
                           x:FieldModifier="public"
                           Header="Edit _Config" />
-                <MenuItem Header="Output _History">
+                <!-- Cycle 28 — Window items are menu-only (no
+                     HotkeyRegistry accelerator). Close Window's
+                     InputGestureText="Alt+F4" is purely visual
+                     (the OS-level Alt+F4 is handled by WPF Window
+                     natively). Cycle 52 Phase 6b: nested under
+                     Interface (was its own top-level menu). -->
+                <MenuItem Header="_Window">
+                    <MenuItem x:Name="MenuItem_CloseWindow"
+                              x:FieldModifier="public"
+                              Header="_Close Window"
+                              InputGestureText="Alt+F4" />
+                    <MenuItem x:Name="MenuItem_ExitApp"
+                              x:FieldModifier="public"
+                              Header="E_xit" />
+                </MenuItem>
+            </MenuItem>
+<!-- Cycle 52 Phase 6b (2026-05-17) — "Cell History"
+                 promoted to its own top-level menu (matches the
+                 cell-history panel title). Real wired items keep
+                 their x:Name (relocated only; compose() wiring
+                 is by-name, unaffected). "(not yet implemented)"
+                 entries are disabled placeholders (no x:Name, no
+                 wiring) sketching the ideal comprehensive op-set
+                 — a clear target for the later cell-operation /
+                 navigation phases (ADR 0007 D2 / Phase 6). -->
+            <MenuItem Header="_Cell History">
+                <MenuItem Header="_Navigation">
+                    <!-- Cell-history-native navigation (distinct
+                         from SpeechCursor review-nav, which lives
+                         under Interface > Speech Cursor). All
+                         placeholders today. -->
+                    <MenuItem Header="Next Cell (not yet implemented)" IsEnabled="False" />
+                    <MenuItem Header="Previous Cell (not yet implemented)" IsEnabled="False" />
+                    <MenuItem Header="First Cell (not yet implemented)" IsEnabled="False" />
+                    <MenuItem Header="Last Cell (not yet implemented)" IsEnabled="False" />
+                    <Separator />
+                    <MenuItem Header="Next Input Cell (not yet implemented)" IsEnabled="False" />
+                    <MenuItem Header="Previous Input Cell (not yet implemented)" IsEnabled="False" />
+                    <MenuItem Header="Next Output Cell (not yet implemented)" IsEnabled="False" />
+                    <MenuItem Header="Previous Output Cell (not yet implemented)" IsEnabled="False" />
+                    <Separator />
+                    <MenuItem Header="Next Failed Command (not yet implemented)" IsEnabled="False" />
+                    <MenuItem Header="Previous Failed Command (not yet implemented)" IsEnabled="False" />
+                    <MenuItem Header="Jump to Bookmarked Cell (not yet implemented)" IsEnabled="False" />
+                </MenuItem>
+                <MenuItem Header="_Focused Cell Operations">
+                    <MenuItem x:Name="MenuItem_CopyFocusedCell"
+                              x:FieldModifier="public"
+                              Header="Copy _Focused Cell to Clipboard" />
+                    <MenuItem x:Name="MenuItem_CopyFocusedCellCommand"
+                              x:FieldModifier="public"
+                              Header="Copy Focused Cell Co_mmand" />
+                    <MenuItem x:Name="MenuItem_CopyFocusedCellOutput"
+                              x:FieldModifier="public"
+                              Header="Copy Focused Cell Out_put" />
+                    <MenuItem x:Name="MenuItem_RerunFocusedInput"
+                              x:FieldModifier="public"
+                              Header="_Rerun Focused Input" />
+                    <Separator />
+                    <MenuItem Header="Insert Focused Command at Prompt (not yet implemented)" IsEnabled="False" />
+                    <MenuItem Header="Copy Focused Cell as Markdown (not yet implemented)" IsEnabled="False" />
+                    <MenuItem Header="Save Focused Cell Output to File (not yet implemented)" IsEnabled="False" />
+                    <MenuItem Header="Bookmark Focused Cell (not yet implemented)" IsEnabled="False" />
+                    <MenuItem Header="Remove Bookmark (not yet implemented)" IsEnabled="False" />
+                    <MenuItem Header="Delete Focused Cell from History (not yet implemented)" IsEnabled="False" />
+                    <MenuItem Header="Expand / Collapse Focused Cell (not yet implemented)" IsEnabled="False" />
+                </MenuItem>
+                <MenuItem Header="_Output and Session">
                     <MenuItem Header="_Last Output">
                         <MenuItem x:Name="MenuItem_OpenLastOutput"
                                   x:FieldModifier="public"
@@ -179,24 +266,11 @@
                     <MenuItem x:Name="MenuItem_CopyHistoryToClipboard"
                               x:FieldModifier="public"
                               Header="_Copy Session History to Clipboard" />
-                    <MenuItem x:Name="MenuItem_CopyFocusedCell"
-                              x:FieldModifier="public"
-                              Header="Copy _Focused Cell to Clipboard" />
-                    <MenuItem x:Name="MenuItem_CopyFocusedCellCommand"
-                              x:FieldModifier="public"
-                              Header="Copy Focused Cell Co_mmand" />
-                    <MenuItem x:Name="MenuItem_CopyFocusedCellOutput"
-                              x:FieldModifier="public"
-                              Header="Copy Focused Cell Out_put" />
-                    <MenuItem x:Name="MenuItem_JumpToLastError"
-                              x:FieldModifier="public"
-                              Header="Jump to Last _Error" />
-                    <MenuItem x:Name="MenuItem_RerunFocusedInput"
-                              x:FieldModifier="public"
-                              Header="_Rerun Focused Input" />
                     <MenuItem x:Name="MenuItem_AnnounceSessionLogPath"
                               x:FieldModifier="public"
                               Header="Announce _Session Log Path" />
+                    <Separator />
+                    <MenuItem Header="Export Session History to File (not yet implemented)" IsEnabled="False" />
                 </MenuItem>
             </MenuItem>
             <!-- Cycle 48 post-PR-F (2026-05-13) — Diagnostics
@@ -346,23 +420,6 @@
                     </MenuItem>
                 </MenuItem>
                 </MenuItem><!-- /Inspect -->
-            </MenuItem>
-            <!-- Cycle 28 — Window menu. Both items are menu-only
-                 commands (no keyboard accelerator registered with
-                 HotkeyRegistry). Close Window's
-                 InputGestureText="Alt+F4" is hardcoded here so
-                 NVDA reads "Close Window, Alt plus F4, menu item"
-                 — the gesture string is purely visual since the
-                 OS-level Alt+F4 is handled by WPF Window
-                 natively, not by an entry in AppReservedHotkeys. -->
-            <MenuItem Header="_Window">
-                <MenuItem x:Name="MenuItem_CloseWindow"
-                          x:FieldModifier="public"
-                          Header="_Close Window"
-                          InputGestureText="Alt+F4" />
-                <MenuItem x:Name="MenuItem_ExitApp"
-                          x:FieldModifier="public"
-                          Header="E_xit" />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem x:Name="MenuItem_CheckForUpdates"

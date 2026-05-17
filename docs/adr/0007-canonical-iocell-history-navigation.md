@@ -665,6 +665,18 @@ changes the ADR 0004 IOCell schema.
     notice), retiring the earlier shorter-parallel-array +
     bounds-check hack and folding the empty-state placeholder
     into the same notice mechanism.
+  - **Menu reorganization (2026-05-17).** A top-level "Cell
+    History" menu (matching the panel title) now groups the
+    per-cell ops under Navigation / Focused Cell Operations /
+    Output and Session; SpeechCursor commands are disciplined
+    under Interface › Speech Cursor; Shell nested under a new
+    Terminal top-level; Window under Interface. The
+    `(not yet implemented)` disabled placeholders in that
+    menu are the **living sketch of the ideal D2 / Phase 6
+    op-set** (cell navigation, per-cell operations, session
+    export) — an early, low-cost stand-in for the Phase 6d
+    operation-discovery menu and a concrete target for the
+    later phases. XAML-only (items wired by `x:Name`).
 
 - **Phase 7 — automated cell-structure diagnostics (D6).**
   Extend the existing test corpus + `Diagnostics → Test …`
