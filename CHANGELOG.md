@@ -15048,6 +15048,42 @@ Phase 6b. Behavioural ⇒ NVDA dogfood row `52-ADR7-P2c`.
 Locally unverifiable — F# structure re-read; CI is the
 build signal.
 
+### Cycle 52 — ADR 0007 Phase 3: rerun focused input (2026-05-17)
+
+Behavioural. New **menu-only** **Output History → Rerun
+Focused Input**: re-submits the focused input cell's command
+as a *fresh* command (a new IOCell via the normal shell
+lifecycle). Risk-controlled per the ADR open decision —
+**no auto-run on navigation; explicit gesture only; a
+two-step arm/confirm with echo-before-run**: the first
+invocation *speaks the exact command* and arms; a second
+invocation of the **same** command on the **same** cell
+within **15 s** actually injects (the window is generous so a
+screen-reader user can hear the full echo then re-navigate
+the menu). "No focused cell…" / "The focused cell has no
+command to rerun." guards. **Provenance** is recorded at the
+announce + Information-log level (the spoken "Rerunning
+command from cell N" + the log line), **not** a new IOCell
+schema field — the ADR 0004 v2 schema is frozen and ADR 0007
+changes no schema; this scoping is the conservative reading
+of the open decision under that hard constraint. Injection
+routes through new `TerminalView.InjectCommand` → the same
+`_writeBytes` path as real keystrokes / the existing Ctrl+L
+`cls\r` precedent, so the command-Enter watermark + the
+interaction state machine observe it as a typed command (any
+residual cmd command/echo imperfection is the already-tracked
+ADR 0006 item-1 substrate issue under FREEZE, explicitly not
+Phase 3's to solve). Counts-only log (`SourceCellSeq` +
+`CmdLen`, never the command text — the announce is the
+user-facing echo; logging discipline keeps text out of the
+bundle). Wired: `HotkeyRegistry` (`RerunFocusedInput`,
+`Key = None` + `nameOf` + `builtIns` + `allCommands`),
+`Program.fs` (handler + arm state + bind), `TerminalView.cs`
+(`InjectCommand`), `MainWindow.xaml` (auto-wired menu item),
+`HotkeyRegistryTests` `expected` set. Behavioural ⇒ NVDA
+dogfood row `52-ADR7-P3`. Locally unverifiable — F#/C#
+structure re-read; CI is the build signal.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

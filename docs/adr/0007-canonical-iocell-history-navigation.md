@@ -787,7 +787,12 @@ instruction, not buried in chat text.
   jump-to-last-error; `CellView.ExitCode` added;
   completes the Phase 2 per-cell-ops set). Dogfood row
   `52-ADR7-P2c` pending the maintainer's NVDA pass.
-- **Phases 3 → 7** — in the autonomous sprint
+- **Phase 3** — Implemented & CI-green (menu-only
+  rerun-input; two-step arm/confirm + echo-before-run;
+  `TerminalView.InjectCommand` via the Ctrl+L `_writeBytes`
+  precedent; provenance at announce+log level since the
+  v2 schema is frozen). Dogfood row `52-ADR7-P3` pending.
+- **Phases 4 → 7** — in the autonomous sprint
   (maintainer-authorised 2026-05-17 to progress as far
   as the **Phase 6a D8 control-type ratification gate**,
   which is a hard stop: nothing past 6a is built until

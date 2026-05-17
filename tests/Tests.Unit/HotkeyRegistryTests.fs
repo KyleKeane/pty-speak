@@ -97,6 +97,9 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               // ADR 0007 Phase 2c — jump to last failed cell
               // (menu-only).
               HotkeyRegistry.JumpToLastError
+              // ADR 0007 Phase 3 — rerun focused input
+              // (menu-only).
+              HotkeyRegistry.RerunFocusedInput
               // Cycle 47 — CMD interaction test corpus (eight
               // menu-only items under Diagnostics → CMD
               // Interaction Tests; each inserts a quoted
