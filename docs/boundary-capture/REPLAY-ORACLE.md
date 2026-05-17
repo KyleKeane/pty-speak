@@ -45,16 +45,42 @@ non-deterministic manual NVDA dogfood.
   `{CommandText, OutputText, Phase, ExitCode}`. SpeechCursor is
   explicitly out of scope (deprecating).
 
+## Expectation files
+
+One trace ⇒ one `<name>.expected` beside it (hand-rolled,
+schemaVersioned per ADR-0004 wire discipline). `#`/blank lines
+ignored; `key=value` (value may contain `=`):
+
+```
+schemaVersion=1
+seedPrompt=<the mid-prompt-join seed P>
+cellCount=<int>
+cellN.phase=Sealed
+cellN.commandContains=<substr>      (optional)
+cellN.outputContains=<substr>       (optional)
+cellN.outputNotContains=<substr>    (optional)
+```
+
+Assertions are substring-based on purpose — exact
+Command/Output boundary text is slice-semantics-sensitive (P3's
+concern); the oracle pins the load-bearing invariants (seal
+count, phase, no prompt-path bleed).
+
 ## Status
 
-- **R-A (this):** harness + the **C3** (`set /p`) scenario
-  asserted inline — deterministically retro-validates P2′
-  (#423) on the real defect bytes. `tests/Tests.Unit/BoundaryReplayOracle.fs`.
-- **R-B:** externalise per-trace `*.expected` files; add C1/C2
-  + new capture dimensions — **backspace/retype** (deleted chars
-  must not reappear in `CommandText`) and **long idle**
-  mid-compose; the CMD-test scripts; a dedicated
-  "Boundary replay oracle" CI job.
+- **R-A:** harness + the **C3** (`set /p`) scenario —
+  deterministically retro-validated P2′ (#423) on the real
+  defect bytes. `tests/Tests.Unit/BoundaryReplayOracle.fs`.
+- **R-B1 (this):** externalised per-trace `*.expected` files;
+  **C1/C2** scenarios added (locks the prompt-path-bleed fix +
+  the slow/fast determinism on the real echo traces); a
+  dedicated **"Boundary replay oracle" CI job** (a boundary
+  regression is now a distinct red signal).
+- **R-B2 (awaiting maintainer captures):** **C5**
+  backspace/retype (deleted chars must not reappear in
+  `CommandText`) and **C6** long-idle mid-compose; the
+  CMD-test scripts. Capture with `Ctrl+Shift+T` toggled
+  *before* the prompt for a full lifecycle (no seed needed).
 - **R-C onward:** P3 (inline sub-prompt) and all further
   boundary work gated by this oracle, never manual dogfood.
 

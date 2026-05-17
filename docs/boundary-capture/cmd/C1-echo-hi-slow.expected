@@ -1,0 +1,15 @@
+# Boundary replay oracle expectation — schema v1 (R-B1).
+# C1: slow `ECHO HI`. Joined mid-prompt → seedPrompt is the
+# stable cmd prompt the trace exhibits. Invariants: exactly one
+# cell seals; the command survives intact (no `ECHO H` slow-typing
+# truncation — the P2′ timing-independent split); the trailing
+# next-prompt path is fenced out of OutputText (no bleed).
+# Substring assertions on purpose (exact boundary text is
+# slice-semantics-sensitive — P3's concern).
+schemaVersion=1
+seedPrompt=C:\Users\Kyle\git\pty-speak\src\Terminal.App>
+cellCount=1
+cell0.phase=Sealed
+cell0.commandContains=ECHO HI
+cell0.outputContains=HI
+cell0.outputNotContains=C:\Users\Kyle\git\pty-speak\src\Terminal.App>

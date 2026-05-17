@@ -1,0 +1,12 @@
+# Boundary replay oracle expectation — schema v1 (R-B1).
+# C2: fast `ECHO HI`. Byte-identical to C1 (only the µs
+# timestamps differ) — the oracle proves the timing-independent
+# split yields the SAME sealed cell as C1, killing the original
+# slow-vs-fast nondeterminism.
+schemaVersion=1
+seedPrompt=C:\Users\Kyle\git\pty-speak\src\Terminal.App>
+cellCount=1
+cell0.phase=Sealed
+cell0.commandContains=ECHO HI
+cell0.outputContains=HI
+cell0.outputNotContains=C:\Users\Kyle\git\pty-speak\src\Terminal.App>
