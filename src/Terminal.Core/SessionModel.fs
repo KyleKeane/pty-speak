@@ -770,6 +770,53 @@ module SessionModel =
                           && s.EndsWith(p) ->
                 s.Substring(0, s.Length - p.Length)
             | _ -> s
+        // Cycle 52 boundary-fix P2 — deterministic deferred-`;D`
+        // split. cmd's injected `prompt` emits `;D ;A <path> ;B`
+        // bundled at next-prompt render, so `tryLatestMarker
+        // PromptStart/CommandStart` resolve to the NEXT prompt's
+        // markers: that corrupts the heuristic split's lower
+        // bound (→ empty fallback slice → `None` → C3 no-seal)
+        // and leaves output unbounded at `Int64.MaxValue` with
+        // only the fragile `stripNextPrompt` exact-`EndsWith`
+        // (→ C1/C2 prompt-path bleed). See `docs/boundary-capture/`.
+        //
+        // Two Seqs ARE immune to that corruption: the `;D`
+        // CommandFinished MARKER (this cell's closer — the next
+        // prompt has run no command, so there is no newer `;D`),
+        // and `commandEnterSeq` (captured at the byte-level Enter
+        // BEFORE any output). Slicing output `[commandEnterSeq,
+        // cfSeq)` fences the trailing `;A<path>;B` out BY
+        // CONSTRUCTION (it has strictly greater Seq). Returns
+        // `None` when there is no `;D` marker or no usable Enter
+        // watermark → every legacy arm runs unchanged (claude /
+        // heuristic / the hand-built unit histories that append
+        // no CommandFinished marker).
+        let deterministicDeferredSplit () : (string * string) option =
+            match
+                ContentHistory.tryLatestMarker
+                    history ContentHistory.MarkerKind.CommandFinished
+            with
+            | Some cf when commandEnterSeq >= 0L
+                           && cf.Seq > commandEnterSeq ->
+                let outRegion =
+                    ContentHistory.sliceText
+                        history commandEnterSeq cf.Seq
+                let cmdRegion =
+                    ContentHistory.sliceText history 0L commandEnterSeq
+                let cmd =
+                    cmdRegion.Replace("\r", "\n").Split('\n')
+                    |> Array.map (fun l -> l.Trim())
+                    |> Array.filter (fun l -> l.Length > 0)
+                    |> Array.tryLast
+                    |> Option.defaultValue ""
+                let out =
+                    (outRegion.TrimStart('\r', '\n')).TrimEnd('\r', '\n')
+                if System.String.IsNullOrWhiteSpace cmd
+                   && System.String.IsNullOrWhiteSpace out then
+                    None
+                else
+                    Some (cmd, out)
+            | _ -> None
         // The PR-X watermark split, parameterised by the slice
         // lower-bound Seq. Anchored at `promptStart.Seq` it is
         // the pre-R2 heuristic-only behaviour (byte-identical);
@@ -889,11 +936,21 @@ module SessionModel =
             // PromptStart-only first-line heuristic. Provenance
             // is OSC 133 (the ;B marker is shell-emitted), so
             // this is a clean arm, not the heuristic fallback.
-            let result = heuristicSplit commandStart.Seq
+            // P2 — prefer the deterministic deferred-`;D` split
+            // (immune to the next-prompt marker corruption);
+            // fall back to the proven PR-X watermark split when
+            // there is no `;D` marker / usable watermark so the
+            // legacy behaviour (and every hand-built test) is
+            // byte-identical.
+            let deferred = deterministicDeferredSplit ()
+            let result =
+                match deferred with
+                | Some _ -> deferred
+                | None -> heuristicSplit commandStart.Seq
             let cl, ol = lenOf result
             logger.LogDebug(
                 "extractIOCell arm. Arm={Arm} PromptSeq={PromptSeq} CommandSeq={CommandSeq} CommandEnterSeq={CommandEnterSeq} CmdLen={CmdLen} OutLen={OutLen}",
-                "CmdOscAB",
+                (if deferred.IsSome then "CmdDeferredCF" else "CmdOscAB"),
                 promptStart.Seq,
                 commandStart.Seq,
                 commandEnterSeq,

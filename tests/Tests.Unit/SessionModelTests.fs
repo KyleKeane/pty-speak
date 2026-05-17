@@ -1503,3 +1503,148 @@ let ``formatHistoryForClipboard history entries appear oldest first`` () =
     Assert.Contains("--- Entry 1 ---", text)
     Assert.Contains("--- Entry 2 ---", text)
     Assert.Contains("--- Entry 3 ---", text)
+
+// ---- Cycle 52 boundary-fix P2: deterministic deferred-;D split
+//
+// Models the PRODUCTION cmd flush the hand-built histories above
+// do NOT: cmd's injected `prompt` emits `;D ;A <path> ;B`
+// BUNDLED at next-prompt render, so a CommandFinished MARKER and
+// the NEXT prompt's path + markers are all in ContentHistory
+// when the cell finalises. Pre-P2 `extractIOCell` reconstructs
+// via `tryLatestMarker` (→ next prompt's markers) → C1/C2
+// prompt-path bleed + C3 no-seal (docs/boundary-capture/). P2's
+// deterministic split bounds output at the `;D` marker Seq with
+// `commandEnterSeq` as the lower bound — both immune.
+
+[<Fact>]
+let ``P2 — deferred ;D: C1-shape echo seals with NO prompt-path bleed`` () =
+    let initial = SessionModel.create "cmd" 100
+    let history = freshHistory ()
+    let history =
+        appendHistoryMarker history t0 ContentHistory.MarkerKind.PromptStart
+    let history =
+        feedHistoryBytes
+            history (after 1)
+            (System.Text.Encoding.ASCII.GetBytes "C:\\dir>")
+    let history =
+        appendHistoryMarker
+            history (after 2) ContentHistory.MarkerKind.CommandStart
+    let history =
+        feedHistoryBytes
+            history (after 3)
+            (System.Text.Encoding.ASCII.GetBytes "echo hi")
+    // Enter watermark — captured AFTER the echoed command,
+    // BEFORE any output (mirrors Program.fs's byte-level Enter).
+    let ces = ContentHistory.latestSeq history
+    let history =
+        feedHistoryBytes
+            history (after 4)
+            (System.Text.Encoding.ASCII.GetBytes "\r\nhi\r\n")
+    // The deferred `;D ;A <path> ;B` flush, bundled at
+    // next-prompt render. The next-prompt path IS in history
+    // (Seq > the ;D marker) — the bleed risk P2 fences out.
+    let history =
+        appendHistoryMarker
+            history (after 5) ContentHistory.MarkerKind.CommandFinished
+    let history =
+        feedHistoryBytes
+            history (after 6)
+            (System.Text.Encoding.ASCII.GetBytes "C:\\dir>")
+    let history =
+        appendHistoryMarker
+            history (after 7) ContentHistory.MarkerKind.PromptStart
+    let history =
+        appendHistoryMarker
+            history (after 8) ContentHistory.MarkerKind.CommandStart
+    let s1 =
+        SessionModel.applyWithContentHistory
+            initial
+            (boundaryWithText BoundaryKind.PromptStart t0 "C:\\dir>")
+            [||] history true ces
+    let s2 =
+        SessionModel.applyWithContentHistory
+            s1 (boundary BoundaryKind.CommandStart (after 2))
+            [||] history true ces
+    let _s3, finalisedOpt =
+        SessionModel.applyAndCaptureWithContentHistory
+            s2
+            (boundaryWithText
+                (BoundaryKind.CommandFinished None) (after 5) "C:\\dir>")
+            [||] history true ces
+    // Pre-P2 this cell either bled the trailing prompt into
+    // OutputText or dropped; P2 seals it cleanly.
+    Assert.True(finalisedOpt.IsSome)
+    let cell = finalisedOpt.Value
+    Assert.Contains("hi", cell.OutputText)
+    // The hard ;D-marker stop fences the next-prompt path out
+    // BY CONSTRUCTION — not via stripNextPrompt. (CommandText
+    // precision is P3's concern; P2 pins no-drop + no-bleed,
+    // the invariants robust to slice-boundary semantics.)
+    Assert.DoesNotContain("C:\\dir>", cell.OutputText)
+    Assert.Equal(SessionModel.IOCellPhase.Sealed, cell.Phase)
+
+[<Fact>]
+let ``P2 — deferred ;D: C3-shape set/p interaction SEALS (was drop-on-None)`` () =
+    let initial = SessionModel.create "cmd" 100
+    let history = freshHistory ()
+    let history =
+        appendHistoryMarker history t0 ContentHistory.MarkerKind.PromptStart
+    let history =
+        feedHistoryBytes
+            history (after 1)
+            (System.Text.Encoding.ASCII.GetBytes "C:\\dir>")
+    let history =
+        appendHistoryMarker
+            history (after 2) ContentHistory.MarkerKind.CommandStart
+    // Launch + an UNMARKED set/p sub-prompt + the echoed
+    // response — exactly the C3 trace shape (no OSC-133 markers
+    // around the sub-prompt; one terminal deferred `;D`).
+    let history =
+        feedHistoryBytes
+            history (after 3)
+            (System.Text.Encoding.ASCII.GetBytes
+                "test02\r\nEnter your name:NAME")
+    // Watermark = the LAST Enter (the NAME submit), as the
+    // Program.fs mutable holds the most-recent Enter Seq.
+    let ces = ContentHistory.latestSeq history
+    let history =
+        feedHistoryBytes
+            history (after 4)
+            (System.Text.Encoding.ASCII.GetBytes
+                "\r\nHello, NAME!\r\n=== END ===\r\n")
+    let history =
+        appendHistoryMarker
+            history (after 5) ContentHistory.MarkerKind.CommandFinished
+    let history =
+        feedHistoryBytes
+            history (after 6)
+            (System.Text.Encoding.ASCII.GetBytes "C:\\dir>")
+    let history =
+        appendHistoryMarker
+            history (after 7) ContentHistory.MarkerKind.PromptStart
+    let history =
+        appendHistoryMarker
+            history (after 8) ContentHistory.MarkerKind.CommandStart
+    let s1 =
+        SessionModel.applyWithContentHistory
+            initial
+            (boundaryWithText BoundaryKind.PromptStart t0 "C:\\dir>")
+            [||] history true ces
+    let s2 =
+        SessionModel.applyWithContentHistory
+            s1 (boundary BoundaryKind.CommandStart (after 2))
+            [||] history true ces
+    let _s3, finalisedOpt =
+        SessionModel.applyAndCaptureWithContentHistory
+            s2
+            (boundaryWithText
+                (BoundaryKind.CommandFinished None) (after 5) "C:\\dir>")
+            [||] history true ces
+    // The C3 defect: this sealed NO cell (drop-on-None). P2
+    // seals it — the unmarked sub-prompt is just bytes inside
+    // [commandEnterSeq, ;D).
+    Assert.True(finalisedOpt.IsSome)
+    let cell = finalisedOpt.Value
+    Assert.Contains("Hello, NAME!", cell.OutputText)
+    Assert.DoesNotContain("C:\\dir>", cell.OutputText)
+    Assert.Equal(SessionModel.IOCellPhase.Sealed, cell.Phase)
