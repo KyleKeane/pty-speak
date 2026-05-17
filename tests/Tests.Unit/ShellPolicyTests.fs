@@ -198,3 +198,41 @@ let ``FinalDirOnly handles trailing whitespace`` () =
         ShellPolicy.trimPromptPath
             ShellPolicy.FinalDirOnly
             "C:\\Users\\Kyle\\Local>   ")
+
+// ---- BoundaryContract (Cycle 52 boundary-fix P1) --------------------
+//
+// Pins the per-shell OSC-133 boundary interpretation contract.
+// P1 only adds the type + lookup; nothing consumes it yet, so
+// these tests pin the seam's data so P2/P3 build on a fixed
+// contract. cmd is the trace-verified row
+// (docs/boundary-capture/cmd/).
+
+[<Fact>]
+let ``cmd boundary contract: deferred ;D, no ;C, ;B is input-start`` () =
+    let c = ShellPolicy.boundaryContractFor "cmd"
+    Assert.True(c.DeferredCommandFinished)
+    Assert.False(c.EmitsOutputStart)
+    Assert.True(c.CommandStartIsInputStart)
+
+[<Fact>]
+let ``powershell carries the same structural contract as cmd`` () =
+    // PS's injected template is the same design (deferred ;D at
+    // next-prompt, no ;C, ;B=input-start). Same data; the P2/P3
+    // extraction change stays cmd-gated until PS's own cycle.
+    let ps = ShellPolicy.boundaryContractFor "powershell"
+    Assert.True(ps.DeferredCommandFinished)
+    Assert.False(ps.EmitsOutputStart)
+    Assert.True(ps.CommandStartIsInputStart)
+
+[<Fact>]
+let ``claude has no OSC-133 injection: all-false contract`` () =
+    let cl = ShellPolicy.boundaryContractFor "claude"
+    Assert.False(cl.DeferredCommandFinished)
+    Assert.False(cl.EmitsOutputStart)
+    Assert.False(cl.CommandStartIsInputStart)
+
+[<Fact>]
+let ``boundaryContractFor on an unknown shell falls back to cmd`` () =
+    Assert.Equal(
+        ShellPolicy.boundaryContractFor "cmd",
+        ShellPolicy.boundaryContractFor "bash")
