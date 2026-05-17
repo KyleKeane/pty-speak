@@ -232,14 +232,18 @@ let private replay
 // ---- C3 oracle ------------------------------------------------------
 
 let private repoFile (rel: string) : string =
-    // Walk up from the test bin dir to the repo root.
-    let mutable d = DirectoryInfo(AppContext.BaseDirectory)
-    let mutable found = ""
-    while not (isNull d) && found = "" do
-        let candidate = Path.Combine(d.FullName, rel)
-        if File.Exists candidate then found <- candidate
-        else d <- d.Parent
-    found
+    // `DirectoryInfo.Parent` is `DirectoryInfo | null` (F# 9
+    // nullness). Walk via an explicit nullable-pattern recursion
+    // (CLAUDE.md FS3261 guidance) — no `isNull` on a
+    // non-nullable, no nullable→non-nullable assignment.
+    let rec walk (dir: DirectoryInfo | null) : string =
+        match dir with
+        | null -> ""
+        | d ->
+            let candidate = Path.Combine(d.FullName, rel)
+            if File.Exists candidate then candidate
+            else walk d.Parent
+    walk (DirectoryInfo(AppContext.BaseDirectory))
 
 [<Fact>]
 let ``R-A oracle: C3 set/p trace seals a cell with no prompt-path bleed`` () =
