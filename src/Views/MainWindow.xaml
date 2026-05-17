@@ -174,6 +174,9 @@
                     <MenuItem x:Name="MenuItem_CopyFocusedCellOutput"
                               x:FieldModifier="public"
                               Header="Copy Focused Cell Out_put" />
+                    <MenuItem x:Name="MenuItem_JumpToLastError"
+                              x:FieldModifier="public"
+                              Header="Jump to Last _Error" />
                     <MenuItem x:Name="MenuItem_AnnounceSessionLogPath"
                               x:FieldModifier="public"
                               Header="Announce _Session Log Path" />

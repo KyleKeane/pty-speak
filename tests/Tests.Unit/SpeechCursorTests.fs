@@ -713,7 +713,7 @@ let private expectSome (label: string) (o: (string * string) option) =
 // a fresh Guid + sequence 0 keeps them focused on
 // navigation/whitespace/ordering exactly as pre-Phase-1.
 let private addCell (c: SpeechCursor.T) (cmd: string) (out: string) : unit =
-    SpeechCursor.appendCell c (System.Guid.NewGuid()) 0L cmd out
+    SpeechCursor.appendCell c (System.Guid.NewGuid()) 0L cmd out None
 
 [<Fact>]
 let ``appendCell adds command then output as separate items`` () =
@@ -855,7 +855,7 @@ let ``appendCell carries the source cell identity and kind on each item`` () =
     // by every other cell test via cellCurrent/Next/Previous).
     let c = manualCursor ()
     let id = Guid.NewGuid()
-    SpeechCursor.appendCell c id 42L "echo hi" "hi"
+    SpeechCursor.appendCell c id 42L "echo hi" "hi" None
     // Latest item = the output cell.
     let out =
         match SpeechCursor.cellToLatest c with
@@ -886,7 +886,7 @@ let ``appendCell carries the source cell identity and kind on each item`` () =
 let ``cellCurrentView is None before any navigation and after cellReset`` () =
     let c = manualCursor ()
     Assert.Equal(None, SpeechCursor.cellCurrentView c)
-    SpeechCursor.appendCell c (Guid.NewGuid()) 0L "c1" "o1"
+    SpeechCursor.appendCell c (Guid.NewGuid()) 0L "c1" "o1" None
     let _ = SpeechCursor.cellToLatest c
     Assert.True((SpeechCursor.cellCurrentView c).IsSome)
     SpeechCursor.cellReset c
@@ -900,7 +900,7 @@ let ``cellCurrentView is None before any navigation and after cellReset`` () =
 let ``focusedCell is None when nothing is focused`` () =
     let c = manualCursor ()
     Assert.Equal(None, SpeechCursor.focusedCell c)
-    SpeechCursor.appendCell c (Guid.NewGuid()) 0L "c1" "o1"
+    SpeechCursor.appendCell c (Guid.NewGuid()) 0L "c1" "o1" None
     // Still unparked (Manual; no navigation yet).
     Assert.Equal(None, SpeechCursor.focusedCell c)
 
@@ -908,7 +908,7 @@ let ``focusedCell is None when nothing is focused`` () =
 let ``focusedCell resolves command + output by shared CellId from either item`` () =
     let c = manualCursor ()
     let id = Guid.NewGuid()
-    SpeechCursor.appendCell c id 7L "echo hi" "hi"
+    SpeechCursor.appendCell c id 7L "echo hi" "hi" None
     // Focus the output item (latest).
     let _ = SpeechCursor.cellToLatest c
     match SpeechCursor.focusedCell c with
@@ -931,10 +931,58 @@ let ``focusedCell sides are None when that side was whitespace-only`` () =
     let c = manualCursor ()
     let id = Guid.NewGuid()
     // Whitespace-only command ⇒ no Input item appended.
-    SpeechCursor.appendCell c id 0L "   " "real output"
+    SpeechCursor.appendCell c id 0L "   " "real output" None
     let _ = SpeechCursor.cellToLatest c
     match SpeechCursor.focusedCell c with
     | Some fc ->
         Assert.Equal(None, fc.Command)
         Assert.Equal(Some "real output", fc.Output)
     | None -> Assert.True(false, "expected a focused cell")
+
+// ADR 0007 Phase 2c — jumpToLastError scans the transcript
+// newest-first for the first item whose source cell exited
+// non-zero, parks the Manual cursor there, and returns its
+// projected pair. None when nothing failed / transcript empty.
+
+[<Fact>]
+let ``jumpToLastError returns None on an empty transcript`` () =
+    let c = manualCursor ()
+    Assert.Equal(None, SpeechCursor.jumpToLastError c)
+
+[<Fact>]
+let ``jumpToLastError returns None when no cell exited non-zero`` () =
+    let c = manualCursor ()
+    SpeechCursor.appendCell c (Guid.NewGuid()) 1L "ok1" "o1" (Some 0)
+    SpeechCursor.appendCell c (Guid.NewGuid()) 2L "ok2" "o2" None
+    Assert.Equal(None, SpeechCursor.jumpToLastError c)
+    // Cursor stays unparked (no failure to jump to).
+    Assert.Equal(None, SpeechCursor.cellCurrentView c)
+
+[<Fact>]
+let ``jumpToLastError lands on the most recent failed cell`` () =
+    let c = manualCursor ()
+    SpeechCursor.appendCell c (Guid.NewGuid()) 1L "a" "oa" (Some 0)
+    SpeechCursor.appendCell c (Guid.NewGuid()) 2L "boom" "err" (Some 1)
+    SpeechCursor.appendCell c (Guid.NewGuid()) 3L "c" "oc" (Some 0)
+    match SpeechCursor.jumpToLastError c with
+    | None -> Assert.True(false, "expected to land on the failed cell")
+    | Some _ ->
+        match SpeechCursor.cellCurrentView c with
+        | Some v ->
+            Assert.Equal(2L, v.CellSequence)
+            // Output item of the failed cell (higher index).
+            Assert.Equal(SpeechCursor.CellKind.Output, v.Kind)
+            Assert.Equal(Some 1, v.ExitCode)
+        | None -> Assert.True(false, "expected a parked cell")
+
+[<Fact>]
+let ``jumpToLastError picks the latest of several failures`` () =
+    let c = manualCursor ()
+    SpeechCursor.appendCell c (Guid.NewGuid()) 1L "f1" "e1" (Some 2)
+    SpeechCursor.appendCell c (Guid.NewGuid()) 2L "f2" "e2" (Some 1)
+    match SpeechCursor.jumpToLastError c with
+    | None -> Assert.True(false, "expected a failed cell")
+    | Some _ ->
+        match SpeechCursor.cellCurrentView c with
+        | Some v -> Assert.Equal(2L, v.CellSequence)
+        | None -> Assert.True(false, "expected a parked cell")

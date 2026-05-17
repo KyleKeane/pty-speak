@@ -137,6 +137,10 @@ module HotkeyRegistry =
         // menu variants.
         | CopyFocusedCellCommand
         | CopyFocusedCellOutput
+        // ADR 0007 Phase 2c (2026-05-17) — jump the Manual
+        // cursor to the most recent failed (non-zero exit)
+        // cell. Menu-only, same rationale as 2b.
+        | JumpToLastError
         // Cycle 47 — CMD interaction tests. Each menu item
         // writes a quoted invocation of the corresponding
         // `scripts/cmd-tests/*.cmd` script to the PTY input
@@ -251,6 +255,7 @@ module HotkeyRegistry =
         | CopyFocusedCell -> "CopyFocusedCell"
         | CopyFocusedCellCommand -> "CopyFocusedCellCommand"
         | CopyFocusedCellOutput -> "CopyFocusedCellOutput"
+        | JumpToLastError -> "JumpToLastError"
         | CmdTestEcho -> "CmdTestEcho"
         | CmdTestTextInput -> "CmdTestTextInput"
         | CmdTestNumericInput -> "CmdTestNumericInput"
@@ -395,6 +400,12 @@ module HotkeyRegistry =
             Key = None
             Modifiers = None
             Description = "Copy the focused cell's output to the clipboard (ADR 0007 Phase 2b)" }
+          // ADR 0007 Phase 2c (2026-05-17) — jump to last
+          // failed cell. Menu-only (Key = None).
+          { Command = JumpToLastError
+            Key = None
+            Modifiers = None
+            Description = "Jump the speech cursor to the most recent failed command (ADR 0007 Phase 2c)" }
           // Cycle 47 — CMD interaction test corpus. All menu-
           // only (no keyboard accelerators). Each item writes
           // an invocation of the corresponding `.cmd` script
@@ -644,6 +655,7 @@ module HotkeyRegistry =
           CopyFocusedCell
           CopyFocusedCellCommand
           CopyFocusedCellOutput
+          JumpToLastError
           CmdTestEcho
           CmdTestTextInput
           CmdTestNumericInput

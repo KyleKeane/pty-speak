@@ -766,3 +766,31 @@ follow, each gated by its own CI + dogfood. CI failures and
 essential blocking questions are raised via `AskUserQuestion`
 (phone notification), per the maintainer's standing
 instruction, not buried in chat text.
+
+**Ship log (per-phase, updated as phases land):**
+
+- **Phase 0** — Implemented & CI-green (dead Seq engine
+  deleted; net-subtractive).
+- **Phase 1** — Implemented & CI-green (typed
+  `CellTranscript`/`CellView`; narration byte-identical).
+- **Phase 2a** — Implemented, CI-green, **dogfood
+  feature-PASSED 2026-05-17** (`Ctrl+Shift+C` + menu copy
+  whole cell). Surfaced the pre-existing command-line-edit
+  desync → ADR 0006 deferred item 1 "Tracked variant 1".
+- **Phase 2b** — Implemented, CI-green, **dogfood
+  feature-PASSED 2026-05-17** (menu-only copy-command /
+  copy-output; output-copy + Manual-nav focus-hold
+  confirmed). Surfaced the clean-command argument
+  truncation → ADR 0006 deferred item 1 "Tracked
+  variant 2".
+- **Phase 2c** — Implemented & CI-green (menu-only
+  jump-to-last-error; `CellView.ExitCode` added;
+  completes the Phase 2 per-cell-ops set). Dogfood row
+  `52-ADR7-P2c` pending the maintainer's NVDA pass.
+- **Phases 3 → 7** — in the autonomous sprint
+  (maintainer-authorised 2026-05-17 to progress as far
+  as the **Phase 6a D8 control-type ratification gate**,
+  which is a hard stop: nothing past 6a is built until
+  6a's NVDA dogfood confirms `Tree` vs `List`). Each
+  lands as its own CI-green PR with a `52-ADR7-P*`
+  dogfood row for the maintainer to validate on return.

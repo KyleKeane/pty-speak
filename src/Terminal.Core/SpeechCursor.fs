@@ -78,7 +78,13 @@ module SpeechCursor =
           CellSequence: int64
           Kind: CellKind
           Text: string
-          ActivityId: string }
+          ActivityId: string
+          /// ADR 0007 Phase 2c — the source IOCell's exit code
+          /// (`None` while in-flight / when the shell emitted
+          /// none). Carried on every item of the cell (both
+          /// share the cell's outcome, like `CellId`); the
+          /// `jump-to-last-error` accessor scans on it.
+          ExitCode: int option }
 
     /// ADR 0007 Phase 2 — the focused cell resolved to its
     /// command + output. The transcript stores a cell's
@@ -656,6 +662,7 @@ module SpeechCursor =
             (cellSequence: int64)
             (commandText: string)
             (outputText: string)
+            (exitCode: int option)
             : unit =
         if not (String.IsNullOrWhiteSpace commandText) then
             state.CellTranscript.Add(
@@ -663,14 +670,16 @@ module SpeechCursor =
                   CellSequence = cellSequence
                   Kind = CellKind.Input
                   Text = commandText.Trim()
-                  ActivityId = ActivityIds.output })
+                  ActivityId = ActivityIds.output
+                  ExitCode = exitCode })
         if not (String.IsNullOrWhiteSpace outputText) then
             state.CellTranscript.Add(
                 { CellId = cellId
                   CellSequence = cellSequence
                   Kind = CellKind.Output
                   Text = outputText
-                  ActivityId = ActivityIds.output })
+                  ActivityId = ActivityIds.output
+                  ExitCode = exitCode })
         if state.Mode = AutoDrive then
             state.CellPos <- state.CellTranscript.Count - 1
 
@@ -737,6 +746,31 @@ module SpeechCursor =
         else
             state.CellPos <- count - 1
             Some (cellPair state.CellTranscript.[count - 1])
+
+    /// ADR 0007 Phase 2c — jump the Manual cursor to the most
+    /// recent transcript item whose source cell exited non-zero.
+    /// Scans newest-first; the first non-zero-`ExitCode` item is
+    /// the failed cell's Output item when it has one (Output is
+    /// appended after Input, so it has the higher index), else
+    /// its Input item. Returns the item, or `None` when no cell
+    /// in the transcript has a non-zero exit code (no failure to
+    /// jump to, or every cell is still in-flight / exit-less).
+    /// Mode is intentionally left untouched, matching
+    /// `cellPrevious` / `cellToLatest` (navigation does not flip
+    /// AutoDrive↔Manual; that focus-vs-live policy is a Phase 6
+    /// D5a open decision, not Phase 2c's to make).
+    let jumpToLastError (state: T) : (string * string) option =
+        let count = state.CellTranscript.Count
+        let mutable idx = count - 1
+        let mutable found = -1
+        while found < 0 && idx >= 0 do
+            match state.CellTranscript.[idx].ExitCode with
+            | Some code when code <> 0 -> found <- idx
+            | _ -> idx <- idx - 1
+        if found < 0 then None
+        else
+            state.CellPos <- found
+            Some (cellPair state.CellTranscript.[found])
 
     /// Clear the cell transcript. Called on shell hot-switch
     /// alongside `reset` (the previous shell's transcript is no

@@ -2053,6 +2053,7 @@ module Program =
                     tuple.CellSequence
                     tuple.CommandText
                     tuple.OutputText
+                    tuple.ExitCode
             | None -> ()
 
             // Cycle 45 Commit 2 — ContentHistory + SpeechCursor
@@ -4260,6 +4261,32 @@ module Program =
                 window.TerminalSurface.Announce(
                     "History is empty.", ActivityIds.diagnostic)
 
+        // ADR 0007 Phase 2c — menu-only: jump the Manual cursor
+        // to the most recent failed (non-zero exit) cell.
+        // Counts-only Information log (no command/output text;
+        // logging discipline) so a bundle confirms the path
+        // fired + which cell it landed on.
+        let runJumpToLastError () : unit =
+            let log =
+                Logger.get "Terminal.App.Program.runJumpToLastError"
+            match SpeechCursor.jumpToLastError speechCursor with
+            | Some (text, _) ->
+                let landedSeq =
+                    match SpeechCursor.cellCurrentView speechCursor with
+                    | Some v -> v.CellSequence
+                    | None -> -1L
+                log.LogInformation(
+                    "ADR 0007 Phase 2c jump-to-last-error. Found=true CellSeq={CellSeq}",
+                    landedSeq)
+                window.TerminalSurface.Announce(
+                    text, ActivityIds.diagnostic)
+            | None ->
+                log.LogInformation(
+                    "ADR 0007 Phase 2c jump-to-last-error. Found=false")
+                window.TerminalSurface.Announce(
+                    "No failed command in history.",
+                    ActivityIds.diagnostic)
+
         let runSpeechCursorToggleMode () : unit =
             let newMode = SpeechCursor.toggleMode speechCursor
             let label =
@@ -4272,6 +4299,7 @@ module Program =
         bind HotkeyRegistry.SpeechCursorPrevious runSpeechCursorPrevious
         bind HotkeyRegistry.SpeechCursorJumpToLatest runSpeechCursorJumpToLatest
         bind HotkeyRegistry.SpeechCursorToggleMode runSpeechCursorToggleMode
+        bind HotkeyRegistry.JumpToLastError runJumpToLastError
 
         // Stage 7-followup PR-F — background heartbeat. Every 5
         // seconds, log a single Information-level "Heartbeat" line
