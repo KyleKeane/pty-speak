@@ -4287,6 +4287,82 @@ module Program =
                     "No failed command in history.",
                     ActivityIds.diagnostic)
 
+        // ADR 0007 Phase 3 — rerun-input. Re-submit the focused
+        // input cell's command as a FRESH command (a new IOCell
+        // via the normal shell lifecycle). Risk-controlled per
+        // the ADR open decision: no auto-run on navigation;
+        // explicit menu gesture only; a two-step arm/confirm
+        // gate with echo-before-run (the first invocation speaks
+        // the exact command and arms; a second invocation of the
+        // SAME command on the SAME cell within the window
+        // actually injects). Provenance is recorded at the
+        // announce + Information-log level (the spoken
+        // "Rerunning command from cell N" + the log line) — NOT
+        // a new IOCell schema field: the ADR 0004 v2 schema is
+        // frozen and ADR 0007 explicitly changes no schema.
+        // Injection routes through TerminalView.InjectCommand →
+        // the same `_writeBytes` path as real keystrokes / the
+        // Ctrl+L `cls\r` precedent, so the watermark + state
+        // machine see it as a typed command (any residual cmd
+        // command/echo imperfection is the already-tracked
+        // ADR 0006 item-1 substrate issue under FREEZE, not
+        // Phase 3's to solve). Counts-only log (CmdLen, never
+        // the command text — the announce is the user-facing
+        // echo; logging discipline keeps text out of the
+        // bundle).
+        let rerunConfirmWindow = TimeSpan.FromSeconds(15.0)
+        let mutable rerunArm
+            : (int64 * string * DateTimeOffset) option = None
+
+        let runRerunInput () : unit =
+            let log = Logger.get "Terminal.App.Program.runRerunInput"
+            match SpeechCursor.focusedCell speechCursor with
+            | None ->
+                window.TerminalSurface.Announce(
+                    "No focused cell. Navigate to a command cell first.",
+                    ActivityIds.diagnostic)
+            | Some fc ->
+                match fc.Command with
+                | None ->
+                    window.TerminalSurface.Announce(
+                        "The focused cell has no command to rerun.",
+                        ActivityIds.diagnostic)
+                | Some cmd ->
+                    let now = DateTimeOffset.UtcNow
+                    let confirmed =
+                        match rerunArm with
+                        | Some (armedSeq, armedCmd, armedAt) ->
+                            armedSeq = fc.CellSequence
+                            && armedCmd = cmd
+                            && (now - armedAt) <= rerunConfirmWindow
+                        | None -> false
+                    if confirmed then
+                        rerunArm <- None
+                        log.LogInformation(
+                            "ADR 0007 Phase 3 rerun-input CONFIRMED. SourceCellSeq={CellSeq} CmdLen={CmdLen}",
+                            fc.CellSequence,
+                            cmd.Length)
+                        window.TerminalSurface.InjectCommand(cmd)
+                        window.TerminalSurface.Announce(
+                            sprintf
+                                "Rerunning command from cell %d: %s"
+                                fc.CellSequence
+                                cmd,
+                            ActivityIds.diagnostic)
+                    else
+                        rerunArm <-
+                            Some (fc.CellSequence, cmd, now)
+                        log.LogInformation(
+                            "ADR 0007 Phase 3 rerun-input ARMED. SourceCellSeq={CellSeq} CmdLen={CmdLen}",
+                            fc.CellSequence,
+                            cmd.Length)
+                        window.TerminalSurface.Announce(
+                            sprintf
+                                "Rerun command from cell %d: %s? Select Rerun Focused Input again within 15 seconds to confirm."
+                                fc.CellSequence
+                                cmd,
+                            ActivityIds.diagnostic)
+
         let runSpeechCursorToggleMode () : unit =
             let newMode = SpeechCursor.toggleMode speechCursor
             let label =
@@ -4300,6 +4376,7 @@ module Program =
         bind HotkeyRegistry.SpeechCursorJumpToLatest runSpeechCursorJumpToLatest
         bind HotkeyRegistry.SpeechCursorToggleMode runSpeechCursorToggleMode
         bind HotkeyRegistry.JumpToLastError runJumpToLastError
+        bind HotkeyRegistry.RerunFocusedInput runRerunInput
 
         // Stage 7-followup PR-F — background heartbeat. Every 5
         // seconds, log a single Information-level "Heartbeat" line

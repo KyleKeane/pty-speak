@@ -177,6 +177,9 @@
                     <MenuItem x:Name="MenuItem_JumpToLastError"
                               x:FieldModifier="public"
                               Header="Jump to Last _Error" />
+                    <MenuItem x:Name="MenuItem_RerunFocusedInput"
+                              x:FieldModifier="public"
+                              Header="_Rerun Focused Input" />
                     <MenuItem x:Name="MenuItem_AnnounceSessionLogPath"
                               x:FieldModifier="public"
                               Header="Announce _Session Log Path" />

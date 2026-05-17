@@ -997,6 +997,29 @@ public class TerminalView : FrameworkElement
     }
 
     /// <summary>
+    /// ADR 0007 Phase 3 — rerun-input. Inject a previously-run
+    /// command back into the shell exactly as if the user had
+    /// typed it and pressed Enter, routing through the same
+    /// <see cref="_writeBytes"/> path as real keystrokes and the
+    /// Ctrl+L <c>cls\r</c> precedent (so the command-Enter
+    /// watermark + interaction state machine observe it
+    /// identically to a typed command). No-op if the PTY host is
+    /// not wired yet or the command is empty. The explicit
+    /// confirm / echo-before-run gate lives in the F#
+    /// <c>runRerunInput</c> caller — this method does not prompt
+    /// and must only be called once the user has confirmed.
+    /// </summary>
+    public void InjectCommand(string command)
+    {
+        if (_writeBytes is null || string.IsNullOrEmpty(command))
+        {
+            return;
+        }
+        var bytes = System.Text.Encoding.UTF8.GetBytes(command + "\r");
+        _writeBytes(bytes);
+    }
+
+    /// <summary>
     /// Stage 6 PR-B — focus reporting. When the child shell has set
     /// DECSET ?1004 (BracketedPaste-mode-style focus events), emit
     /// <c>\x1b[I</c> on focus and <c>\x1b[O</c> on blur. Editors
