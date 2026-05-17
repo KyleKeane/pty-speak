@@ -901,6 +901,86 @@ maintainer's standing instruction, not buried in chat text.
     [`docs/SESSION-HANDOFF.md`](../SESSION-HANDOFF.md) "6a
     progress (2026-05-17)". Conservative D5a Q1/Q2/Q3 defaults
     for the first cut; dogfood refines.
+
+    **Architectural conformance — maintainer deep-review
+    2026-05-17 (binding constraints on the 6a-2b build; this
+    is the application of ADR 0008 / ADR 0004 Decision 4 /
+    D9 / ADR 0001 — the "one typed universal event stream,
+    many composable sinks; never re-derive meaning" principle
+    — to a *natively-focusable GUI* surface):**
+
+    1. **Parallel focus-marker, no double-speak.** When a list
+       item receives focus the **screen reader announces it
+       natively** via the standard UIA `ListItem` — pty-speak
+       does **NOT** manually `Announce` the item (doing so
+       double-speaks). *In parallel*, the list's
+       selection/focus-changed handler **publishes
+       `CellEventBus.Focused`** so the universal cell pipeline
+       is still fed for the non-screen-reader sinks (earcon,
+       spatial audio, braille, future peripherals / a separate
+       UI process). The native AT path and our typed-event
+       path run **side by side off the same focus change** —
+       relying on native focus for a clean SR experience must
+       not silently bypass the universal bus. The pane-switch
+       cue likewise must not re-read the focused element
+       (NVDA announces the newly focused control itself); at
+       most a brief distinct pane-change marker.
+    2. **SpeechCursor tooling stays separate code.** The
+       existing keyboard `runSpeechCursor*` manual-announce
+       feature is a **standalone** path; 6a-2b's list does
+       **not** route through it and it does **not** drive the
+       list (no two-entangled-models). The #404 `Focused`
+       publish off the `runSpeechCursor*` handlers is a
+       **transitional source for the legacy keyboard model**;
+       for the list model the authoritative `Focused` source
+       is the list's own focus handler. Both features may
+       coexist; they stay decoupled.
+    3. **Which-drives-which (resolved).** For the list model
+       the **list's native focus/selection IS the interaction
+       source**; SpeechCursor manual nav remains a separate
+       standalone keyboard feature. Neither drives the other.
+    4. **Frontend/backend separation invariant.**
+       `Terminal.Core` (incl. `CellEventBus`, `SpeechCursor`)
+       **never depends on WPF**. The frontend only (a)
+       *publishes* interaction events (focus) onto the bus and
+       (b) *subscribes* to lifecycle events (`Appended`) from
+       it. The bus is the neutral contract — so the interface
+       could later run as a **separate process** with the
+       computational core as the reliable hub. 6a-2b must not
+       introduce a core→WPF edge (portability-lint enforces
+       it) nor a complex frontend↔backend coupling.
+    5. **Forward-aligned to the Tree.** The flat `ListBox` is
+       an explicitly **temporary scaffold**; swap-to-`Tree`
+       must stay simple (typed model unchanged). Because
+       `CellEvent` carries the **typed `CellView`** (not
+       rendered text), a future Tree landing on a multi-
+       segment cell can drive a "**N sub-components**" earcon
+       by composing from the typed event — *without computing
+       over the rendered list*. 6a-2b must keep the event
+       typed and the item a projection (no logic that a Tree
+       swap would have to unpick).
+
+    **OPEN DECISION (maintainer) — single universal bus vs.
+    two typed sources.** #404 settled the cell pipeline as a
+    *dedicated* `CellEventBus` **parallel to** the byte-
+    oriented `OutputDispatcher` (rationale: typed `CellView`s
+    vs. rendered-text `OutputEvent`s; ADR 0008 "don't
+    re-derive"). That preserves the *principle* (typed
+    events, composable sinks) and is **extensible** to a
+    unified tap, but it is **not literally one bus**: an
+    auxiliary peripheral / spatial-audio sink today would
+    subscribe to *two* sources. The maintainer's vision is a
+    **single universal tap-point for every interaction + app
+    event**. Reconciliation options (not to be built as a
+    sidetrack — recorded for the maintainer to rule on before
+    6a-2b's focus dispatch is finalised): (a) accept two
+    specialised typed sources + add a thin uniform
+    aggregation/façade sink later; (b) make `CellEventBus`
+    feed `OutputDispatcher` (or vice-versa) so there is one
+    physical tap; (c) a neutral `UniversalEventBus` both
+    publish into. Decision gates only the *publish target* of
+    6a-2b's list-focus handler; the parallel-marker pattern
+    above holds regardless.
 - **Phases 4/4b/5 → 7** — sequence after Phase 6a + the
   boundary-diagnostic track (5 = intra-cell segments on the
   settled model; 7's oracle asserts it). Each lands as its
