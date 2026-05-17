@@ -4281,10 +4281,35 @@ module Program =
                 window.TerminalSurface.Announce(
                     text, ActivityIds.diagnostic)
             | None ->
+                // ADR 0007 Phase 2c follow-up (2026-05-17,
+                // maintainer dogfood). Exit-code failure
+                // detection only sees an exit code when one is
+                // actually transported: PowerShell emits
+                // `;D;$LASTEXITCODE` (external-process non-zero
+                // exits only — cmdlet errors do NOT set
+                // `$LASTEXITCODE`); cmd emits a bare `;D` with
+                // NO exit code at all (documented transport
+                // limitation, `CmdAdapter.fs:52-65`, maintainer
+                // decision 2026-05-16 — clink/doskey out of
+                // scope). Under cmd the generic "no failed
+                // command" line actively misled the maintainer
+                // (3 genuinely-failing commands → "none"); a
+                // shell-type-gated honest capability message is
+                // NOT an announce-reconstruction heuristic (it
+                // parses nothing — it states a static transport
+                // fact), so it is outside the cmd-heuristic
+                // FREEZE.
+                let msg =
+                    match currentShellId with
+                    | ShellRegistry.Cmd ->
+                        "cmd does not report command exit codes; Jump to Last Error needs PowerShell."
+                    | _ ->
+                        "No failed command in history."
                 log.LogInformation(
-                    "ADR 0007 Phase 2c jump-to-last-error. Found=false")
+                    "ADR 0007 Phase 2c jump-to-last-error. Found=false Shell={Shell}",
+                    (sprintf "%A" currentShellId))
                 window.TerminalSurface.Announce(
-                    "No failed command in history.",
+                    msg,
                     ActivityIds.diagnostic)
 
         // ADR 0007 Phase 3 — rerun-input. Re-submit the focused

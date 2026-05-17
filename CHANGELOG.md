@@ -15112,6 +15112,34 @@ one-word unblock path ("C1, proceed"). The two pre-existing
 cmd-substrate issues surfaced this sprint stay tracked-only
 (ADR 0006 deferred item 1 variants 1 & 2; FREEZE).
 
+### Cycle 52 — ADR 0007 Phase 2c follow-up: honest cmd capability message + dogfood PASS (2026-05-17)
+
+`52-ADR7-P2c` dogfood **feature-PASSED** under
+`Ctrl+Shift+H`-confirmed **PowerShell**: `cmd /c exit 7` ⏎ →
+Output History → **Jump to Last Error** correctly jumps to
+the failed cell. The earlier cmd "failures" were a
+test-design error: exit-code failure detection only sees an
+exit code the shell actually *transports* — PowerShell emits
+`;D;$LASTEXITCODE` for **external processes only** (a failing
+*cmdlet* like `dir`/`type` does not set `$LASTEXITCODE`), and
+**cmd emits no exit code at all** (`CmdAdapter.fs:52-65`;
+maintainer decision 2026-05-16). Under cmd the generic "No
+failed command in history." actively misled (3 genuinely
+failing commands → "none"), so `runJumpToLastError` now
+speaks a **shell-type-gated honest message** under cmd:
+"cmd does not report command exit codes; Jump to Last Error
+needs PowerShell." (gated purely on `currentShellId`; parses
+nothing → outside the cmd-heuristic FREEZE). Log gains
+`Shell={…}`. `52-ADR7-P2c` matrix row marked feature-PASSED
+with the corrected PowerShell procedure (`cmd /c exit N`, not
+cmdlets) + the cmd-not-supported expectation; CHANGELOG + ADR
+0007 ship-log updated. The maintainer-observed boundary
+confusion during the test (inaccurate cell boundaries /
+prompt-path bleed / non-sequential history) is the
+already-tracked ADR 0006 deferred item 1 variants 1 & 2 —
+**not** a Phase 2c bug, nothing new recorded. Locally
+unverifiable — F# structure re-read; CI is the build signal.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
