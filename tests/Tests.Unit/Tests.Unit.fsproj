@@ -27,6 +27,7 @@
     <Compile Include="AnnounceSanitiserTests.fs" />
     <Compile Include="CanonicalStateTests.fs" />
     <Compile Include="SessionModelTests.fs" />
+    <Compile Include="BoundaryReplayOracle.fs" />
     <Compile Include="SessionPersistenceTests.fs" />
     <Compile Include="SessionSanitiserTests.fs" />
     <Compile Include="SessionModelJsonlTests.fs" />
