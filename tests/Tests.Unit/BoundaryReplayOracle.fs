@@ -99,9 +99,31 @@ let private parseTrace (path: string) : TraceEvent list =
                     | _ -> Out
                 match Int64.TryParse us with
                 | true, v ->
+                    let bytes = unescape payload
+                    // Loud guard, scoped to the whitespace-strip
+                    // signature ONLY: a lone printable 0x20 renders
+                    // as trailing whitespace and is silently
+                    // stripped to an EMPTY payload in a paste→commit
+                    // round-trip (C1/C2 line 12/13 hit exactly this).
+                    // It is NOT a general unescape-fidelity check —
+                    // the recorder counts raw PTY bytes and `unescape`
+                    // is a best-effort reconstruction that legitimately
+                    // differs by ~1 on large OSC/ST chunks (extraction
+                    // tolerates that — it reads ContentHistory text +
+                    // Screen OSC parsing, not byte-exact payloads). So
+                    // fire only when the declared count is ≥1 yet the
+                    // decoded payload is empty (the byte vanished).
+                    let declared =
+                        match Int32.TryParse(parts.[2].TrimEnd 'B') with
+                        | true, n -> n
+                        | _ -> -1
+                    if declared >= 1 && bytes.Length = 0 then
+                        failwithf
+                            "%s: declared %dB but decoded 0B on '%s' — payload whitespace-stripped in a paste/commit round-trip; repair the fixture (escape a lone 0x20 as \\x20)"
+                            path declared (head.Trim())
                     Some { ElapsedUs = v
                            Dir = dir
-                           Bytes = unescape payload }
+                           Bytes = bytes }
                 | _ -> None)
     |> Array.toList
 
@@ -229,7 +251,7 @@ let private replay
 
     List.ofSeq sealedCells
 
-// ---- C3 oracle ------------------------------------------------------
+// ---- repo file locator ----------------------------------------------
 
 let private repoFile (rel: string) : string =
     // `DirectoryInfo.Parent` is `DirectoryInfo | null` (F# 9
@@ -245,26 +267,85 @@ let private repoFile (rel: string) : string =
             else walk d.Parent
     walk (DirectoryInfo(AppContext.BaseDirectory))
 
-[<Fact>]
-let ``R-A oracle: C3 set/p trace seals a cell with no prompt-path bleed`` () =
-    let path =
-        repoFile (Path.Combine("docs", "boundary-capture", "cmd",
-                               "C3-set-p-text-input.txt"))
+let private cmdFile (name: string) : string =
+    repoFile (Path.Combine("docs", "boundary-capture", "cmd", name))
+
+// ---- expectation file (R-B1 schema v1) ------------------------------
+//
+// One trace ⇒ one `.expected` (hand-rolled, schemaVersioned per
+// ADR-0004 wire discipline). `#`/blank lines ignored; `key=value`
+// (value may contain `=`). Keys:
+//   schemaVersion=1
+//   seedPrompt=<the mid-prompt-join seed P>
+//   cellCount=<int>
+//   cellN.phase=Sealed
+//   cellN.commandContains=<substr>     (optional)
+//   cellN.outputContains=<substr>      (optional)
+//   cellN.outputNotContains=<substr>   (optional)
+// Assertions are substring-based on purpose — exact Command/Output
+// boundary text is slice-semantics-sensitive (P3's concern); the
+// oracle pins the load-bearing invariants (seal, no bleed).
+
+let private parseExpected (path: string) : Map<string, string> =
+    File.ReadAllLines path
+    |> Array.choose (fun raw ->
+        let line = raw.Trim()
+        if line.Length = 0 || line.StartsWith "#" then None
+        else
+            match line.IndexOf '=' with
+            | i when i > 0 ->
+                Some(line.Substring(0, i), line.Substring(i + 1))
+            | _ -> None)
+    |> Map.ofArray
+
+let private assertScenario (traceName: string) (expectedName: string) =
+    let tracePath = cmdFile traceName
+    let expectedPath = cmdFile expectedName
     Assert.True(
-        File.Exists path,
-        sprintf "C3 trace not found from %s" AppContext.BaseDirectory)
-    let trace = parseTrace path
+        File.Exists tracePath,
+        sprintf "trace %s not found from %s"
+            traceName AppContext.BaseDirectory)
+    Assert.True(
+        File.Exists expectedPath,
+        sprintf "expectation %s not found from %s"
+            expectedName AppContext.BaseDirectory)
+    let exp = parseExpected expectedPath
+    Assert.Equal("1", exp.["schemaVersion"])
+    let seed = exp.["seedPrompt"]
+    let trace = parseTrace tracePath
     Assert.NotEmpty trace
-    // The stable cmd prompt the C3 trace exhibits (its trailing
-    // next-prompt path) — the seed for the mid-prompt join.
-    let seed =
-        "C:\\Users\\Kyle\\git\\pty-speak\\src\\Terminal.App>"
     let cells = replay trace seed
-    // The C3 DEFECT was: this sealed NO cell (drop-on-None).
-    // P2′ must seal exactly one, with the set/p result as output
-    // and the next-prompt path fenced out (no bleed).
-    Assert.Equal(1, List.length cells)
-    let c = List.head cells
-    Assert.Equal(SessionModel.IOCellPhase.Sealed, c.Phase)
-    Assert.Contains("Hello, NAME!", c.OutputText)
-    Assert.DoesNotContain(seed, c.OutputText)
+    Assert.Equal(int exp.["cellCount"], List.length cells)
+    cells
+    |> List.iteri (fun i c ->
+        let g k = Map.tryFind (sprintf "cell%d.%s" i k) exp
+        match g "phase" with
+        | Some "Sealed" ->
+            Assert.Equal(SessionModel.IOCellPhase.Sealed, c.Phase)
+        | _ -> ()
+        match g "commandContains" with
+        | Some s -> Assert.Contains(s, c.CommandText)
+        | None -> ()
+        match g "outputContains" with
+        | Some s -> Assert.Contains(s, c.OutputText)
+        | None -> ()
+        match g "outputNotContains" with
+        | Some s -> Assert.DoesNotContain(s, c.OutputText)
+        | None -> ())
+
+// ---- scenarios ------------------------------------------------------
+
+[<Fact>]
+let ``replay oracle: C1 echo slow — seals, command intact, no bleed`` () =
+    assertScenario
+        "C1-echo-hi-slow.txt" "C1-echo-hi-slow.expected"
+
+[<Fact>]
+let ``replay oracle: C2 echo fast — byte-identical, same invariants`` () =
+    assertScenario
+        "C2-echo-hi-fast.txt" "C2-echo-hi-fast.expected"
+
+[<Fact>]
+let ``replay oracle: C3 set/p — seals (was drop-on-None), no bleed`` () =
+    assertScenario
+        "C3-set-p-text-input.txt" "C3-set-p-text-input.expected"

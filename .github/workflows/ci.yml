@@ -97,6 +97,49 @@ jobs:
           path: releases/
           retention-days: 7
 
+  replay-oracle:
+    name: Boundary replay oracle
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.fsproj', '**/*.csproj', '**/Directory.Packages.props', '**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build Tests.Unit
+        run: dotnet build tests/Tests.Unit/Tests.Unit.fsproj --configuration Release --no-restore
+
+      # Runs ONLY the boundary replay-oracle facts so a boundary
+      # regression (cmd cell-seal / prompt-path bleed) is a
+      # distinct red signal, separate from generic unit failures.
+      # Replays the committed docs/boundary-capture/cmd traces
+      # through the real Terminal.Core pipeline.
+      - name: Run boundary replay oracle
+        run: dotnet test tests/Tests.Unit/Tests.Unit.fsproj --configuration Release --no-build --filter "FullyQualifiedName~BoundaryReplayOracle" --logger "trx;LogFileName=oracle-results.trx"
+
+      - name: Upload oracle results
+        if: always() && hashFiles('**/oracle-results.trx') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: boundary-oracle-results
+          path: '**/oracle-results.trx'
+
   portability-lint:
     name: Portability lint (substrate / channel boundary)
     runs-on: ubuntu-latest

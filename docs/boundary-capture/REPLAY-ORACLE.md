@@ -45,16 +45,63 @@ non-deterministic manual NVDA dogfood.
   `{CommandText, OutputText, Phase, ExitCode}`. SpeechCursor is
   explicitly out of scope (deprecating).
 
+## Expectation files
+
+One trace ⇒ one `<name>.expected` beside it (hand-rolled,
+schemaVersioned per ADR-0004 wire discipline). `#`/blank lines
+ignored; `key=value` (value may contain `=`):
+
+```
+schemaVersion=1
+seedPrompt=<the mid-prompt-join seed P>
+cellCount=<int>
+cellN.phase=Sealed
+cellN.commandContains=<substr>      (optional)
+cellN.outputContains=<substr>       (optional)
+cellN.outputNotContains=<substr>    (optional)
+```
+
+Assertions are substring-based on purpose — exact
+Command/Output boundary text is slice-semantics-sensitive (P3's
+concern); the oracle pins the load-bearing invariants (seal
+count, phase, no prompt-path bleed).
+
+## Fixture hygiene — lone 0x20 payloads
+
+A recorder line whose entire payload is one printable space
+(`... 1B | ` + 0x20) is **all trailing whitespace** and is
+silently stripped in a paste→chat→commit round-trip (C1/C2
+line 12/13 — the space in `ECHO HI` — hit exactly this; the
+oracle caught it as a `"ECHOHI"` cmd-text mismatch). Two
+defences, both shipped R-B1:
+
+- **Normalise** a lone 0x20 payload to `\x20` in committed
+  traces (`unescape`-equivalent, immune to whitespace
+  stripping). Apply to any future capture before committing.
+- **Loud guard** in `parseTrace`, scoped to the strip
+  signature only: a declared count ≥1 that decodes to an
+  **empty** payload `failwith`s naming the file + line, so the
+  corruption fails at the parser, not three layers away as a
+  confusing assertion. It is deliberately *not* a general
+  unescape-fidelity check — the recorder counts raw PTY bytes
+  and `unescape` legitimately differs by ~1 on large OSC/ST
+  chunks (extraction tolerates that).
+
 ## Status
 
-- **R-A (this):** harness + the **C3** (`set /p`) scenario
-  asserted inline — deterministically retro-validates P2′
-  (#423) on the real defect bytes. `tests/Tests.Unit/BoundaryReplayOracle.fs`.
-- **R-B:** externalise per-trace `*.expected` files; add C1/C2
-  + new capture dimensions — **backspace/retype** (deleted chars
-  must not reappear in `CommandText`) and **long idle**
-  mid-compose; the CMD-test scripts; a dedicated
-  "Boundary replay oracle" CI job.
+- **R-A:** harness + the **C3** (`set /p`) scenario —
+  deterministically retro-validated P2′ (#423) on the real
+  defect bytes. `tests/Tests.Unit/BoundaryReplayOracle.fs`.
+- **R-B1 (this):** externalised per-trace `*.expected` files;
+  **C1/C2** scenarios added (locks the prompt-path-bleed fix +
+  the slow/fast determinism on the real echo traces); a
+  dedicated **"Boundary replay oracle" CI job** (a boundary
+  regression is now a distinct red signal).
+- **R-B2 (awaiting maintainer captures):** **C5**
+  backspace/retype (deleted chars must not reappear in
+  `CommandText`) and **C6** long-idle mid-compose; the
+  CMD-test scripts. Capture with `Ctrl+Shift+T` toggled
+  *before* the prompt for a full lifecycle (no seed needed).
 - **R-C onward:** P3 (inline sub-prompt) and all further
   boundary work gated by this oracle, never manual dogfood.
 
