@@ -78,10 +78,14 @@ defences, both shipped R-B1:
 - **Normalise** a lone 0x20 payload to `\x20` in committed
   traces (`unescape`-equivalent, immune to whitespace
   stripping). Apply to any future capture before committing.
-- **Loud guard** in `parseTrace`: the recorder declares the
-  byte count; a decode-length mismatch `failwith`s naming the
-  file + line, so corruption fails at the parser, not three
-  layers away as a confusing assertion.
+- **Loud guard** in `parseTrace`, scoped to the strip
+  signature only: a declared count ≥1 that decodes to an
+  **empty** payload `failwith`s naming the file + line, so the
+  corruption fails at the parser, not three layers away as a
+  confusing assertion. It is deliberately *not* a general
+  unescape-fidelity check — the recorder counts raw PTY bytes
+  and `unescape` legitimately differs by ~1 on large OSC/ST
+  chunks (extraction tolerates that).
 
 ## Status
 

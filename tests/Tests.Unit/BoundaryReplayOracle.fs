@@ -100,21 +100,27 @@ let private parseTrace (path: string) : TraceEvent list =
                 match Int64.TryParse us with
                 | true, v ->
                     let bytes = unescape payload
-                    // Loud guard: the recorder declares the byte
-                    // count; a lone printable 0x20 renders as
-                    // trailing whitespace and is silently stripped
-                    // in a paste→commit round-trip (C1/C2 line 12/13
-                    // hit exactly this). Without this check the byte
-                    // just vanishes and the failure surfaces three
-                    // layers away as a confusing cmd-text assertion.
+                    // Loud guard, scoped to the whitespace-strip
+                    // signature ONLY: a lone printable 0x20 renders
+                    // as trailing whitespace and is silently
+                    // stripped to an EMPTY payload in a paste→commit
+                    // round-trip (C1/C2 line 12/13 hit exactly this).
+                    // It is NOT a general unescape-fidelity check —
+                    // the recorder counts raw PTY bytes and `unescape`
+                    // is a best-effort reconstruction that legitimately
+                    // differs by ~1 on large OSC/ST chunks (extraction
+                    // tolerates that — it reads ContentHistory text +
+                    // Screen OSC parsing, not byte-exact payloads). So
+                    // fire only when the declared count is ≥1 yet the
+                    // decoded payload is empty (the byte vanished).
                     let declared =
                         match Int32.TryParse(parts.[2].TrimEnd 'B') with
                         | true, n -> n
                         | _ -> -1
-                    if declared >= 0 && declared <> bytes.Length then
+                    if declared >= 1 && bytes.Length = 0 then
                         failwithf
-                            "%s: declared %dB but decoded %dB on '%s' — payload likely whitespace-stripped in a paste/commit round-trip; repair the fixture (escape a lone 0x20 as \\x20)"
-                            path declared bytes.Length (head.Trim())
+                            "%s: declared %dB but decoded 0B on '%s' — payload whitespace-stripped in a paste/commit round-trip; repair the fixture (escape a lone 0x20 as \\x20)"
+                            path declared (head.Trim())
                     Some { ElapsedUs = v
                            Dir = dir
                            Bytes = bytes }
