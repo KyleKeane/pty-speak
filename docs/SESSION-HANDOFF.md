@@ -441,12 +441,13 @@ verified to fully restore it on both build types.
   faithfully projects `CellEventBus.Appended` off the seal
   site: (a) no live output trickle (= Phase 4, by design);
   (b) the input-test seals no command cell (ADR 0004
-  drop-on-None / Cycle 52 boundary detection, upstream); (c)
-  history not reset on shell hot-switch — accepted, the
-  planned follow-up is a shell-switch **marker row** (its own
-  change; unify the parallel-index row arrays into one typed
-  row list first — also retires the empty-list placeholder
-  hack).
+  drop-on-None / Cycle 52 boundary detection, upstream).
+  (c) history not reset on shell hot-switch — accepted;
+  **shipped** a shell-switch **marker notice row** with the
+  row-model unification (`cellHistoryRows` = one
+  `CellView option` collection 1:1 with the displayed items;
+  retired the parallel-array + placeholder hack). (a)/(b)
+  remain the open computational-accuracy items.
 
 See [`docs/PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md)
 for sequencing rationale + risks.

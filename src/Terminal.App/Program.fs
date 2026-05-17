@@ -4488,11 +4488,13 @@ module Program =
         //    type ratified 2026-05-17); the item is a typed
         //    projection so the Tree swap stays trivial.
         //
-        // Item display is single-line ("<Kind>: <text>"); the
-        // parallel `cellHistoryCells` keeps each row's typed
-        // `CellView` so `SelectionChanged` can publish the
-        // typed event (sinks never re-derive from text —
-        // ADR 0008).
+        // Item display is single-line ("<Kind>: <text>" for
+        // cells, verbatim for notice rows). `cellHistoryRows`
+        // is strictly 1:1 with `cellHistoryItems`: `Some cv`
+        // for a real cell row (so `SelectionChanged` publishes
+        // the typed event — sinks never re-derive from text,
+        // ADR 0008), `None` for a non-cell notice row
+        // (empty-state placeholder / shell-switch marker).
         // Diagnostic triggers (ship-with-the-feature rule):
         // counts/enums only, never cell text (logging
         // discipline) — so a `Ctrl+Shift+D` bundle confirms
@@ -4503,22 +4505,31 @@ module Program =
             Logger.get "Terminal.App.Program.CellHistoryPane"
         let cellHistoryItems =
             System.Collections.ObjectModel.ObservableCollection<string>()
-        let cellHistoryCells =
-            ResizeArray<SpeechCursor.CellView>()
+        // Kept strictly index-aligned with `cellHistoryItems`
+        // (one entry per visible row): a real cell row carries
+        // `Some cv`; a non-cell *notice* row (the empty-state
+        // placeholder, or a shell-switch marker) carries `None`.
+        // One aligned collection (vs. the earlier shorter
+        // parallel array + bounds-check hack) is what lets a
+        // notice row sit anywhere without misaligning row→cell
+        // lookups.
+        let cellHistoryRows =
+            ResizeArray<SpeechCursor.CellView option>()
         // ADR 0007 Phase 6b follow-up (dogfood 2026-05-17): an
         // empty ListBox cannot hold keyboard focus — arrows
-        // escape to the menu. Seed one non-cell placeholder row
-        // so the pane always has a focusable item; it is dropped
-        // the first time a real cell is appended (the list is
-        // append-only for the app lifetime, so it never returns
-        // to empty — no re-add path needed). Index safety: while
-        // the placeholder is the only row `cellHistoryCells` is
-        // empty, and every row→cell lookup (SelectionChanged
-        // publish, `listSelectedFocusedCell`) is already
-        // bounds-checked against `cellHistoryCells`, so a
-        // selected placeholder resolves to "no cell".
+        // escape to the menu. Seed one placeholder notice row so
+        // the pane always has a focusable item; it is dropped
+        // the first time any real row (cell or notice) is added.
         let cellHistoryPlaceholder = "No cell history yet."
         let mutable cellHistoryPlaceholderPresent = false
+        // Shared so the Appended path and the notice path drop
+        // the placeholder identically (both run on the UI
+        // thread, so the shared mutable is serialised).
+        let dropPlaceholderIfPresent () : unit =
+            if cellHistoryPlaceholderPresent then
+                cellHistoryItems.Clear()
+                cellHistoryRows.Clear()
+                cellHistoryPlaceholderPresent <- false
         let cellKindLabel (k: SpeechCursor.CellKind) : string =
             match k with
             | SpeechCursor.CellKind.Input -> "Command"
@@ -4531,6 +4542,7 @@ module Program =
             sprintf "%s: %s" (cellKindLabel cv.Kind) oneLine
         window.CellHistoryList.ItemsSource <- cellHistoryItems
         cellHistoryItems.Add(cellHistoryPlaceholder)
+        cellHistoryRows.Add(None)
         cellHistoryPlaceholderPresent <- true
         // Subscribe the list to the canonical cell pipeline.
         // `Appended` → add a projected row (marshalled to the
@@ -4544,11 +4556,9 @@ module Program =
             | CellEventBus.Appended cv ->
                 window.Dispatcher.InvokeAsync(
                     System.Action(fun () ->
-                        if cellHistoryPlaceholderPresent then
-                            cellHistoryItems.Clear()
-                            cellHistoryPlaceholderPresent <- false
+                        dropPlaceholderIfPresent ()
                         cellHistoryItems.Add(cellHistoryDisplay cv)
-                        cellHistoryCells.Add(cv)
+                        cellHistoryRows.Add(Some cv)
                         cellPaneLog.LogInformation(
                             "ADR 0007 Phase 6a-2b list append. CellSeq={CellSeq} Kind={Kind} Count={Count}",
                             cv.CellSequence,
@@ -4562,14 +4572,16 @@ module Program =
         // event. NO manual `Announce` here (double-speak).
         window.CellHistoryList.SelectionChanged.Add(fun _ ->
             let i = window.CellHistoryList.SelectedIndex
-            if i >= 0 && i < cellHistoryCells.Count then
-                let cell = cellHistoryCells.[i]
-                CellEventBus.publish (CellEventBus.Focused cell)
-                cellPaneLog.LogInformation(
-                    "ADR 0007 Phase 6a-2b list focus-marker. Index={Index} CellSeq={CellSeq} Kind={Kind}",
-                    i,
-                    cell.CellSequence,
-                    (sprintf "%A" cell.Kind)))
+            if i >= 0 && i < cellHistoryRows.Count then
+                match cellHistoryRows.[i] with
+                | Some cell ->
+                    CellEventBus.publish (CellEventBus.Focused cell)
+                    cellPaneLog.LogInformation(
+                        "ADR 0007 Phase 6a-2b list focus-marker. Index={Index} CellSeq={CellSeq} Kind={Kind}",
+                        i,
+                        cell.CellSequence,
+                        (sprintf "%A" cell.Kind))
+                | None -> ())
 
         // ADR 0007 Phase 6b — per-cell ops follow the navigable
         // list, resolved by `CellId` (reorder/delete-safe; a
@@ -4584,21 +4596,46 @@ module Program =
             : SpeechCursor.FocusedCell option =
             let lb = window.CellHistoryList
             let i = lb.SelectedIndex
-            if i < 0 || i >= cellHistoryCells.Count then None
+            if i < 0 || i >= cellHistoryRows.Count then None
             else
-                let v = cellHistoryCells.[i]
-                let textOf (k: SpeechCursor.CellKind) =
-                    cellHistoryCells
-                    |> Seq.tryFind (fun c ->
-                        c.CellId = v.CellId && c.Kind = k)
-                    |> Option.map (fun c -> c.Text)
-                Some
-                    ({ CellId = v.CellId
-                       CellSequence = v.CellSequence
-                       Command = textOf SpeechCursor.CellKind.Input
-                       Output = textOf SpeechCursor.CellKind.Output }
-                     : SpeechCursor.FocusedCell)
+                match cellHistoryRows.[i] with
+                | None -> None
+                | Some v ->
+                    let textOf (k: SpeechCursor.CellKind) =
+                        cellHistoryRows
+                        |> Seq.choose id
+                        |> Seq.tryFind (fun c ->
+                            c.CellId = v.CellId && c.Kind = k)
+                        |> Option.map (fun c -> c.Text)
+                    Some
+                        ({ CellId = v.CellId
+                           CellSequence = v.CellSequence
+                           Command = textOf SpeechCursor.CellKind.Input
+                           Output = textOf SpeechCursor.CellKind.Output }
+                         : SpeechCursor.FocusedCell)
         focusedCellSource <- listSelectedFocusedCell
+
+        // ADR 0007 Phase 6b (dogfood 2026-05-17) — non-cell
+        // *notice* rows. The cell history is intentionally NOT
+        // reset on shell hot-switch (maintainer 2026-05-17);
+        // instead a marker row is appended so the transcript
+        // stays continuous while the shell boundary is visible
+        // and screen-reader-announced (the row is a standard
+        // ListItem). Notice rows carry `None` in
+        // `cellHistoryRows`, so per-cell ops on them resolve to
+        // "no cell" and no `Focused` event is published.
+        // UI-thread marshalled (ObservableCollection affinity),
+        // mirroring the Appended path.
+        let appendHistoryNotice (text: string) : unit =
+            window.Dispatcher.InvokeAsync(
+                System.Action(fun () ->
+                    dropPlaceholderIfPresent ()
+                    cellHistoryItems.Add(text)
+                    cellHistoryRows.Add(None)
+                    cellPaneLog.LogInformation(
+                        "ADR 0007 Phase 6b history notice appended. Count={Count}",
+                        cellHistoryItems.Count)))
+            |> ignore
 
         // ADR 0007 Phase 6a-2b — non-speech pane-switch cue.
         // Distinct earcon per pane (ADR 0008: the tone itself
@@ -5505,6 +5542,17 @@ module Program =
                                         // pathway, not the
                                         // pre-switch shell's.
                                         currentShellId <- shell.Id
+                                        // ADR 0007 Phase 6b — the
+                                        // cell history is not
+                                        // reset on hot-switch
+                                        // (maintainer 2026-05-17);
+                                        // drop a marker notice row
+                                        // so the shell boundary is
+                                        // visible + announced.
+                                        appendHistoryNotice
+                                            (sprintf
+                                                "Shell switched to %s."
+                                                shell.DisplayName)
                                         // SessionModel Tier 1.C —
                                         // per-shell-session
                                         // recreation (per Q5

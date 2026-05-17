@@ -655,10 +655,16 @@ changes the ADR 0004 IOCell schema.
     list. Both are upstream computational-accuracy items,
     explicitly out of scope here. (c) Cell history is **not
     reset on shell hot-switch** — accepted as correct
-    (maintainer 2026-05-17); the planned follow-up is a
-    shell-switch **marker row** inserted into the history
-    (its own change; needs the row model unified off the
-    current parallel-index arrays first).
+    (maintainer 2026-05-17); **shipped**: a shell-switch
+    **marker notice row** ("Shell switched to <name>.") is
+    appended so the transcript stays continuous while the
+    boundary is visible + screen-reader-announced. This
+    landed with the row-model unification: `cellHistoryRows`
+    is now a single `CellView option` collection strictly
+    1:1 with the displayed items (`Some` = cell, `None` =
+    notice), retiring the earlier shorter-parallel-array +
+    bounds-check hack and folding the empty-state placeholder
+    into the same notice mechanism.
 
 - **Phase 7 — automated cell-structure diagnostics (D6).**
   Extend the existing test corpus + `Diagnostics → Test …`
