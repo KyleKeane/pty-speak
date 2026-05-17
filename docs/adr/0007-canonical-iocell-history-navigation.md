@@ -870,13 +870,37 @@ maintainer's standing instruction, not buried in chat text.
   [§ Re-sequencing amendment](#re-sequencing-amendment-2026-05-17-maintainer-ratified)
   (it supersedes the "Phase 4 readiness brief" below, which is
   retained as the decision trail).
-- **Phase 6a** — **pulled forward; STARTS NOW** per the
-  re-sequencing amendment. Decoupled from the segment model;
-  depends only on D1 + D2 (both shipped). Kind-generic
-  focusable history list (D8) + `Ctrl+Shift+Left/Right` pane
-  switch + the D9 `pty-speak.cell.*` event family, on existing
-  cmd/PowerShell cells. Its NVDA dogfood remains the **hard
-  D8 control-type ratification gate**.
+- **Phase 6a** — pulled forward per the re-sequencing
+  amendment; decoupled from the segment model (depends only on
+  D1 + D2, both shipped). **Sub-progress (2026-05-17):**
+  - **6a-1 (#404)** — Implemented & CI-green. `CellEventBus`:
+    the canonical typed cell pipeline. Settled the ADR open
+    decision "`pty-speak.cell.*` taxonomy / pipeline shape" =
+    a **dedicated typed bus** (parallel to the byte-oriented
+    `OutputDispatcher`; sinks never re-derive from rendered
+    text — ADR 0008). `cell.focused` wired off the four
+    user-nav handlers. Purely additive, no audible change, no
+    dogfood (no sink yet); unit-tested.
+  - **6a-2a (#405)** — Implemented & CI-green. `cell.appended`
+    off the canonical `appendCell` seal site (D8's list-update
+    event) + pure `SpeechCursor.cellCount` / `cellViewsFrom`
+    accessors (the `internal` transcript isn't reachable from
+    Terminal.App; `appendCell` signature unchanged). Purely
+    additive, no audible change, no dogfood; unit-tested. **The
+    entire pure D9 cell-event substrate is now complete.**
+  - **6a-2b — NEXT (not started).** The focusable WPF history
+    list + `Ctrl+Shift+Left/Right` pane switch. **One cohesive
+    PR** (the gesture is meaningless — a reserved dead key —
+    without the pane; not further splittable without shipping
+    a half-feature). **Control type RATIFIED = flat `ListBox`
+    → UIA `List`** (maintainer decision 2026-05-17, per D8's
+    deliberately-flat-first conditional; Tree is the deferred
+    Phase-4/5 growth path, typed model unchanged). Its NVDA
+    dogfood **is** the hard D8 control-type ratification gate.
+    Precise per-file implementation touchpoints recorded in
+    [`docs/SESSION-HANDOFF.md`](../SESSION-HANDOFF.md) "6a
+    progress (2026-05-17)". Conservative D5a Q1/Q2/Q3 defaults
+    for the first cut; dogfood refines.
 - **Phases 4/4b/5 → 7** — sequence after Phase 6a + the
   boundary-diagnostic track (5 = intra-cell segments on the
   settled model; 7's oracle asserts it). Each lands as its
