@@ -67,6 +67,8 @@ let private translateKey (k: HotkeyRegistry.HotkeyKey) : Key =
     | HotkeyRegistry.Up -> Key.Up
     | HotkeyRegistry.Down -> Key.Down
     | HotkeyRegistry.End -> Key.End
+    | HotkeyRegistry.Left -> Key.Left
+    | HotkeyRegistry.Right -> Key.Right
 
 let private translateMods (mods: Set<HotkeyRegistry.Modifier>) : ModifierKeys =
     let mutable result = ModifierKeys.None
