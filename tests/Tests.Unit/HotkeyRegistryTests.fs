@@ -69,6 +69,9 @@ let ``allCommands contains exactly the documented commands (PR-O)`` () =
               HotkeyRegistry.OpenGitHubRepo
               HotkeyRegistry.OpenFeatureRequest
               HotkeyRegistry.OpenSubmitIssue
+              // Cycle 52 boundary-diagnostic-capture — raw PTY
+              // byte trace toggle (Ctrl+Shift+T).
+              HotkeyRegistry.ToggleRawTrace
               // Cycle 25b-1a — CopyLatestLog removed (D's bundle
               // subsumes it).
               // Cycle 27 — `ToggleDebugLog` and `MuteEarcons`
@@ -326,14 +329,15 @@ let ``OpenConfig is bound to Ctrl+Shift+E (Cycle 25a)`` () =
         hk.Modifiers)
 
 [<Fact>]
-let ``Ctrl+Shift+T is unbound (Cycle 25b removed RunTestMatrix placeholder)`` () =
-    // Cycle 25b — the RunTestMatrix placeholder shipped in 25a is
-    // removed. The diagnostic suite folds into Ctrl+Shift+D rather
-    // than splitting across two hotkeys; the interactive cleanup
-    // test (which required user input) moves to a future app menu.
+let ``Ctrl+Shift+T is bound to ToggleRawTrace (Cycle 52 boundary-diagnostic-capture)`` () =
+    // Cycle 25b vacated Ctrl+Shift+T (RunTestMatrix placeholder
+    // removed) and this test pinned it free. Cycle 52
+    // intentionally claims the slot for the raw PTY byte trace
+    // toggle (boundary-diagnostic-capture Instrument B), so the
+    // pin flips from "unbound" to a positive binding assertion.
     let modifiers = Set.ofList [ HotkeyRegistry.Ctrl; HotkeyRegistry.Shift ]
     let result = HotkeyRegistry.tryFind (HotkeyRegistry.Letter 'T') modifiers
-    Assert.Equal(None, result)
+    Assert.Equal(Some HotkeyRegistry.ToggleRawTrace, result)
 
 [<Fact>]
 let ``Ctrl+Shift+; is unbound (Cycle 25a vacated)`` () =

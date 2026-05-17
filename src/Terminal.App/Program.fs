@@ -129,6 +129,12 @@ module Program =
                     while not ct.IsCancellationRequested do
                         let! chunk = host.Stdout.ReadAsync(ct).AsTask()
                         if chunk.Length > 0 then
+                            // Cycle 52 boundary-diagnostic-capture
+                            // (Instrument B) — additive raw OUT tap
+                            // (shell → app). No-op unless a
+                            // Ctrl+Shift+T capture is active.
+                            RawShellRecorder.record
+                                RawShellRecorder.Output chunk
                             // Stage 7-followup PR-F — record the
                             // moment of last live PTY activity. The
                             // heartbeat timer + Ctrl+Shift+H health
@@ -3755,6 +3761,130 @@ module Program =
                         sprintf "Could not save output: %s" safe,
                         ActivityIds.error)
 
+        // Cycle 52 boundary-diagnostic-capture (Instrument B) —
+        // Ctrl+Shift+T toggles the raw PTY byte recorder. ON:
+        // announce the keystroke-recording warning + begin
+        // capturing every byte in/out. OFF: format the trace,
+        // ALWAYS write a one-off `extracts\rawtrace-<ts>.txt`
+        // (user-intentional, not always-on disk growth), copy
+        // to the clipboard capped at 60 KB, and announce the
+        // path + a truncation warning if the clipboard copy was
+        // capped. File-write + STA-clipboard shapes mirror
+        // `runOpenLastOutput` / `runCopyHistoryToClipboard`.
+        let runToggleRawTrace () : unit =
+            let log =
+                Logger.get "Terminal.App.Program.runToggleRawTrace"
+            if RawShellRecorder.isRecording () then
+                match RawShellRecorder.stop () with
+                | None ->
+                    window.TerminalSurface.Announce(
+                        "Raw shell trace was not recording.",
+                        ActivityIds.diagnostic)
+                | Some (text, inB, outB) ->
+                    let timestamp =
+                        DateTime.UtcNow.ToString(
+                            "yyyy-MM-dd-HH-mm-ss-fff")
+                    let extractsDir =
+                        System.IO.Path.Combine(
+                            Environment.GetFolderPath(
+                                Environment.SpecialFolder.LocalApplicationData),
+                            "PtySpeak",
+                            "extracts")
+                    let filePath =
+                        System.IO.Path.Combine(
+                            extractsDir,
+                            sprintf "rawtrace-%s.txt" timestamp)
+                    let mutable wrote = false
+                    try
+                        System.IO.Directory.CreateDirectory(extractsDir)
+                        |> ignore
+                        System.IO.File.WriteAllText(
+                            filePath, text, System.Text.Encoding.UTF8)
+                        RawShellRecorder.setLastTracePath filePath
+                        wrote <- true
+                        log.LogInformation(
+                            "Raw shell trace written. Path={Path} InBytes={In} OutBytes={Out} TextLen={Len}",
+                            filePath,
+                            inB,
+                            outB,
+                            text.Length)
+                    with ex ->
+                        let safe = AnnounceSanitiser.sanitise ex.Message
+                        log.LogError(
+                            ex,
+                            "Could not write raw trace file at {Path}.",
+                            filePath)
+                        window.TerminalSurface.Announce(
+                            sprintf "Could not save the raw trace: %s" safe,
+                            ActivityIds.error)
+                    if wrote then
+                        let cap = 60 * 1024
+                        let truncated = text.Length > cap
+                        let clip =
+                            if truncated then
+                                text.Substring(0, cap)
+                                + "\n\n... [clipboard truncated; full trace in the file] ..."
+                            else
+                                text
+                        let _ =
+                            task {
+                                try
+                                    let setOk = TaskCompletionSource<bool>()
+                                    let staBody =
+                                        ThreadStart(fun () ->
+                                            try
+                                                System.Windows.Clipboard.SetText(clip)
+                                                setOk.TrySetResult(true)
+                                                |> ignore
+                                            with ex ->
+                                                log.LogWarning(
+                                                    ex,
+                                                    "Clipboard.SetText threw: {Message}",
+                                                    ex.Message)
+                                                setOk.TrySetResult(false)
+                                                |> ignore)
+                                    let staThread = new Thread(staBody)
+                                    staThread.SetApartmentState(
+                                        ApartmentState.STA)
+                                    staThread.IsBackground <- true
+                                    staThread.Start()
+                                    let! winner =
+                                        Task.WhenAny(
+                                            setOk.Task :> Task,
+                                            Task.Delay(3000))
+                                    let copied =
+                                        obj.ReferenceEquals(
+                                            winner, setOk.Task)
+                                        && setOk.Task.Result
+                                    let msg =
+                                        if not copied then
+                                            sprintf
+                                                "Raw shell trace stopped. %d bytes in, %d out. Saved to %s. Clipboard copy failed; open the file."
+                                                inB outB filePath
+                                        elif truncated then
+                                            sprintf
+                                                "Raw shell trace stopped. %d bytes in, %d out. Saved to %s. Clipboard copy was truncated; open the file for the full trace."
+                                                inB outB filePath
+                                        else
+                                            sprintf
+                                                "Raw shell trace stopped. %d bytes in, %d out. Saved to %s and copied to the clipboard."
+                                                inB outB filePath
+                                    window.TerminalSurface.Announce(
+                                        msg, ActivityIds.diagnostic)
+                                with ex ->
+                                    log.LogWarning(
+                                        ex,
+                                        "Raw trace clipboard task threw.")
+                            }
+                        ()
+            else
+                RawShellRecorder.start () |> ignore
+                log.LogInformation(
+                    "Raw shell trace recording started.")
+                window.TerminalSurface.Announce(
+                    "Raw shell trace recording started. Warning: every keystroke you type, including any passwords or secrets, and all shell output is being recorded until you press Control Shift T again.",
+                    ActivityIds.diagnostic)
+
         // Cycle 46 post-audit (2026-05-13) — re-narrate the
         // latest finalised tuple's `OutputText`, capped at the
         // same `OutputAnnounceCapChars` the auto-narrate uses.
@@ -4312,6 +4442,7 @@ module Program =
         bind HotkeyRegistry.CopyHistoryToClipboard runCopyHistoryToClipboard
         bind HotkeyRegistry.AnnounceSessionLogPath runAnnounceSessionLogPath
         bind HotkeyRegistry.OpenLastOutput runOpenLastOutput
+        bind HotkeyRegistry.ToggleRawTrace runToggleRawTrace
         bind HotkeyRegistry.AnnounceLastOutput runAnnounceLastOutput
         bind HotkeyRegistry.CopyFocusedCell runCopyFocusedCell
         bind HotkeyRegistry.CopyFocusedCellCommand runCopyFocusedCellCommand
@@ -5408,6 +5539,12 @@ module Program =
                        && (bytes.[1] = 0x5Buy || bytes.[1] = 0x4Fuy)
                        && (bytes.[2] = 0x41uy || bytes.[2] = 0x42uy) then
                         triggerHistoryRecallDebounce ()
+                    // Cycle 52 boundary-diagnostic-capture
+                    // (Instrument B) — additive raw IN tap
+                    // (app → shell keystrokes). No-op unless a
+                    // Ctrl+Shift+T capture is active.
+                    RawShellRecorder.record
+                        RawShellRecorder.Input bytes
                     host.WriteBytes(bytes)),
                 Action<int, int>(fun cols rows ->
                     // Resize is best-effort: a transient failure

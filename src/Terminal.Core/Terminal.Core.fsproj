@@ -14,6 +14,7 @@
     <Compile Include="UpdateMessages.fs" />
     <Compile Include="FileLogger.fs" />
     <Compile Include="Coalescer.fs" />
+    <Compile Include="RawShellRecorder.fs" />
     <!--
       Cycle 45 — ContentHistory is the aural substrate. Depends
       only on `Types.fs` (VtEvent). Cycle 45c PR-3a moved it

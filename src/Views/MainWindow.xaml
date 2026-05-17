@@ -266,6 +266,14 @@
                 <MenuItem x:Name="MenuItem_OpenDataFolder"
                           x:FieldModifier="public"
                           Header="Open _Data Folder" />
+                <!-- Cycle 52 boundary-diagnostic-capture
+                     (Instrument B). Same RoutedCommand as
+                     Ctrl+Shift+T; toggles raw PTY byte
+                     recording. (Open / Copy most-recent trace
+                     items land in a follow-up.) -->
+                <MenuItem x:Name="MenuItem_ToggleRawTrace"
+                          x:FieldModifier="public"
+                          Header="Toggle Raw Shell _Trace" />
                 <!-- Probe — quick "fire an action and watch what
                      happens" probes: health check, incident
                      marker, the diagnostic battery. The
