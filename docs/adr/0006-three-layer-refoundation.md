@@ -497,6 +497,30 @@ would be premature.
    marker/`Overwrite`-aware reconstruction; ADR 0007 Phase 7's
    oracle is designed to pin exactly this off-by-one once the
    harness exists.
+
+   **Tracked variant 2 — command argument truncation on a
+   clean command (maintainer dogfood 2026-05-17,
+   `52-ADR7-P2b`).** A *simple, un-edited* `echo hi` (no
+   backspace, no reflow) captures only `echo` as the IOCell
+   command — the whitespace-delimited argument(s) are lost.
+   Distinct *symptom* from variant 1 (no editing involved;
+   the loss is within a single clean command line, not a
+   cross-cell pairing shift) but the **same root-cause
+   family**: the cmd command text is reconstructed from a
+   `ContentHistory` slice bounded by the `commandEnterSeq`
+   byte-watermark rather than cut at a real `;B`/`;C`
+   marker, so a sub-line boundary (here, the first space)
+   can terminate the captured command early. **Not an ADR
+   0007 Phase 2b regression** — Phase 2b's copy faithfully
+   copied whatever `extractIOCell` produced (output copy +
+   focus-hold both confirmed working in the same dogfood);
+   the truncation is upstream and pre-existing. **Decision
+   (maintainer 2026-05-17): record alongside variant 1 and
+   continue the phases; do NOT speculative-patch (cmd
+   announce-heuristic FREEZE).** Fixed by the same
+   marker-aware command/output reconstruction this item
+   specifies; ADR 0007 Phase 7's oracle pins it once the
+   harness exists.
 2. **Replace SpeechCursor manual history-navigation with
    canonical IOCell-history navigation + per-cell
    operations.** The SpeechCursor's navigable history and

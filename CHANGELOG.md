@@ -14994,6 +14994,23 @@ copies an *older* cell to prove the op binds to the Manual
 cursor). No code change — AutoDrive auto-follow is correct,
 intended behaviour.
 
+### Cycle 52 — known issue recorded: clean-command argument truncation (2026-05-17)
+
+`52-ADR7-P2b` dogfood **passed the Phase 2b feature**
+(output-only copy + Manual-nav focus-hold confirmed) and
+**surfaced a pre-existing upstream defect** (not an ADR 0007
+regression): a simple, un-edited `echo hi` captures only
+`echo` as the IOCell command — the whitespace-delimited
+argument is lost. Same root-cause family as the
+command-line-edit desync (cmd command text reconstructed
+from a `commandEnterSeq`-bounded `ContentHistory` slice
+instead of a real `;B`/`;C` marker), distinct symptom
+(single clean line, no editing). Recorded as **ADR 0006
+§"Deferred to R6+" item 1 "Tracked variant 2"**, the
+`52-ADR7-P2b` matrix row marked feature-PASSED, decision
+(maintainer 2026-05-17): track + continue phases, no
+speculative patch (cmd announce-heuristic FREEZE). Doc-only.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
