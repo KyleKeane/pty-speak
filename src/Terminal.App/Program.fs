@@ -3728,6 +3728,28 @@ module Program =
         // `<Content Include>` glob in `Terminal.App.fsproj`.
         // `AppContext.BaseDirectory` is the install dir at
         // runtime.
+        // ADR 0007 Phase 3 (2026-05-17, maintainer UX
+        // direction) — the shared "replace the current prompt
+        // line with this text, do NOT auto-run" primitive.
+        // Prepends `Esc` (0x1B): cmd's cooked-mode line editor
+        // treats Esc as "clear the current input buffer", so
+        // whatever the user had partially typed is wiped and
+        // the line is fully replaced (the maintainer's "delete
+        // whatever is in the current input to completely
+        // replace that line" requirement). NO trailing `\r` —
+        // the user reviews the inserted line and presses Enter
+        // themselves; that explicit human submit is the safety
+        // affordance (no auto-run on a gesture). Used by BOTH
+        // the diagnostic test-script insertion and
+        // rerun-focused-input so the two are provably the same
+        // path.
+        let insertAtPromptClearingLine (textToInsert: string) : unit =
+            let bytes =
+                Array.append
+                    [| 0x1Buy |]
+                    (System.Text.Encoding.UTF8.GetBytes(textToInsert))
+            window.TerminalSurface.WritePtyBytes(bytes)
+
         let runCmdTest (testId: string) : unit =
             let log =
                 Logger.get "Terminal.App.Program.runCmdTest"
@@ -3748,27 +3770,15 @@ module Program =
                     ActivityIds.error)
             else
                 // Quote the path (handles spaces in install
-                // dir like "Program Files (x86)") and append
-                // a trailing space so the user can type more
+                // dir like "Program Files (x86)") and append a
+                // trailing space so the user can type more
                 // arguments / redirects before Enter if they
-                // want.
-                //
-                // Cycle 47 follow-up (2026-05-13) — prepend an
-                // `Esc` (0x1B) byte before the invocation.
-                // cmd.exe's cooked-mode line editor treats Esc
-                // as "clear the current input buffer", so any
-                // text the user had partially typed before
-                // clicking the menu item is wiped before our
-                // script invocation lands. Without this, the
-                // invocation appends to whatever was already
-                // pending and breaks parsing.
-                let invocation =
-                    sprintf "\"%s\" " scriptPath
-                let cmdBytes =
-                    System.Text.Encoding.UTF8.GetBytes(invocation)
-                let bytes =
-                    Array.append [| 0x1Buy |] cmdBytes
-                window.TerminalSurface.WritePtyBytes(bytes)
+                // want. The line-clear (Esc) + no-auto-run is
+                // now the shared `insertAtPromptClearingLine`
+                // primitive (Cycle 47 follow-up behaviour,
+                // unchanged — just factored so rerun-input uses
+                // the identical path).
+                insertAtPromptClearingLine (sprintf "\"%s\" " scriptPath)
                 window.TerminalSurface.Announce(
                     sprintf
                         "Test command inserted: %s. Press Enter to run."
@@ -4312,33 +4322,25 @@ module Program =
                     msg,
                     ActivityIds.diagnostic)
 
-        // ADR 0007 Phase 3 — rerun-input. Re-submit the focused
-        // input cell's command as a FRESH command (a new IOCell
-        // via the normal shell lifecycle). Risk-controlled per
-        // the ADR open decision: no auto-run on navigation;
-        // explicit menu gesture only; a two-step arm/confirm
-        // gate with echo-before-run (the first invocation speaks
-        // the exact command and arms; a second invocation of the
-        // SAME command on the SAME cell within the window
-        // actually injects). Provenance is recorded at the
-        // announce + Information-log level (the spoken
-        // "Rerunning command from cell N" + the log line) — NOT
-        // a new IOCell schema field: the ADR 0004 v2 schema is
-        // frozen and ADR 0007 explicitly changes no schema.
-        // Injection routes through TerminalView.InjectCommand →
-        // the same `_writeBytes` path as real keystrokes / the
-        // Ctrl+L `cls\r` precedent, so the watermark + state
-        // machine see it as a typed command (any residual cmd
-        // command/echo imperfection is the already-tracked
-        // ADR 0006 item-1 substrate issue under FREEZE, not
-        // Phase 3's to solve). Counts-only log (CmdLen, never
-        // the command text — the announce is the user-facing
-        // echo; logging discipline keeps text out of the
-        // bundle).
-        let rerunConfirmWindow = TimeSpan.FromSeconds(15.0)
-        let mutable rerunArm
-            : (int64 * string * DateTimeOffset) option = None
-
+        // ADR 0007 Phase 3 — rerun-input. Maintainer UX
+        // direction (2026-05-17, after the 52-ADR7-P3 dogfood):
+        // drop the two-step arm/confirm — it was the
+        // conservative reading of the ADR's "confirm gesture"
+        // open decision, which the maintainer (product owner)
+        // has now resolved in favour of the simpler flow.
+        // Behaviour: take the focused input cell's command,
+        // CLEAR the current prompt line, and INSERT that command
+        // at the prompt — the same `insertAtPromptClearingLine`
+        // path the diagnostic test-script insertion uses. NO
+        // auto-run: the user reviews the inserted line and
+        // presses Enter themselves. That explicit human submit
+        // is the safety affordance (still "no auto-run on a
+        // gesture", per the ADR's risk-control intent — just
+        // satisfied by the user's own Enter rather than a second
+        // menu invocation). Counts-only Information log
+        // (SourceCellSeq + CmdLen, never the command text — it
+        // appears on the prompt line for the user, not in the
+        // bundle; logging discipline).
         let runRerunInput () : unit =
             let log = Logger.get "Terminal.App.Program.runRerunInput"
             match SpeechCursor.focusedCell speechCursor with
@@ -4353,40 +4355,16 @@ module Program =
                         "The focused cell has no command to rerun.",
                         ActivityIds.diagnostic)
                 | Some cmd ->
-                    let now = DateTimeOffset.UtcNow
-                    let confirmed =
-                        match rerunArm with
-                        | Some (armedSeq, armedCmd, armedAt) ->
-                            armedSeq = fc.CellSequence
-                            && armedCmd = cmd
-                            && (now - armedAt) <= rerunConfirmWindow
-                        | None -> false
-                    if confirmed then
-                        rerunArm <- None
-                        log.LogInformation(
-                            "ADR 0007 Phase 3 rerun-input CONFIRMED. SourceCellSeq={CellSeq} CmdLen={CmdLen}",
+                    log.LogInformation(
+                        "ADR 0007 Phase 3 rerun-input inserted. SourceCellSeq={CellSeq} CmdLen={CmdLen}",
+                        fc.CellSequence,
+                        cmd.Length)
+                    insertAtPromptClearingLine cmd
+                    window.TerminalSurface.Announce(
+                        sprintf
+                            "Command from cell %d inserted at the prompt. Press Enter to run."
                             fc.CellSequence,
-                            cmd.Length)
-                        window.TerminalSurface.InjectCommand(cmd)
-                        window.TerminalSurface.Announce(
-                            sprintf
-                                "Rerunning command from cell %d: %s"
-                                fc.CellSequence
-                                cmd,
-                            ActivityIds.diagnostic)
-                    else
-                        rerunArm <-
-                            Some (fc.CellSequence, cmd, now)
-                        log.LogInformation(
-                            "ADR 0007 Phase 3 rerun-input ARMED. SourceCellSeq={CellSeq} CmdLen={CmdLen}",
-                            fc.CellSequence,
-                            cmd.Length)
-                        window.TerminalSurface.Announce(
-                            sprintf
-                                "Rerun command from cell %d: %s? Select Rerun Focused Input again within 15 seconds to confirm."
-                                fc.CellSequence
-                                cmd,
-                            ActivityIds.diagnostic)
+                        ActivityIds.diagnostic)
 
         let runSpeechCursorToggleMode () : unit =
             let newMode = SpeechCursor.toggleMode speechCursor
