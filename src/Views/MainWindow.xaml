@@ -28,7 +28,7 @@
              Compose's reflection-driven wiring auto-picks it up.
 
              Top-level order + mnemonics: _Interface, _Terminal,
-             _Cell History, Dia_gnostics, _About (all unique;
+             _Cell History, _Diagnostics, _About (all unique;
              non-conflicting with AppReservedHotkeys's
              Ctrl+Shift+letter gestures since different modifier
              sets are different gestures).
@@ -248,56 +248,15 @@
                  Top-level had ~10 items; grouping by "what it
                  does" reduces scan depth. Logging Level stays
                  at top because it's a frequent toggle. -->
-            <MenuItem Header="Dia_gnostics">
-                <MenuItem x:Name="MenuItem_LoggingLevel"
-                          x:FieldModifier="public"
-                          Header="Logging _Level">
-                    <MenuItem x:Name="MenuItem_LoggingLevel_information"
-                              x:FieldModifier="public"
-                              Header="_Information" />
-                    <MenuItem x:Name="MenuItem_LoggingLevel_debug"
-                              x:FieldModifier="public"
-                              Header="_Debug" />
-                </MenuItem>
-                <!-- Open Data Folder moved here from Interface
-                     (maintainer 2026-05-17): it is a
-                     troubleshooting affordance — the parent of
-                     \logs, \sessions, config.toml. -->
-                <MenuItem x:Name="MenuItem_OpenDataFolder"
-                          x:FieldModifier="public"
-                          Header="Open _Data Folder" />
-                <!-- Cycle 52 boundary-diagnostic-capture
-                     (Instrument B). Same RoutedCommand as
-                     Ctrl+Shift+T; toggles raw PTY byte
-                     recording. (Open / Copy most-recent trace
-                     items land in a follow-up.) -->
-                <MenuItem x:Name="MenuItem_ToggleRawTrace"
-                          x:FieldModifier="public"
-                          Header="Toggle Raw Shell _Trace" />
-                <!-- Probe — quick "fire an action and watch what
-                     happens" probes: health check, incident
-                     marker, the diagnostic battery. The
-                     longer-running Process Cleanup Test moves
-                     to Test Scripts below (per maintainer
-                     preview.118 feedback) so the accelerators
-                     within Probe stay short + unique. -->
-                <MenuItem Header="_Probe">
-                    <MenuItem x:Name="MenuItem_HealthCheck"
-                              x:FieldModifier="public"
-                              Header="_Health Check" />
-                    <MenuItem x:Name="MenuItem_IncidentMarker"
-                              x:FieldModifier="public"
-                              Header="_Incident Marker" />
-                    <MenuItem x:Name="MenuItem_RunDiagnostic"
-                              x:FieldModifier="public"
-                              Header="Run Diagnostic _Battery" />
-                </MenuItem>
+            <MenuItem Header="_Diagnostics">
                 <!-- Test Scripts — runnable scripts that exercise
                      specific subsystems. The CMD Interaction
                      Tests submenu, the manual-test browser,
                      and the process-cleanup test all live here
-                     per maintainer preview.118 feedback. -->
-                <MenuItem Header="_Test Scripts">
+                     per maintainer preview.118 feedback. Moved
+                     to the top of Diagnostics + accelerator S
+                     (maintainer 2026-05-18). -->
+                <MenuItem Header="Test _Scripts">
                     <MenuItem x:Name="MenuItem_OpenManualTests"
                               x:FieldModifier="public"
                               Header="Open _Manual Tests" />
@@ -333,6 +292,41 @@
                                   x:FieldModifier="public"
                                   Header="_Multi-Interrupt (R3c)" />
                     </MenuItem>
+                </MenuItem>
+                <MenuItem x:Name="MenuItem_LoggingLevel"
+                          x:FieldModifier="public"
+                          Header="Logging _Level">
+                    <MenuItem x:Name="MenuItem_LoggingLevel_information"
+                              x:FieldModifier="public"
+                              Header="_Information" />
+                    <MenuItem x:Name="MenuItem_LoggingLevel_debug"
+                              x:FieldModifier="public"
+                              Header="_Debug" />
+                </MenuItem>
+                <!-- Open Data Folder moved here from Interface
+                     (maintainer 2026-05-17): it is a
+                     troubleshooting affordance — the parent of
+                     \logs, \sessions, config.toml. -->
+                <MenuItem x:Name="MenuItem_OpenDataFolder"
+                          x:FieldModifier="public"
+                          Header="Open _Data Folder" />
+                <!-- Probe — quick "fire an action and watch what
+                     happens" probes: health check, incident
+                     marker, the diagnostic battery. The
+                     longer-running Process Cleanup Test lives
+                     in Test Scripts (per maintainer
+                     preview.118 feedback) so the accelerators
+                     within Probe stay short + unique. -->
+                <MenuItem Header="_Probe">
+                    <MenuItem x:Name="MenuItem_HealthCheck"
+                              x:FieldModifier="public"
+                              Header="_Health Check" />
+                    <MenuItem x:Name="MenuItem_IncidentMarker"
+                              x:FieldModifier="public"
+                              Header="_Incident Marker" />
+                    <MenuItem x:Name="MenuItem_RunDiagnostic"
+                              x:FieldModifier="public"
+                              Header="Run Diagnostic _Battery" />
                 </MenuItem>
                 <!-- Inspect — "look at what already happened"
                      tools: bundle copy, grep, extract submenu. -->
@@ -404,6 +398,14 @@
                     </MenuItem>
                 </MenuItem>
                 </MenuItem><!-- /Inspect -->
+                <!-- Cycle 52 boundary-diagnostic-capture
+                     (Instrument B). Same RoutedCommand as
+                     Ctrl+Shift+T; toggles raw PTY byte
+                     recording. Moved to the bottom of
+                     Diagnostics (maintainer 2026-05-18). -->
+                <MenuItem x:Name="MenuItem_ToggleRawTrace"
+                          x:FieldModifier="public"
+                          Header="Toggle Raw Shell _Trace" />
             </MenuItem>
             <!-- Cycle 52 Phase 6b round 2 — "Help" renamed
                  "About" (maintainer 2026-05-17). Acknowledgment
