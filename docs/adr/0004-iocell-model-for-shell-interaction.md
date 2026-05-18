@@ -1,6 +1,14 @@
 # ADR 0004 — IOCell is the unit of shell interaction; ContentHistory is the sole substrate; OutputDispatcher is the sole non-emergency channel
 
 - **Status**: Proposed (2026-05-14)
+- **Status-note (#428, 2026-05-17)**: Decision 3 strengthened,
+  not amended — ContentHistory now applies the `\x08`
+  backspace-erase on its active span (cmd's `BS SP BS` idiom)
+  and no longer idle-seal-fragments the composing command, so
+  the sole-extraction-substrate stays faithful to in-line
+  edits without consulting the (display-only) Screen. No
+  wire-format change. Design note:
+  [`docs/428-contenthistory-backspace-design.md`](../428-contenthistory-backspace-design.md).
 - **Date**: 2026-05-14
 - **Deciders**: maintainer (KyleKeane)
 - **Authoring item**: Cycle 51 PR-V, in response to the
