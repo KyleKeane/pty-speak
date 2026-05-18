@@ -11,7 +11,61 @@ previous (multi-thousand-line) handoff is at
 [`docs/archive/pre-cycle-45/SESSION-HANDOFF-pre-cycle-45c-historical.md`](archive/pre-cycle-45/SESSION-HANDOFF-pre-cycle-45c-historical.md)
 and serves the decision-trail role this file used to overload.
 
-## Current state (2026-05-17)
+## Current state (2026-05-18)
+
+> **⇒ 2026-05-18 — SESSION-CLOSURE RECONCILIATION (read THIS
+> first; it supersedes every earlier block in this section).**
+> The boundary-diagnostic-capture track is **COMPLETE and on
+> main** (#417–#429), *not* "next" (the earlier blocks below
+> wrongly imply it is pending — that stale framing was the
+> source of the session loops):
+> - **#417** B1 `RawShellRecorder` + `Ctrl+Shift+T`; **#418**
+>   protocol/catalogue; **#419–#421** C1/C2/C3 captured +
+>   analysed; **#422/#423** boundary-fix P1 (per-shell
+>   `BoundaryContract` seam) / P2′ (timing-independent cmd
+>   split + tolerant prompt strip); **#424–#429** replay-oracle
+>   (R-A/R-B, C1/C2/C3/C5/C6 — the regression guard).
+> - **The cell-seal defect is CHARACTERISED FROM DATA** in
+>   [`docs/boundary-capture/README.md`](boundary-capture/README.md)
+>   (cross-scenario synthesis): it is **one** boundary defect
+>   that *degrades with interaction complexity* — the OSC-133
+>   markers needed to fence a cell **are present**; the
+>   extractor just doesn't treat `;D` as a hard output-end nor
+>   fence the trailing next-prompt out. The fix is **specified
+>   + oracle-guarded** (seal on top-level `;D`; fence trailing
+>   `;A <prompt> ;B`; hold cell open across unmarked
+>   sub-prompts as ADR 0004 inline state; tolerate mixed OSC
+>   terminators) **plus one independent channel-layer fix** for
+>   the C2 fast-type repeated-speech timing artifact.
+> - **#428 saga settled:** the Direction-1 **BS arm is
+>   retained** (oracle-validated; C5 is an active guard); the
+>   (ii) `tick` idle-seal gate was a **live regression and is
+>   reverted** (#431→#432 on main).
+> - Also merged this session: **#433** (CHANGELOG union-merge
+>   CI), **#435** (menu accelerators / Diagnostics `Alt+D`,
+>   Test Scripts `Alt+S`), **#436** (markdown-link-check CI
+>   speedup). Open issues: **#434** (changelog-from-commits
+>   tooling), **#437** (corpus battery: injected commands
+>   bypass the keyboard `EnterPressed` transition → all FAIL
+>   `missing=StreamChunk`), **#438** (yes/no `choice`
+>   single-key — investigated, **PARKED as intermittent**;
+>   focus-report/timing hypothesis; ruled out: #428, the
+>   OSC-133 pivot, the input handler — see the issue).
+> - **GATE — the next direction is a maintainer decision, not
+>   more diagnosis.** [ADR 0010](adr/0010-interaction-strategy-structured-runner-vs-passthrough.md)
+>   (**Proposed** 2026-05-18) puts the first-principles ROI
+>   fork to the maintainer: **A** two-mode reframe (structured
+>   command-runner primary + raw-PTY passthrough secondary —
+>   recommended), **B** stay the course (implement the
+>   specified boundary fix + C2 fix), **C** hybrid auto-detect.
+>   **Status-quo implementation (= ADR 0010 Option B) is READY
+>   but PAUSED** so the decision is not pre-empted. **Next
+>   stage = the maintainer ratifies A/B/C in ADR 0010; the
+>   chosen option's consequence list becomes the next cycle's
+>   plan** (see § Next stage).
+>
+> *(Earlier blocks retained as the narrative trail; the block
+> above is authoritative.)*
 
 > **⇒ 2026-05-17 evening — CYCLE CLOSURE (post-#415; read
 > THIS first, it supersedes every earlier block in this
@@ -366,30 +420,39 @@ State after the maintainer's batched dogfood of post-`cab2a0d`
 
 ## Next stage
 
-**CURRENT next stage (2026-05-17, post-#415 — maintainer-
-chosen): the cell-seal / boundary computational-accuracy
-track.** Symptom: the canonical input-test runs but produces
-**no sealed command cell** in the navigable history — the
-cell is dropped upstream (ADR 0004 *drop-on-None*: no
-`PromptStart` Seq ⇒ `extractIOCell` returns `None` ⇒ cell
-dropped) and/or the prompt boundary is never detected for
-that scenario (Cycle-52 OSC-133 / `HeuristicPromptDetector`
-fallback). It is **not** a cell-history-list bug — the list
-faithfully projects `CellEventBus.Appended` off the seal
-site; nothing seals, so nothing appears. Goal of this track:
-make interactive command/output reliably **seal into typed
-IOCells** so the (now structurally-solid) history UI
-populates. Approach per the [#403 re-sequencing amendment](adr/0007-canonical-iocell-history-navigation.md#re-sequencing-amendment-2026-05-17-maintainer-ratified):
-a **boundary-diagnostic-capture** pass first (high-resolution
-timestamped record of every shell event → analyse the
-real begin/end-of-evaluation signals from data, cmd /
-PowerShell first, Claude deferred) before changing the
-seal/boundary logic — design the capture as its own scoped
-work item, do not patch the heuristic speculatively. ADR
-0007 Phase 4/4b/5 (segments) + 6c/6d + the real
+**CURRENT next stage (2026-05-18): ratify [ADR 0010](adr/0010-interaction-strategy-structured-runner-vs-passthrough.md)
+— the interaction-strategy fork.** The boundary-diagnostic-
+capture pass that the *previous* "next stage" called for is
+**done** (#417–#429); the cell-seal defect is characterised
+from data and the fix is specified + oracle-guarded
+([`docs/boundary-capture/README.md`](boundary-capture/README.md)).
+Before implementing it, the maintainer asked the
+first-principles question: does raw-shell-passthrough +
+semantic segmentation earn its keep for the actual goal (a
+clean Windows coding interface for blind devs), versus a
+structured command-runner. ADR 0010 (**Proposed**) records
+the analysis + three options and **must be ratified before
+implementation resumes**:
+
+- **A — two-mode reframe (recommended):** structured
+  command-runner as the *primary* surface (exact boundaries +
+  real exit codes *for free*, no scraping for the ~80%
+  non-interactive path) with the existing raw-PTY passthrough
+  demoted to an explicit secondary "interactive terminal"
+  mode. Reuses the three-layer/IOCell/CellEventBus/history/
+  oracle investment via the `ShellAdapter` seam.
+- **B — stay the course:** implement the already-specified
+  one boundary/extraction fix + the independent C2
+  channel-layer fix, oracle-guarded; raw terminal stays the
+  single primary surface.
+- **C — hybrid auto-detect.**
+
+On ratification, the chosen option's **Consequences** list
+becomes the cycle plan and this section is rewritten to it.
+ADR 0007 Phase 4/4b/5 (segments) + 6c/6d + the real
 cell-nav/per-cell-op implementations behind the enabled
 `(not yet implemented)` placeholders follow once cells
-reliably seal.
+reliably seal — under whichever mode A/B/C makes primary.
 
 *Historical (shipped) — R4c / R5 / R6 below are DONE; kept
 as the build-order trail, not "next":*

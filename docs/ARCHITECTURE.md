@@ -6,17 +6,25 @@ prior-art survey, and tradeoff analysis live in
 map: how data flows, which module owns which concern, and where the
 thread boundaries are.
 
-> **Currency note** (snapshot 2026-05-12; refreshed post-Cycle-45c).
-> The pre-Cycle-45 12-stage screen-grid-diff pipeline (StreamPathway
-> / LinearTextStream / DisplayPathway / TuiPathway / PathwaySelector)
-> was retired by Cycle 45c (PRs #274–#278). The aural substrate is
-> now `ContentHistory` + `SpeechCursor`. The data-flow ASCII below
-> reflects this. Sections further down that still reference the
-> retired pipeline (PathwayPump threading, individual pathway-specific
-> file inventory) are **historical**; a future doc-cleanup cycle
-> will rewrite them — see
-> [`docs/PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md)
-> § "Open follow-ups" for the deferred deep rewrite.
+> **Currency note** (snapshot 2026-05-18; module table refreshed
+> for Cycle 52 ADR 0006 three-layer refoundation + ADR 0007
+> CellEventBus). The pre-Cycle-45 12-stage screen-grid-diff
+> pipeline (StreamPathway / LinearTextStream / DisplayPathway /
+> TuiPathway / PathwaySelector) was retired by Cycle 45c (PRs
+> #274–#278). The aural substrate is `ContentHistory` +
+> `SpeechCursor`; `CellEventBus` (ADR 0007 D9, Cycle 52 #404)
+> is the parallel typed cell-event bus. Cycle 52 ADR 0006
+> landed the transport/core/channel three-layer boundary
+> (`Terminal.Shell` adapters; portability-lint-enforced). The
+> data-flow ASCII below reflects the substrate but predates
+> the `Terminal.Shell` split + `CellEventBus`; the module
+> table is current. Sections further down that still
+> reference the retired pipeline (PathwayPump threading,
+> pathway-specific file inventory) are **historical**. The
+> live strategic gate is
+> [`docs/adr/0010-interaction-strategy-structured-runner-vs-passthrough.md`](adr/0010-interaction-strategy-structured-runner-vs-passthrough.md)
+> (Proposed 2026-05-18) — a structured command-runner would
+> add a new transport adapter behind the same ADR 0006 seam.
 >
 > Pre-Cycle-45 stage definitions remain accessible in the
 > archived
@@ -118,8 +126,8 @@ the linked research-stage docs for design).
 
 | Project | Layer | Owns | Status |
 |---|---|---|---|
-| `Terminal.Core` | Pure session core (ADR 0006) | Pure types (`ColorSpec`, `SgrAttrs`, `Cell`, `Cursor`, `VtEvent`); `Screen`; `Coalescer`; `CanonicalState`; `ContentHistory` (Cycle 45 aural substrate); `SpeechCursor`; `SessionModel`; `Osc133` (pure decoder); `SelectionDetector`; `OutputDispatcher`; `ProfileRegistry`; `PassThroughProfile`; `EarconProfile`; `SelectionProfile`; `NvdaChannel`; `EarconChannel`; `FileLoggerChannel`; `FileLogger`; `Config`; `OutputEventTypes` (incl. `SemanticCategory`, `Priority`, `ActivityIds`); `OutputEventBuilder`; `AnnounceSanitiser`; `KeyEncoding`; `HotkeyRegistry`; `ShellPolicy`; `Logger`. **No WPF / P/Invoke / shell strings / `Terminal.Shell` dependency — CI-enforced by `portability-lint` (Cycle 52 R4b).** | ✅ shipped (Stages 1-3 + 5 + 8a-8d + substrate cycle + Cycle 45; `HeuristicPromptDetector` relocated to `Terminal.Shell` in Cycle 52 R1.2/R4a) |
-| `Terminal.Shell` | Transport (ADR 0006: one adapter per shell) | `SessionHost` (one-file orchestration — startup shell-resolution); `ShellEvent` / `ShellAdapter` (`IShellAdapter` — the R2+ boundary contract); `CmdAdapter` (VT-parser wrap + OSC-133 `prompt` injection, Cycle 52 R2 Option B); `HeuristicPromptDetector` (the no-OSC fallback, muted once OSC-133 seen — R3a). Dependency direction Shell → {Core, Pty, Parser}, never the reverse | ✅ shipped (Cycle 52 R1 #348–#352; R2–R4 #353–#357) |
+| `Terminal.Core` | Pure session core (ADR 0006) | Pure types (`ColorSpec`, `SgrAttrs`, `Cell`, `Cursor`, `VtEvent`); `Screen`; `Coalescer`; `CanonicalState`; `ContentHistory` (Cycle 45 aural substrate); `SpeechCursor`; `CellEventBus` (ADR 0007 D9 — parallel typed cell-event bus, Cycle 52 #404); `SessionModel`; `Osc133` (pure decoder); `SelectionDetector`; `OutputDispatcher`; `ProfileRegistry`; `PassThroughProfile`; `EarconProfile`; `SelectionProfile`; `NvdaChannel`; `EarconChannel`; `FileLoggerChannel`; `FileLogger`; `Config`; `OutputEventTypes` (incl. `SemanticCategory`, `Priority`, `ActivityIds`); `OutputEventBuilder`; `AnnounceSanitiser`; `KeyEncoding`; `HotkeyRegistry`; `ShellPolicy`; `Logger`. **No WPF / P/Invoke / shell strings / `Terminal.Shell` dependency — CI-enforced by `portability-lint` (Cycle 52 R4b).** | ✅ shipped (Stages 1-3 + 5 + 8a-8d + substrate cycle + Cycle 45; `HeuristicPromptDetector` relocated to `Terminal.Shell` in Cycle 52 R1.2/R4a) |
+| `Terminal.Shell` | Transport (ADR 0006: one adapter per shell) | `SessionHost` (one-file orchestration — startup shell-resolution); `ShellEvent` / `ShellAdapter` (`IShellAdapter` — the R2+ boundary contract); `CmdAdapter` (VT-parser wrap + OSC-133 `prompt` injection, Cycle 52 R2 Option B); `PowerShellAdapter` (`-NoExit -EncodedCommand` `prompt`-function emitting `;A`/`;B`/`;D;$LASTEXITCODE` — real exit code; Cycle 52 R5 #374/#375); `HeuristicPromptDetector` (the no-OSC fallback, muted once OSC-133 seen — R3a). Dependency direction Shell → {Core, Pty, Parser}, never the reverse | ✅ shipped (Cycle 52 R1 #348–#352; R2–R4 #353–#357; R5 #374–#375) |
 | `Terminal.Pty.Native` | Interop | `[<DllImport>]` signatures, `SafeHandle` subclasses, struct layouts | ✅ shipped (Stage 1) |
 | `Terminal.Pty` | Host | `CreatePseudoConsole` lifecycle, `ConPtyHost`, `readerLoop` helper, stdin `FileStream`, `Channel<byte[]>`-based reader; `ShellRegistry` + `EnvBlock` (env-scrub PO-5) | ✅ shipped (Stage 1 + Stage 7 PR-A/PR-B/PR-K env-scrub) |
 | `Terminal.Parser` | Stateful | Williams VT500 state machine (`StateMachine.fs`, `Parser.fs`); emits `VtEvent` | ✅ shipped (Stage 2) |

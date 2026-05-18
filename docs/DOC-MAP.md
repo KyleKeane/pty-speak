@@ -57,7 +57,7 @@ navigation anchor.
 1. [`CLAUDE.md`](../CLAUDE.md) (auto-loaded; read it first)
 2. [`README.md`](../README.md) — what the project is + shipped stages
 3. [`docs/SESSION-HANDOFF.md`](SESSION-HANDOFF.md) — "Where we left off"
-4. [`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-12.md) — current cycle plan (2026-05-09 successor)
+4. [`docs/PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md) — current cycle plan
 5. [`spec/tech-plan.md`](../spec/tech-plan.md) §N for the active stage
 6. [`spec/event-and-output-framework.md`](../spec/event-and-output-framework.md)
    when the active stage is in the framework cycles (sub-stages 8a-8f or 9a-9d) or Stage 10
@@ -92,8 +92,8 @@ navigation anchor.
 
 ### "I'm planning the next cycle"
 
-1. [`docs/PROJECT-PLAN-2026-05-09.md`](PROJECT-PLAN-2026-05-12.md) — current
-   strategic plan (2026-05-09 successor revision); predecessor
+1. [`docs/PROJECT-PLAN-2026-05-12.md`](PROJECT-PLAN-2026-05-12.md) — current
+   strategic plan; predecessor
    revisions archived under
    [`docs/archive/pre-cycle-45/`](archive/pre-cycle-45/)
 2. [`docs/ROADMAP.md`](ROADMAP.md) — high-level stage list
