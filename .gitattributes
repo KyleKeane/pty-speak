@@ -1,0 +1,14 @@
+# Concurrent PRs both append a new dated `### Cycle N …` block at
+# the bottom of CHANGELOG.md's [Unreleased] section. Git's 3-way
+# merge flags those adjacent insertions as a conflict even though
+# they are semantically independent (the per-entry headers carry
+# the ordering, not file position). The built-in `union` merge
+# driver concatenates both sides instead of conflicting — exactly
+# right for append-only standalone blocks.
+#
+# Safe ONLY because CHANGELOG entries are append-only: never
+# rewrite an earlier entry in place (union would duplicate, not
+# replace). See CONTRIBUTING.md / CLAUDE.md changelog rules and
+# the tracked follow-up to generate the changelog from
+# Conventional Commits.
+CHANGELOG.md merge=union
