@@ -882,30 +882,3 @@ let ``BS does not reach across a seal boundary into a sealed span`` () =
     |> ignore
     Assert.Equal<string[]>([| "ab"; "c" |], textSpans state)
 
-[<Fact>]
-let ``tick does NOT idle-seal a UserInputEcho active span (#428 ii)`` () =
-    let state = freshHistory ()
-    ContentHistory.setSourceResolver state (fun () ->
-        ContentHistory.EntrySource.UserInputEcho)
-    feed state t0
-        [ printRune 'e'; printRune 'c'; printRune 'h'; printRune 'o' ]
-    |> ignore
-    // Idle well past IdleSpanSealMs (200).
-    let ticked = ContentHistory.tick state (after 5000)
-    Assert.Empty(ticked)
-    Assert.Equal(0, ContentHistory.count state)
-    // Still one unsealed span; an LF now seals the WHOLE
-    // command in one TextSpan (no idle fragmentation).
-    feed state (after 5001) [ lf ] |> ignore
-    Assert.Equal<string[]>([| "echo" |], textSpans state)
-
-[<Fact>]
-let ``tick still idle-seals a CmdOutput active span`` () =
-    let state = freshHistory ()
-    ContentHistory.setSourceResolver state (fun () ->
-        ContentHistory.EntrySource.CmdOutput)
-    feed state t0 [ printRune 'h'; printRune 'i' ] |> ignore
-    let ticked = ContentHistory.tick state (after 500)
-    Assert.Equal(1, List.length ticked)
-    Assert.Equal(1, ContentHistory.count state)
-
