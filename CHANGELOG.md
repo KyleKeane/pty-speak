@@ -15566,6 +15566,27 @@ ring) follow.
   setting *"Automatically delete head branches"* + a
   one-time maintainer/Action `is:merged` verified sweep.
 
+### Cycle 52 ADR-0010 ratification — Option A (2026-05-18)
+
+- **Changed (docs / decision record)**: [ADR 0010](docs/adr/0010-interaction-strategy-structured-runner-vs-passthrough.md)
+  ratified by the maintainer — **Option A (two-mode reframe)**.
+  A structured command-runner becomes the *primary* surface
+  (exact command/output boundaries + a real exit code for free
+  on the non-interactive coding path — no scraping, no OSC-133
+  for the common case); the existing raw-PTY passthrough is
+  demoted to an explicit, user-selected *secondary "interactive
+  terminal" mode*. Reuses the ADR 0006 three-layer seam, ADR
+  0004 IOCell, ADR 0007 CellEventBus + navigable history, and
+  the replay-oracle unchanged — the runner is a new transport
+  adapter behind the existing `ShellAdapter` / `SessionHost`
+  seam, not a rewrite. The A1–A4 consequence list is now the
+  cycle plan (`docs/SESSION-HANDOFF.md` § Next stage). ADR 0010
+  status flipped Proposed → Accepted; the previously-paused
+  status-quo fix (Option B's specified boundary/extraction + the
+  C2 channel fix) is **reprioritised to the secondary PTY mode,
+  not deleted**; #437 / #438 become secondary-mode issues. No
+  code / behaviour change.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

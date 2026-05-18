@@ -152,20 +152,24 @@ before deviating.
    maintainer's call. Read before any cell-metadata /
    outcome / schema-version / tag-search work.
 9b. **[`docs/adr/0010-interaction-strategy-structured-runner-vs-passthrough.md`](docs/adr/0010-interaction-strategy-structured-runner-vs-passthrough.md)**
-   — Cycle 52 **Proposed** (2026-05-18). The first-principles
-   strategy fork: does raw-shell-passthrough + semantic
-   segmentation earn its keep vs a structured command-runner,
-   given the goal is a clean Windows coding interface for
-   blind devs. Grounded in the boundary-capture data
+   — Cycle 52 **Accepted — Option A ratified 2026-05-18**.
+   The first-principles strategy fork: does raw-shell-
+   passthrough + semantic segmentation earn its keep vs a
+   structured command-runner, given the goal is a clean
+   Windows coding interface for blind devs. Grounded in the
+   boundary-capture data
    ([`docs/boundary-capture/README.md`](docs/boundary-capture/README.md)):
    the non-interactive path is bounded (one specified
    oracle-guarded fix); the interactive sub-prompt tail is
-   intrinsically unbounded. Options **A** two-mode reframe
-   (recommended) / **B** stay the course / **C** hybrid.
-   **Proposed — awaiting maintainer ratification; status-quo
-   implementation (= Option B) is PAUSED until then.** Read
-   FIRST before any boundary / extraction / runner /
-   primary-surface work — it gates the next cycle.
+   intrinsically unbounded. **Maintainer ratified Option A
+   (two-mode reframe): structured command-runner = primary
+   surface; raw-PTY passthrough demoted to a secondary
+   "interactive terminal" mode.** The A1–A4 consequence list
+   is the cycle plan (`docs/SESSION-HANDOFF.md` § Next stage);
+   A1 `StructuredRunnerAdapter` behind the existing
+   `ShellAdapter` seam is the start — no shipped work
+   discarded. Read FIRST before any boundary / extraction /
+   runner / primary-surface work — it sets the current cycle.
 10. **RFC 0001 (archived)** — Cycle 33 pivot-gate RFC, formalised
    the `LinearTextStream` substrate + streaming-emission protocol.
    The substrate it specified was replaced by `ContentHistory` +
@@ -1048,15 +1052,22 @@ points at the cycle headline.
   retained, (ii) tick-gate reverted (#431→#432). Also
   merged: #433/#435/#436. Open: #434, #437, #438 (yes/no
   `choice` — parked intermittent).
-- **Next** = **maintainer ratifies [ADR 0010](docs/adr/0010-interaction-strategy-structured-runner-vs-passthrough.md)
-  (Proposed 2026-05-18)** — the structured-runner-vs-
-  passthrough strategy fork (A two-mode reframe recommended /
-  B stay-the-course / C hybrid). The capture/diagnosis is
-  *done*; the next move is a **decision**, not more
-  investigation. Status-quo implementation (= ADR 0010
-  Option B, the specified boundary fix) is **ready but
-  PAUSED**. On ratification the chosen option's Consequences
-  become the cycle plan. **Start-here: [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)
+- **Next** = **[ADR 0010](docs/adr/0010-interaction-strategy-structured-runner-vs-passthrough.md)
+  Option A — two-mode reframe (RATIFIED 2026-05-18)**. The
+  structured-runner-vs-passthrough strategy fork is decided:
+  **structured command-runner = primary surface**; raw-PTY
+  passthrough demoted to a secondary "interactive terminal"
+  mode. The capture/diagnosis is *done* (#417–#429); the
+  decision is *made*. ADR 0010's **Consequences A1–A4 are the
+  cycle plan** — a walking skeleton, each its own PR +
+  dogfood, no shipped work discarded (the runner is a new
+  transport adapter behind the existing `ShellAdapter` seam;
+  ADR 0006/0004/0007 + replay-oracle carry over). **A1
+  `StructuredRunnerAdapter` is the start.** Option B's
+  specified boundary fix is reprioritised to the secondary
+  PTY mode (A4), not deleted; #437 / #438 become
+  secondary-mode issues. **Start-here:
+  [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)
   § Current state (2026-05-18 block) + § Next stage** +
   ADR 0010. Other backlog (independent): 45g
   `ShellPolicy` consolidation; full deferral list in ADR

@@ -1,11 +1,13 @@
 # ADR 0010 — Interaction strategy: structured command-runner vs raw-terminal passthrough
 
-- **Status**: **Proposed** (2026-05-18; the maintainer requested
-  this decision record *before* any further implementation —
-  "Strategy ADR first". No code changes accompany it. The
-  maintainer ratifies one of the options below; until then the
-  status-quo path (Option B) is **paused** so the decision is
-  not pre-empted.)
+- **Status**: **Accepted — Option A (two-mode reframe) ratified
+  by the maintainer 2026-05-18.** The decision record was
+  requested *before* any further implementation ("Strategy ADR
+  first"); no code changes accompany the ADR itself. The A1–A4
+  consequence list is now the cycle plan
+  ([`docs/SESSION-HANDOFF.md`](../SESSION-HANDOFF.md) § Next
+  stage). Implementation is a walking skeleton — each of A1–A4
+  is its own PR + dogfood; no shipped work is discarded.
 - **Date**: 2026-05-18
 - **Deciders**: maintainer (KyleKeane)
 - **Authoring item**: Cycle 52, session-closure reconciliation.
@@ -133,7 +135,13 @@ de-risking property (it keeps an unbounded predictor on the
 hot path).
 
 This ADR records the analysis; **the maintainer ratifies the
-option.** Status stays Proposed until then.
+option.**
+
+**Ratified 2026-05-18: Option A (two-mode reframe).** The
+structured command-runner becomes the primary surface; raw-PTY
+passthrough is demoted to an explicit secondary "interactive
+terminal" mode. The Consequences A1–A4 below are the cycle
+plan.
 
 ## Consequences
 
@@ -202,10 +210,13 @@ heuristic surface.
 
 ## Status / next
 
-**Proposed 2026-05-18.** No implementation. The maintainer
-selects A, B, or C; the chosen option's consequence list
-becomes the next cycle's plan and `docs/SESSION-HANDOFF.md`
-§ Next stage is set to it. Until ratified, status-quo
-implementation is **paused** — the specified boundary fix is
-*ready* but deliberately not started so this decision is not
-pre-empted.
+**Accepted 2026-05-18 — Option A (two-mode reframe), maintainer
+ratified.** The A1–A4 consequence list is the next cycle's plan
+and [`docs/SESSION-HANDOFF.md`](../SESSION-HANDOFF.md) § Next
+stage is set to it. Implementation is a walking skeleton (A1
+`StructuredRunnerAdapter` first, each its own PR + dogfood); no
+shipped work is discarded. The status-quo Option B fix (the
+specified boundary/extraction fix + the independent C2 channel
+fix) is **reprioritised to the secondary PTY mode (A4), not
+deleted** — it still applies there, still oracle-guarded;
+#437 / #438 become secondary-mode issues.
