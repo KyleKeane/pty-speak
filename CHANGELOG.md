@@ -15555,9 +15555,16 @@ ring) follow.
   ADR 0006 three-layer split + `CellEventBus` +
   `PowerShellAdapter`; removed the accidental ~1 MB
   `diagnostics/1.txt` and added a `diagnostics/` gitignore
-  rule; pruned stale squash-merged `claude/*` branches. No
-  code / behaviour change. Issues #437 (corpus battery) /
-  #438 (yes/no `choice`, parked intermittent) recorded.
+  rule. No code / behaviour change. Issues #437 (corpus
+  battery) / #438 (yes/no `choice`, parked intermittent)
+  recorded. **Branch prune NOT performed**: the stale
+  `claude/*` set is ~220 (not the audited 44) and the
+  sandbox git proxy + GitHub MCP both refuse remote
+  branch-deletes (same constraint class as the tag-push
+  limitation), so it cannot be done from a Claude session
+  at all. Durable fix is GitHub-side: enable the repo
+  setting *"Automatically delete head branches"* + a
+  one-time maintainer/Action `is:merged` verified sweep.
 
 ## [0.0.1-preview.18] — 2026-04-28
 
