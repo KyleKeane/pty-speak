@@ -107,11 +107,14 @@ defences, both shipped R-B1:
   real defect on first run** (sealed `CommandText` is
   `ECHO HELLOXX` — cmd's `\x08 \x08` erase is Screen-level but
   extraction reads linear ContentHistory per ADR 0004, which
-  doesn't apply `\x08`). The fact ships **`Skip`-with-reason**
-  (maintainer decision 2026-05-17): the trace + `.expected`
-  stay in the corpus so it flips to an active regression guard
-  once the ADR-0004-level substrate fix lands. Tracked:
-  [#428](https://github.com/KyleKeane/pty-speak/issues/428).
+  doesn't apply `\x08`). **#428 fixed it** (maintainer-chosen
+  direction 2026-05-17): ContentHistory's `appendFromEvent`
+  gained a BS arm that applies the `\x08` erase on the active
+  span (cmd's `BS SP BS` idiom nets to a deletion), and the
+  composing command is no longer idle-seal-fragmented
+  (`tick` skips `UserInputEcho` spans). C5's `Skip` was
+  **removed** — it is now an **active regression guard**.
+  Tracked: [#428](https://github.com/KyleKeane/pty-speak/issues/428).
   **C6** long-idle mid-compose landed — real capture (`ECHO`,
   ~54s idle with no Enter, then ` DONE`); asserts the gap
   neither splits the in-flight command nor seals early

@@ -353,15 +353,12 @@ let ``replay oracle: C3 set/p — seals (was drop-on-None), no bleed`` () =
     assertScenario
         "C3-set-p-text-input.txt" "C3-set-p-text-input.expected"
 
-// SKIPPED: caught a real defect (#428). cmd echoes the in-line
-// erase as `\x08 \x08`, a Screen-level destructive edit; extraction
-// reads linear ContentHistory (ADR 0004) which doesn't apply `\x08`,
-// so backspaced chars survive in the sealed CommandText
-// ("ECHO HELLOXX" not "ECHO HELLO"). The substrate fix is an
-// ADR-0004-level follow-up (maintainer decision 2026-05-17); the
-// trace + .expected stay in the corpus so this flips to an active
-// regression guard once #428 lands. Remove the Skip then.
-[<Fact(Skip = "known defect #428: backspace not applied to ContentHistory CommandText (ADR-0004 substrate follow-up)")>]
+// #428 fixed: ContentHistory now applies the `\x08` erase on the
+// active span (cmd's `BS SP BS` idiom nets to a deletion), and the
+// composing command is no longer idle-seal-fragmented. C5 is now an
+// active regression guard — backspaced chars must not survive into
+// the sealed CommandText.
+[<Fact>]
 let ``replay oracle: C5 backspace/retype — deleted chars gone from CommandText`` () =
     assertScenario
         "C5-backspace-retype.txt" "C5-backspace-retype.expected"

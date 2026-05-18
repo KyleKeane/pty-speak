@@ -15498,6 +15498,27 @@ path. Surfaced as `Diagnostics → Toggle Raw Shell Trace`
 items + Instrument A (always-on bounded boundary-decision
 ring) follow.
 
+### Cycle 52 #428 ContentHistory backspace-erase (2026-05-17)
+
+- **Fixed**: backspaced characters in an in-line command edit
+  no longer survive into the sealed command (history /
+  announce). cmd echoes an in-line erase as the idiom
+  `BS SP BS` (`\x08 \x20 \x08`); `ContentHistory.appendFromEvent`
+  previously had no `\x08` arm, so the to-be-deleted characters
+  stayed in the reconstructed `CommandText` (e.g.
+  `ECHO HELLOXX` instead of `ECHO HELLO`). The substrate now
+  applies the erase on its active span (the idiom nets to a
+  single deletion, clamped at empty — never reaches into
+  sealed entries), and the composing command is no longer
+  idle-seal-fragmented (`tick` skips `UserInputEcho` spans),
+  so the fix holds for slow typing with pauses, not just the
+  oracle. The C5 replay-oracle fact flipped from `Skip` to an
+  active regression guard. Direction recorded in
+  [`docs/428-contenthistory-backspace-design.md`](docs/428-contenthistory-backspace-design.md)
+  (ADR 0004 Decision 3 strengthened, not amended; no
+  wire-format change). PowerShell / PSReadLine CSI-driven
+  in-line editing is a distinct concern, out of scope here.
+
 ## [0.0.1-preview.18] — 2026-04-28
 ## [0.0.1-preview.18] — 2026-04-28
 

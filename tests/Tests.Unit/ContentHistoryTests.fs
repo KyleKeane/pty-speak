@@ -38,6 +38,7 @@ let private execute (b: byte) : VtEvent = Execute b
 let private lf = execute 0x0Auy
 let private cr = execute 0x0Duy
 let private bel = execute 0x07uy
+let private bs = execute 0x08uy
 
 let private cub (n: int) : VtEvent =
     CsiDispatch ([| n |], [||], 'D', None)
@@ -832,4 +833,79 @@ let ``Resolver exception falls back to Unknown`` () =
         Assert.Equal(
             ContentHistory.EntrySource.Unknown,
             ContentHistory.entrySource e)
+
+// ---------------------------------------------------------------------
+// #428 — BS (0x08) destructive cursor-back on the active span
+// ---------------------------------------------------------------------
+
+let private textSpans (state: ContentHistory.T) : string[] =
+    ContentHistory.snapshot state
+    |> Array.choose (fun e ->
+        match e with
+        | ContentHistory.TextSpan d -> Some d.Text
+        | _ -> None)
+
+[<Fact>]
+let ``BS deletes the last char of the active span`` () =
+    let state = freshHistory ()
+    feed state t0 [ printRune 'a'; printRune 'b'; printRune 'c'; bs; lf ]
+    |> ignore
+    Assert.Equal<string[]>([| "ab" |], textSpans state)
+
+[<Fact>]
+let ``BS on an empty active span is a no-op`` () =
+    let state = freshHistory ()
+    let emitted = feed state t0 [ bs ]
+    Assert.Empty(emitted)
+    Assert.Equal(0, ContentHistory.count state)
+    Assert.Equal(-1L, ContentHistory.latestSeq state)
+    // Subsequent content is unaffected.
+    feed state t0 [ printRune 'x'; lf ] |> ignore
+    Assert.Equal<string[]>([| "x" |], textSpans state)
+
+[<Fact>]
+let ``cmd BS-SP-BS erase idiom nets to a single deletion`` () =
+    let state = freshHistory ()
+    // "ECHO HELLOXX" then two `BS SP BS` erase idioms → "ECHO HELLO".
+    let typed = [ for c in "ECHO HELLOXX" -> printRune c ]
+    let eraseIdiom = [ bs; printRune ' '; bs ]
+    feed state t0 (typed @ eraseIdiom @ eraseIdiom @ [ lf ]) |> ignore
+    Assert.Equal<string[]>([| "ECHO HELLO" |], textSpans state)
+
+[<Fact>]
+let ``BS does not reach across a seal boundary into a sealed span`` () =
+    let state = freshHistory ()
+    // "ab" + LF seals "ab"; BS now hits an EMPTY active span
+    // (no-op) and must not mutate the sealed "ab".
+    feed state t0
+        [ printRune 'a'; printRune 'b'; lf; bs; printRune 'c'; lf ]
+    |> ignore
+    Assert.Equal<string[]>([| "ab"; "c" |], textSpans state)
+
+[<Fact>]
+let ``tick does NOT idle-seal a UserInputEcho active span (#428 ii)`` () =
+    let state = freshHistory ()
+    ContentHistory.setSourceResolver state (fun () ->
+        ContentHistory.EntrySource.UserInputEcho)
+    feed state t0
+        [ printRune 'e'; printRune 'c'; printRune 'h'; printRune 'o' ]
+    |> ignore
+    // Idle well past IdleSpanSealMs (200).
+    let ticked = ContentHistory.tick state (after 5000)
+    Assert.Empty(ticked)
+    Assert.Equal(0, ContentHistory.count state)
+    // Still one unsealed span; an LF now seals the WHOLE
+    // command in one TextSpan (no idle fragmentation).
+    feed state (after 5001) [ lf ] |> ignore
+    Assert.Equal<string[]>([| "echo" |], textSpans state)
+
+[<Fact>]
+let ``tick still idle-seals a CmdOutput active span`` () =
+    let state = freshHistory ()
+    ContentHistory.setSourceResolver state (fun () ->
+        ContentHistory.EntrySource.CmdOutput)
+    feed state t0 [ printRune 'h'; printRune 'i' ] |> ignore
+    let ticked = ContentHistory.tick state (after 500)
+    Assert.Equal(1, List.length ticked)
+    Assert.Equal(1, ContentHistory.count state)
 

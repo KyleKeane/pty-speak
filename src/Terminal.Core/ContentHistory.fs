@@ -852,6 +852,27 @@ module ContentHistory =
                     match sealedEntry with
                     | Some e -> [ e; bellEntry ]
                     | None -> [ bellEntry ]
+                | Execute b when b = 0x08uy ->
+                    // #428 — BS: destructive cursor-back on the
+                    // active span. cmd echoes an in-line erase as
+                    // the idiom `BS SP BS`; deleting the last
+                    // accumulated char on each BS composes with it
+                    // to net the deletion. Clamp at empty — never
+                    // reach back into sealed entries (append-only
+                    // invariant; ADR 0004). cmd's line editor never
+                    // echoes a BS that would erase past the prompt.
+                    if state.ActiveSpanText.Length > 0 then
+                        state.ActiveSpanText.Remove(
+                            state.ActiveSpanText.Length - 1, 1)
+                        |> ignore
+                        if state.ActiveSpanText.Length = 0 then
+                            // Span emptied — let the next Print
+                            // re-snapshot the first-byte source +
+                            // start (keeps the PR-Q first-byte
+                            // invariant honest).
+                            state.ActiveSpanStartedAt <- ValueNone
+                            state.ActiveSpanSource <- ValueNone
+                    []
                 | CsiDispatch (_, _, 'D', _) ->
                     // CUB → defer to next event.
                     state.PendingCUB <- ValueSome 1
@@ -906,14 +927,26 @@ module ContentHistory =
         lock state.Gate (fun () ->
             if state.ActiveSpanText.Length = 0 then []
             else
-                let elapsed =
-                    (now - state.LastEventAt).TotalMilliseconds
-                if elapsed >= float state.Parameters.IdleSpanSealMs then
-                    match sealActiveSpan state now with
-                    | Some e -> [ e ]
-                    | None -> []
-                else
-                    [])
+                match state.ActiveSpanSource with
+                | ValueSome EntrySource.UserInputEcho ->
+                    // #428 (ii) — never idle-seal the composing
+                    // command. Its bytes are UserInputEcho
+                    // (suppressed from announces per ADR
+                    // 0003/0008), so idle-sealing serves no
+                    // purpose and would fragment the command
+                    // across sealed TextSpans beyond a later BS's
+                    // reach. Keep it in ONE active span until the
+                    // CommandStart marker seals it.
+                    []
+                | _ ->
+                    let elapsed =
+                        (now - state.LastEventAt).TotalMilliseconds
+                    if elapsed >= float state.Parameters.IdleSpanSealMs then
+                        match sealActiveSpan state now with
+                        | Some e -> [ e ]
+                        | None -> []
+                    else
+                        [])
 
     /// Reset to empty. Called when SessionModel transitions out
     /// of a sealed tuple so the next tuple starts fresh.
