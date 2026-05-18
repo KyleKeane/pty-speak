@@ -27,7 +27,7 @@ target workload.
 > in the spec per chat 2026-05-03 maintainer authorization;
 > see [`spec/tech-plan.md`](spec/tech-plan.md) §4a / §4b /
 > §5a. Stages 7-10 are sequenced via
-> [`docs/PROJECT-PLAN-2026-05-09.md`](docs/PROJECT-PLAN-2026-05-12.md)
+> [`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md)
 > (the current strategic plan; 2026-05-09 successor to the
 > 2026-05-07 revision) as cleanup (✓ shipped May 2026) →
 > Stage 7 (validation gate; ✓ shipped) → substrate cycle
@@ -147,7 +147,7 @@ docs/                    Living developer documentation
   CHECKPOINTS.md         Stable-baseline tags per shipped stage
   CONPTY-NOTES.md        Observed Windows ConPTY platform quirks
   SESSION-HANDOFF.md     Bridge between Claude Code coding sessions
-  PROJECT-PLAN-2026-05-09.md  Current strategic plan (predecessor revisions in archive/pre-cycle-45/)
+  PROJECT-PLAN-2026-05-12.md  Current strategic plan (predecessor revisions in archive/pre-cycle-45/)
   archive/pre-cycle-45/  Decision-history archive of the pre-Cycle-45 substrate-pipeline docs (audits, RFC 0001, pipeline narrative, stage-gap inventory, research seeds, historical context)
 .github/
   workflows/             CI and release automation
@@ -172,7 +172,7 @@ shortcuts for the four most common audiences.
 **If you're Claude Code starting a session:**
 - [`CLAUDE.md`](CLAUDE.md) — Claude-runtime-only rules (auto-loaded; sandbox quirks, MCP behaviour, ask-for-CI-logs, no-GUI-walks rule, diagnostic recipes)
 - [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md) — "Where we left off"
-- [`docs/PROJECT-PLAN-2026-05-09.md`](docs/PROJECT-PLAN-2026-05-12.md) — strategic plan
+- [`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md) — strategic plan
 - [`spec/tech-plan.md`](spec/tech-plan.md) — stage-by-stage spec
 
 **If you're the maintainer cutting a release:**

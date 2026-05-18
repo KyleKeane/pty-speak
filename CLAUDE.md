@@ -151,6 +151,21 @@ before deviating.
    start, independently landable, scheduled at the
    maintainer's call. Read before any cell-metadata /
    outcome / schema-version / tag-search work.
+9b. **[`docs/adr/0010-interaction-strategy-structured-runner-vs-passthrough.md`](docs/adr/0010-interaction-strategy-structured-runner-vs-passthrough.md)**
+   — Cycle 52 **Proposed** (2026-05-18). The first-principles
+   strategy fork: does raw-shell-passthrough + semantic
+   segmentation earn its keep vs a structured command-runner,
+   given the goal is a clean Windows coding interface for
+   blind devs. Grounded in the boundary-capture data
+   ([`docs/boundary-capture/README.md`](docs/boundary-capture/README.md)):
+   the non-interactive path is bounded (one specified
+   oracle-guarded fix); the interactive sub-prompt tail is
+   intrinsically unbounded. Options **A** two-mode reframe
+   (recommended) / **B** stay the course / **C** hybrid.
+   **Proposed — awaiting maintainer ratification; status-quo
+   implementation (= Option B) is PAUSED until then.** Read
+   FIRST before any boundary / extraction / runner /
+   primary-surface work — it gates the next cycle.
 10. **RFC 0001 (archived)** — Cycle 33 pivot-gate RFC, formalised
    the `LinearTextStream` substrate + streaming-emission protocol.
    The substrate it specified was replaced by `ContentHistory` +
@@ -986,9 +1001,9 @@ points at the cycle headline.
   activity ID. Deferred: `EntrySource.DraftInputRecall`
   ContentHistory tagging (Cycle 49 E3) — substrate
   refinement, no audible user-visible bug behind it after
-  PR-I's screen-read approach. Cycle plan archived at
-  [`docs/CYCLE-49-PLAN.md`](docs/CYCLE-49-PLAN.md) (now
-  historical).
+  PR-I's screen-read approach. (Cycle 49 was never given a
+  dedicated archived plan file — the CHANGELOG `[Unreleased]`
+  Cycle 49 entries + `git log` are the record.)
 - **Cycle 51** (PRs #337–#344, 2026-05-14) — IOCell pivot
   ([ADR 0004](docs/adr/0004-iocell-model-for-shell-interaction.md)):
   `IOCell` + schemaVersion-2 JSONL + round-trip reader, then
@@ -1022,17 +1037,28 @@ points at the cycle headline.
   `52-ADR7-P6b` ✅. Findings: Output Verbosity still live
   (not deprecated); focused-item outline-on-blur deferred
   to the stable Tree.
-- **Next** = the **cell-seal / boundary computational-
-  accuracy track** (maintainer-chosen 2026-05-17): the
-  input-test seals **no command cell** (ADR 0004
-  drop-on-None / Cycle-52 boundary detection) — a
-  boundary-diagnostic-capture pass first, then the
-  seal/boundary fix; ADR 0007 Phase 4/4b/5 + 6c/6d + the
-  real cell-nav/per-cell-op implementations behind the
-  enabled menu placeholders follow once cells reliably
-  seal. **Start-here: [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)
-  § Current state + § Next stage** (post-#415 closure block
-  is authoritative). Other backlog (independent): 45g
+- **Cycle 52 continued (2026-05-17 → 2026-05-18)** — the
+  **boundary-diagnostic-capture track shipped & is COMPLETE
+  on main** (#417 B1 recorder/`Ctrl+Shift+T` · #418 protocol
+  · #419–#421 C1/C2/C3 capture+analysis · #422/#423
+  boundary-fix P1/P2 · #424–#429 replay-oracle). The
+  cell-seal defect is **characterised from data**
+  ([`docs/boundary-capture/README.md`](docs/boundary-capture/README.md));
+  the fix is **specified + oracle-guarded**. #428 BS-arm
+  retained, (ii) tick-gate reverted (#431→#432). Also
+  merged: #433/#435/#436. Open: #434, #437, #438 (yes/no
+  `choice` — parked intermittent).
+- **Next** = **maintainer ratifies [ADR 0010](docs/adr/0010-interaction-strategy-structured-runner-vs-passthrough.md)
+  (Proposed 2026-05-18)** — the structured-runner-vs-
+  passthrough strategy fork (A two-mode reframe recommended /
+  B stay-the-course / C hybrid). The capture/diagnosis is
+  *done*; the next move is a **decision**, not more
+  investigation. Status-quo implementation (= ADR 0010
+  Option B, the specified boundary fix) is **ready but
+  PAUSED**. On ratification the chosen option's Consequences
+  become the cycle plan. **Start-here: [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)
+  § Current state (2026-05-18 block) + § Next stage** +
+  ADR 0010. Other backlog (independent): 45g
   `ShellPolicy` consolidation; full deferral list in ADR
   0006 §"Deferred to R6+".
 

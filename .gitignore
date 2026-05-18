@@ -261,3 +261,8 @@ release-private.key
 # Tools
 .config/dotnet-tools.json.lock
 
+# Ad-hoc diagnostic bundles / raw traces — never commit these.
+# Deterministic catalogued capture fixtures live under
+# docs/boundary-capture/ (see that dir's README safety rule).
+diagnostics/
+

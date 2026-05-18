@@ -15539,7 +15539,26 @@ ring) follow.
   models the idle-seal + watermark interaction. Two
   gate-specific unit tests removed; no wire-format change.
 
-## [0.0.1-preview.18] — 2026-04-28
+### Cycle 52 session-closure reconciliation (2026-05-18)
+
+- **Changed (docs / housekeeping)**: a session-closure
+  reconciliation pass. `SESSION-HANDOFF.md` + `CLAUDE.md` now
+  state the boundary-diagnostic-capture track is **complete
+  on main** (#417–#429) and the next move is ratifying the
+  new **ADR 0010** strategy fork (structured command-runner
+  vs raw-terminal passthrough; Proposed) — correcting the
+  stale "next stage" framing that caused session loops. Also:
+  documented the #435 menu accelerators (Diagnostics `Alt+D`,
+  Test Scripts `Alt+S`); fixed README / DOC-MAP backwards
+  plan-version labels; fixed the broken `CYCLE-49-PLAN.md`
+  reference in CLAUDE.md; refreshed `ARCHITECTURE.md` for the
+  ADR 0006 three-layer split + `CellEventBus` +
+  `PowerShellAdapter`; removed the accidental ~1 MB
+  `diagnostics/1.txt` and added a `diagnostics/` gitignore
+  rule; pruned stale squash-merged `claude/*` branches. No
+  code / behaviour change. Issues #437 (corpus battery) /
+  #438 (yes/no `choice`, parked intermittent) recorded.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
