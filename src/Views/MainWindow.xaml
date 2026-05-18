@@ -28,7 +28,7 @@
              Compose's reflection-driven wiring auto-picks it up.
 
              Top-level order + mnemonics: _Interface, _Terminal,
-             _Cell History, Dia_gnostics, _About (all unique;
+             _Cell History, _Diagnostics, _About (all unique;
              non-conflicting with AppReservedHotkeys's
              Ctrl+Shift+letter gestures since different modifier
              sets are different gestures).
