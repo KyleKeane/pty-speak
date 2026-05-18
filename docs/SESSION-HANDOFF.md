@@ -51,18 +51,23 @@ and serves the decision-trail role this file used to overload.
 >   single-key — investigated, **PARKED as intermittent**;
 >   focus-report/timing hypothesis; ruled out: #428, the
 >   OSC-133 pivot, the input handler — see the issue).
-> - **GATE — the next direction is a maintainer decision, not
->   more diagnosis.** [ADR 0010](adr/0010-interaction-strategy-structured-runner-vs-passthrough.md)
->   (**Proposed** 2026-05-18) puts the first-principles ROI
->   fork to the maintainer: **A** two-mode reframe (structured
->   command-runner primary + raw-PTY passthrough secondary —
->   recommended), **B** stay the course (implement the
->   specified boundary fix + C2 fix), **C** hybrid auto-detect.
->   **Status-quo implementation (= ADR 0010 Option B) is READY
->   but PAUSED** so the decision is not pre-empted. **Next
->   stage = the maintainer ratifies A/B/C in ADR 0010; the
->   chosen option's consequence list becomes the next cycle's
->   plan** (see § Next stage).
+> - **GATE RESOLVED 2026-05-18 — [ADR 0010](adr/0010-interaction-strategy-structured-runner-vs-passthrough.md)
+>   ratified: Option A (two-mode reframe).** The maintainer
+>   chose the structured command-runner as the *primary*
+>   surface (exact boundaries + a real exit code for free on
+>   the non-interactive path, no scraping); the existing
+>   raw-PTY passthrough is demoted to an explicit secondary
+>   "interactive terminal" mode. ADR 0010 status flipped
+>   Proposed → Accepted. **Next stage = the A1–A4
+>   walking-skeleton consequence list** (each its own PR +
+>   dogfood; no shipped work discarded — the runner is a new
+>   transport adapter behind the existing `ShellAdapter` /
+>   `SessionHost` seam, reusing ADR 0006/0004/0007 + the
+>   replay-oracle). The previously-paused Option B fix
+>   (specified boundary/extraction + C2 channel fix) is
+>   **reprioritised to the secondary PTY mode (A4), not
+>   deleted**; #437 / #438 become secondary-mode issues. See
+>   § Next stage.
 >
 > *(Earlier blocks retained as the narrative trail; the block
 > above is authoritative.)*
@@ -420,39 +425,50 @@ State after the maintainer's batched dogfood of post-`cab2a0d`
 
 ## Next stage
 
-**CURRENT next stage (2026-05-18): ratify [ADR 0010](adr/0010-interaction-strategy-structured-runner-vs-passthrough.md)
-— the interaction-strategy fork.** The boundary-diagnostic-
-capture pass that the *previous* "next stage" called for is
-**done** (#417–#429); the cell-seal defect is characterised
-from data and the fix is specified + oracle-guarded
-([`docs/boundary-capture/README.md`](boundary-capture/README.md)).
-Before implementing it, the maintainer asked the
-first-principles question: does raw-shell-passthrough +
-semantic segmentation earn its keep for the actual goal (a
-clean Windows coding interface for blind devs), versus a
-structured command-runner. ADR 0010 (**Proposed**) records
-the analysis + three options and **must be ratified before
-implementation resumes**:
+**CURRENT next stage (2026-05-18): [ADR 0010](adr/0010-interaction-strategy-structured-runner-vs-passthrough.md)
+Option A — two-mode reframe (RATIFIED).** The maintainer
+ratified Option A: a **structured command-runner becomes the
+primary surface**, the existing raw-PTY passthrough is demoted
+to an explicit secondary "interactive terminal" mode. The
+boundary-diagnostic-capture pass the previous "next stage"
+called for is **done** (#417–#429); the strategy decision that
+gated implementation is now made. ADR 0010's **Consequences
+A1–A4 are the cycle plan** — a walking skeleton, each its own
+PR + dogfood, **no shipped work discarded** (the runner is a
+new transport adapter behind the existing `ShellAdapter` /
+`SessionHost` seam; ADR 0006 three-layer + ADR 0004 IOCell +
+ADR 0007 CellEventBus/navigable-history + the replay-oracle all
+carry over unchanged):
 
-- **A — two-mode reframe (recommended):** structured
-  command-runner as the *primary* surface (exact boundaries +
-  real exit codes *for free*, no scraping for the ~80%
-  non-interactive path) with the existing raw-PTY passthrough
-  demoted to an explicit secondary "interactive terminal"
-  mode. Reuses the three-layer/IOCell/CellEventBus/history/
-  oracle investment via the `ShellAdapter` seam.
-- **B — stay the course:** implement the already-specified
-  one boundary/extraction fix + the independent C2
-  channel-layer fix, oracle-guarded; raw terminal stays the
-  single primary surface.
-- **C — hybrid auto-detect.**
+- **A1 — `StructuredRunnerAdapter`** behind the existing
+  `ShellAdapter` / `SessionHost` seam (ADR 0006): invoke +
+  capture stdout / stderr / exit-code directly; emit one
+  sealed `IOCell` with exact `CommandStartedAt` /
+  `CommandFinishedAt` and a **real** `ExitCode` (turns ADR
+  0009's `Indeterminate`-for-cmd into a genuine
+  `Succeeded` / `Failed` on this path). No OSC-133, no
+  `HeuristicPromptDetector` on this path. **A1 is the start.**
+- **A2 — clean command-input surface as the default.** The
+  ADR 0007 IOCell history is already the right output model —
+  it simply receives *exact* cells.
+- **A3 — explicit mode switch** to the existing raw-PTY
+  passthrough, relabelled **"Interactive terminal"**; its
+  known segmentation imperfections become *documented, scoped*
+  limitations of an opt-in mode, not product-critical bugs.
+- **A4 — in-flight status-quo items reprioritised, not
+  deleted:** the specified boundary/extraction fix + the
+  independent C2 channel fix still apply to the secondary PTY
+  mode; the replay-oracle still guards it; **#437 / #438
+  become secondary-mode issues**.
 
-On ratification, the chosen option's **Consequences** list
-becomes the cycle plan and this section is rewritten to it.
-ADR 0007 Phase 4/4b/5 (segments) + 6c/6d + the real
+Each A-stage stays independently CI- + NVDA-dogfood-gated
+(matrix rows per stage in
+[`ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)). ADR
+0007 Phase 4/4b/5 (segments) + 6c/6d + the real
 cell-nav/per-cell-op implementations behind the enabled
 `(not yet implemented)` placeholders follow once cells
-reliably seal — under whichever mode A/B/C makes primary.
+reliably seal — they seal *exactly and for free* on the A1
+primary path.
 
 *Historical (shipped) — R4c / R5 / R6 below are DONE; kept
 as the build-order trail, not "next":*
