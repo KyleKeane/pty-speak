@@ -15519,6 +15519,26 @@ ring) follow.
   wire-format change). PowerShell / PSReadLine CSI-driven
   in-line editing is a distinct concern, out of scope here.
 
+### Cycle 52 #428 follow-up: revert the tick idle-seal gate (2026-05-18)
+
+- **Fixed (regression)**: the #428 (ii) sub-decision —
+  `ContentHistory.tick` skipping idle-seal for
+  `UserInputEcho` spans — regressed the **live** announce
+  path and is **reverted**. The R6a progress/watermark path
+  (`Program.fs` ~5079–5125) depends on `tick` sealing the
+  typed-command span to keep the R3d/`commandEnterSeq`
+  watermark consistent; gating that seal reintroduced the
+  "echo hi⏎hi" + prompt-path-bleed class and garbled the
+  sub-prompt / Ctrl+C (Y/N) announces (the shell handled the
+  keys; the audio feedback was broken). The replay oracle
+  could not catch it — the harness never calls `tick` (the
+  live-only fidelity gap the design note flagged). The
+  Direction-1 **BS arm is retained** (oracle-validated; C5
+  stays an active regression guard); only the `tick` gate is
+  reverted. (ii) is deferred until a live-faithful test
+  models the idle-seal + watermark interaction. Two
+  gate-specific unit tests removed; no wire-format change.
+
 ## [0.0.1-preview.18] — 2026-04-28
 ## [0.0.1-preview.18] — 2026-04-28
 

@@ -110,11 +110,17 @@ defences, both shipped R-B1:
   doesn't apply `\x08`). **#428 fixed it** (maintainer-chosen
   direction 2026-05-17): ContentHistory's `appendFromEvent`
   gained a BS arm that applies the `\x08` erase on the active
-  span (cmd's `BS SP BS` idiom nets to a deletion), and the
-  composing command is no longer idle-seal-fragmented
-  (`tick` skips `UserInputEcho` spans). C5's `Skip` was
-  **removed** — it is now an **active regression guard**.
-  Tracked: [#428](https://github.com/KyleKeane/pty-speak/issues/428).
+  span (cmd's `BS SP BS` idiom nets to a deletion). C5's
+  `Skip` was **removed** — it is now an **active regression
+  guard**. The (ii) idle-seal gate (`tick` skipping
+  `UserInputEcho` spans) was **reverted** — it broke the
+  live R3d/`commandEnterSeq` watermark (R6a, `Program.fs`
+  ~5079–5125: the "echo hi⏎hi" + prompt-bleed class) and the
+  oracle could not catch it (the harness never calls
+  `ContentHistory.tick` — the documented fidelity gap). (ii)
+  is deferred until there is a **live-faithful test** that
+  models `tick`. Tracked:
+  [#428](https://github.com/KyleKeane/pty-speak/issues/428).
   **C6** long-idle mid-compose landed — real capture (`ECHO`,
   ~54s idle with no Enter, then ` DONE`); asserts the gap
   neither splits the in-flight command nor seals early

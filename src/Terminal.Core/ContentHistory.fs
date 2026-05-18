@@ -927,26 +927,14 @@ module ContentHistory =
         lock state.Gate (fun () ->
             if state.ActiveSpanText.Length = 0 then []
             else
-                match state.ActiveSpanSource with
-                | ValueSome EntrySource.UserInputEcho ->
-                    // #428 (ii) — never idle-seal the composing
-                    // command. Its bytes are UserInputEcho
-                    // (suppressed from announces per ADR
-                    // 0003/0008), so idle-sealing serves no
-                    // purpose and would fragment the command
-                    // across sealed TextSpans beyond a later BS's
-                    // reach. Keep it in ONE active span until the
-                    // CommandStart marker seals it.
-                    []
-                | _ ->
-                    let elapsed =
-                        (now - state.LastEventAt).TotalMilliseconds
-                    if elapsed >= float state.Parameters.IdleSpanSealMs then
-                        match sealActiveSpan state now with
-                        | Some e -> [ e ]
-                        | None -> []
-                    else
-                        [])
+                let elapsed =
+                    (now - state.LastEventAt).TotalMilliseconds
+                if elapsed >= float state.Parameters.IdleSpanSealMs then
+                    match sealActiveSpan state now with
+                    | Some e -> [ e ]
+                    | None -> []
+                else
+                    [])
 
     /// Reset to empty. Called when SessionModel transitions out
     /// of a sealed tuple so the next tuple starts fresh.

@@ -1,10 +1,28 @@
 # #428 — ContentHistory backspace-erase: design note
 
-Status: **Proposed** (2026-05-17). Scope: the cmd `\x08`-erase
-defect caught by the replay oracle's C5 fact
-(`docs/boundary-capture/REPLAY-ORACLE.md`). Implements the
+Status: **Partially shipped** (2026-05-17 → 2026-05-18). Scope:
+the cmd `\x08`-erase defect caught by the replay oracle's C5
+fact (`docs/boundary-capture/REPLAY-ORACLE.md`). Implements the
 spirit of [ADR 0004](adr/0004-iocell-model-for-shell-interaction.md)
 more faithfully; **does not amend** any ADR 0004 decision.
+
+> **Update 2026-05-18 — (ii) reverted.** The Direction-1 core
+> (the BS arm on `appendFromEvent`) shipped and is oracle-
+> validated (C5 active). The companion sub-decision **(ii)**
+> — gating `tick`'s idle-seal for `UserInputEcho` spans — was
+> implemented in #431 and **reverted the same day**: it broke
+> the live announce watermark (R3d/`commandEnterSeq`, the R6a
+> path at `Program.fs` ~5079–5125), reintroducing the
+> "echo hi⏎hi" + prompt-path-bleed class and garbling the
+> sub-prompt / Ctrl+C announces. The replay oracle could not
+> catch it because the harness never calls
+> `ContentHistory.tick` — exactly the live-only fidelity gap
+> the "Open sub-decision" section below flagged. **(ii)
+> stays deferred** until there is a live-faithful test (a
+> harness `tick` model or an integration test) that exercises
+> the idle-seal + watermark interaction. The narrow
+> slow-typed-then-paused-then-backspaced residual (i) is
+> reaccepted in the meantime.
 
 ## Problem
 
