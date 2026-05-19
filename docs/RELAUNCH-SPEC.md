@@ -63,66 +63,112 @@ one universal-event-bus consumer among many (§4.6, §14.11,
 
 ### 0.2 Candidate component decomposition (proposed — awaiting ratification)
 
-**Status: candidate, not canon.** This is the first decomposition
-of the interaction engine into named internal components. It is
-recorded so it is navigable, but it is explicitly *proposed* —
-the maintainer ratifies (and may rename or re-cut) each part.
-Only §0.1's two terms are fixed.
+**Status: refined 2026-05-19 from the maintainer's own
+decomposition.** Names below are the maintainer's words where
+marked *[maintainer-named]*; *[candidate]* marks the parts still
+open. Only §0.1's two terms are fixed canon. This serializes a
+nonlinear graph into prose deliberately — the linear spine at
+the end is the one path everything else hangs off.
 
-**The asymmetry (the key idea).** Input and output are different
-machines, and naming them the same ("bus") would hide that:
+**The persistence triad (the spine).** Three layers, not two —
+naming them separates everything else:
 
-- *Output* is **fan-out broadcast** — one typed stream, many
-  passive non-privileged consumers. That genuinely is a **bus**
-  (the ratified term fits).
-- *Input* is **fan-in with admission and scheduling** — many
-  heterogeneous sources; each event typed, validated, queued,
-  prioritized, dispatched. An active scheduler/router, **not** a
-  passive wire. "Bus" is the wrong word here.
+1. **Structured-memory repo** *(persistent)* — git-managed, a
+   *hierarchy of multiple document types*, versioned. Records
+   and manages decisions, processes, and structured documents.
+   The durable artifact projection (§2). *Not* "a document" — a
+   repo.
+2. **Operationalized working memory** *(operational)* — the
+   live working set the system *actively maintains and surfaces*
+   so the maintainer stays oriented: the current context of
+   what is being worked on. Not all of memory (that is layer 1);
+   the part kept warm. This is the externalized working memory
+   the maintainer's eyesight used to provide, made *operational*
+   because the system maintains it (ties to §10, §1.1).
+3. **Interaction interface** *(ephemeral)* — the transient
+   surface to navigate, make small inline edits, and issue
+   intent. Exists only to *capture into* layer 1 and *act on*
+   layers 1–2, then is gone. A cleaner, consistently-built
+   version of what the maintainer fights with VoiceOver on the
+   Claude app today.
 
-**The six components** (2 ratified canon, 4 candidate):
+**Three top-level systems** (not one):
 
-1. **Interaction engine** — *[canon, ratified]* — the whole
-   core. Items 2–6 are its internal parts; this names the
-   whole. (Part/whole boundary.)
-2. **Universal intake** — *[candidate name; alternatives: Input
-   dispatcher, Conductor]* — the input side. Defines the input
-   event taxonomy and the admission / queue / dispatch protocol.
-3. **Canonical model** — *[candidate]* — the single source of
-   truth: chunk tree (§5) + context/document substrate (§8) +
-   organization (§9). "The document is the memory" (§14.3). All
-   state lives here; participants and consumers are stateless
-   relative to it.
-4. **Orchestrator** — *[candidate]* — the active verb. Applies
-   admitted input to the model, selects which participant to
-   invoke with which context slice, runs side-conversation
-   fork/snapshot/promote (§8.1) and org assignment/handoff (§9),
-   and decides which typed events to emit.
-5. **Participant seam** — *[candidate; = the ADR 0006 transport
-   seam]* — each agent/tool (Claude Code CLI first) behind one
-   uniform transport interface; stateless relative to the model;
-   fed rendered context slices (§8.2).
-6. **Universal event bus** — *[canon, ratified]* — the output
-   side; one typed semantic stream, non-privileged consumers
-   (§0.1).
+- **The interaction engine** — the active core (components
+  below).
+- **The structured-memory repo** — layer 1 above; separate.
+- **The organizational-management tool** *[maintainer-named]* —
+  *separate from the engine*: where the maintainer intervenes
+  to create a process or adjust who is responsible for which
+  operations and what information they may access (the §9
+  organization model, now correctly *outside* the engine).
 
-**The loop (relationships, one line):** sources → Universal
-intake (admit · type · queue · prioritize · dispatch) →
-Orchestrator (apply to Canonical model · select participant +
-context slice) → Participant seam (invoke agent/tool) → results
-**re-enter through Universal intake** → Orchestrator updates the
-Canonical model → emits typed events → Universal event bus →
-consumers render to devices.
+**The asymmetry (still the key idea).** Output is **fan-out
+broadcast** — one typed stream, many passive non-privileged
+consumers; that genuinely is a **bus**. Input is **fan-in with
+typing, admission and scheduling** — an active handler + router,
+**not** a passive wire; "bus" is wrong for it. Hence the input
+side is split in two below.
+
+**Interaction-engine components:**
+
+1. **Event handler** *[maintainer-named]* — ingests events of
+   discrete typed data classes (a stream of bytes, a stream of
+   characters, a list of numbers / a grid, …); the protected,
+   extensible boundary where any pipeline — our managed audio
+   path *or* an external speech-to-text process — normalizes
+   into the engine's event vocabulary. (Renamed from "input
+   handler": many event kinds route back in to *modulate* the
+   system, not just user input.)
+2. **Event dispatch** *[maintainer-named]* — routes admitted
+   events to the right handler. (The maintainer's split of the
+   earlier single "intake" into handler + dispatch.)
+3. **Interaction manager** *[maintainer-named]* — owns the
+   *linear consequential interaction workflow* (below); the
+   logic behind the ephemeral interface (triad layer 3).
+4. **Event output bus** — the output side. This **is** the §0.1
+   canon *universal event bus*. *Open:* keep "universal event
+   bus" as canon with "event output bus" as its plain gloss, or
+   rename the canon term for symmetry with event
+   handler / dispatch.
+5. **Participant seam** *[candidate; = the ADR 0006 transport
+   seam]* — each AI / tool (Claude Code CLI first) behind one
+   uniform transport so new AI components plug in as they
+   emerge; stateless relative to memory; fed rendered context
+   slices (§8.2). Not named this round but still required by the
+   "incorporate new AI components" goal — flagged so it is not
+   lost.
+
+**The semantic difference the maintainer was seeking.** A
+command prompt transports a stateless text line to a shell;
+output scrolls away. The interaction manager **captures an
+intent (or a reaction to an event) as a typed act into the
+versioned structured-memory repo, dispatches it, and records
+its consequences** — a durable move in an addressable
+computational narrative, not a transient line. The mechanism (a
+field, a prompt) can look identical; the correct abstraction
+layer is **not "an input field" — it is an intent / act
+capture-and-dispatch layer over persistent structured memory.**
+
+**The linear spine (the one path; everything nonlinear hangs
+off it):** communicate intent / react to an event → **event
+handler** types & admits it → **event dispatch** routes it →
+**interaction manager** captures it as a typed act into the
+**structured-memory repo** & updates **working memory** →
+participant invoked via the **participant seam** if needed →
+result **re-enters through the event handler** → memory +
+working memory updated → typed events emitted to the **event
+output bus** → consumers render.
 
 **The boundary rule that makes the two sides separable:**
 
-> A participant's reply is **input, not output.** An agent/tool
-> result re-enters the engine *through the Universal intake*,
+> A participant's reply is **input, not output.** An AI / tool
+> result re-enters the engine *through the event handler*,
 > exactly like a keystroke or an utterance. The engine's
-> *output* is only the typed semantic events the Orchestrator
-> emits after updating the Canonical model. Intake and bus
-> never touch directly — the model and orchestrator always sit
-> between them.
+> *output* is only the typed events emitted to the event output
+> bus after memory is updated. Handler/dispatch and the output
+> bus never touch directly — the interaction manager and memory
+> always sit between them.
 
 **Candidate input taxonomy + protocol** (what the engine
 accepts; how it is queued / dispatched):
@@ -134,16 +180,20 @@ accepts; how it is queued / dispatched):
 | Participant results (agent chunks, tool results, completion) | ambient | queued + coalesced; surface only when sealed (§5.2); promoted to foreground only by explicit verb |
 | System / lifecycle (process state, errors, timers, connectivity) | ambient | coalesced; ambient unless promoted |
 
-The foreground/ambient attention contract is therefore enforced
-in **two** places: the input side (Universal intake scheduling)
-and the output side (bus consumers rendering foreground vs
-ambient — §7.3). Same contract, two enforcement points; that
-split is itself a candidate for future canon.
+The foreground/ambient attention contract is enforced in
+**two** places: input (event handler / dispatch scheduling) and
+output (bus consumers rendering foreground vs ambient — §7.3).
+Same contract, two enforcement points; that split is a
+candidate for future canon.
 
-**Open for ratification:** the input-component name; whether
-"Canonical model / Orchestrator / Participant seam" are the
-right names and the right cut; whether the two-point attention
-contract should be promoted to canon.
+**Open for ratification (the maintainer answers in their own
+words; no file access needed):** (1) the persistence triad as
+the spine; (2) event handler + event dispatch replacing
+"universal intake"; (3) "event output bus" as gloss vs canon
+rename; (4) the operationalized-working-memory definition above;
+(5) the three-top-level-systems boundary; (6) whether
+"interaction manager" subsumes the earlier "orchestrator"
+responsibilities or they remain a distinct part.
 
 **Reading order for a re-launch:**
 
