@@ -28,12 +28,13 @@ carry.
 
 ### 0.1 Core canon (stabilized vocabulary)
 
-Two phrases are **fixed as core canon** — stabilized linguistic
-cornerstones the maintainer is presently using to engage with
-this abstraction. They are deliberately *named first* so the
-rest of the document is read against them. They may later be
-decomposed into components or re-categorized; until then the
-*terms themselves are fixed* and used consistently throughout.
+Two phrases are **fixed as core canon — maintainer-ratified
+2026-05-19** — stabilized linguistic cornerstones the maintainer
+is presently using to engage with this abstraction. They are
+deliberately *named first* so the rest of the document is read
+against them. They may later be decomposed into components or
+re-categorized; until then the *terms themselves are fixed* and
+used consistently throughout.
 
 - **Interaction engine** — *the system being built.* The
   platform-free core that ingests structured input, holds the
@@ -60,12 +61,99 @@ external screen reader ever becomes essential, it enters only as
 one universal-event-bus consumer among many (§4.6, §14.11,
 §14.12).
 
+### 0.2 Candidate component decomposition (proposed — awaiting ratification)
+
+**Status: candidate, not canon.** This is the first decomposition
+of the interaction engine into named internal components. It is
+recorded so it is navigable, but it is explicitly *proposed* —
+the maintainer ratifies (and may rename or re-cut) each part.
+Only §0.1's two terms are fixed.
+
+**The asymmetry (the key idea).** Input and output are different
+machines, and naming them the same ("bus") would hide that:
+
+- *Output* is **fan-out broadcast** — one typed stream, many
+  passive non-privileged consumers. That genuinely is a **bus**
+  (the ratified term fits).
+- *Input* is **fan-in with admission and scheduling** — many
+  heterogeneous sources; each event typed, validated, queued,
+  prioritized, dispatched. An active scheduler/router, **not** a
+  passive wire. "Bus" is the wrong word here.
+
+**The six components** (2 ratified canon, 4 candidate):
+
+1. **Interaction engine** — *[canon, ratified]* — the whole
+   core. Items 2–6 are its internal parts; this names the
+   whole. (Part/whole boundary.)
+2. **Universal intake** — *[candidate name; alternatives: Input
+   dispatcher, Conductor]* — the input side. Defines the input
+   event taxonomy and the admission / queue / dispatch protocol.
+3. **Canonical model** — *[candidate]* — the single source of
+   truth: chunk tree (§5) + context/document substrate (§8) +
+   organization (§9). "The document is the memory" (§14.3). All
+   state lives here; participants and consumers are stateless
+   relative to it.
+4. **Orchestrator** — *[candidate]* — the active verb. Applies
+   admitted input to the model, selects which participant to
+   invoke with which context slice, runs side-conversation
+   fork/snapshot/promote (§8.1) and org assignment/handoff (§9),
+   and decides which typed events to emit.
+5. **Participant seam** — *[candidate; = the ADR 0006 transport
+   seam]* — each agent/tool (Claude Code CLI first) behind one
+   uniform transport interface; stateless relative to the model;
+   fed rendered context slices (§8.2).
+6. **Universal event bus** — *[canon, ratified]* — the output
+   side; one typed semantic stream, non-privileged consumers
+   (§0.1).
+
+**The loop (relationships, one line):** sources → Universal
+intake (admit · type · queue · prioritize · dispatch) →
+Orchestrator (apply to Canonical model · select participant +
+context slice) → Participant seam (invoke agent/tool) → results
+**re-enter through Universal intake** → Orchestrator updates the
+Canonical model → emits typed events → Universal event bus →
+consumers render to devices.
+
+**The boundary rule that makes the two sides separable:**
+
+> A participant's reply is **input, not output.** An agent/tool
+> result re-enters the engine *through the Universal intake*,
+> exactly like a keystroke or an utterance. The engine's
+> *output* is only the typed semantic events the Orchestrator
+> emits after updating the Canonical model. Intake and bus
+> never touch directly — the model and orchestrator always sit
+> between them.
+
+**Candidate input taxonomy + protocol** (what the engine
+accepts; how it is queued / dispatched):
+
+| Input class | Scheduling class | Rule |
+|---|---|---|
+| Composition input (speech / typed / gesture edits) | foreground | single ordered, **non-preemptible** stream; never interrupted by anything below |
+| Command input (navigate, branch, promote, dispatch-to-role, switch participant) | command | low-latency interjections, processed between composition units |
+| Participant results (agent chunks, tool results, completion) | ambient | queued + coalesced; surface only when sealed (§5.2); promoted to foreground only by explicit verb |
+| System / lifecycle (process state, errors, timers, connectivity) | ambient | coalesced; ambient unless promoted |
+
+The foreground/ambient attention contract is therefore enforced
+in **two** places: the input side (Universal intake scheduling)
+and the output side (bus consumers rendering foreground vs
+ambient — §7.3). Same contract, two enforcement points; that
+split is itself a candidate for future canon.
+
+**Open for ratification:** the input-component name; whether
+"Canonical model / Orchestrator / Participant seam" are the
+right names and the right cut; whether the two-point attention
+contract should be promoted to canon.
+
 **Reading order for a re-launch:**
 
 0. §0.1 Core canon — the fixed vocabulary ("interaction engine",
    "universal event bus") and the day-zero "ignore GUI / UIA /
    NVDA" consequence. Read this first; everything else is read
-   against it.
+   against it. **§0.2** holds the candidate component
+   decomposition (proposed, not yet canon) — read it next if
+   the question is *how the engine is built*, not *what it is
+   for*.
 1. §1 Purpose and the person it is for — the goals and the
    lived-workflow constraints that are the real acceptance
    criteria.
@@ -88,6 +176,7 @@ one universal-event-bus consumer among many (§4.6, §14.11,
 **Section index:**
 
 - §0.1 — Core canon (stabilized vocabulary) — *read first*
+- §0.2 — Candidate component decomposition (proposed, not canon)
 - §1 — Purpose and the person it is for
 - §2 — The core reframe: three projections of one context
 - §3 — Reference experiences and what we take from each
