@@ -37,13 +37,14 @@ re-categorized; until then the *terms themselves are fixed* and
 used consistently throughout.
 
 - **Interaction engine** — *the system being built.* The
-  platform-free core that ingests structured input, holds the
-  canonical model (the §5 chunk tree, §8 context, §9
-  organization), orchestrates participants, and emits typed
-  events. It is **not** a GUI, a screen-reader integration, or a
-  terminal. "We are focusing on the interaction engine" is the
-  scope statement for the whole re-launch; §13 Phase 0 is its
-  first build.
+  platform-free core that ingests structured input, operates
+  over the canonical model (the §5 chunk tree, §8 context, §9
+  organization — persisted in the *separate* structured-memory
+  repo per the §0.2 three-systems boundary), drives
+  participants, and emits typed events. It is **not** a GUI, a
+  screen-reader integration, or a terminal. "We are focusing on
+  the interaction engine" is the scope statement for the whole
+  re-launch; §13 Phase 0 is its first build.
 - **Universal event bus** — *the one typed semantic stream the
   interaction engine emits.* Every output mechanism — the
   self-voicing audio channel, spatial audio, haptics, braille,
@@ -344,7 +345,9 @@ The single idea everything else follows from:
 > artifact is a set of version-controlled files. Its
 > participants are agents and tools. These are three projections
 > of one underlying structured context, and the human's role
-> across all three is editor and orchestrator.**
+> across all three is editor and director.** (The human
+> *directs*; the §0.2 *Orchestrator* is the engine component
+> that drives participants — distinct things, distinct words.)
 
 - The **process** projection is the thinking: the live dialogue,
   the tree of exchanges.
@@ -1122,10 +1125,12 @@ braille and haptic channels are usable for their named roles.
    chunk, conversation, document, team, organization.
 10. **The model is the foundation; the stack is a replaceable
     adapter.** The core domain model (§5, §8, §9) carries no
-    platform, runtime, or UI-toolkit types. .NET / WPF /
-    Windows / NVDA are current adapters behind the ADR 0006
-    seam, chosen on stewardship grounds (§4.5) and deliberately
-    kept reversible. The foundational-stack bet is survivable
+    platform, runtime, or UI-toolkit types. The runtime
+    (.NET / Windows) is a replaceable adapter behind the ADR
+    0006 seam, chosen on stewardship grounds (§4.5); WPF / UIA /
+    NVDA are *not* current adapters — they are deferred day zero
+    (§0.1) and, if ever essential, only universal-event-bus
+    consumers (§14.12). The foundational-stack bet is survivable
     because being wrong about it is cheap by construction —
     never by prediction.
 11. **Own the voice for what you own.** The system self-voices
@@ -1254,8 +1259,9 @@ Stated so they are correctable rather than silent:
 authoritatively in §0.1; they are fixed vocabulary.*
 
 - **Interaction engine** **[canon]** — the platform-free core
-  being built: ingests structured input, holds the canonical
-  model, orchestrates participants, emits typed events; not a
+  being built: ingests structured input, operates over the
+  canonical model (persisted in the separate structured-memory
+  repo, §0.2), drives participants, emits typed events; not a
   GUI / screen reader / terminal (§0.1).
 - **Universal event bus** **[canon]** — the one typed semantic
   stream the interaction engine emits; every output mechanism
@@ -1314,8 +1320,10 @@ authoritatively in §0.1; they are fixed vocabulary.*
   terminal (§4.2).
 - **Portable core / platform adapter** — the principle that the
   core domain model carries no platform / runtime / UI-toolkit
-  types, so .NET / WPF / Windows / NVDA are replaceable adapters
-  and the foundational-stack bet is reversible (§4.5, §14.10).
+  types, so the runtime (.NET / Windows) is a replaceable
+  adapter and the foundational-stack bet is reversible; WPF /
+  UIA / NVDA are deferred day zero, not current adapters (§4.5,
+  §14.10, §14.12).
 - **Self-voicing** — the system renders its own canonical
   content to audio directly, owning the audio path end-to-end,
   rather than depending on a generic external screen reader to
