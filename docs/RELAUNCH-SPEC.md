@@ -26,8 +26,46 @@ intent — completeness is the point, because it has to carry the
 "where are we and why" framing that a diagram would otherwise
 carry.
 
+### 0.1 Core canon (stabilized vocabulary)
+
+Two phrases are **fixed as core canon** — stabilized linguistic
+cornerstones the maintainer is presently using to engage with
+this abstraction. They are deliberately *named first* so the
+rest of the document is read against them. They may later be
+decomposed into components or re-categorized; until then the
+*terms themselves are fixed* and used consistently throughout.
+
+- **Interaction engine** — *the system being built.* The
+  platform-free core that ingests structured input, holds the
+  canonical model (the §5 chunk tree, §8 context, §9
+  organization), orchestrates participants, and emits typed
+  events. It is **not** a GUI, a screen-reader integration, or a
+  terminal. "We are focusing on the interaction engine" is the
+  scope statement for the whole re-launch; §13 Phase 0 is its
+  first build.
+- **Universal event bus** — *the one typed semantic stream the
+  interaction engine emits.* Every output mechanism — the
+  self-voicing audio channel, spatial audio, haptics, braille,
+  and (only if ever essential) any GUI / UIA / external screen
+  reader — is merely **a consumer of this bus**, never a
+  foundation and never privileged. Earlier phrasings in this
+  document ("universal routable event bus", "the bus",
+  `CellEventBus`) denote this canon term.
+
+Consequence, ratified by the maintainer: **from day zero we
+build for the interaction engine and the universal event bus and
+ignore GUI / UIA / NVDA entirely.** They are not foundational,
+not transitional, not a comparison oracle. *If* a GUI or
+external screen reader ever becomes essential, it enters only as
+one universal-event-bus consumer among many (§4.6, §14.11,
+§14.12).
+
 **Reading order for a re-launch:**
 
+0. §0.1 Core canon — the fixed vocabulary ("interaction engine",
+   "universal event bus") and the day-zero "ignore GUI / UIA /
+   NVDA" consequence. Read this first; everything else is read
+   against it.
 1. §1 Purpose and the person it is for — the goals and the
    lived-workflow constraints that are the real acceptance
    criteria.
@@ -49,6 +87,7 @@ carry.
 
 **Section index:**
 
+- §0.1 — Core canon (stabilized vocabulary) — *read first*
 - §1 — Purpose and the person it is for
 - §2 — The core reframe: three projections of one context
 - §3 — Reference experiences and what we take from each
@@ -224,7 +263,8 @@ not a rewrite:
 | Cell as the unit (ADR 0004) | The cell is the notebook cell and the chunk-tree node. Conceptually load-bearing. |
 | Navigable cell history (ADR 0007) | The "leave, do other things, return recontextualized" function — the central cognitive requirement (§1.1). |
 | Three-layer transport / core / channel seam + `SessionHost` (ADR 0006) | Lets a structured-agent transport slot in beside the shell adapter as *the same plug shape* (§12). Pure, shell-agnostic core. |
-| WPF app shell, diagnostics infra, accessibility + dogfood discipline | The host, the triage tooling, and the "accessibility outcome is the acceptance criterion" rule all carry over. |
+| Diagnostics infra; accessibility + dogfood *discipline* (the "accessibility outcome is the acceptance criterion" rule) | **Keep** — but the validation *mechanism* is the system's own self-voicing channel, not an external screen reader (§4.6, §14.1). |
+| WPF / UIA app shell, NVDA integration | **Defer (not day zero).** Per core canon (§0.1) we ignore GUI / UIA / NVDA entirely from day zero and build the interaction engine against the universal event bus. *If* a GUI ever becomes essential it re-enters only as one bus consumer among many (§4.6, §14.12) — never the host, never a foundation. |
 
 ### 4.2 FREEZE — the terminal-scraping debt
 
@@ -288,15 +328,19 @@ real answer; see the principle in §14.
 **Evaluate it as four bets, not one — they have very different
 risk:**
 
-1. **Accessibility substrate — Windows UI Automation + NVDA.**
-   This is the real foundation, more than the language, and the
-   strongest part of the bet. UIA is a documented OS API under a
-   multi-decade backward-compatibility obligation; NVDA is open
-   source and stewarded by a mission-driven nonprofit, not a
-   company that can pivot away from it. Re-platforming compute is
-   annoying; re-platforming the accessibility substrate is the
-   genuinely dangerous move. This is the dominant reason to stay
-   on Windows.
+1. **Accessibility substrate — historically the dominant
+   bet; *superseded by §0.1 / §4.6*.** The original analysis:
+   re-platforming the accessibility substrate is the genuinely
+   dangerous move, so depending on Windows UIA + NVDA looked
+   like the strongest, least-reversible bet. The day-zero
+   self-voicing decision (§0.1, §4.6) **resolves this by
+   elimination**: the system owns its audio path and takes *no*
+   external-accessibility-substrate dependency at all, so the
+   "dangerous to re-platform" risk does not apply to owned
+   content — it is removed, not chosen. This *strengthens* the
+   reversibility logic rather than weakening it. (UIA / NVDA
+   retain relevance only as a possible deferred foreign-software
+   edge adapter — §4.6 — never a foundation.)
 2. **Runtime — .NET.** On the stated axis, close to the safest
    available, for a precise reason: not founder-obsession (the
    Wolfram model) but **structural incentive** — Microsoft's
@@ -329,12 +373,14 @@ controls.
 
 **The decisive move.** Convert the unanswerable question ("what
 is the perfect ten-year stack?") into a small one ("what is the
-best *current adapter* for a Windows screen-reader workspace?")
-by keeping the core model (§5, §8, §9) free of platform,
-runtime, and UI-toolkit types. Then **the model is the
-foundation; .NET / WPF / Windows / NVDA are current adapters**
-behind the ADR 0006 seam, and the foundational bet is
-reversible. The architectural tax — no platform types in the
+best *current adapter* for the interaction engine on the
+maintainer's machine?") by keeping the core model (§5, §8, §9)
+free of platform, runtime, and UI-toolkit types. Then **the
+model is the foundation; the runtime (.NET / Windows) is a
+replaceable adapter** behind the ADR 0006 seam — and any future
+output / GUI / screen-reader integration is likewise just a
+universal-event-bus consumer (§0.1, §14.12) — so the
+foundational bet is reversible. The architectural tax — no platform types in the
 core — is the cheapest insurance available and the correct
 response to uncertainty that cannot be studied away. The repo
 already pays a version of this tax (the enforced core/shell
@@ -353,16 +399,18 @@ capability is kept and orchestrated, not abandoned, while the
 *foundation* sits on the structurally-incentivized, open,
 accessibility-mature substrate.
 
-**Recommendation (maintainer ratifies).** Stay Windows + .NET +
-UIA + NVDA — not because any vendor is guaranteed (no honest
-answer claims that) but because it is the strongest available
-combination on the criteria that matter here *and* the
-architecture lets the bet be wrong cheaply. Hold WPF loosely.
-Enforce core portability as a named principle (§14) and name the
-WPF-replacement trigger as an open decision (§16). **Refined by
-§4.6:** the "UIA + NVDA strongest bet" applies to the
-*foreign-software edge*; for the system's **own** content there
-is no external-screen-reader dependency to bet on at all.
+**Recommendation (maintainer ratifies).** Stay Windows + .NET
+for the **runtime** — not because any vendor is guaranteed (no
+honest answer claims that) but because it is the strongest
+available runtime on the criteria that matter here *and* the
+architecture lets the bet be wrong cheaply. **UIA + NVDA are
+*not* part of the recommendation:** per §0.1 / §4.6 the system
+self-voices and takes no external-accessibility-substrate
+dependency; that sub-bet is eliminated, not chosen. WPF / GUI
+is deferred entirely (§0.1, §4.1, §15). Enforce core
+portability as a named principle (§14.10); the open decision in
+§16 is now the GUI-essential trigger, not a WPF-replacement
+trigger.
 
 ### 4.6 Self-voicing vs. external screen reader (output ownership)
 
@@ -416,18 +464,28 @@ maintainer instinctively flagged only the web part as scary):
   canonical format, never reconstructed through a generic
   external screen reader. **Ratified.**
 - **For software the system does not own** (foreign apps, the
-  open web), an external accessibility substrate (NVDA / UIA)
-  and / or automation + vision are **bounded, opt-in adapters at
-  the edge** — the same status as the §4.2 secondary terminal
-  mode and the §14.10 replaceable-adapter stance: never the
-  primary path, never on the critical loop, allowed to be
-  best-effort because they are off it. Local-first vision is
-  preferred where the edge is built, to preserve the privacy
-  rationale.
-- NVDA remains available **transitionally** and as a
-  comparison oracle during development until the self-voicing
-  channel reaches parity; it is sunset from the *owned* path as
-  that parity lands, not ripped out on day one.
+  open web), an external accessibility substrate (UIA) and / or
+  automation + vision would be **bounded, opt-in adapters at the
+  edge** — the same status as the §4.2 secondary terminal mode
+  and the §14.10 replaceable-adapter stance: never the primary
+  path, never on the critical loop. **Deferred — not day
+  zero.** When built, such an adapter is just another
+  universal-event-bus participant; local-first vision is
+  preferred to preserve the privacy rationale.
+- **Day-zero strengthening (maintainer-ratified, supersedes the
+  earlier "NVDA transitional / comparison oracle" hedge).** Per
+  core canon (§0.1): from day zero we **ignore GUI / UIA / NVDA
+  entirely**. They are not foundational, not transitional, and
+  **not** a development comparison oracle — any such dependency
+  would re-impose the very external-developer constraints this
+  build exists to escape, and would contaminate the
+  from-scratch interaction engine. The self-voicing channel is
+  validated on its own terms (§14.1). The single residual cost
+  — no external oracle for the access-critical channel early —
+  is accepted *because* the universal event bus makes adding a
+  screen-reader consumer later trivial and non-foundational
+  (§14.10 reversible-by-construction); the door is not closed,
+  it is simply not built now.
 
 **Recommendation (maintainer ratifies).** Adopt self-voicing as
 the canonical output-ownership model, scoped as above. Distilled
@@ -790,19 +848,28 @@ is quarantined, not deleted.
 The smallest honest version of the primary loop, run locally so
 the app can build the app.
 
-- Reuse the existing WPF shell + event bus + channel + NVDA
-  integration + diagnostics (§4.1).
+- Reuse only the **interaction-engine** parts of the current
+  repo (§4.1): the typed event bus, the three-layer
+  transport / core / channel seam + `SessionHost`, and
+  diagnostics. **No WPF shell, no UIA, no NVDA** — per core
+  canon (§0.1) those are not built day zero.
+- A **self-voicing audio channel** as a universal-event-bus
+  consumer — the system owns the audio path end-to-end (§4.6,
+  §14.11). This is the only output channel required for Phase
+  0.
 - One new transport adapter: **Claude Code CLI over its
   structured / streaming interface**, behind the existing
   `ShellAdapter` / `SessionHost` seam, running **locally on the
-  maintainer's Windows machine**.
+  maintainer's machine**.
 - Ingest decomposes the response into a sealed **chunk tree**
   (§5); the streaming rule (§5.2) is honored.
 - The v1 navigation verbs (§6.2) and the non-ejection invariant
   (§6.4).
 - **Fast, reliable narration is the explicit gating quality
-  bar** (§1.1, §7.1) — and it is *only* measurable here, in the
-  local screen-reader loop.
+  bar** (§1.1, §7.1) — owning the audio path is precisely how
+  it is met (it is the §4.6 mechanical cure for the
+  UIA-churn cost); validated on the self-voicing channel's own
+  terms, not against a screen reader.
 - Data model includes authored order + stable ids + tree
   branching from the first commit (§5.1), even though only the
   v1 verbs are exposed.
@@ -869,8 +936,11 @@ braille and haptic channels are usable for their named roles.
 ## 14. Principles and invariants (non-negotiable)
 
 1. **Accessibility outcome is the acceptance criterion.** A
-   phase is not done until the maintainer has validated it with
-   a screen reader, locally. (Carried from the current repo.)
+   phase is not done until the maintainer has validated it
+   locally **on the system's own self-voicing channel** — not
+   against an external screen reader (§4.6, §0.1). (The
+   *discipline* is carried from the current repo; the
+   validation mechanism changes to the owned channel.)
 2. **Maximal semantic surfacing (ADR 0008).** Recover the most
    structure the source unambiguously provides; emit typed
    events; never relay the flattened-ambiguous form. The chunk
@@ -909,7 +979,19 @@ braille and haptic channels are usable for their named roles.
     narration-reliability cost). External screen readers /
     automation + vision are bounded, opt-in *edge* adapters for
     foreign software the system does not own (§4.6) — never the
-    primary path, never on the critical loop.
+    primary path, never on the critical loop, and **not built
+    day zero**.
+12. **Build the interaction engine, not a GUI.** (§0.1 canon.)
+    From day zero the work targets the *interaction engine* and
+    the *universal event bus*; GUI / UIA / NVDA are ignored
+    entirely — not foundational, not transitional, not a
+    comparison oracle. *If* a GUI or external screen reader
+    ever becomes essential it enters **only as one
+    universal-event-bus consumer among many** (alongside
+    self-voicing audio, spatial audio, haptics, braille), never
+    a host and never a foundation. Avoiding GUI / UIA
+    considerations is itself a design constraint that protects
+    the from-scratch system.
 
 ## 15. What carries over from the current repo
 
@@ -923,8 +1005,9 @@ green-field restart:
 | ADR 0006 three-layer seam + `SessionHost` | **Keep** — the N-tool transport seam (§12). |
 | ADR 0007 navigable cell history | **Keep / extend** — capture-layer navigation; authored layer (§5.3) is the new growth. |
 | ADR 0008 maximal semantic surfacing | **Keep / elevate** — the spine principle (§14.2). |
-| `CellEventBus` + typed event taxonomy | **Keep** — the universal routable bus (§7). |
-| WPF shell, diagnostics, hotkey contract, accessibility + dogfood discipline | **Keep** — host + triage + acceptance rules. |
+| `CellEventBus` + typed event taxonomy | **Keep** — *is* the universal event bus (§0.1, §7). |
+| Diagnostics, hotkey contract, accessibility + dogfood *discipline* | **Keep** — triage + the "accessibility outcome is the acceptance criterion" rule; validation mechanism becomes the self-voicing channel (§14.1). |
+| WPF / UIA shell, NVDA integration | **Defer (not day zero)** — per core canon (§0.1) GUI / UIA / NVDA are ignored from day zero; a GUI, if ever essential, re-enters only as one universal-event-bus consumer among many (§4.6, §14.12), never the host. |
 | `HeuristicPromptDetector`, OSC-133 precedence, sub-prompt accumulators, boundary-capture fix, #437 / #438 | **Freeze** — opt-in secondary PTY mode (§4.2); not invested in. |
 | ADR 0010 Option A framing | **Superseded by this document** — directionally right, under-scoped. (Cross-link / status update is a follow-up, not done here.) |
 | `SESSION-HANDOFF` / ADR / `CLAUDE.md` orientation apparatus | **Keep, then automate** — it is the §10 orientation-surface spec. |
@@ -960,35 +1043,39 @@ document does not pre-empt them.
    re-issue, and cross-document reference.
 8. **Spatial-audio model (§7.1, §7.3).** How positions map to
    foreground / ambient and to participants / threads.
-9. **WPF-replacement trigger (§4.5).** WPF is the loosely-held
-   layer. What observable signal (a support-policy change, an
-   accessibility regression, a successor reaching parity) should
-   trigger planning its replacement — and is a thin
-   UI-channel-portability spike worth scheduling *before* any
-   trigger fires, so the reversibility in §14.10 is proven, not
-   assumed? Related: which layer's failure is the true
-   existential risk (the §4.5 analysis says the accessibility
-   substrate, not the runtime) and what the contingency for
-   *that* is.
-10. **Self-voicing scope boundary (§4.6).** Which foreign
-    surfaces warrant an edge adapter at all vs. are simply out
-    of scope; local vs. cloud vision models for the web edge
-    (privacy-determining); and the concrete parity criteria
-    that sunset NVDA from the *owned* path — vs. keeping it as
-    a permanent optional parallel channel and comparison
-    oracle.
+9. **GUI-essential trigger (§0.1, §4.6).** GUI / UIA is
+   deferred entirely day zero. Open: what, if anything, would
+   ever make a visual surface *essential*, and confirmation
+   that it would then enter **only** as a universal-event-bus
+   consumer (§14.12), never a host. Related: with the
+   accessibility-substrate dependency *removed* by self-voicing,
+   the §4.5 existential-risk question narrows to the **runtime**
+   (.NET on the maintainer's machine) and the **self-voicing
+   channel itself** — what the contingency for each is, and
+   whether a thin runtime-portability spike is worth scheduling
+   so §14.10 reversibility is proven, not assumed.
+10. **Foreign-software edge boundary (§4.6).** Which foreign
+    surfaces (if any) ever warrant a bounded edge adapter vs.
+    are simply out of scope; local vs. cloud vision models for
+    any such web edge (privacy-determining). The earlier
+    "NVDA sunset / comparison-oracle" sub-question is **closed**
+    — NVDA is not built at all (§0.1).
 
 ## 17. Working assumptions (correct these)
 
 Stated so they are correctable rather than silent:
 
-- Primary platform is Windows + NVDA (existing).
-- The existing WPF / F# / .NET 9 shell is reused, not rebuilt
-  (ADR 0006; MAUI out of scope). The stack is chosen on the
-  stewardship / security / reversibility analysis in §4.5, not
-  taken for granted; WPF is held loosely (§4.5, §16.9) and the
-  core is kept platform-type-free (§14.10) so the bet stays
-  reversible.
+- Primary runtime platform is the maintainer's own machine
+  (Windows / .NET assumed; §4.5). **No NVDA / UIA dependency** —
+  per core canon (§0.1) the interaction engine self-voices and
+  ignores GUI / UIA / NVDA from day zero.
+- The current repo's **interaction-engine** parts (event bus,
+  three-layer seam + `SessionHost`, data model, diagnostics) in
+  F# / .NET 9 are reused, not rebuilt (ADR 0006; MAUI out of
+  scope). The **WPF / UIA / NVDA presentation layer is deferred,
+  not reused as a host** (§0.1, §4.1, §15). The stack is chosen
+  on the §4.5 stewardship / reversibility analysis; the core is
+  kept platform-type-free (§14.10) so the bet stays reversible.
 - Claude Code CLI exposes a usable structured / streaming
   programmatic interface (Agent SDK / structured CLI output)
   sufficient for a typed chunk stream — to be verified
@@ -1005,6 +1092,17 @@ Stated so they are correctable rather than silent:
 
 ## 18. Glossary
 
+*Core-canon terms are marked **[canon]** and defined
+authoritatively in §0.1; they are fixed vocabulary.*
+
+- **Interaction engine** **[canon]** — the platform-free core
+  being built: ingests structured input, holds the canonical
+  model, orchestrates participants, emits typed events; not a
+  GUI / screen reader / terminal (§0.1).
+- **Universal event bus** **[canon]** — the one typed semantic
+  stream the interaction engine emits; every output mechanism
+  is merely a consumer of it (§0.1, §7). Subsumes the earlier
+  "universal routable event bus" / `CellEventBus` phrasings.
 - **Chunk** — the atomic typed node of a decomposed response;
   the unit of navigation (§5.1).
 - **Chunk tree** — a conversation as a tree of chunks with
