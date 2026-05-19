@@ -49,9 +49,11 @@ used consistently throughout.
   self-voicing audio channel, spatial audio, haptics, braille,
   and (only if ever essential) any GUI / UIA / external screen
   reader — is merely **a consumer of this bus**, never a
-  foundation and never privileged. Earlier phrasings in this
-  document ("universal routable event bus", "the bus",
-  `CellEventBus`) denote this canon term.
+  foundation and never privileged. "Event output bus" is the
+  accepted plain gloss for this canon term (ratified 2026-05-19,
+  no canon rename). Earlier phrasings in this document
+  ("universal routable event bus", "the bus", `CellEventBus`)
+  also denote it.
 
 Consequence, ratified by the maintainer: **from day zero we
 build for the interaction engine and the universal event bus and
@@ -61,30 +63,37 @@ external screen reader ever becomes essential, it enters only as
 one universal-event-bus consumer among many (§4.6, §14.11,
 §14.12).
 
-### 0.2 Candidate component decomposition (proposed — awaiting ratification)
+### 0.2 Component decomposition (ratified 2026-05-19)
 
-**Status: refined 2026-05-19 from the maintainer's own
-decomposition.** Names below are the maintainer's words where
-marked *[maintainer-named]*; *[candidate]* marks the parts still
-open. Only §0.1's two terms are fixed canon. This serializes a
-nonlinear graph into prose deliberately — the linear spine at
-the end is the one path everything else hangs off.
+**Status: ratified by the maintainer 2026-05-19** via the
+§0.2-point question set. The persistence triad, the
+three-top-level-systems boundary, the input-side split, the
+bus-naming resolution, and the operationalized-working-memory
+definition are **fixed**. Point 6 was decided *against* the
+simplifying recommendation: the **orchestrator is kept distinct**
+from the interaction manager. The only parts still *candidate*
+are the participant seam's name/cut and the input-taxonomy
+specifics (noted inline). This serializes a nonlinear graph into
+prose deliberately — the linear spine is the one path everything
+else hangs off.
 
-**The persistence triad (the spine).** Three layers, not two —
-naming them separates everything else:
+**The persistence triad — RATIFIED as the structural spine.**
+Three layers, not two:
 
 1. **Structured-memory repo** *(persistent)* — git-managed, a
    *hierarchy of multiple document types*, versioned. Records
    and manages decisions, processes, and structured documents.
    The durable artifact projection (§2). *Not* "a document" — a
    repo.
-2. **Operationalized working memory** *(operational)* — the
-   live working set the system *actively maintains and surfaces*
-   so the maintainer stays oriented: the current context of
-   what is being worked on. Not all of memory (that is layer 1);
-   the part kept warm. This is the externalized working memory
-   the maintainer's eyesight used to provide, made *operational*
-   because the system maintains it (ties to §10, §1.1).
+2. **Operationalized working memory** *(operational)* —
+   *[definition RATIFIED]* — the live working set the system
+   *actively maintains and surfaces* so the maintainer stays
+   oriented: the current context of what is being worked on.
+   Not all of memory (that is layer 1); the part kept warm.
+   The externalized working memory the maintainer's eyesight
+   used to provide, made *operational* because the system
+   maintains it (the named bridge between the repo and the §10
+   orientation surface; ties to §1.1).
 3. **Interaction interface** *(ephemeral)* — the transient
    surface to navigate, make small inline edits, and issue
    intent. Exists only to *capture into* layer 1 and *act on*
@@ -92,86 +101,98 @@ naming them separates everything else:
    version of what the maintainer fights with VoiceOver on the
    Claude app today.
 
-**Three top-level systems** (not one):
+**Three top-level systems — RATIFIED** (not one):
 
 - **The interaction engine** — the active core (components
   below).
-- **The structured-memory repo** — layer 1 above; separate.
-- **The organizational-management tool** *[maintainer-named]* —
-  *separate from the engine*: where the maintainer intervenes
-  to create a process or adjust who is responsible for which
-  operations and what information they may access (the §9
-  organization model, now correctly *outside* the engine).
+- **The structured-memory repo** — layer 1 above; a separate,
+  independently-evolvable system.
+- **The organizational-management tool** — *separate from the
+  engine*: where the maintainer intervenes to create a process
+  or adjust who is responsible for which operations and what
+  information they may access (the §9 organization model,
+  correctly *outside* the engine).
 
-**The asymmetry (still the key idea).** Output is **fan-out
+**The asymmetry (the key idea).** Output is **fan-out
 broadcast** — one typed stream, many passive non-privileged
 consumers; that genuinely is a **bus**. Input is **fan-in with
 typing, admission and scheduling** — an active handler + router,
-**not** a passive wire; "bus" is wrong for it. Hence the input
-side is split in two below.
+**not** a passive wire. Hence the input side is split in two.
 
 **Interaction-engine components:**
 
-1. **Event handler** *[maintainer-named]* — ingests events of
-   discrete typed data classes (a stream of bytes, a stream of
+1. **Event handler** *[RATIFIED]* — ingests events of discrete
+   typed data classes (a stream of bytes, a stream of
    characters, a list of numbers / a grid, …); the protected,
    extensible boundary where any pipeline — our managed audio
    path *or* an external speech-to-text process — normalizes
    into the engine's event vocabulary. (Renamed from "input
    handler": many event kinds route back in to *modulate* the
    system, not just user input.)
-2. **Event dispatch** *[maintainer-named]* — routes admitted
-   events to the right handler. (The maintainer's split of the
-   earlier single "intake" into handler + dispatch.)
-3. **Interaction manager** *[maintainer-named]* — owns the
-   *linear consequential interaction workflow* (below); the
-   logic behind the ephemeral interface (triad layer 3).
-4. **Event output bus** — the output side. This **is** the §0.1
-   canon *universal event bus*. *Open:* keep "universal event
-   bus" as canon with "event output bus" as its plain gloss, or
-   rename the canon term for symmetry with event
-   handler / dispatch.
-5. **Participant seam** *[candidate; = the ADR 0006 transport
-   seam]* — each AI / tool (Claude Code CLI first) behind one
-   uniform transport so new AI components plug in as they
-   emerge; stateless relative to memory; fed rendered context
-   slices (§8.2). Not named this round but still required by the
-   "incorporate new AI components" goal — flagged so it is not
-   lost.
+2. **Event dispatch** *[RATIFIED]* — routes admitted events to
+   the right handler. (Split from the event handler so
+   normalization and routing are independently evolvable
+   seams.)
+3. **Interaction manager** *[RATIFIED]* — owns the *user-facing
+   linear consequential interaction workflow* and the logic
+   behind the ephemeral interface (triad layer 3): captures the
+   maintainer's intent / reaction as a typed act into the
+   structured-memory repo and updates working memory. *Does not*
+   drive participants — that is the orchestrator (point 6).
+4. **Orchestrator** *[RATIFIED — kept distinct, point 6]* —
+   drives participants: selects which participant to invoke with
+   which context slice, runs side-conversation
+   fork / snapshot / promote (§8.1) and org handoff (§9), and
+   decides which typed events to emit. Separated from the
+   interaction manager so *"what the user is doing"* and *"how
+   participants are driven"* evolve independently.
+5. **Event output bus** *[= the §0.1 canon "universal event
+   bus"]* — the output side; one typed stream, non-privileged
+   consumers. **Naming RATIFIED:** canon term stays *universal
+   event bus*; "event output bus" is its accepted plain gloss
+   (no canon rename).
+6. **Participant seam** *[still candidate; = the ADR 0006
+   transport seam]* — each AI / tool (Claude Code CLI first)
+   behind one uniform transport so new AI components plug in as
+   they emerge; stateless relative to memory; fed rendered
+   context slices (§8.2). Name/cut not yet ratified — flagged so
+   it is not lost.
 
 **The semantic difference the maintainer was seeking.** A
 command prompt transports a stateless text line to a shell;
 output scrolls away. The interaction manager **captures an
 intent (or a reaction to an event) as a typed act into the
-versioned structured-memory repo, dispatches it, and records
-its consequences** — a durable move in an addressable
-computational narrative, not a transient line. The mechanism (a
-field, a prompt) can look identical; the correct abstraction
-layer is **not "an input field" — it is an intent / act
-capture-and-dispatch layer over persistent structured memory.**
+versioned structured-memory repo and records its consequences**
+— a durable move in an addressable computational narrative, not
+a transient line. The mechanism (a field, a prompt) can look
+identical; the correct abstraction layer is **not "an input
+field" — it is an intent / act capture-and-dispatch layer over
+persistent structured memory.**
 
 **The linear spine (the one path; everything nonlinear hangs
 off it):** communicate intent / react to an event → **event
 handler** types & admits it → **event dispatch** routes it →
 **interaction manager** captures it as a typed act into the
 **structured-memory repo** & updates **working memory** →
-participant invoked via the **participant seam** if needed →
-result **re-enters through the event handler** → memory +
-working memory updated → typed events emitted to the **event
-output bus** → consumers render.
+**orchestrator** drives a participant via the **participant
+seam** if needed → result **re-enters through the event
+handler** → memory + working memory updated → **orchestrator**
+emits typed events to the **event output bus** → consumers
+render.
 
 **The boundary rule that makes the two sides separable:**
 
 > A participant's reply is **input, not output.** An AI / tool
 > result re-enters the engine *through the event handler*,
 > exactly like a keystroke or an utterance. The engine's
-> *output* is only the typed events emitted to the event output
-> bus after memory is updated. Handler/dispatch and the output
-> bus never touch directly — the interaction manager and memory
-> always sit between them.
+> *output* is only the typed events the orchestrator emits to
+> the event output bus after memory is updated. Handler/dispatch
+> and the output bus never touch directly — the interaction
+> manager / orchestrator and memory always sit between them.
 
-**Candidate input taxonomy + protocol** (what the engine
-accepts; how it is queued / dispatched):
+**Input taxonomy + protocol** *(structure ratified via the
+triad; the specific classes below remain candidate — what the
+engine accepts; how it is queued / dispatched):*
 
 | Input class | Scheduling class | Rule |
 |---|---|---|
@@ -186,24 +207,22 @@ output (bus consumers rendering foreground vs ambient — §7.3).
 Same contract, two enforcement points; that split is a
 candidate for future canon.
 
-**Open for ratification (the maintainer answers in their own
-words; no file access needed):** (1) the persistence triad as
-the spine; (2) event handler + event dispatch replacing
-"universal intake"; (3) "event output bus" as gloss vs canon
-rename; (4) the operationalized-working-memory definition above;
-(5) the three-top-level-systems boundary; (6) whether
-"interaction manager" subsumes the earlier "orchestrator"
-responsibilities or they remain a distinct part.
+**Ratified 2026-05-19 (summary):** (1) persistence triad = the
+spine ✓; (2) event handler + event dispatch (input split) ✓;
+(3) keep "universal event bus" canon, "event output bus" =
+gloss ✓; (4) operationalized-working-memory definition ✓; (5)
+three top-level systems ✓; (6) orchestrator kept **distinct**
+from the interaction manager ✓. **Still open:** the participant
+seam's name/cut, and the specific input-taxonomy classes.
 
 **Reading order for a re-launch:**
 
 0. §0.1 Core canon — the fixed vocabulary ("interaction engine",
    "universal event bus") and the day-zero "ignore GUI / UIA /
    NVDA" consequence. Read this first; everything else is read
-   against it. **§0.2** holds the candidate component
-   decomposition (proposed, not yet canon) — read it next if
-   the question is *how the engine is built*, not *what it is
-   for*.
+   against it. **§0.2** holds the component decomposition
+   (ratified 2026-05-19) — read it next if the question is
+   *how the engine is built*, not *what it is for*.
 1. §1 Purpose and the person it is for — the goals and the
    lived-workflow constraints that are the real acceptance
    criteria.
@@ -226,7 +245,7 @@ responsibilities or they remain a distinct part.
 **Section index:**
 
 - §0.1 — Core canon (stabilized vocabulary) — *read first*
-- §0.2 — Candidate component decomposition (proposed, not canon)
+- §0.2 — Component decomposition (ratified 2026-05-19)
 - §1 — Purpose and the person it is for
 - §2 — The core reframe: three projections of one context
 - §3 — Reference experiences and what we take from each
@@ -1240,8 +1259,29 @@ authoritatively in §0.1; they are fixed vocabulary.*
   GUI / screen reader / terminal (§0.1).
 - **Universal event bus** **[canon]** — the one typed semantic
   stream the interaction engine emits; every output mechanism
-  is merely a consumer of it (§0.1, §7). Subsumes the earlier
-  "universal routable event bus" / `CellEventBus` phrasings.
+  is merely a consumer of it (§0.1, §7). Plain gloss: **event
+  output bus** (ratified 2026-05-19, no canon rename). Subsumes
+  the earlier "universal routable event bus" / `CellEventBus`
+  phrasings.
+- **Event handler** **[ratified]** — input-side component that
+  types and admits incoming events of discrete data classes;
+  the pipeline-normalization boundary (§0.2).
+- **Event dispatch** **[ratified]** — input-side component that
+  routes admitted events to the right handler (§0.2).
+- **Interaction manager** **[ratified]** — owns the user-facing
+  linear interaction workflow and the ephemeral interface;
+  captures intent as a typed act into memory; does not drive
+  participants (§0.2).
+- **Orchestrator** **[ratified, distinct]** — drives
+  participants (selection, context slice, fork/promote, org
+  handoff) and decides what the engine emits; kept separate
+  from the interaction manager (§0.2 point 6).
+- **Structured-memory repo** **[ratified]** — the persistent,
+  git-managed, multi-document, versioned memory; triad layer 1
+  (§0.2).
+- **Operationalized working memory** **[ratified]** — the live
+  working set the system keeps warm so the maintainer stays
+  oriented; triad layer 2, the bridge to §10 (§0.2).
 - **Chunk** — the atomic typed node of a decomposed response;
   the unit of navigation (§5.1).
 - **Chunk tree** — a conversation as a tree of chunks with
