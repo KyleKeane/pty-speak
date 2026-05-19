@@ -36,8 +36,9 @@ carry.
 3. §4 Strategic decision (keep / freeze / pivot / localize) —
    what changes versus the current repo, and why nothing good is
    discarded. **Includes §4.5 — the foundational-stack
-   (stewardship / security / reversibility) decision, the
-   single hardest one to evaluate.**
+   (stewardship / security / reversibility) decision — and
+   §4.6 — self-voicing vs. external screen reader (output
+   ownership): the two single hardest decisions to evaluate.**
 4. §13 Phased plan — the concrete walking skeleton; **Phase 0 is
    the start.**
 5. §16 Open decisions + §17 Working assumptions — what is *not*
@@ -53,6 +54,7 @@ carry.
 - §3 — Reference experiences and what we take from each
 - §4 — Strategic decision: keep / freeze / pivot / localize
   - §4.5 — Foundational stack: stewardship, security, reversibility
+  - §4.6 — Self-voicing vs. external screen reader (output ownership)
 - §5 — The data model (locked): the chunk tree
 - §6 — Navigation and the compose-by-speech loop
 - §7 — Multimodal I/O: the universal routable event bus
@@ -357,7 +359,79 @@ answer claims that) but because it is the strongest available
 combination on the criteria that matter here *and* the
 architecture lets the bet be wrong cheaply. Hold WPF loosely.
 Enforce core portability as a named principle (§14) and name the
-WPF-replacement trigger as an open decision (§16).
+WPF-replacement trigger as an open decision (§16). **Refined by
+§4.6:** the "UIA + NVDA strongest bet" applies to the
+*foreign-software edge*; for the system's **own** content there
+is no external-screen-reader dependency to bet on at all.
+
+### 4.6 Self-voicing vs. external screen reader (output ownership)
+
+Another foundational decision the maintainer raised and asked to
+be distilled into a principle. It **refines §4.5**: §4.5 governs
+the platform / runtime; this governs *who owns the rendering of
+meaning to the user*.
+
+**The instinct (recorded).** Build a self-voicing ecosystem —
+the system renders its own canonical content to audio directly —
+rather than depending on an external screen reader (NVDA) to
+re-derive meaning from a UI built for sighted use. Grounds:
+canonical control (the format the user controls, not another
+developer's interface), per-user optimization, privacy and
+security from owning the audio path end-to-end, and values
+encoded into the canonical format.
+
+**Why it is internally consistent, not a detour.** Depending on
+a generic screen reader to voice the system's *own* content is
+the same shape of mistake as terminal-scraping (§4.2):
+reconstructing semantics through a generic adaptation layer when
+the system already owns them. ADR 0008 (maximal semantic
+surfacing) applied to the output channel **is** self-voicing.
+It is also the mechanical cure for the §1.1 fast-and-reliable
+narration bar: the repo's long history of fighting
+UIA-notification churn *is* the cost of not owning the audio
+path.
+
+**The honest cost (the scary part, correctly identified).**
+Self-voicing makes the system responsible for an accessibility
+surface NVDA represents decades of battle-tested edge-case
+handling for. For the system's **own** canonical content this is
+bounded and tractable (it is the §5 chunk tree the system
+already produces). For **foreign software and the open web** it
+is the unbounded-reconstruction problem (§4.2 / ADR 0010) at
+OS / web scale — automation frameworks + vision models are
+powerful but brittle, slow, costly, non-deterministic: the
+opposite of the §1.1 bar, and a real risk of recreating
+terminal-scraping at planetary scale. A *cloud* vision model for
+that edge also *introduces* a privacy exposure (screen content
+to a third party), inverting the privacy rationale unless the
+edge uses local models.
+
+**The reconciliation — scope is the whole answer.** These are
+two different decisions; conflating them is the trap (the
+maintainer instinctively flagged only the web part as scary):
+
+- **Self-voicing is the primary, canonical experience for
+  everything the system owns** — content, decisions, operations,
+  orientation — rendered directly from the user-controlled
+  canonical format, never reconstructed through a generic
+  external screen reader. **Ratified.**
+- **For software the system does not own** (foreign apps, the
+  open web), an external accessibility substrate (NVDA / UIA)
+  and / or automation + vision are **bounded, opt-in adapters at
+  the edge** — the same status as the §4.2 secondary terminal
+  mode and the §14.10 replaceable-adapter stance: never the
+  primary path, never on the critical loop, allowed to be
+  best-effort because they are off it. Local-first vision is
+  preferred where the edge is built, to preserve the privacy
+  rationale.
+- NVDA remains available **transitionally** and as a
+  comparison oracle during development until the self-voicing
+  channel reaches parity; it is sunset from the *owned* path as
+  that parity lands, not ripped out on day one.
+
+**Recommendation (maintainer ratifies).** Adopt self-voicing as
+the canonical output-ownership model, scoped as above. Distilled
+as principle §14.11.
 
 ## 5. The data model (locked): the chunk tree
 
@@ -826,6 +900,16 @@ braille and haptic channels are usable for their named roles.
     kept reversible. The foundational-stack bet is survivable
     because being wrong about it is cheap by construction —
     never by prediction.
+11. **Own the voice for what you own.** The system self-voices
+    its own canonical content, decisions, and operations
+    directly from the user-controlled canonical format; it
+    never depends on a generic external screen reader to
+    re-derive meaning the system already holds (ADR 0008
+    applied to the output channel; the cure for the §1.1
+    narration-reliability cost). External screen readers /
+    automation + vision are bounded, opt-in *edge* adapters for
+    foreign software the system does not own (§4.6) — never the
+    primary path, never on the critical loop.
 
 ## 15. What carries over from the current repo
 
@@ -886,6 +970,13 @@ document does not pre-empt them.
    existential risk (the §4.5 analysis says the accessibility
    substrate, not the runtime) and what the contingency for
    *that* is.
+10. **Self-voicing scope boundary (§4.6).** Which foreign
+    surfaces warrant an edge adapter at all vs. are simply out
+    of scope; local vs. cloud vision models for the web edge
+    (privacy-determining); and the concrete parity criteria
+    that sunset NVDA from the *owned* path — vs. keeping it as
+    a permanent optional parallel channel and comparison
+    oracle.
 
 ## 17. Working assumptions (correct these)
 
@@ -948,6 +1039,14 @@ Stated so they are correctable rather than silent:
   core domain model carries no platform / runtime / UI-toolkit
   types, so .NET / WPF / Windows / NVDA are replaceable adapters
   and the foundational-stack bet is reversible (§4.5, §14.10).
+- **Self-voicing** — the system renders its own canonical
+  content to audio directly, owning the audio path end-to-end,
+  rather than depending on a generic external screen reader to
+  re-derive it (§4.6, §14.11).
+- **Edge adapter** — a bounded, opt-in connector to software the
+  system does not own (foreign apps / the open web), via
+  external accessibility APIs and / or automation + vision;
+  never on the critical loop (§4.6).
 
 ---
 
