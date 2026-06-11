@@ -46,6 +46,13 @@
     -->
     <Compile Include="Navigator.fs" />
     <Compile Include="ChunkNarration.fs" />
+    <!--
+      RELAUNCH-SPEC §7.3 / §4.6 — the attention contract
+      (output-side enforcement: pure queue + routing policy)
+      and the platform-free self-voicing sink seam.
+    -->
+    <Compile Include="Attention.fs" />
+    <Compile Include="SpeechSink.fs" />
   </ItemGroup>
 
   <ItemGroup>

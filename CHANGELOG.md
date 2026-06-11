@@ -15685,6 +15685,21 @@ ring) follow.
   container child counts, §6.2 "what was run" for tool calls.
   `NavigatorTests` + `ChunkNarrationTests` pin both.
 
+### Phase 0 PR-6 (2026-06-11): attention contract + speech-sink seam
+
+- **Added**: `Engine.Core/Attention.fs` — the RELAUNCH-SPEC
+  §7.3 attention contract, output-side enforcement (ADR 0011
+  E6): a pure queue (foreground strict non-preemptible FIFO;
+  ambient coalesced latest-wins per key, surfaced only when no
+  foreground waits) + the routing policy (requests confirmed
+  foreground — the §6.1 narrate-and-confirm echo; progress and
+  notes ambient; completion foreground and error-aware; sealed
+  chunks deliberately silent per §5.2).
+  `Engine.Core/SpeechSink.fs` — the platform-free `ISpeechSink`
+  contract the self-voicing channel implements (speak / cancel
+  / utterance-completed drain trigger). `AttentionTests` pin
+  the discipline.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
