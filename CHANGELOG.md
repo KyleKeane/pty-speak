@@ -15654,6 +15654,24 @@ ring) follow.
   are dropped; structural kinds survive. `MarkdownChunkerTests`
   pin the grain incl. a realistic agent-response decomposition.
 
+### Phase 0 PR-4 (2026-06-11): engine event bus + ingest fold
+
+- **Added**: `Engine.Core/EngineEvent.fs` — the universal event
+  bus, engine instance (RELAUNCH-SPEC §0.1): typed
+  `EngineEvent` vocabulary (`RequestCaptured` / `SessionStarted`
+  / `ChunkSealed` / `ResponseProgress` / `ResponseCompleted` /
+  `EngineNote`) on an **instance-scoped** `EngineBus`
+  (token-keyed subscribe, snapshot-then-fire, throwing-sink
+  guard — the CellEventBus shape without the global state).
+- **Added**: `Engine.Core/Ingest.fs` — the §5.2 streaming rule
+  as a pure fold: `captureRequest` (typed-act capture, branch
+  anchoring) + `applyAgentEvent` (assistant messages decompose
+  + seal at message boundaries; tool use / results seal typed
+  chunks; unknown shapes surface as ambient notes, never in the
+  tree; turn results complete without re-appending duplicate
+  text; latest-response-start tracked for the §6.2 jump verb).
+  `EngineBusTests` + `IngestTests` pin both.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

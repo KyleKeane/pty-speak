@@ -31,6 +31,14 @@
       tests HTML).
     -->
     <Compile Include="MarkdownChunker.fs" />
+    <!--
+      RELAUNCH-SPEC §0.1 / ADR 0011 E5 — the engine's universal
+      event bus (instance-scoped) + the ingest fold (the §5.2
+      streaming rule). Ingest depends on the chunker + the bus
+      event vocabulary, so both sit after MarkdownChunker.
+    -->
+    <Compile Include="EngineEvent.fs" />
+    <Compile Include="Ingest.fs" />
   </ItemGroup>
 
   <ItemGroup>
