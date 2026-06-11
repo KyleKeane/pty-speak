@@ -104,6 +104,7 @@
     <Compile Include="NavigatorTests.fs" />
     <Compile Include="ChunkNarrationTests.fs" />
     <Compile Include="AttentionTests.fs" />
+    <Compile Include="ClaudeCliTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
@@ -129,6 +130,7 @@
     <!-- RELAUNCH-SPEC Phase 0 (ADR 0011) — the interaction
          engine's pure core. -->
     <ProjectReference Include="..\..\src\Engine.Core\Engine.Core.fsproj" />
+    <ProjectReference Include="..\..\src\Engine.Participants\Engine.Participants.fsproj" />
     <!-- R1.2 (ADR 0006): HeuristicPromptDetectorTests reach the
          relocated detector (still `namespace Terminal.Core`,
          now in the Terminal.Shell assembly). -->

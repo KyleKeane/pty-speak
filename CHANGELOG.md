@@ -15700,6 +15700,21 @@ ring) follow.
   / utterance-completed drain trigger). `AttentionTests` pin
   the discipline.
 
+### Phase 0 PR-7 (2026-06-11): Claude CLI participant runner
+
+- **Added**: `src/Engine.Participants` — the participant seam's
+  transport layer (RELAUNCH-SPEC §0.2 component 6 / §12; first
+  instance: the local Claude Code CLI). `ClaudeCli.fs`:
+  `buildArguments` (pure — per-turn `-p … --output-format
+  stream-json --verbose` + `--resume <sid>` continuity, ADR
+  0011 E4), `pumpLines` (pure fold over a line source →
+  `ClaudeStreamJson.parseLine` → typed events), and `runTurn`
+  (thin process layer: redirected stdio, concurrent stderr
+  drain, typed `TurnOutcome`). A participant's reply is INPUT
+  to the engine (§0.2 boundary rule) — events hand off to the
+  host, which routes them through ingest. `ClaudeCliTests` pin
+  the pure parts.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
