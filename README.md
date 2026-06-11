@@ -154,6 +154,7 @@ docs/                    Living developer documentation
   ISSUE_TEMPLATE/        Bug, feature, accessibility-issue templates
 scripts/                 Repo-local utility scripts (install helpers, etc.)
 src/                     F# / C# / WPF source (Stage 0 skeleton merged)
+  Engine.*               RELAUNCH-SPEC Phase 0 interaction engine (2026-06-11): platform-free core (chunk tree, Claude CLI stream parsing, navigation, attention) + CLI participant + self-voicing SAPI sink + console host; see docs/ENGINE-PHASE0.md
 tests/                   xUnit + FsCheck.Xunit + FlaUI placeholder
 ```
 
@@ -174,6 +175,11 @@ shortcuts for the four most common audiences.
 - [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md) — "Where we left off"
 - [`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md) — strategic plan
 - [`spec/tech-plan.md`](spec/tech-plan.md) — stage-by-stage spec
+
+**If you're running the Phase 0 interaction engine (re-launch path):**
+- [`docs/RELAUNCH-SPEC.md`](docs/RELAUNCH-SPEC.md) — the strategic target (audio-first multi-agent workspace)
+- [`docs/adr/0011-phase0-interaction-engine-bootstrap.md`](docs/adr/0011-phase0-interaction-engine-bootstrap.md) — Phase 0 implementation decisions
+- [`docs/ENGINE-PHASE0.md`](docs/ENGINE-PHASE0.md) — build, run, keys, and the acceptance walk
 
 **If you're the maintainer cutting a release:**
 - [`docs/RELEASE-PROCESS.md`](docs/RELEASE-PROCESS.md) — Velopack release flow

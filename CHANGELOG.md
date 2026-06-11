@@ -15735,6 +15735,23 @@ ring) follow.
   acceptance procedure: `docs/ENGINE-PHASE0.md` (lands with the
   closure PR).
 
+### Phase 0 closure audit (2026-06-11)
+
+- **Added (docs)**: [`docs/ENGINE-PHASE0.md`](docs/ENGINE-PHASE0.md)
+  — build/run instructions, key map, the attention contract
+  made audible, and the spec §13 acceptance walk for the Phase
+  0 engine (judged on the self-voicing channel — no NVDA, per
+  core canon). [`docs/ACCESSIBILITY-TESTING.md`](docs/ACCESSIBILITY-TESTING.md)
+  gains the `P0-ENGINE-1` matrix row (PENDING — the maintainer
+  local-dogfood gate).
+- **Changed (docs)**: ADR 0011 status → Implemented & CI-green
+  (#444–#451), ratification + dogfood open;
+  `docs/SESSION-HANDOFF.md` + `CLAUDE.md` flip to "Phase 0
+  implemented; next = the local dogfood"; `README.md` (layout
+  + quick links), `docs/ARCHITECTURE.md` (four `Engine.*`
+  module rows), `docs/DOC-MAP.md` (RELAUNCH-SPEC +
+  ENGINE-PHASE0 routing rows). No code / behaviour change.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

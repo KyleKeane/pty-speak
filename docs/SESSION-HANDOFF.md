@@ -24,21 +24,30 @@ and serves the decision-trail role this file used to overload.
 > ADR 0010 Option A's *framing* (the runner reframe was
 > directionally right, under-scoped — status note now in the
 > ADR itself).
-> **Phase 0 (spec §13) is in implementation** under
+> **Phase 0 (spec §13) is IMPLEMENTED & CI-GREEN** under
 > [ADR 0011](adr/0011-phase0-interaction-engine-bootstrap.md)
-> (Proposed — authored during the maintainer-authorized
-> autonomous session of 2026-06-11; decisions E1–E10 are
-> implemented-pending-ratification): new additive `Engine.*`
-> assemblies (pure `Engine.Core` chunk-tree model + Claude CLI
-> stream-json parser + Markdig block chunker + ingest/bus +
-> navigation verbs + attention router; `Engine.Participants`
-> Claude CLI runner; `Engine.Voice` SAPI self-voicing sink;
-> `Engine.Host` console host). Nothing existing is deleted or
-> modified — the WPF app keeps shipping; the §4.2 freeze on
-> terminal-scraping heuristics stands. The Phase 0 acceptance
-> gate is the maintainer's **local** dogfood on the
-> self-voicing channel (spec §14.1) — CI validates everything
-> except narration.
+> (decisions E1–E10, implemented-pending-ratification; PRs
+> #443–#452, all first-run green): additive `Engine.*`
+> assemblies — pure `Engine.Core` (chunk-tree model ·
+> stream-json parser · Markdig chunker · ingest fold ·
+> instance-scoped engine bus · navigation verbs · canonical
+> narration · attention contract · `ISpeechSink` seam),
+> `Engine.Participants` (Claude CLI runner),
+> `Engine.Voice` (SAPI self-voicing sink), `Engine.Host`
+> (console host: compose `c` / branch `b` / anchor-return `a`
+> / jump `g` / tree nav `j k l h` / repeat `r` / stop `s`).
+> Nothing existing deleted or modified — the WPF app keeps
+> shipping; the §4.2 freeze on terminal-scraping heuristics
+> stands.
+> **NEXT (the only open Phase 0 item): the maintainer's local
+> dogfood on the self-voicing channel** — install .NET 9 SDK +
+> Claude Code CLI locally, `dotnet run --project
+> src/Engine.Host/Engine.Host.fsproj -c Release`, walk the
+> acceptance procedure in
+> [`docs/ENGINE-PHASE0.md`](ENGINE-PHASE0.md) (matrix row
+> `P0-ENGINE-1`). Findings ratify or revise ADR 0011's
+> E-decisions; Phases 1–6 (spec §13) follow from the working
+> loop.
 >
 > *(The 2026-05-18 block below is retained as the narrative
 > trail; the block above is authoritative.)*
@@ -455,21 +464,26 @@ State after the maintainer's batched dogfood of post-`cab2a0d`
 
 ## Next stage
 
-**CURRENT next stage (2026-06-11):
-[`RELAUNCH-SPEC.md`](RELAUNCH-SPEC.md) Phase 0 — the local
-bootstrap — per [ADR 0011](adr/0011-phase0-interaction-engine-bootstrap.md).**
-PR sequence (walking skeleton, one concern per PR, all
-additive): chunk-tree model → Claude CLI stream-json parser →
-markdown chunker → ingest + engine event bus → navigation
-verbs → attention router → Claude CLI participant runner →
-self-voicing sink + console host → closure audit. After the
-code lands CI-green, the remaining Phase 0 work is **on the
-maintainer's machine**: install the .NET 9 SDK + Claude Code
-CLI locally, run `Engine.Host`, and validate the §13
-acceptance loop on the self-voicing channel. ADR 0007 Phase
-4/4b/5 etc. and the ADR 0010 A1–A4 list are subsumed /
-deferred per the spec (§4.2 freeze stands; PTY mode =
-secondary).
+**CURRENT next stage (2026-06-11, post-#452): the Phase 0
+LOCAL DOGFOOD.** The
+[`RELAUNCH-SPEC.md`](RELAUNCH-SPEC.md) Phase 0 walking
+skeleton is fully implemented & CI-green (PRs #443–#452; per
+[ADR 0011](adr/0011-phase0-interaction-engine-bootstrap.md)).
+What remains is **on the maintainer's machine**: install the
+.NET 9 SDK + Claude Code CLI locally, run
+`dotnet run --project src/Engine.Host/Engine.Host.fsproj -c
+Release`, and walk the acceptance procedure in
+[`docs/ENGINE-PHASE0.md`](ENGINE-PHASE0.md) (matrix row
+`P0-ENGINE-1` — judged on the self-voicing channel, spec
+§14.1). Outcomes: ratify/revise ADR 0011 E1–E10; extend the
+parser fixture corpus if the installed CLI's stream-json
+differs (unknown shapes arrive as spoken ambient notes — by
+design); then re-steer from the working loop (spec §13
+Phases 1–6: editor verbs → side conversations + policy →
+multiple participants → organization → lab instantiation →
+device maturation). ADR 0007 Phase 4/4b/5 etc. and the ADR
+0010 A1–A4 list are subsumed / deferred per the spec (§4.2
+freeze stands; PTY mode = secondary).
 
 *Historical (superseded by the spec) — the 2026-05-18 plan:*
 

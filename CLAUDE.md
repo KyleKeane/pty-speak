@@ -1067,20 +1067,24 @@ points at the cycle headline.
   retained, (ii) tick-gate reverted (#431→#432). Also
   merged: #433/#435/#436. Open: #434, #437, #438 (yes/no
   `choice` — parked intermittent).
-- **Next** = **[`docs/RELAUNCH-SPEC.md`](docs/RELAUNCH-SPEC.md)
-  Phase 0 — the local bootstrap (IN IMPLEMENTATION,
-  2026-06-11)** per
+- **Cycle 53 (2026-06-11, autonomous session)** —
+  **[`docs/RELAUNCH-SPEC.md`](docs/RELAUNCH-SPEC.md) Phase 0
+  IMPLEMENTED & CI-GREEN** (PRs #443–#452) per
   [ADR 0011](docs/adr/0011-phase0-interaction-engine-bootstrap.md):
-  additive `Engine.*` assemblies (pure chunk-tree core +
-  Claude CLI stream-json parser + Markdig chunker + ingest /
-  engine event bus + navigation verbs + attention router +
-  CLI participant runner + SAPI self-voicing sink + console
-  host). The spec supersedes ADR 0010's framing (status note
-  in the ADR); A1–A4 are subsumed; the raw-PTY path is the
-  secondary mode (§4.2 freeze stands); ADR 0007 Phase 4+ is
-  deferred behind the spec's plan. Phase 0 acceptance = the
-  maintainer's local dogfood on the self-voicing channel.
-  **Start-here:
+  additive `Engine.*` assemblies — pure `Engine.Core`
+  (chunk-tree model · Claude CLI stream-json parser · Markdig
+  chunker · ingest fold · instance-scoped engine bus ·
+  navigation verbs · canonical narration · attention contract
+  · `ISpeechSink`), `Engine.Participants` (CLI runner),
+  `Engine.Voice` (SAPI sink), `Engine.Host` (console host).
+  Nothing deleted; WPF app untouched; §4.2 freeze stands;
+  portability-lint extended to Engine.Core.
+- **Next** = **the Phase 0 LOCAL DOGFOOD on the maintainer's
+  machine** — run instructions + acceptance walk in
+  [`docs/ENGINE-PHASE0.md`](docs/ENGINE-PHASE0.md) (matrix row
+  `P0-ENGINE-1`; judged on the self-voicing channel, spec
+  §14.1). Findings ratify/revise ADR 0011 E1–E10; then spec
+  §13 Phases 1–6 from the working loop. **Start-here:
   [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)
   § Current state (2026-06-11 block) + § Next stage** +
   RELAUNCH-SPEC + ADR 0011. Other backlog (independent): 45g
