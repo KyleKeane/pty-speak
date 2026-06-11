@@ -207,3 +207,15 @@ everything else.
 - 2026-06-11: ADR authored; implementation PR sequence begins
   (model → parser → chunker → ingest/bus → navigation →
   router → participant runner → voice/host → closure audit).
+- 2026-06-11 (same session): **Implemented & CI-green** —
+  #444 chunk-tree model · #445 AgentEvent + stream-json parser
+  · #446 markdown chunker · #447 engine bus + ingest · #448
+  navigation verbs + narration · #449 attention contract +
+  `ISpeechSink` · #450 `Engine.Participants` Claude CLI runner
+  · #451 `Engine.Voice` SAPI sink + `Engine.Host` console
+  host. Every PR green first-run (build + tests + extended
+  portability lint). **Maintainer ratification + the Phase 0
+  local dogfood remain open** — procedure + acceptance walk in
+  [`docs/ENGINE-PHASE0.md`](../ENGINE-PHASE0.md), matrix row
+  `P0-ENGINE-1` in
+  [`docs/ACCESSIBILITY-TESTING.md`](../ACCESSIBILITY-TESTING.md).

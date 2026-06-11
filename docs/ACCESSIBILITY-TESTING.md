@@ -1426,6 +1426,20 @@ from 350 if needed). If 47-10 the `garbage` text still
 prepends the invocation: the Esc byte didn't reach cmd —
 verify `runCmdTest` is prepending `0x1Buy` to the bytes.
 
+### Phase 0 — interaction engine (RELAUNCH-SPEC §13, ADR 0011)
+
+> **Validation channel note:** per RELAUNCH-SPEC §14.1 / core
+> canon §0.1, this row is judged on the system's **own
+> self-voicing channel** — NVDA is deliberately NOT in the
+> loop. Run locally (`dotnet run --project
+> src/Engine.Host/Engine.Host.fsproj -c Release` with a local
+> Claude Code CLI; `ENGINE_CLAUDE_PATH` if the CLI isn't
+> `claude.cmd` on PATH).
+
+| ID | Status / procedure | Expected |
+| --- | --- | --- |
+| **P0-ENGINE-1** | **PENDING.** Full procedure + step-by-step acceptance walk: [`docs/ENGINE-PHASE0.md`](ENGINE-PHASE0.md) § "Phase 0 acceptance walk". Summary: launch → compose (`c`) a structured request → confirm-echo timing → ambient progress during the turn → completion announce → `g` jump + `j`/`k`/`l`/`h` tree navigation of typed chunks → `b` branch anchored at a chunk + `a` return to anchor → follow-up turn resumes the CLI session → `s` interrupt latency → sustained drop-free reads. | The spec §13 acceptance sentence, on the owned audio path: request spoken back fast and reliably; sealed chunks navigable as typed structure; branch + return with zero drift; narration interruptible, no stutter/drops (judge reliability — SAPI voice *quality* is the ADR 0011 E7 bootstrap tradeoff). **Fail signals:** confirm-echo sluggish or dropped; chunks read as one flat blob (chunker not engaged); focus ejected / lost at edges; branch response not nested under its anchor; `a` not returning to the exact chunk; unknown-stream-shape notes on every turn (wire-format drift — paste the spoken note text into the next session to extend the parser corpus). |
+
 ## Recording results
 
 For each release tag:
