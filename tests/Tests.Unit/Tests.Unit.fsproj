@@ -98,6 +98,7 @@
     -->
     <Compile Include="ChunkTreeTests.fs" />
     <Compile Include="ClaudeStreamJsonTests.fs" />
+    <Compile Include="MarkdownChunkerTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

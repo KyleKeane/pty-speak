@@ -24,10 +24,18 @@
     -->
     <Compile Include="AgentEvent.fs" />
     <Compile Include="ClaudeStreamJson.fs" />
+    <!--
+      ADR 0011 E2 — markdown → chunk-spec decomposition (the
+      chunk grain). Markdig is platform-free and already in the
+      central package set (Terminal.Core uses it for the manual
+      tests HTML).
+    -->
+    <Compile Include="MarkdownChunker.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="FSharp.Core" />
+    <PackageReference Include="Markdig" />
   </ItemGroup>
 
 </Project>
