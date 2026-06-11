@@ -101,6 +101,8 @@
     <Compile Include="MarkdownChunkerTests.fs" />
     <Compile Include="EngineBusTests.fs" />
     <Compile Include="IngestTests.fs" />
+    <Compile Include="NavigatorTests.fs" />
+    <Compile Include="ChunkNarrationTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

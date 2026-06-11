@@ -1,0 +1,79 @@
+module PtySpeak.Tests.Unit.ChunkNarrationTests
+
+open Xunit
+open Engine.Core
+open Engine.Core.Chunk
+
+// ---------------------------------------------------------------------
+// RELAUNCH-SPEC §4.6 / §14.11 — canonical narration rendering.
+// ---------------------------------------------------------------------
+//
+// Structure announced before content; container kinds announce
+// child counts; tool calls render the §6.2 "what was run" info.
+
+let private ok r =
+    match r with
+    | Ok v -> v
+    | Error e -> failwithf "fixture build failed: %s" e
+
+let private describeSolo (kind: ChunkKind) (text: string) : string =
+    let chunk, tree = ok (ChunkTree.append None kind text ChunkTree.empty)
+    ChunkNarration.describe tree chunk
+
+[<Fact>]
+let ``paragraph narrates its text verbatim`` () =
+    Assert.Equal("Plain words.", describeSolo Paragraph "Plain words.")
+
+[<Fact>]
+let ``heading announces its level first`` () =
+    Assert.Equal(
+        "Heading level 2. Setup",
+        describeSolo (Heading 2) "Setup")
+
+[<Fact>]
+let ``list announces order and item count`` () =
+    let list, tree =
+        ok (ChunkTree.append None (ListBlock true) "" ChunkTree.empty)
+    let _, tree = ok (ChunkTree.append (Some list.Id) ListItem "one" tree)
+    let _, tree = ok (ChunkTree.append (Some list.Id) ListItem "two" tree)
+    Assert.Equal(
+        "Numbered list, 2 items.",
+        ChunkNarration.describe tree list)
+
+[<Fact>]
+let ``list item with nested content says so`` () =
+    let item, tree =
+        ok (ChunkTree.append None ListItem "outer" ChunkTree.empty)
+    let _, tree =
+        ok (ChunkTree.append (Some item.Id) (ListBlock false) "" tree)
+    Assert.Equal(
+        "outer. Has nested content.",
+        ChunkNarration.describe tree item)
+
+[<Fact>]
+let ``code block announces language and line count before the body`` () =
+    Assert.Equal(
+        "Code block, fsharp, 2 lines. let x = 1\nlet y = 2",
+        describeSolo (CodeBlock (Some "fsharp")) "let x = 1\nlet y = 2")
+
+[<Fact>]
+let ``tool call renders name then input`` () =
+    Assert.Equal(
+        """Tool call, Bash. Input: {"command":"dir"}""",
+        describeSolo (ToolUse "Bash") """{"command":"dir"}""")
+
+[<Fact>]
+let ``tool error result is announced as an error`` () =
+    Assert.Equal(
+        "Tool result, error. boom",
+        describeSolo (ToolResult true) "boom")
+
+[<Fact>]
+let ``user request is labelled`` () =
+    Assert.Equal(
+        "Your request: fix the bug",
+        describeSolo UserRequest "fix the bug")
+
+[<Fact>]
+let ``separator has a fixed word`` () =
+    Assert.Equal("Separator.", describeSolo ThematicBreak "")

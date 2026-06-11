@@ -15672,6 +15672,19 @@ ring) follow.
   text; latest-response-start tracked for the §6.2 jump verb).
   `EngineBusTests` + `IngestTests` pin both.
 
+### Phase 0 PR-5 (2026-06-11): navigation verbs + canonical narration
+
+- **Added**: `Engine.Core/Navigator.fs` — the RELAUNCH-SPEC
+  §6.2 v1 verbs as pure transitions (focus / jump-to-latest /
+  next / previous / descend / ascend / re-narrate /
+  push-anchor + return-to-anchor as a nesting stack). The §6.4
+  non-ejection invariant holds by construction: an `Edge`
+  outcome never moves focus and no verb can focus outside the
+  tree. `Engine.Core/ChunkNarration.fs` — canonical self-voicing
+  rendering (§4.6/§14.11): structure announced before content,
+  container child counts, §6.2 "what was run" for tool calls.
+  `NavigatorTests` + `ChunkNarrationTests` pin both.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
