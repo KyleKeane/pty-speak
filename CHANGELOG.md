@@ -15772,6 +15772,13 @@ ring) follow.
   lands on the first authored child. Guards the §5 model for
   every reachable v1 tree, not just the example fixtures.
 
+### Phase 0 PR-12 (2026-06-11): checkpoint staged
+
+- **Changed (docs)**: [`docs/CHECKPOINTS.md`](docs/CHECKPOINTS.md)
+  gains the `baseline/phase-0-interaction-engine` checkpoint
+  (anchor = #454's squash) + the pending-tag push commands for
+  the maintainer to sweep (sandbox cannot push tag refs).
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
