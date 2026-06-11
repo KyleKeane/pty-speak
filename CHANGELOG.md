@@ -15715,6 +15715,26 @@ ring) follow.
   host, which routes them through ingest. `ClaudeCliTests` pin
   the pure parts.
 
+### Phase 0 PR-8 (2026-06-11): self-voicing sink + console host
+
+- **Added**: `src/Engine.Voice` — `SapiSink`, the Phase 0
+  self-voicing back-end: Windows SAPI
+  (`System.Speech.Synthesizer`, new central package pin
+  `System.Speech 9.0.17`) behind the platform-free
+  `ISpeechSink` seam; `SpeakCompleted` fires for finished AND
+  cancelled utterances so the host drain always advances.
+- **Added**: `src/Engine.Host` — the Phase 0 console host (the
+  dogfoodable interaction-engine executable, ADR 0011 E8):
+  console keys → navigation verbs + compose loop → Claude CLI
+  participant (background turn thread) → ingest → chunk tree →
+  engine bus → attention queue → SAPI sink. Keys: `c` compose,
+  `b` branch at focus, `a` return to anchor, `g` latest
+  response, `j`/`k`/`l`/`h` (+arrows) tree nav, `r` repeat,
+  `s` stop speech, `?` help, `q` quit. `ENGINE_CLAUDE_PATH`
+  overrides the CLI executable (default `claude.cmd`). Run +
+  acceptance procedure: `docs/ENGINE-PHASE0.md` (lands with the
+  closure PR).
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

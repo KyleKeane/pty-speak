@@ -34,6 +34,14 @@
       only consumer.
     -->
     <PackageVersion Include="Markdig" Version="0.38.0" />
+    <!--
+      RELAUNCH-SPEC Phase 0 (ADR 0011 E7) — System.Speech is
+      the Windows SAPI wrapper backing Engine.Voice's
+      self-voicing sink. First-party Microsoft package,
+      Windows-only by nature; referenced only by Engine.Voice
+      (net9.0-windows).
+    -->
+    <PackageVersion Include="System.Speech" Version="9.0.17" />
 
     <!-- Test -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
