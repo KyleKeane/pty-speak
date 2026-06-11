@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      ADR 0011 E1 — the interaction engine's pure core targets
+      plain net9.0 (NOT net9.0-windows): the RELAUNCH-SPEC
+      §14.10 portable-core principle made structural. Platform
+      types cannot be referenced because the platform TFM is
+      absent; the portability-lint CI job additionally bans
+      WPF/Win32 opens, P/Invoke, and Terminal.* dependencies.
+    -->
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Engine.Core</RootNamespace>
+    <AssemblyName>Engine.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Chunk.fs" />
+    <Compile Include="ChunkTree.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" />
+  </ItemGroup>
+
+</Project>

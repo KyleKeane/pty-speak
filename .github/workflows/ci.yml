@@ -177,6 +177,34 @@ jobs:
           fi
           echo "Portability invariant held: Terminal.Core has no Terminal.Shell dependency."
 
+      # RELAUNCH-SPEC §14.10 / ADR 0011 E1+E10 (2026-06-11): the
+      # interaction engine's core is platform-free BY STRUCTURE
+      # (plain net9.0 TFM) and additionally lint-enforced here:
+      # no host-specific opens, no P/Invoke, and no dependency on
+      # ANY Terminal.* assembly (the engine core must not inherit
+      # terminal-scraping types — spec §4.2/§4.3). Greps stay
+      # anchored like the steps above so doc-comment mentions
+      # never trigger.
+      - name: Engine.Core must stay platform-free (spec §14.10)
+        run: |
+          set -e
+          tfm=$(grep -nE '<TargetFramework>net9\.0</TargetFramework>' src/Engine.Core/Engine.Core.fsproj || true)
+          if [ -z "$tfm" ]; then
+            echo "::error::Portability invariant violated. Engine.Core must target plain net9.0 (no -windows suffix) per RELAUNCH-SPEC §14.10 / ADR 0011 E1."
+            exit 1
+          fi
+          opens=$(grep -rEn '^[[:space:]]*open[[:space:]]+(System\.Windows|PresentationCore|WindowsBase|Microsoft\.Win32|Terminal\.)' src/Engine.Core --include='*.fs' || true)
+          pinvoke=$(grep -rEn '^[[:space:]]*\[<[[:space:]]*DllImport|^[[:space:]]*extern[[:space:]]' src/Engine.Core --include='*.fs' || true)
+          projref=$(grep -nE '<ProjectReference[^>]*Terminal\.' src/Engine.Core/Engine.Core.fsproj || true)
+          if [ -n "$opens" ] || [ -n "$pinvoke" ] || [ -n "$projref" ]; then
+            echo "::error::Portability invariant violated. Engine.Core (the interaction engine's pure core) must not open host-specific or Terminal.* namespaces, use P/Invoke, or reference Terminal.* projects."
+            echo "$opens"
+            echo "$pinvoke"
+            echo "$projref"
+            exit 1
+          fi
+          echo "Portability invariant held: Engine.Core is platform-free."
+
   workflow-lint:
     name: Workflow lint (actionlint)
     runs-on: ubuntu-latest
