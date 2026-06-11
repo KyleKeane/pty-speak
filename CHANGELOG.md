@@ -15761,6 +15761,17 @@ ring) follow.
   chunk no branch was made from. `compose` now reports whether
   a turn actually started and the anchor is pushed only then.
 
+### Phase 0 PR-11 (2026-06-11): chunk-tree property tests
+
+- **Added**: `ChunkTreePropertyTests` — FsCheck properties over
+  arbitrary append sequences (a byte list scripts each chunk's
+  parent choice): count = appends; capture order = insertion
+  order; every chunk sits in its parent's child list at its
+  authored index; children point back to their parent;
+  next/previous sibling are inverse where defined; descend
+  lands on the first authored child. Guards the §5 model for
+  every reachable v1 tree, not just the example fixtures.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

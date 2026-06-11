@@ -97,6 +97,7 @@
       a Windows TFM referencing a plain TFM is fine.
     -->
     <Compile Include="ChunkTreeTests.fs" />
+    <Compile Include="ChunkTreePropertyTests.fs" />
     <Compile Include="ClaudeStreamJsonTests.fs" />
     <Compile Include="MarkdownChunkerTests.fs" />
     <Compile Include="EngineBusTests.fs" />
