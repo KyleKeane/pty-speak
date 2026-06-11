@@ -1172,7 +1172,7 @@ green-field restart:
 | Diagnostics, hotkey contract, accessibility + dogfood *discipline* | **Keep** — triage + the "accessibility outcome is the acceptance criterion" rule; validation mechanism becomes the self-voicing channel (§14.1). |
 | WPF / UIA shell, NVDA integration | **Defer (not day zero)** — per core canon (§0.1) GUI / UIA / NVDA are ignored from day zero; a GUI, if ever essential, re-enters only as one universal-event-bus consumer among many (§4.6, §14.12), never the host. |
 | `HeuristicPromptDetector`, OSC-133 precedence, sub-prompt accumulators, boundary-capture fix, #437 / #438 | **Freeze** — opt-in secondary PTY mode (§4.2); not invested in. |
-| ADR 0010 Option A framing | **Superseded by this document** — directionally right, under-scoped. (Cross-link / status update is a follow-up, not done here.) |
+| ADR 0010 Option A framing | **Superseded by this document** — directionally right, under-scoped. (Cross-link / status update recorded in ADR 0010 + `SESSION-HANDOFF` + `CLAUDE.md`, 2026-06-11.) |
 | `SESSION-HANDOFF` / ADR / `CLAUDE.md` orientation apparatus | **Keep, then automate** — it is the §10 orientation-surface spec. |
 
 ## 16. Open decisions (decide these)
@@ -1248,10 +1248,12 @@ Stated so they are correctable rather than silent:
 - "Re-launch" means a new transport adapter + the chunk-tree
   model + the local loop on the kept skeleton — **not** a
   rewrite.
-- This document supersedes ADR 0010's *framing* but does not
-  itself edit ADR 0010 / `SESSION-HANDOFF` / `CLAUDE.md`; those
-  cross-links are a deliberate follow-up so this draft can be
-  reviewed in isolation first.
+- This document supersedes ADR 0010's *framing*. The
+  cross-links into ADR 0010 / `SESSION-HANDOFF` / `CLAUDE.md`
+  were a deliberate follow-up so this draft could be reviewed
+  in isolation first; they landed 2026-06-11 alongside
+  [ADR 0011](adr/0011-phase0-interaction-engine-bootstrap.md)
+  (the Phase 0 implementation-decision record).
 
 ## 18. Glossary
 

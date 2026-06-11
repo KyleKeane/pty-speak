@@ -170,6 +170,21 @@ before deviating.
    `ShellAdapter` seam is the start — no shipped work
    discarded. Read FIRST before any boundary / extraction /
    runner / primary-surface work — it sets the current cycle.
+9c. **[`docs/RELAUNCH-SPEC.md`](docs/RELAUNCH-SPEC.md)** —
+   **the current strategic target (2026-05-19; core canon
+   §0.1/§0.2 maintainer-ratified). Read FIRST for any new
+   work** — it supersedes ADR 0010's framing. An audio-first
+   multi-agent computational workspace: the **interaction
+   engine** + **universal event bus** as fixed canon;
+   self-voicing output ownership; GUI / UIA / NVDA ignored
+   from day zero on the new path; chunk-tree data model
+   (locked); §13 phased plan with **Phase 0 (local
+   Claude-Code-CLI bootstrap) as the committed start**.
+   Implementation decisions for Phase 0 are in
+   [`docs/adr/0011-phase0-interaction-engine-bootstrap.md`](docs/adr/0011-phase0-interaction-engine-bootstrap.md)
+   (Proposed, 2026-06-11 — new additive `Engine.*`
+   assemblies; nothing existing deleted; the §4.2 freeze on
+   terminal-scraping heuristics stands).
 10. **RFC 0001 (archived)** — Cycle 33 pivot-gate RFC, formalised
    the `LinearTextStream` substrate + streaming-emission protocol.
    The substrate it specified was replaced by `ContentHistory` +
@@ -1052,24 +1067,23 @@ points at the cycle headline.
   retained, (ii) tick-gate reverted (#431→#432). Also
   merged: #433/#435/#436. Open: #434, #437, #438 (yes/no
   `choice` — parked intermittent).
-- **Next** = **[ADR 0010](docs/adr/0010-interaction-strategy-structured-runner-vs-passthrough.md)
-  Option A — two-mode reframe (RATIFIED 2026-05-18)**. The
-  structured-runner-vs-passthrough strategy fork is decided:
-  **structured command-runner = primary surface**; raw-PTY
-  passthrough demoted to a secondary "interactive terminal"
-  mode. The capture/diagnosis is *done* (#417–#429); the
-  decision is *made*. ADR 0010's **Consequences A1–A4 are the
-  cycle plan** — a walking skeleton, each its own PR +
-  dogfood, no shipped work discarded (the runner is a new
-  transport adapter behind the existing `ShellAdapter` seam;
-  ADR 0006/0004/0007 + replay-oracle carry over). **A1
-  `StructuredRunnerAdapter` is the start.** Option B's
-  specified boundary fix is reprioritised to the secondary
-  PTY mode (A4), not deleted; #437 / #438 become
-  secondary-mode issues. **Start-here:
+- **Next** = **[`docs/RELAUNCH-SPEC.md`](docs/RELAUNCH-SPEC.md)
+  Phase 0 — the local bootstrap (IN IMPLEMENTATION,
+  2026-06-11)** per
+  [ADR 0011](docs/adr/0011-phase0-interaction-engine-bootstrap.md):
+  additive `Engine.*` assemblies (pure chunk-tree core +
+  Claude CLI stream-json parser + Markdig chunker + ingest /
+  engine event bus + navigation verbs + attention router +
+  CLI participant runner + SAPI self-voicing sink + console
+  host). The spec supersedes ADR 0010's framing (status note
+  in the ADR); A1–A4 are subsumed; the raw-PTY path is the
+  secondary mode (§4.2 freeze stands); ADR 0007 Phase 4+ is
+  deferred behind the spec's plan. Phase 0 acceptance = the
+  maintainer's local dogfood on the self-voicing channel.
+  **Start-here:
   [`docs/SESSION-HANDOFF.md`](docs/SESSION-HANDOFF.md)
-  § Current state (2026-05-18 block) + § Next stage** +
-  ADR 0010. Other backlog (independent): 45g
+  § Current state (2026-06-11 block) + § Next stage** +
+  RELAUNCH-SPEC + ADR 0011. Other backlog (independent): 45g
   `ShellPolicy` consolidation; full deferral list in ADR
   0006 §"Deferred to R6+".
 

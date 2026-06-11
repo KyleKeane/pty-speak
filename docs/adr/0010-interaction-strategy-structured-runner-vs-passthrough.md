@@ -8,6 +8,19 @@
   ([`docs/SESSION-HANDOFF.md`](../SESSION-HANDOFF.md) § Next
   stage). Implementation is a walking skeleton — each of A1–A4
   is its own PR + dogfood; no shipped work is discarded.
+  **Framing superseded 2026-05-19 by
+  [`docs/RELAUNCH-SPEC.md`](../RELAUNCH-SPEC.md)** (cross-link
+  recorded 2026-06-11): Option A was directionally right —
+  stop depending on raw-terminal scraping for the primary
+  surface — but under-scoped. The primary surface is a
+  *structured AI-agent session* fed by the agent's native typed
+  stream (spec §4.3), not a generic command runner; the A1–A4
+  list is subsumed by the spec's §13 phased plan (Phase 0
+  first; implementation decisions in
+  [ADR 0011](0011-phase0-interaction-engine-bootstrap.md)).
+  A4's demotion of the raw-PTY path to a secondary
+  "interactive terminal" mode carries over unchanged (spec
+  §4.2).
 - **Date**: 2026-05-18
 - **Deciders**: maintainer (KyleKeane)
 - **Authoring item**: Cycle 52, session-closure reconciliation.
