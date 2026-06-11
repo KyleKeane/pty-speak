@@ -15609,6 +15609,22 @@ ring) follow.
   order 9c + Current sequencing) now point at RELAUNCH-SPEC
   Phase 0 as the active work. No code / behaviour change.
 
+### Phase 0 PR-1 (2026-06-11): Engine.Core chunk-tree model
+
+- **Added**: `src/Engine.Core` — the interaction engine's pure
+  core assembly (plain `net9.0`, no platform types — RELAUNCH-SPEC
+  §14.10 made structural). First content: the locked §5 data
+  model — `Chunk` (typed kinds, durable GUID ids, immutable
+  `CaptureSeq` + per-parent `AuthoredIndex` from the first
+  commit) and `ChunkTree` (immutable append-only tree; children
+  / parent / sibling / descend lookups all total; branches nest
+  under their anchor without disturbing the main thread).
+  `ChunkTreeTests` pin the invariants.
+- **Changed (CI)**: `portability-lint` gains an Engine.Core
+  step — plain-TFM check, no host-specific / `Terminal.*`
+  opens, no P/Invoke, no `Terminal.*` project references
+  (ADR 0011 E1/E10).
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
