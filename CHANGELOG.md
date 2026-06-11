@@ -15642,6 +15642,18 @@ ring) follow.
   wire contract until the Phase 0 dogfood re-verifies it on the
   maintainer's machine.
 
+### Phase 0 PR-3 (2026-06-11): markdown → chunk decomposition
+
+- **Added**: `Engine.Core/MarkdownChunker.fs` — the ADR 0011 E2
+  chunk grain realized: assistant markdown decomposed with
+  Markdig at the block boundaries the model itself marked
+  (heading / paragraph / list + items / fenced + indented code
+  / quote / thematic break), into a pure `ChunkSpec` forest
+  (nested lists nest under their item). Inline emphasis / code
+  / links flatten into narration text. Whitespace-only leaves
+  are dropped; structural kinds survive. `MarkdownChunkerTests`
+  pin the grain incl. a realistic agent-response decomposition.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
