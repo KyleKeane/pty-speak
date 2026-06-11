@@ -15587,6 +15587,28 @@ ring) follow.
   not deleted**; #437 / #438 become secondary-mode issues. No
   code / behaviour change.
 
+### Re-launch Phase 0 kick-off — ADR 0011 + cross-links (2026-06-11)
+
+- **Added (docs / decision record)**: [ADR 0011](docs/adr/0011-phase0-interaction-engine-bootstrap.md)
+  — Phase 0 interaction-engine bootstrap (Proposed; authored
+  during a maintainer-authorized autonomous session). Records
+  decisions E1–E10: additive `Engine.*` assembly layout (pure
+  `net9.0` `Engine.Core`; `Engine.Participants` Claude CLI
+  runner; `Engine.Voice` SAPI self-voicing sink; `Engine.Host`
+  console host), Markdig block-level chunk grain, GUID chunk
+  ids + capture/authored order, per-turn `claude -p
+  --output-format stream-json` transport with tolerant typed
+  parsing, seal-at-message-boundary streaming rule, output-side
+  attention router, keyboard-first Phase 0 host, nothing
+  deleted, CI + local-dogfood validation split.
+- **Changed (docs)**: the deliberate follow-up
+  [`docs/RELAUNCH-SPEC.md`](docs/RELAUNCH-SPEC.md) §15/§17
+  named is done — ADR 0010 carries a "framing superseded by
+  the re-launch spec" status note; `docs/SESSION-HANDOFF.md`
+  § Current state / § Next stage and `CLAUDE.md` (reading
+  order 9c + Current sequencing) now point at RELAUNCH-SPEC
+  Phase 0 as the active work. No code / behaviour change.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

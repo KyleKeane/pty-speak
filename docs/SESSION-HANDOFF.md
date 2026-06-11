@@ -11,10 +11,40 @@ previous (multi-thousand-line) handoff is at
 [`docs/archive/pre-cycle-45/SESSION-HANDOFF-pre-cycle-45c-historical.md`](archive/pre-cycle-45/SESSION-HANDOFF-pre-cycle-45c-historical.md)
 and serves the decision-trail role this file used to overload.
 
-## Current state (2026-05-18)
+## Current state (2026-06-11)
 
-> **⇒ 2026-05-18 — SESSION-CLOSURE RECONCILIATION (read THIS
-> first; it supersedes every earlier block in this section).**
+> **⇒ 2026-06-11 — RE-LAUNCH UNDERWAY (read THIS first; it
+> supersedes every earlier block in this section).** The
+> strategic target is now
+> [`docs/RELAUNCH-SPEC.md`](RELAUNCH-SPEC.md) (2026-05-19,
+> core canon §0.1/§0.2 maintainer-ratified): an audio-first
+> multi-agent computational workspace — the **interaction
+> engine** + **universal event bus**, self-voicing, GUI / UIA /
+> NVDA ignored from day zero on the new path. It supersedes
+> ADR 0010 Option A's *framing* (the runner reframe was
+> directionally right, under-scoped — status note now in the
+> ADR itself).
+> **Phase 0 (spec §13) is in implementation** under
+> [ADR 0011](adr/0011-phase0-interaction-engine-bootstrap.md)
+> (Proposed — authored during the maintainer-authorized
+> autonomous session of 2026-06-11; decisions E1–E10 are
+> implemented-pending-ratification): new additive `Engine.*`
+> assemblies (pure `Engine.Core` chunk-tree model + Claude CLI
+> stream-json parser + Markdig block chunker + ingest/bus +
+> navigation verbs + attention router; `Engine.Participants`
+> Claude CLI runner; `Engine.Voice` SAPI self-voicing sink;
+> `Engine.Host` console host). Nothing existing is deleted or
+> modified — the WPF app keeps shipping; the §4.2 freeze on
+> terminal-scraping heuristics stands. The Phase 0 acceptance
+> gate is the maintainer's **local** dogfood on the
+> self-voicing channel (spec §14.1) — CI validates everything
+> except narration.
+>
+> *(The 2026-05-18 block below is retained as the narrative
+> trail; the block above is authoritative.)*
+
+> **⇒ 2026-05-18 — SESSION-CLOSURE RECONCILIATION (superseded
+> by the 2026-06-11 block above; kept as trail).**
 > The boundary-diagnostic-capture track is **COMPLETE and on
 > main** (#417–#429), *not* "next" (the earlier blocks below
 > wrongly imply it is pending — that stale framing was the
@@ -425,7 +455,25 @@ State after the maintainer's batched dogfood of post-`cab2a0d`
 
 ## Next stage
 
-**CURRENT next stage (2026-05-18): [ADR 0010](adr/0010-interaction-strategy-structured-runner-vs-passthrough.md)
+**CURRENT next stage (2026-06-11):
+[`RELAUNCH-SPEC.md`](RELAUNCH-SPEC.md) Phase 0 — the local
+bootstrap — per [ADR 0011](adr/0011-phase0-interaction-engine-bootstrap.md).**
+PR sequence (walking skeleton, one concern per PR, all
+additive): chunk-tree model → Claude CLI stream-json parser →
+markdown chunker → ingest + engine event bus → navigation
+verbs → attention router → Claude CLI participant runner →
+self-voicing sink + console host → closure audit. After the
+code lands CI-green, the remaining Phase 0 work is **on the
+maintainer's machine**: install the .NET 9 SDK + Claude Code
+CLI locally, run `Engine.Host`, and validate the §13
+acceptance loop on the self-voicing channel. ADR 0007 Phase
+4/4b/5 etc. and the ADR 0010 A1–A4 list are subsumed /
+deferred per the spec (§4.2 freeze stands; PTY mode =
+secondary).
+
+*Historical (superseded by the spec) — the 2026-05-18 plan:*
+
+**[ADR 0010](adr/0010-interaction-strategy-structured-runner-vs-passthrough.md)
 Option A — two-mode reframe (RATIFIED).** The maintainer
 ratified Option A: a **structured command-runner becomes the
 primary surface**, the existing raw-PTY passthrough is demoted
