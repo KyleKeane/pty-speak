@@ -15625,6 +15625,23 @@ ring) follow.
   opens, no P/Invoke, no `Terminal.*` project references
   (ADR 0011 E1/E10).
 
+### Phase 0 PR-2 (2026-06-11): Claude CLI stream-json parser
+
+- **Added**: `Engine.Core/AgentEvent.fs` — the typed vocabulary
+  a participant's structured stream normalizes into
+  (`SessionInit` / `AssistantMessage` with typed content blocks
+  / `ToolResults` / `TurnResult` / typed `Unknown` +
+  `ParseError`), and `Engine.Core/ClaudeStreamJson.fs` — the
+  pure one-line-in / one-typed-event-out parser for the Claude
+  Code CLI's `-p --output-format stream-json --verbose` wire
+  format (ADR 0011 E4). Tolerance rules are load-bearing:
+  unknown top-level types and unknown content-block types are
+  surfaced typed (ADR 0008 — never silently dropped, never
+  relayed ambiguous); malformed lines become `ParseError`;
+  nothing throws. `ClaudeStreamJsonTests` fixture corpus is the
+  wire contract until the Phase 0 dogfood re-verifies it on the
+  maintainer's machine.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
