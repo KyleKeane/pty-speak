@@ -15752,6 +15752,15 @@ ring) follow.
   module rows), `docs/DOC-MAP.md` (RELAUNCH-SPEC +
   ENGINE-PHASE0 routing rows). No code / behaviour change.
 
+### Phase 0 PR-10 (2026-06-11): branch anchor only on a sent branch
+
+- **Fixed**: `Engine.Host` — pressing `b` (branch) pushed the
+  return anchor before the compose line was read, so an
+  aborted branch (empty line, or a turn still in flight) left
+  a stale anchor on the stack and a later `a` returned to a
+  chunk no branch was made from. `compose` now reports whether
+  a turn actually started and the anchor is pushed only then.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

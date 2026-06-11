@@ -180,19 +180,26 @@ let main _argv =
                 move)
         narrateMove move
 
-    let compose (anchor: Chunk.ChunkId option) =
+    /// Returns true when a turn was actually started — the
+    /// branch path pushes its anchor only on success, so an
+    /// aborted compose (busy / empty line) leaves no stale
+    /// anchor on the stack.
+    let compose (anchor: Chunk.ChunkId option) : bool =
         let busy = lock gate (fun () -> state.TurnInFlight)
         if busy then
             speakNow "A response is still in progress. Wait for it to complete."
+            false
         else
             speech.CancelAll ()
             Console.Write("> ")
             match Console.ReadLine() with
-            | null -> ()
+            | null -> false
             | line when String.IsNullOrWhiteSpace line ->
                 speakNow "Nothing sent."
+                false
             | line ->
                 startTurn line anchor
+                true
 
     // --- main key loop -----------------------------------------------
     enqueue (Attention.Foreground (
@@ -203,19 +210,18 @@ let main _argv =
         let key = Console.ReadKey(true)
         match key.Key with
         | ConsoleKey.Q -> running <- false
-        | ConsoleKey.C -> compose None
+        | ConsoleKey.C -> compose None |> ignore
         | ConsoleKey.B ->
             // Branch: anchor at the focused chunk (§5.1); the
-            // anchor stack remembers where to return.
-            let anchor =
-                lock gate (fun () ->
-                    match state.Nav.Current with
-                    | Some id ->
-                        state.Nav <- Navigator.pushAnchor state.Nav
-                        Some id
-                    | None -> None)
+            // anchor stack remembers where to return. Pushed
+            // only when the branch request is actually sent —
+            // an aborted compose must not leave a stale anchor.
+            let anchor = lock gate (fun () -> state.Nav.Current)
             match anchor with
-            | Some id -> compose (Some id)
+            | Some id ->
+                if compose (Some id) then
+                    lock gate (fun () ->
+                        state.Nav <- Navigator.pushAnchor state.Nav)
             | None ->
                 speakNow "Focus a chunk first, then press b to branch from it."
         | ConsoleKey.A -> navigate Navigator.returnToAnchor
