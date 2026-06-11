@@ -17,6 +17,13 @@
   <ItemGroup>
     <Compile Include="Chunk.fs" />
     <Compile Include="ChunkTree.fs" />
+    <!--
+      ADR 0011 E4 — the participant-stream vocabulary + the
+      Claude CLI stream-json parser (pure; System.Text.Json is
+      inbox on net9.0, no package needed).
+    -->
+    <Compile Include="AgentEvent.fs" />
+    <Compile Include="ClaudeStreamJson.fs" />
   </ItemGroup>
 
   <ItemGroup>
