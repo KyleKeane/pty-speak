@@ -1,0 +1,243 @@
+module Engine.Host.Program
+
+// RELAUNCH-SPEC §13 Phase 0 / ADR 0011 E8 — the local
+// bootstrap host. Wires: console keyboard → navigation verbs +
+// compose loop → Claude CLI participant → ingest → chunk tree →
+// engine event bus → attention router → self-voicing SAPI sink.
+//
+// Keyboard model (E8 — keyboard-first; speech input arrives via
+// OS dictation into the same compose line):
+//
+//   c       compose a request (type a line, Enter sends)
+//   b       branch: compose anchored at the focused chunk
+//   a       return to anchor
+//   g       jump to the start of the latest response
+//   j / ↓   next chunk        k / ↑   previous chunk
+//   l / →   descend into chunk  h / ←  ascend to parent
+//   r       re-narrate the focused chunk
+//   s       stop speech
+//   ?       speak the key list
+//   q       quit
+//
+// Everything spoken goes through the attention queue
+// (foreground strict FIFO; ambient coalesced) into the
+// self-voicing sink — no console-output dependence; the printed
+// mirror text is a debugging convenience only.
+
+open System
+open System.Threading
+open Engine.Core
+open Engine.Core.EngineEvent
+open Engine.Participants
+
+/// Shared mutable host state, all guarded by one lock: the
+/// console thread (navigation, compose) and the turn thread
+/// (participant events) both touch it.
+type private HostState =
+    { mutable Session: Ingest.Session
+      mutable Nav: Navigator.State
+      mutable Queue: Attention.Queue
+      mutable Speaking: bool
+      mutable TurnInFlight: bool }
+
+let private helpText =
+    "Keys: c compose. b branch at focus. a return to anchor. "
+    + "g latest response. j next. k previous. l descend. "
+    + "h ascend. r repeat. s stop speech. q quit."
+
+[<EntryPoint>]
+let main _argv =
+    let gate = obj ()
+    let state : HostState =
+        { Session = Ingest.empty
+          Nav = Navigator.initial
+          Queue = Attention.empty
+          Speaking = false
+          TurnInFlight = false }
+    let bus = EngineBus()
+    use sink = new Engine.Voice.SapiSink()
+    let speech = sink :> ISpeechSink
+
+    let claudeConfig : ClaudeCli.Config =
+        let fromEnv =
+            Environment.GetEnvironmentVariable "ENGINE_CLAUDE_PATH"
+        match fromEnv with
+        | null ->
+            { ClaudeCli.defaultConfig with ExecutablePath = "claude.cmd" }
+        | v when String.IsNullOrWhiteSpace v ->
+            { ClaudeCli.defaultConfig with ExecutablePath = "claude.cmd" }
+        | v ->
+            { ClaudeCli.defaultConfig with ExecutablePath = v }
+
+    // --- speech drain ------------------------------------------------
+    let rec speakNext () =
+        let toSpeak =
+            lock gate (fun () ->
+                if state.Speaking then None
+                else
+                    match Attention.tryDequeue state.Queue with
+                    | Some (text, rest) ->
+                        state.Queue <- rest
+                        state.Speaking <- true
+                        Some text
+                    | None -> None)
+        match toSpeak with
+        | Some text ->
+            Console.WriteLine(text)
+            speech.SpeakAsync text
+        | None -> ()
+
+    speech.UtteranceCompleted.Add(fun () ->
+        lock gate (fun () -> state.Speaking <- false)
+        speakNext ())
+
+    let enqueue (utterance: Attention.Utterance) =
+        lock gate (fun () ->
+            state.Queue <- Attention.enqueue utterance state.Queue)
+        speakNext ()
+
+    /// A user-initiated read preempts whatever is being spoken:
+    /// cancel, then queue foreground. (Ambient still never
+    /// preempts — this is the user's own interrupt.)
+    let speakNow (text: string) =
+        lock gate (fun () ->
+            state.Queue <- Attention.enqueue (Attention.Foreground text) state.Queue)
+        speech.CancelAll ()
+        speakNext ()
+
+    // --- bus → attention --------------------------------------------
+    bus.Subscribe(fun ev ->
+        match Attention.route ev with
+        | Some utterance -> enqueue utterance
+        | None -> ())
+    |> ignore
+
+    // --- participant turn -------------------------------------------
+    let publishAll (events: EngineEvent list) =
+        events |> List.iter (fun e -> bus.Publish e)
+
+    let startTurn (prompt: string) (anchor: Chunk.ChunkId option) =
+        let captureEvents =
+            lock gate (fun () ->
+                let session', events =
+                    Ingest.captureRequest prompt anchor state.Session
+                state.Session <- session'
+                state.TurnInFlight <- true
+                events)
+        publishAll captureEvents
+        let resume = lock gate (fun () -> state.Session.SessionId)
+        let worker () =
+            let outcome =
+                ClaudeCli.runTurn claudeConfig prompt resume (fun agentEvent ->
+                    let events =
+                        lock gate (fun () ->
+                            let session', events =
+                                Ingest.applyAgentEvent agentEvent state.Session
+                            state.Session <- session'
+                            events)
+                    publishAll events)
+            lock gate (fun () -> state.TurnInFlight <- false)
+            match outcome with
+            | Ok o when o.ExitCode <> 0 ->
+                let detail =
+                    let trimmed = o.StdErr.Trim()
+                    if trimmed.Length > 300 then trimmed.Substring(0, 300)
+                    else trimmed
+                bus.Publish(
+                    EngineNote (
+                        sprintf "Participant exited with code %d. %s"
+                            o.ExitCode detail))
+            | Ok _ -> ()
+            | Error message ->
+                bus.Publish(
+                    EngineNote (
+                        sprintf
+                            "Could not run the participant: %s. Set ENGINE_CLAUDE_PATH to the claude executable."
+                            message))
+        let thread = Thread(worker)
+        thread.IsBackground <- true
+        thread.Start()
+
+    // --- navigation --------------------------------------------------
+    let narrateMove (move: Navigator.Move) =
+        match move with
+        | Navigator.Moved chunk ->
+            let text =
+                lock gate (fun () ->
+                    ChunkNarration.describe state.Session.Tree chunk)
+            speakNow text
+        | Navigator.Edge description ->
+            speakNow description
+        | Navigator.NothingFocused ->
+            speakNow
+                "Nothing is focused yet. Press g to jump to the latest response."
+
+    let navigate (verb: Navigator.State -> ChunkTree.Tree -> Navigator.State * Navigator.Move) =
+        let move =
+            lock gate (fun () ->
+                let nav', move = verb state.Nav state.Session.Tree
+                state.Nav <- nav'
+                move)
+        narrateMove move
+
+    let compose (anchor: Chunk.ChunkId option) =
+        let busy = lock gate (fun () -> state.TurnInFlight)
+        if busy then
+            speakNow "A response is still in progress. Wait for it to complete."
+        else
+            speech.CancelAll ()
+            Console.Write("> ")
+            match Console.ReadLine() with
+            | null -> ()
+            | line when String.IsNullOrWhiteSpace line ->
+                speakNow "Nothing sent."
+            | line ->
+                startTurn line anchor
+
+    // --- main key loop -----------------------------------------------
+    enqueue (Attention.Foreground (
+        "Engine ready. " + helpText))
+
+    let mutable running = true
+    while running do
+        let key = Console.ReadKey(true)
+        match key.Key with
+        | ConsoleKey.Q -> running <- false
+        | ConsoleKey.C -> compose None
+        | ConsoleKey.B ->
+            // Branch: anchor at the focused chunk (§5.1); the
+            // anchor stack remembers where to return.
+            let anchor =
+                lock gate (fun () ->
+                    match state.Nav.Current with
+                    | Some id ->
+                        state.Nav <- Navigator.pushAnchor state.Nav
+                        Some id
+                    | None -> None)
+            match anchor with
+            | Some id -> compose (Some id)
+            | None ->
+                speakNow "Focus a chunk first, then press b to branch from it."
+        | ConsoleKey.A -> navigate Navigator.returnToAnchor
+        | ConsoleKey.G ->
+            let latest = lock gate (fun () -> state.Session.LatestResponseStart)
+            navigate (Navigator.jumpToLatestResponse latest)
+        | ConsoleKey.J | ConsoleKey.DownArrow -> navigate Navigator.next
+        | ConsoleKey.K | ConsoleKey.UpArrow -> navigate Navigator.previous
+        | ConsoleKey.L | ConsoleKey.RightArrow -> navigate Navigator.descend
+        | ConsoleKey.H | ConsoleKey.LeftArrow -> navigate Navigator.ascend
+        | ConsoleKey.R ->
+            let chunk =
+                lock gate (fun () ->
+                    Navigator.current state.Nav state.Session.Tree
+                    |> Option.map (fun c ->
+                        ChunkNarration.describe state.Session.Tree c))
+            match chunk with
+            | Some text -> speakNow text
+            | None -> speakNow "Nothing is focused."
+        | ConsoleKey.S -> speech.CancelAll ()
+        | _ when key.KeyChar = '?' -> speakNow helpText
+        | _ -> ()
+
+    speech.CancelAll ()
+    0

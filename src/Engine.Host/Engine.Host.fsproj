@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      ADR 0011 E8 — the Phase 0 console host: the dogfoodable
+      interaction-engine executable. Windows TFM because it
+      wires the SAPI voice channel; everything it orchestrates
+      is platform-free Engine.Core logic.
+    -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <RootNamespace>Engine.Host</RootNamespace>
+    <AssemblyName>Engine.Host</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" />
+    <ProjectReference Include="..\Engine.Core\Engine.Core.fsproj" />
+    <ProjectReference Include="..\Engine.Participants\Engine.Participants.fsproj" />
+    <ProjectReference Include="..\Engine.Voice\Engine.Voice.fsproj" />
+  </ItemGroup>
+
+</Project>
