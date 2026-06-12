@@ -32,6 +32,11 @@
     -->
     <Compile Include="MarkdownChunker.fs" />
     <!--
+      ADR 0012 S1 — heading-scoped semantic outline (pure
+      transform between decomposition and append).
+    -->
+    <Compile Include="SemanticOutline.fs" />
+    <!--
       RELAUNCH-SPEC §0.1 / ADR 0011 E5 — the engine's universal
       event bus (instance-scoped) + the ingest fold (the §5.2
       streaming rule). Ingest depends on the chunker + the bus

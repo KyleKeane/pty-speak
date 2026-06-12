@@ -15816,6 +15816,22 @@ ring) follow.
   reads the full body. The structure-first narration order
   means the kind/label always survives the cut.
 
+### Cycle 53 ADR-0012 S1 (2026-06-12): heading-scoped semantic outline
+
+- **Added**: `Engine.Core/SemanticOutline.fs` — `nest`
+  recovers the section structure the model already marks: a
+  heading absorbs every following block (including deeper
+  headings) as children until a heading of equal or shallower
+  level; pre-heading content stays top-level; list children
+  untouched. Ingest applies it between decomposition and
+  append, so the chunk tree carries the document's real
+  outline — `next`/`previous` at the top level is
+  section-to-section, `descend` enters a section (the §6.2
+  verbs get real hierarchy). Heading narration announces the
+  section size ("Heading level 2: Setup. 4 items inside.").
+  `SemanticOutlineTests` pin the nesting law incl. skipped
+  levels, scope-closing, and an end-to-end markdown outline.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

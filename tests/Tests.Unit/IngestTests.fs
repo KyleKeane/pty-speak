@@ -60,8 +60,10 @@ let ``assistant text seals decomposed chunks under the request`` () =
     Assert.Equal(2, List.length chunks)
     Assert.Equal(Chunk.Heading 1, chunks.[0].Kind)
     Assert.Equal(Chunk.Paragraph, chunks.[1].Kind)
-    for c in chunks do
-        Assert.Equal(Some req.Id, c.Parent)
+    // ADR 0012 S1 — the outline nests: the section heads the
+    // response under the request; its prose nests inside it.
+    Assert.Equal(Some req.Id, chunks.[0].Parent)
+    Assert.Equal(Some chunks.[0].Id, chunks.[1].Parent)
     // Trailing ambient progress carries the running count.
     match List.last events with
     | ResponseProgress 2 -> ()
