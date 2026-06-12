@@ -15881,6 +15881,24 @@ ring) follow.
   Implemented & CI-green; ARCHITECTURE / SESSION-HANDOFF /
   CLAUDE.md updated.
 
+### Cycle 54 kick-off (2026-06-12): ADRs 0013 + 0014 (launch-readiness cycle)
+
+- **Added (docs / decision records)**:
+  [ADR 0013](docs/adr/0013-computational-notebook-authored-layer.md)
+  — the computational notebook (authored layer): N1 notebook =
+  references (pinned chunks) + narrative + sections, never
+  copies; N2 two host modes, one minimal surface; N3 export =
+  markdown (publishable AND re-ingestable — narratives flow
+  into new conversations); N4 session + notebook persistence
+  as schema-v1 JSONL with validated restore + auto-save +
+  open-last-session (`--resume` carried across restarts); N5
+  rerun verb. [ADR 0014](docs/adr/0014-engine-config-keymap-speech-diagnostics.md)
+  — `engine.toml` (C1, warn-and-default discipline), the
+  declarative conflict-checked keymap with generated help
+  (C2), speech rate/voice controls on the sink seam (C3), and
+  the ear-first diagnostics path (spoken summary + dump file +
+  session event log) (C4).
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
