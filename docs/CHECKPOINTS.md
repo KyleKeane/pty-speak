@@ -36,6 +36,8 @@ with the release workflow.
 
 | `baseline/phase-0-interaction-engine` | [#443](https://github.com/KyleKeane/pty-speak/pull/443)–[#454](https://github.com/KyleKeane/pty-speak/pull/454) | _(no release; engine runs from source — see [`docs/ENGINE-PHASE0.md`](ENGINE-PHASE0.md))_ | RELAUNCH-SPEC §13 Phase 0 ship (Cycle 53, autonomous session 2026-06-11; ADR 0011): the interaction engine's local bootstrap — `Engine.Core` (chunk-tree model, Claude CLI stream-json parser, Markdig chunker, ingest fold, instance-scoped engine bus, navigation verbs, canonical narration, attention contract, `ISpeechSink`), `Engine.Participants` (CLI runner), `Engine.Voice` (SAPI self-voicing sink), `Engine.Host` (console host). All 12 PRs first-run CI-green; chunk-tree invariants FsCheck-guarded; portability lint extended to `Engine.Core`. Maintainer dogfood (`P0-ENGINE-1`) pending — this checkpoint is the pre-dogfood code-complete state. Anchor commit is PR #454's squash (`2deae451bfa80e4706373c69b51c79f94ad2b7fa`). |
 
+| `baseline/cycle-54-launch-readiness` | [#462](https://github.com/KyleKeane/pty-speak/pull/462)–[#475](https://github.com/KyleKeane/pty-speak/pull/475) | _(no release; engine runs from source — [`docs/engine/USER-GUIDE.md`](engine/USER-GUIDE.md))_ | Cycle 54 ship (2026-06-12; ADRs 0013/0014): the audio-only computational notebook complete — authored layer + markdown export, session/notebook persistence with validated restore and `--resume` continuity, engine.toml + declarative keymap + speech controls, ear-first diagnostics, exploration verbs, FsCheck law suites, and the full `docs/engine/` corpus. The pre-dogfood launch-candidate state; `P0-ENGINE-1` steps 1–12 pending. |
+
 ## Pending checkpoint tags
 
 Tags listed in the table above that have **not yet been pushed to
@@ -50,6 +52,7 @@ stays accurate.
 
 | Tag | Push commands |
 |---|---|
+| `baseline/cycle-54-launch-readiness` | <pre>git fetch origin main<br>git tag -a baseline/cycle-54-launch-readiness \\<br>  a1ba1852f3f35363b07acc02d315894495bbfa66 \\<br>  -m "Cycle 54 ship: the audio-only computational notebook (ADRs 0013/0014) — notebook, persistence, config, keymap, diagnostics, exploration verbs, docs corpus; pre-dogfood"<br>git push origin baseline/cycle-54-launch-readiness</pre> |
 | `baseline/phase-0-interaction-engine` | <pre>git fetch origin main<br>git tag -a baseline/phase-0-interaction-engine \\<br>  2deae451bfa80e4706373c69b51c79f94ad2b7fa \\<br>  -m "Phase 0 ship: RELAUNCH-SPEC interaction-engine local bootstrap (ADR 0011) — Engine.Core/Participants/Voice/Host, CI-green, pre-dogfood"<br>git push origin baseline/phase-0-interaction-engine</pre> |
 | `baseline/stage-0-ci-release` | <pre>git fetch origin main<br>git tag -a baseline/stage-0-ci-release \\<br>  8c261b75cafffa223af07464b298621d934b4f22 \\<br>  -m "Stage 0 ship: CI + release pipeline working; v0.0.1-preview.15 shipped from this state"<br>git push origin baseline/stage-0-ci-release</pre> |
 | `baseline/stage-1-conpty-hello-world` | <pre>git fetch origin main<br>git tag -a baseline/stage-1-conpty-hello-world \\<br>  c245564469a4f8f2f920ab1ee212b2e2cceac0c3 \\<br>  -m "Stage 1 ship: Terminal.Pty library; ConPtyHost spawns cmd.exe under ConPTY"<br>git push origin baseline/stage-1-conpty-hello-world</pre> |

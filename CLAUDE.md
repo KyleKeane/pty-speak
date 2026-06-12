@@ -1084,7 +1084,16 @@ points at the cycle headline.
   `w` where-verb breadcrumb · S3 spatial signatures for
   every bus event (per-kind pitch, attention-contract stage
   layout) · S4 `Engine.Audio` stereo renderer · S5
-  attention-layer audit fixes.
+  attention-layer audit fixes. **Cycle 54 (2026-06-12,
+  #462–#475): launch-readiness shipped CI-green** — ADRs
+  0013/0014: the computational notebook (authored layer,
+  markdown export, notebook mode) · session + notebook
+  persistence (validated restore, `--resume` continuity) ·
+  engine.toml + declarative keymap + speech controls ·
+  ear-first diagnostics · exploration verbs (find /
+  structure summary / digits / rerun) · FsCheck law suites ·
+  the `docs/engine/` corpus (user guide → 11-chapter
+  textbook + development guide).
 - **Next** = **the Phase 0 LOCAL DOGFOOD on the maintainer's
   machine** — run instructions + acceptance walk in
   [`docs/ENGINE-PHASE0.md`](docs/ENGINE-PHASE0.md) (matrix row

@@ -16051,6 +16051,14 @@ ring) follow.
   CI-green with per-PR ship notes; `ENGINE-PHASE0.md` +
   `P0-ENGINE-1` extended to acceptance steps 10–12.
 
+### Cycle 54 closure (2026-06-12)
+
+- **Changed (docs)**: SESSION-HANDOFF + CLAUDE.md carry the
+  Cycle 54 ship block; `baseline/cycle-54-launch-readiness`
+  staged in CHECKPOINTS (tag push needs the maintainer's
+  workstation); README / ARCHITECTURE / DOC-MAP reflect the
+  engine corpus and the six new Engine.Core modules.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

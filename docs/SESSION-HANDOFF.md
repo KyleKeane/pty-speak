@@ -39,6 +39,30 @@ and serves the decision-trail role this file used to overload.
 > Nothing existing deleted or modified — the WPF app keeps
 > shipping; the §4.2 freeze on terminal-scraping heuristics
 > stands.
+> **2026-06-12 evening addendum — CYCLE 54 (launch-readiness)
+> SHIPPED on top (#462–#475, CI-green; one CI failure all
+> cycle, a keymap test fixture, fixed):** ADRs 0013 + 0014 —
+> the **computational notebook** (authored layer over the
+> capture tree: pin / narrative / section / reorder / remove /
+> markdown export that is provably re-ingestable; notebook
+> mode `n`), **session + notebook persistence** (schema-v1
+> JSONL, validated restore, auto-save, `o` reopens with CLI
+> `--resume` continuity), **engine.toml** (warn-and-default;
+> participant path, rate/voice, narration cap, cue gain,
+> `[keys]` rebinding), the **declarative conflict-checked
+> keymap** with generated help, **speech controls** (`+`/`-`
+> live rate; voice selection), the **ear-first diagnostics
+> path** (`d`: spoken summary + dump file; per-run event
+> log), **exploration verbs** (`f` find with wrap, `z`
+> structure summary, digits direct-address, `t`/`e`, `y`
+> rerun, hardwired Escape stop), notebook-persistence gap
+> closed, FsCheck law suites (outline/attention/ingest/
+> serde), and the docs corpus (`docs/engine/`: user guide,
+> workflows, keyboard reference, configuration,
+> troubleshooting, development guide, 11-chapter textbook).
+> `P0-ENGINE-1` now has acceptance steps 1–12 and remains
+> THE open gate.
+>
 > **2026-06-12 addendum — ADR 0012 SHIPPED on top (#456–#461,
 > CI-green):** S1 heading-scoped semantic outline at ingest
 > (top-level nav = section-to-section; descend enters a
