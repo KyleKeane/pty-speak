@@ -15965,6 +15965,26 @@ ring) follow.
   design). Host integration of config/keymap/notebook/
   persistence lands next.
 
+### Cycle 54 PR-7 (2026-06-12): host integration — the full instrument
+
+- **Changed**: `Engine.Host/Program.fs` rewired end-to-end:
+  key dispatch is now the KeyMap TABLE (user `[keys]`
+  overrides applied; arrows hardwired); `engine.toml` drives
+  participant path, speech rate/voice, narration cap, cue
+  enable + master gain; **notebook mode** (`n`) with pin /
+  navigate / reorder / remove / insert narrative + section /
+  markdown export (path spoken); **session persistence** —
+  auto-save after every turn + on quit, `v` manual save
+  (per-run snapshot + `session-latest.jsonl`), `o` restores
+  the tree AND the CLI `--resume` continuity, with typed
+  spoken errors on corrupt files; **diagnostics** — every bus
+  event recorded to the ring + the per-run session event log,
+  `d` speaks the summary and writes + names the dump file;
+  **speech controls** — `+`/`-` live rate with confirmation;
+  startup speaks config-warning count, voice note, and a
+  previous-session offer; `t`/`e` level jumps and `y` rerun
+  (of a focused request, anchored where it was) wired.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
