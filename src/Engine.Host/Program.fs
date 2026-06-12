@@ -502,6 +502,7 @@ let main _argv =
 
     // --- verb dispatch ------------------------------------------------------
     let mutable running = true
+    let mutable lastFindQuery : string option = None
 
     let runVerb (verb: KeyMap.Verb) =
         let mode = lock gate (fun () -> state.Mode)
@@ -581,6 +582,27 @@ let main _argv =
                 | Some (n, m) ->
                     speakNow (sprintf "Cell %d of %d, in the notebook." n m)
                 | None -> notebookEmptyHint ()
+        | KeyMap.Find ->
+            let query =
+                match readLine "find> " with
+                | Some text ->
+                    lastFindQuery <- Some text
+                    Some text
+                | None -> lastFindQuery
+            match query with
+            | None -> speakNow "Type something to find."
+            | Some text ->
+                navigate SpatialCue.Jump (Navigator.findNext text)
+        | KeyMap.StructureSummary ->
+            let summary =
+                lock gate (fun () ->
+                    Navigator.current state.Nav state.Session.Tree
+                    |> Option.map (fun c ->
+                        ChunkNarration.summarizeChildren
+                            state.Session.Tree c))
+            match summary with
+            | Some text -> speakNow text
+            | None -> speakNow "Nothing is focused."
         | KeyMap.Pin ->
             let pinned =
                 lock gate (fun () ->
@@ -707,6 +729,17 @@ let main _argv =
             runVerb KeyMap.Descend
         | ConsoleKey.LeftArrow when mode = KeyMap.Transcript ->
             runVerb KeyMap.Ascend
+        | ConsoleKey.Escape ->
+            // Hardwired stop alias — silence must be a reflex
+            // that survives any remapping.
+            runVerb KeyMap.Stop
+        | _ when
+            mode = KeyMap.Transcript
+            && key.KeyChar >= '1' && key.KeyChar <= '9' ->
+            // Direct address: jump to the Nth item at this
+            // level (hardwired, like the arrows).
+            let n = int key.KeyChar - int '0'
+            navigate SpatialCue.Jump (Navigator.nthSibling n)
         | _ ->
             match KeyMap.tryFind mode key.KeyChar bindings with
             | Some verb -> runVerb verb

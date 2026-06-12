@@ -16014,6 +16014,22 @@ ring) follow.
   the ADR 0013 N4 gap found in audit — previously the
   notebook was lost on restart.
 
+### Cycle 54 PR-10 (2026-06-12): exploration verbs
+
+- **Added**: three verbs for fast computational exploration —
+  **find** (`f`: type a query, jump to the next chunk
+  containing it, case-insensitive, capture-order forward with
+  wrap; Enter alone repeats the last search;
+  `Navigator.findNext`); **structure summary** (`z`: "Contains
+  2 paragraphs, 1 code block." — data at hand to decide the
+  next move without reading anything;
+  `ChunkNarration.summarizeChildren`, honest singulars);
+  **direct address** (digits `1`–`9`, hardwired like the
+  arrows: jump to the Nth item at the current level;
+  `Navigator.nthSibling`). **Escape** is a hardwired stop
+  alias — silence survives any remapping. Tests pin all
+  three incl. wrap-around, no-match edges, and singulars.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

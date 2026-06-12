@@ -45,10 +45,13 @@ let ``help is generated from the table and covers every binding`` () =
 
 [<Fact>]
 let ``an override moves a verb to a new key`` () =
+    // 'Z' (uppercase) is free in both modes; lowercase 'z' is
+    // structure_summary since the exploration-verbs PR — the
+    // conflict path for it is covered below.
     let bindings, warnings =
-        withOverrides (Map.ofList [ "pin", 'z' ]) defaults
+        withOverrides (Map.ofList [ "pin", 'Z' ]) defaults
     Assert.Empty(warnings)
-    Assert.Equal(Some Pin, tryFind Transcript 'z' bindings)
+    Assert.Equal(Some Pin, tryFind Transcript 'Z' bindings)
     Assert.Equal(None, tryFind Transcript 'p' bindings)
 
 [<Fact>]

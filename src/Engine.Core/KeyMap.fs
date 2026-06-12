@@ -29,6 +29,8 @@ module KeyMap =
         | LastSibling
         | Repeat
         | Where
+        | Find
+        | StructureSummary
         | Pin
         | Rerun
         | ToggleNotebook
@@ -63,6 +65,8 @@ module KeyMap =
         | LastSibling -> "last_sibling"
         | Repeat -> "repeat"
         | Where -> "where"
+        | Find -> "find"
+        | StructureSummary -> "structure_summary"
         | Pin -> "pin"
         | Rerun -> "rerun"
         | ToggleNotebook -> "toggle_notebook"
@@ -117,6 +121,10 @@ module KeyMap =
             Description = "repeat in full" }
           { Verb = Where; Key = 'w'; Modes = both
             Description = "where am I" }
+          { Verb = Find; Key = 'f'; Modes = [ Transcript ]
+            Description = "find text from here (Enter alone repeats the last search)" }
+          { Verb = StructureSummary; Key = 'z'; Modes = [ Transcript ]
+            Description = "what is inside the focused chunk" }
           { Verb = Pin; Key = 'p'; Modes = [ Transcript ]
             Description = "pin the focused chunk to the notebook" }
           { Verb = Rerun; Key = 'y'; Modes = [ Transcript ]

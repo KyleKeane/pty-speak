@@ -106,6 +106,50 @@ module Navigator =
             state
             tree
 
+    /// Jump to the 1-based Nth sibling at the focused chunk's
+    /// level (the digit keys — direct address within a row).
+    let nthSibling (n: int) (state: State) (tree: ChunkTree.Tree) : State * Move =
+        moveVia
+            (fun id t ->
+                match ChunkTree.tryFind id t with
+                | None -> None
+                | Some chunk ->
+                    ChunkTree.children chunk.Parent t
+                    |> List.tryItem (n - 1))
+            (sprintf "there is no item %d at this level" n)
+            state
+            tree
+
+    /// Find the next chunk whose text contains `query`
+    /// (case-insensitive), searching capture order forward from
+    /// the focused chunk and wrapping; the §6.2 exploration
+    /// companion — jump by content when structure isn't enough.
+    let findNext (query: string) (state: State) (tree: ChunkTree.Tree) : State * Move =
+        let all = ChunkTree.inCaptureOrder tree
+        if List.isEmpty all then
+            state, Edge "nothing to search yet"
+        else
+            let matches (chunk: Chunk.Chunk) =
+                chunk.Text.Contains(
+                    query,
+                    System.StringComparison.OrdinalIgnoreCase)
+            let startIndex =
+                match state.Current with
+                | None -> -1
+                | Some id ->
+                    all
+                    |> List.tryFindIndex (fun c -> c.Id = id)
+                    |> Option.defaultValue -1
+            let total = List.length all
+            let found =
+                Seq.init total (fun offset ->
+                    all.[(startIndex + 1 + offset) % total])
+                |> Seq.tryFind matches
+            match found with
+            | Some chunk ->
+                { state with Current = Some chunk.Id }, Moved chunk
+            | None -> state, Edge (sprintf "no match for %s" query)
+
     /// The focused chunk, for re-narration (§6.2).
     let current (state: State) (tree: ChunkTree.Tree) : Chunk.Chunk option =
         state.Current
