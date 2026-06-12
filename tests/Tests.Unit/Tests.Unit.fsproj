@@ -110,6 +110,7 @@
     <Compile Include="EngineConfigTests.fs" />
     <Compile Include="EngineDiagnosticsTests.fs" />
     <Compile Include="NotebookTests.fs" />
+    <Compile Include="KeyMapTests.fs" />
     <Compile Include="ClaudeCliTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

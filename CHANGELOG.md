@@ -15927,6 +15927,18 @@ ring) follow.
   labelled) — **provably re-ingestable** by the engine's own
   chunker (tested). `NotebookTests` pin all of it.
 
+### Cycle 54 PR-4 (2026-06-12): the declarative keymap
+
+- **Added**: `Engine.Core/KeyMap.fs` (ADR 0014 C2) — every
+  verb a union case; ONE bindings table (verb, key, modes,
+  description); dispatch, per-mode conflict validation,
+  generated help, and `[keys]` overrides all derive from it.
+  Conflicting or unknown overrides warn and keep the default;
+  cross-mode-disjoint reuse is legitimately allowed. The
+  defaults are CI-asserted conflict-free; help is asserted to
+  cover every binding. `KeyMapTests` pin all rules. Host
+  switchover lands with the integration PR.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
