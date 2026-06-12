@@ -19,7 +19,14 @@ module ChunkNarration =
             ChunkTree.children (Some chunk.Id) tree |> List.length
         match chunk.Kind with
         | Chunk.Heading level ->
-            sprintf "Heading level %d. %s" level chunk.Text
+            // ADR 0012 S1 — a heading is a section now; say
+            // how much it holds so descend is an informed move.
+            if childCount > 0 then
+                sprintf
+                    "Heading level %d: %s. %d items inside."
+                    level chunk.Text childCount
+            else
+                sprintf "Heading level %d: %s" level chunk.Text
         | Chunk.Paragraph ->
             chunk.Text
         | Chunk.ListBlock ordered ->

@@ -27,8 +27,17 @@ let ``paragraph narrates its text verbatim`` () =
 [<Fact>]
 let ``heading announces its level first`` () =
     Assert.Equal(
-        "Heading level 2. Setup",
+        "Heading level 2: Setup",
         describeSolo (Heading 2) "Setup")
+
+[<Fact>]
+let ``a heading with children announces its section size`` () =
+    let h, tree = ok (ChunkTree.append None (Heading 1) "Plan" ChunkTree.empty)
+    let _, tree = ok (ChunkTree.append (Some h.Id) Paragraph "a" tree)
+    let _, tree = ok (ChunkTree.append (Some h.Id) Paragraph "b" tree)
+    Assert.Equal(
+        "Heading level 1: Plan. 2 items inside.",
+        ChunkNarration.describe tree h)
 
 [<Fact>]
 let ``list announces order and item count`` () =

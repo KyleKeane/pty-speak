@@ -100,6 +100,7 @@
     <Compile Include="ChunkTreePropertyTests.fs" />
     <Compile Include="ClaudeStreamJsonTests.fs" />
     <Compile Include="MarkdownChunkerTests.fs" />
+    <Compile Include="SemanticOutlineTests.fs" />
     <Compile Include="EngineBusTests.fs" />
     <Compile Include="IngestTests.fs" />
     <Compile Include="NavigatorTests.fs" />

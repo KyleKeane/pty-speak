@@ -131,7 +131,12 @@ module Ingest =
                 ||> List.fold (fun (acc, t, ns) block ->
                     match block with
                     | Text text ->
-                        let specs = MarkdownChunker.decompose text
+                        // ADR 0012 S1 — recover the section
+                        // structure before append: the tree
+                        // carries the document's real outline.
+                        let specs =
+                            MarkdownChunker.decompose text
+                            |> SemanticOutline.nest
                         let sealed_, t' = appendSpecs parent specs t
                         (acc @ sealed_, t', ns)
                     | ToolUse (_id, name, inputJson) ->
