@@ -53,50 +53,17 @@ debugging mirror only — audio is the product surface).
 
 ## Keys
 
-| Key | Verb |
-|---|---|
-| `c` | Compose a request (type a line, Enter sends) |
-| `b` | Branch: compose anchored at the focused chunk (§5.1) |
-| `a` | Return to anchor — back to the exact branch origin |
-| `g` | Jump to the start of the latest response |
-| `j` / Down | Next chunk |
-| `k` / Up | Previous chunk |
-| `l` / Right | Descend into the chunk's children |
-| `h` / Left | Ascend to the parent |
-| `r` | Re-narrate the focused chunk (full body — navigation reads are capped at 600 chars with an honest "Truncated" marker) |
-| `w` | Where am I — kind + position + ancestor trail + depth (ADR 0012 S2) |
-| `s` | Stop speech (cancels AND clears everything queued) |
-| `?` | Speak the key list |
-| `q` | Quit |
-
-## The semantic outline (ADR 0012 S1)
-
-Responses are no longer flat: a heading absorbs its section's
-content as children, so the tree carries the document's real
-outline. Practically: after `g`, `j`/`k` step **section to
-section** (headings announce their size — "Heading level 2:
-Setup. 4 items inside."), `l` enters the section you're on,
-and every move ends with its position ("…, 2 of 5").
-
-## The spatial stage (ADR 0012 S3/S4)
-
-Every universal-event-bus event also renders as a short
-stereo-positioned tone (best on headphones; speakers work).
-The stage layout encodes the attention contract by position:
-
-- **Center** — the narrative thread: your request landing
-  (660 Hz blip), response complete (bright 880 Hz), response
-  failed (low 220 Hz, longer).
-- **Near right** — the content trickle: one soft tick per
-  sealed chunk, **pitch identifies the kind** (headings ring
-  high B5, paragraphs C5, code F5, tool errors low D#4…).
-- **Right** — turn progress: a rising pitch series as the
-  count grows.
-- **Far left / left** — lifecycle (session start) /
-  diagnostic notes.
-- **Navigation** — a crisp tick panned toward the movement
-  (next right, previous left; descend low, ascend high); a
-  refused move (an edge) rings dull on the side you bumped.
+The full key surface (two modes, rebinding, design notes) is
+[`engine/KEYBOARD-REFERENCE.md`](engine/KEYBOARD-REFERENCE.md);
+`?` speaks the live table. The core six: `c` compose · `g`
+latest response · `j`/`k` next/previous · `l`/`h`
+descend/ascend · `r` repeat · `s` stop. Beyond Phase 0's
+original surface the engine now also has: the notebook (`p`
+pin, `n` toggle, `i`/`u`/`[`/`]`/`x`/`m` edit + export),
+sessions (`v` save, `o` reopen; auto-save after every turn),
+find/summary/direct-address (`f`/`z`/digits), rerun (`y`),
+diagnostics (`d`), and live speech rate (`+`/`-`). Config:
+[`engine/CONFIGURATION.md`](engine/CONFIGURATION.md).
 
 ## The attention contract, audible
 
@@ -149,6 +116,21 @@ Run on the local machine, judged on the self-voicing channel
    side. The check: with speech stopped (`s`), navigate and
    tell next from previous from edge **by ear alone**.
 
+10. **The notebook loop (ADR 0013):** pin two chunks (`p`),
+   `n` into the notebook, `i` a narrative sentence between
+   them (`[` to move it), `m` export — confirm the spoken
+   path and that the markdown file reads as a document; `x`
+   a cell and hear the honest count.
+11. **Persistence:** quit (`q`), relaunch, press `o` — the
+   session AND notebook restore (counts spoken) and the next
+   `c` request continues the same conversation.
+12. **Config + diagnostics (ADR 0014):** put a deliberate
+   mistake in `engine.toml` (e.g. `rate = "fast"`), relaunch —
+   one spoken warning count, nothing broken; `d` reads the
+   detail and names the dump file. Set `rate = 4` and a
+   `[keys]` rebinding and confirm both take effect. `+`/`-`
+   adjust rate live.
+
 Record the outcome in
 [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
 (matrix row `P0-ENGINE-1`).
@@ -157,6 +139,9 @@ Record the outcome in
 
 - Keyboard-first composition; speech input arrives via OS
   dictation into the compose line (ADR 0011 E8).
+- Notebook editing is the v1 verb set (pin / narrative /
+  section / reorder / remove / export); inline text editing
+  of existing cells is the v2 editor (ADR 0013).
 - One participant (Claude CLI), per-turn invocation with
   `--resume` (E4); no persistent stdin process yet.
 - Editor verbs (§6.3), side-conversation policy (§8.3), and the
