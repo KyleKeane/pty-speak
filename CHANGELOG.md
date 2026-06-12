@@ -15939,6 +15939,22 @@ ring) follow.
   cover every binding. `KeyMapTests` pin all rules. Host
   switchover lands with the integration PR.
 
+### Cycle 54 PR-5 (2026-06-12): session persistence (serde + validated restore)
+
+- **Added**: `Engine.Core/ChunkSerde.fs` (ADR 0013 N4) — the
+  session as schema-v1 JSONL: one meta line (schemaVersion,
+  participant session id, cursor anchors) + one chunk per line
+  in capture order, locked key order, hand-written
+  `Utf8JsonWriter` emit; tolerant reader (malformed lines,
+  missing fields, unknown kinds, newer schema → typed
+  `Error`). `ChunkTree.restore` rebuilds a tree from chunk
+  records while RE-VALIDATING the structural invariants
+  (parents precede children, strict capture order, unique
+  ids, authored-index consistency) — a corrupt file can never
+  produce a silently wrong tree. Round-trip pinned
+  example-based AND property-based over arbitrary trees with
+  all 14 chunk kinds; special characters covered.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

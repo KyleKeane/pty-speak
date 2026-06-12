@@ -128,3 +128,43 @@ module ChunkTree =
         |> Map.toList
         |> List.map snd
         |> List.sortBy (fun c -> c.CaptureSeq)
+
+    /// ADR 0013 N4 — rebuild a tree from previously-serialized
+    /// chunks (capture order), VALIDATING the structural
+    /// invariants as it goes: parents must precede their
+    /// children, capture order must be strictly increasing,
+    /// ids must be unique, and each authored index must match
+    /// its arrival position among its siblings. A corrupt file
+    /// is a typed `Error`, never a crash and never a silently
+    /// wrong tree.
+    let restore (chunks: Chunk.Chunk list) : Result<Tree, string> =
+        let rec go (tree: Tree) (remaining: Chunk.Chunk list) =
+            match remaining with
+            | [] -> Ok tree
+            | chunk :: rest ->
+                let parentMissing =
+                    match chunk.Parent with
+                    | None -> false
+                    | Some pid -> not (tree.ById |> Map.containsKey pid)
+                if parentMissing then
+                    Error "restore: a chunk's parent does not precede it"
+                elif tree.ById |> Map.containsKey chunk.Id then
+                    Error "restore: duplicate chunk id"
+                elif chunk.CaptureSeq < tree.NextCaptureSeq then
+                    Error "restore: capture order is not strictly increasing"
+                else
+                    let siblings =
+                        match tree.Children |> Map.tryFind chunk.Parent with
+                        | Some ids -> ids
+                        | None -> []
+                    if chunk.AuthoredIndex <> List.length siblings then
+                        Error "restore: authored index inconsistent with sibling order"
+                    else
+                        go
+                            { ById = tree.ById |> Map.add chunk.Id chunk
+                              Children =
+                                tree.Children
+                                |> Map.add chunk.Parent (siblings @ [ chunk.Id ])
+                              NextCaptureSeq = chunk.CaptureSeq + 1 }
+                            rest
+        go empty chunks
