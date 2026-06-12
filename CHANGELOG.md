@@ -15863,6 +15863,24 @@ ring) follow.
   low-and-long failure, and under-speech gains. Pure model
   only — the renderer lands next.
 
+### Cycle 53 ADR-0012 S4 (2026-06-12): spatial renderer + host wiring + closure
+
+- **Added**: `src/Engine.Audio` — `SpatialPlayer` renders a
+  `SpatialCue.Cue` as a stereo-panned sine tone (NAudio
+  `PanningSampleProvider`, constant-power pan; per-play
+  `WasapiOut` + cached `MMDeviceEnumerator` + error-swallowing,
+  the battle-tested `Terminal.Audio.EarconPlayer` shape). The
+  host subscribes it as the bus's **second consumer** — every
+  event renders its stage signature in parallel with speech —
+  and navigation verbs play direction-coded cues before the
+  spoken read.
+- **Changed (docs)**: `ENGINE-PHASE0.md` gains the `w` key, the
+  semantic-outline and spatial-stage sections, and acceptance
+  steps 8–9 (outline/orientation + by-ear cue identification);
+  `P0-ENGINE-1` matrix row extended; ADR 0012 status →
+  Implemented & CI-green; ARCHITECTURE / SESSION-HANDOFF /
+  CLAUDE.md updated.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now

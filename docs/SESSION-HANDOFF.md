@@ -39,6 +39,19 @@ and serves the decision-trail role this file used to overload.
 > Nothing existing deleted or modified — the WPF app keeps
 > shipping; the §4.2 freeze on terminal-scraping heuristics
 > stands.
+> **2026-06-12 addendum — ADR 0012 SHIPPED on top (#456–#461,
+> CI-green):** S1 heading-scoped semantic outline at ingest
+> (top-level nav = section-to-section; descend enters a
+> section; headings announce size) · S2 positional orientation
+> ("N of M" on moves + the `w` where-verb breadcrumb) · S3
+> deterministic spatial signatures for every universal-event-
+> bus event (stage layout encodes the attention contract;
+> per-ChunkKind pitch identity; direction-coded nav cues) ·
+> S4 `Engine.Audio` stereo renderer (NAudio, per-play
+> WasapiOut) · S5 attention-layer audit fixes (user reads
+> supersede stale foreground; stop clears the queue; capped
+> reads with honest truncation). Dogfood walk extended
+> (ENGINE-PHASE0 steps 8–9).
 > **NEXT (the only open Phase 0 item): the maintainer's local
 > dogfood on the self-voicing channel** — install .NET 9 SDK +
 > Claude Code CLI locally, `dotnet run --project

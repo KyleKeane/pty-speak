@@ -22,6 +22,7 @@
     <ProjectReference Include="..\Engine.Core\Engine.Core.fsproj" />
     <ProjectReference Include="..\Engine.Participants\Engine.Participants.fsproj" />
     <ProjectReference Include="..\Engine.Voice\Engine.Voice.fsproj" />
+    <ProjectReference Include="..\Engine.Audio\Engine.Audio.fsproj" />
   </ItemGroup>
 
 </Project>

@@ -1078,7 +1078,13 @@ points at the cycle headline.
   · `ISpeechSink`), `Engine.Participants` (CLI runner),
   `Engine.Voice` (SAPI sink), `Engine.Host` (console host).
   Nothing deleted; WPF app untouched; §4.2 freeze stands;
-  portability-lint extended to Engine.Core.
+  portability-lint extended to Engine.Core. **Continued
+  2026-06-12 (#456–#461): ADR 0012 shipped CI-green** —
+  S1 heading-scoped semantic outline · S2 "N of M" +
+  `w` where-verb breadcrumb · S3 spatial signatures for
+  every bus event (per-kind pitch, attention-contract stage
+  layout) · S4 `Engine.Audio` stereo renderer · S5
+  attention-layer audit fixes.
 - **Next** = **the Phase 0 LOCAL DOGFOOD on the maintainer's
   machine** — run instructions + acceptance walk in
   [`docs/ENGINE-PHASE0.md`](docs/ENGINE-PHASE0.md) (matrix row
