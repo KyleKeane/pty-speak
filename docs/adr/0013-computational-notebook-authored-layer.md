@@ -133,3 +133,10 @@ other chunk kind it explains itself instead of guessing.
 - 2026-06-12: authored; implementation lands in this cycle
   (serde → auto-save/restore → notebook model → host mode →
   export → rerun), each its own PR.
+- 2026-06-12 (same session): **Implemented & CI-green** —
+  #464 notebook model · #466 session serde + validated
+  restore · #468 host integration (mode, editor verbs,
+  export, rerun, auto-save/`o` restore) · #470 notebook
+  serde + restore (closing the N4 notebook-persistence gap
+  found in audit). The extended `P0-ENGINE-1` walk (steps
+  10–11) is the ratification gate.
