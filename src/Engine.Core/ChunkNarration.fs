@@ -61,3 +61,24 @@ module ChunkNarration =
             sprintf "Agent error. %s" chunk.Text
         | Chunk.SystemNote ->
             chunk.Text
+
+    /// ADR 0012 S5 — `describe` bounded for navigation reads:
+    /// a long body (a big code block, a wall of tool output) is
+    /// cut at `maxChars` with an honest marker telling the
+    /// listener how much remains and how to hear it all. The
+    /// structure prefix always survives — the cut applies to
+    /// the rendered string, and kinds put structure first.
+    let describeCapped
+            (maxChars: int)
+            (tree: ChunkTree.Tree)
+            (chunk: Chunk.Chunk)
+            : string =
+        let full = describe tree chunk
+        if full.Length <= maxChars then
+            full
+        else
+            let remaining = full.Length - maxChars
+            sprintf
+                "%s… Truncated; %d more characters — press r to hear all."
+                (full.Substring(0, maxChars))
+                remaining
