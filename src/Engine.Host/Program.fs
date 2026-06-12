@@ -46,6 +46,8 @@ let main _argv =
     let configPath = Path.Combine(dataRoot, "engine.toml")
     let latestSessionPath =
         Path.Combine(sessionsDir, "session-latest.jsonl")
+    let latestNotebookPath =
+        Path.Combine(sessionsDir, "notebook-latest.jsonl")
     let runStamp = DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss")
 
     // --- config + keymap (ADR 0014 C1/C2) ------------------------------
@@ -181,6 +183,13 @@ let main _argv =
                         sprintf "session-%s.jsonl" runStamp),
                     text)
                 File.WriteAllText(latestSessionPath, text)
+                // The notebook persists beside the session
+                // (ADR 0013 N4) — references stay valid because
+                // the session file carries every chunk.
+                let notebookText =
+                    lock gate (fun () ->
+                        NotebookSerde.toJsonl state.Notebook)
+                File.WriteAllText(latestNotebookPath, notebookText)
                 if announce then
                     speakNow (
                         sprintf "Saved, %d chunks."
@@ -189,6 +198,21 @@ let main _argv =
                 diag.Record "error" (sprintf "save failed: %s" ex.Message)
                 if announce then
                     speakNow "Save failed; press d for details."
+
+    // Helpers extracted so the restore match arms stay single
+    // expressions (the sequence-in-match-arm gotcha).
+    let applyRestoredNotebook (notebook: Notebook.Notebook) : string =
+        lock gate (fun () ->
+            state.Notebook <- notebook
+            state.NotebookIndex <-
+                min state.NotebookIndex (Notebook.count notebook - 1))
+        if Notebook.count notebook > 0 then
+            sprintf " Notebook restored, %d cells." (Notebook.count notebook)
+        else ""
+
+    let notebookRestoreFailure (detail: string) : string =
+        diag.Record "error" (sprintf "notebook restore: %s" detail)
+        " The notebook file could not be read; starting with an empty notebook."
 
     let openLastSession () =
         if not (File.Exists latestSessionPath) then
@@ -209,6 +233,15 @@ let main _argv =
                 diag.Record "error" (sprintf "session restore: %s" e)
                 speakNow (sprintf "Could not open the last session: %s" e)
             | Ok (file, tree) ->
+                let notebookNote =
+                    if File.Exists latestNotebookPath then
+                        try
+                            match NotebookSerde.parseJsonl
+                                      (File.ReadAllText latestNotebookPath) with
+                            | Ok notebook -> applyRestoredNotebook notebook
+                            | Error e -> notebookRestoreFailure e
+                        with ex -> notebookRestoreFailure ex.Message
+                    else ""
                 lock gate (fun () ->
                     state.Session <-
                         { Tree = tree
@@ -218,9 +251,10 @@ let main _argv =
                           InFlightCount = 0 }
                     state.Nav <- Navigator.initial)
                 speakNow (
-                    sprintf
+                    (sprintf
                         "Session restored, %d chunks. Press g to jump to the latest response."
                         (ChunkTree.count tree))
+                    + notebookNote)
 
     // --- participant turns ------------------------------------------------
     let publishAll (events: EngineEvent list) =

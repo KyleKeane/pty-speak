@@ -113,6 +113,7 @@
     <Compile Include="KeyMapTests.fs" />
     <Compile Include="ChunkSerdeTests.fs" />
     <Compile Include="EnginePropertyTests.fs" />
+    <Compile Include="NotebookSerdeTests.fs" />
     <Compile Include="ClaudeCliTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

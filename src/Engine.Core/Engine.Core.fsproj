@@ -86,6 +86,7 @@
       chunks in capture order; tolerant typed-error reader.
     -->
     <Compile Include="ChunkSerde.fs" />
+    <Compile Include="NotebookSerde.fs" />
   </ItemGroup>
 
   <ItemGroup>
