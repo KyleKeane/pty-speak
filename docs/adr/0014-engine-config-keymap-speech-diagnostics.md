@@ -122,3 +122,13 @@ keystroke, not a config edit.
 - 2026-06-12: authored; implementation lands in this cycle
   (config → diagnostics → keymap → speech controls → host
   integration), each its own PR.
+- 2026-06-12 (same session): **Implemented & CI-green** —
+  #463 engine.toml + diagnostics ring · #465 keymap · #467
+  `SetRate` + voice selection · #468 host integration · #471
+  exploration verbs (find / structure summary / digit
+  direct-address / hardwired Escape stop) on the same table.
+  One CI failure in the whole cycle (#471 first run): a test
+  fixture rebinding onto the newly-taken `z` — the conflict
+  checker working as designed; fixture moved to a free key.
+  The extended `P0-ENGINE-1` walk (step 12) is the
+  ratification gate.

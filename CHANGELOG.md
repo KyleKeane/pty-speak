@@ -16030,6 +16030,27 @@ ring) follow.
   alias — silence survives any remapping. Tests pin all
   three incl. wrap-around, no-match edges, and singulars.
 
+### Cycle 54 docs corpus + closure (2026-06-12)
+
+- **Added (docs)**: the engine documentation corpus under
+  [`docs/engine/`](docs/engine/) — `USER-GUIDE` (new-user
+  onboarding), `WORKFLOWS` (investigation loop / experiment
+  loop / narrative building / domain flow / triage /
+  listening posture), `KEYBOARD-REFERENCE` (both modes +
+  rebinding rules, mirroring the KeyMap table),
+  `CONFIGURATION` (every key + the degradation contract),
+  `TROUBLESHOOTING` (everything diagnosable by ear),
+  `DEVELOPMENT-GUIDE` (worked recipes: add a verb / chunk
+  kind / participant / bus consumer / config key; field
+  debugging; release checklist), and the eleven-chapter
+  internals `TEXTBOOK` (00 overview → 10 host). *(Process
+  note: the corpus rode into main with #470's commit rather
+  than its own PRs — an over-broad `git add -A`; content
+  reviewed and brought current in #472/#473.)*
+- **Changed (docs)**: ADRs 0013/0014 → Implemented &
+  CI-green with per-PR ship notes; `ENGINE-PHASE0.md` +
+  `P0-ENGINE-1` extended to acceptance steps 10–12.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
