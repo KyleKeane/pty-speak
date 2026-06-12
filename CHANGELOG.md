@@ -15832,6 +15832,18 @@ ring) follow.
   `SemanticOutlineTests` pin the nesting law incl. skipped
   levels, scope-closing, and an end-to-end markdown outline.
 
+### Cycle 53 ADR-0012 S2 (2026-06-12): positional orientation + where-verb
+
+- **Added**: `ChunkNarration.positionOf` / `describeAt` — every
+  navigation move now ends with its sibling position ("…, 3 of
+  5", the screen-reader positional convention); `r` stays pure
+  content. `ChunkNarration.locate` — the new **where-verb**
+  (`w` in the host): the focused chunk's kind + position, the
+  ancestor trail innermost-first ("inside section Setup, inside
+  your request: …"), and the depth — the spec §10 orientation
+  surface at chunk scale, computed from the tree so it cannot
+  drift. Help text + key map updated.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
