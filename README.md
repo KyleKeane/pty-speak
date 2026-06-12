@@ -176,10 +176,17 @@ shortcuts for the four most common audiences.
 - [`docs/PROJECT-PLAN-2026-05-12.md`](docs/PROJECT-PLAN-2026-05-12.md) — strategic plan
 - [`spec/tech-plan.md`](spec/tech-plan.md) — stage-by-stage spec
 
-**If you're running the Phase 0 interaction engine (re-launch path):**
-- [`docs/RELAUNCH-SPEC.md`](docs/RELAUNCH-SPEC.md) — the strategic target (audio-first multi-agent workspace)
-- [`docs/adr/0011-phase0-interaction-engine-bootstrap.md`](docs/adr/0011-phase0-interaction-engine-bootstrap.md) — Phase 0 implementation decisions
-- [`docs/ENGINE-PHASE0.md`](docs/ENGINE-PHASE0.md) — build, run, keys, and the acceptance walk
+**If you're using the interaction engine (the audio-only computational notebook):**
+- [`docs/engine/USER-GUIDE.md`](docs/engine/USER-GUIDE.md) — a brand-new user's first sessions
+- [`docs/engine/WORKFLOWS.md`](docs/engine/WORKFLOWS.md) — recipes for computational exploration
+- [`docs/engine/KEYBOARD-REFERENCE.md`](docs/engine/KEYBOARD-REFERENCE.md) — every key, both modes, rebinding
+- [`docs/engine/CONFIGURATION.md`](docs/engine/CONFIGURATION.md) + [`docs/engine/TROUBLESHOOTING.md`](docs/engine/TROUBLESHOOTING.md)
+- [`docs/ENGINE-PHASE0.md`](docs/ENGINE-PHASE0.md) — build, run, and the maintainer acceptance walk
+
+**If you're developing the interaction engine:**
+- [`docs/engine/DEVELOPMENT-GUIDE.md`](docs/engine/DEVELOPMENT-GUIDE.md) — worked recipes for every change class
+- [`docs/engine/TEXTBOOK-00-OVERVIEW.md`](docs/engine/TEXTBOOK-00-OVERVIEW.md) — the 11-chapter internals textbook
+- [`docs/RELAUNCH-SPEC.md`](docs/RELAUNCH-SPEC.md) + ADRs 0011–0014 — the target and the decisions
 
 **If you're the maintainer cutting a release:**
 - [`docs/RELEASE-PROCESS.md`](docs/RELEASE-PROCESS.md) — Velopack release flow
