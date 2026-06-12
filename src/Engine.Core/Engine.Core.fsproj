@@ -81,6 +81,11 @@
       dispatch / conflict checks / generated help / overrides.
     -->
     <Compile Include="KeyMap.fs" />
+    <!--
+      ADR 0013 N4 — session JSONL (schema v1): meta line +
+      chunks in capture order; tolerant typed-error reader.
+    -->
+    <Compile Include="ChunkSerde.fs" />
   </ItemGroup>
 
   <ItemGroup>
