@@ -15899,6 +15899,20 @@ ring) follow.
   the ear-first diagnostics path (spoken summary + dump file +
   session event log) (C4).
 
+### Cycle 54 PR-2 (2026-06-12): engine.toml + diagnostics ring
+
+- **Added**: `Engine.Core/EngineConfig.fs` — `engine.toml`
+  parse (ADR 0014 C1): participant executable, speech
+  rate/voice, narration cap, cue enable/gain, single-char key
+  overrides; schema_version gate; the warn-and-default
+  discipline (no input can crash or silently change
+  behaviour). `Engine.Core/EngineDiagnostics.fs` — the
+  bounded thread-safe ring (lifetime counts, last-error
+  tracking, speakable `Summary`, grep-friendly `Dump`,
+  `describeEvent` bus rendering with clipped bodies).
+  Tests pin both incl. forward-compatible unknown-key
+  silence and ring eviction-vs-lifetime-count honesty.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
