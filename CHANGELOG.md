@@ -15985,6 +15985,20 @@ ring) follow.
   previous-session offer; `t`/`e` level jumps and `y` rerun
   (of a focused request, anchored where it was) wired.
 
+### Cycle 54 PR-8 (2026-06-12): engine property suite
+
+- **Added**: `EnginePropertyTests` — FsCheck laws over
+  arbitrary inputs: the OUTLINE only re-parents (flattening
+  the nested forest reproduces the input's exact kind/text
+  sequence) and obeys the scope law (no absorbable content
+  after a heading at its own level); the ATTENTION queue
+  preserves every foreground in order, never lets ambient
+  precede foreground, and holds at most one (the newest)
+  ambient per key; the INGEST fold never throws on arbitrary
+  event sequences, the tree grows by exactly the announced
+  seal count, and tree capture order equals seal-announcement
+  order.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
