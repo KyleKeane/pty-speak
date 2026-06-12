@@ -65,11 +65,18 @@
       after it.
     -->
     <Compile Include="SpatialCue.fs" />
+    <!--
+      ADR 0014 C1/C4 — engine.toml (Tomlyn, the Terminal.Core
+      Config pattern) + the ear-first diagnostics ring.
+    -->
+    <Compile Include="EngineConfig.fs" />
+    <Compile Include="EngineDiagnostics.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="FSharp.Core" />
     <PackageReference Include="Markdig" />
+    <PackageReference Include="Tomlyn" />
   </ItemGroup>
 
 </Project>
