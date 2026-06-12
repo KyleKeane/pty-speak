@@ -140,3 +140,8 @@ open decision 8 evolves.
 - 2026-06-11: authored; implementation lands in the same
   session (audit fixes → outline → orientation → cues →
   renderer + host wiring → docs).
+- 2026-06-12: **Implemented & CI-green** — #457 S5 audit
+  fixes · #458 S1 outline · #459 S2 orientation · #460 S3
+  cue model · #461 S4 renderer + host wiring + docs. The
+  `P0-ENGINE-1` dogfood walk (steps 8–9) is the ratification
+  gate.

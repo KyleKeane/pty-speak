@@ -117,6 +117,16 @@ let main _argv =
         | None -> ())
     |> ignore
 
+    // --- bus → spatial stage (ADR 0012 S3/S4) -------------------------
+    // The second universal-event-bus consumer: every event
+    // renders as its deterministic stereo-stage signature, in
+    // parallel with (never gating) speech.
+    bus.Subscribe(fun ev ->
+        match SpatialCue.forEvent ev with
+        | Some cue -> Engine.Audio.SpatialPlayer.play cue
+        | None -> ())
+    |> ignore
+
     // --- participant turn -------------------------------------------
     let publishAll (events: EngineEvent list) =
         events |> List.iter (fun e -> bus.Publish e)
@@ -185,12 +195,21 @@ let main _argv =
             speakNow
                 "Nothing is focused yet. Press g to jump to the latest response."
 
-    let navigate (verb: Navigator.State -> ChunkTree.Tree -> Navigator.State * Navigator.Move) =
+    let navigate
+            (direction: SpatialCue.NavDirection)
+            (verb: Navigator.State -> ChunkTree.Tree -> Navigator.State * Navigator.Move) =
         let move =
             lock gate (fun () ->
                 let nav', move = verb state.Nav state.Session.Tree
                 state.Nav <- nav'
                 move)
+        // Direction-coded cue first (instant, non-verbal),
+        // then the spoken read (ADR 0012 S3).
+        let moved =
+            match move with
+            | Navigator.Moved _ -> true
+            | _ -> false
+        Engine.Audio.SpatialPlayer.play (SpatialCue.forNav direction moved)
         narrateMove move
 
     /// Returns true when a turn was actually started — the
@@ -237,14 +256,19 @@ let main _argv =
                         state.Nav <- Navigator.pushAnchor state.Nav)
             | None ->
                 speakNow "Focus a chunk first, then press b to branch from it."
-        | ConsoleKey.A -> navigate Navigator.returnToAnchor
+        | ConsoleKey.A ->
+            navigate SpatialCue.ReturnToAnchor Navigator.returnToAnchor
         | ConsoleKey.G ->
             let latest = lock gate (fun () -> state.Session.LatestResponseStart)
-            navigate (Navigator.jumpToLatestResponse latest)
-        | ConsoleKey.J | ConsoleKey.DownArrow -> navigate Navigator.next
-        | ConsoleKey.K | ConsoleKey.UpArrow -> navigate Navigator.previous
-        | ConsoleKey.L | ConsoleKey.RightArrow -> navigate Navigator.descend
-        | ConsoleKey.H | ConsoleKey.LeftArrow -> navigate Navigator.ascend
+            navigate SpatialCue.Jump (Navigator.jumpToLatestResponse latest)
+        | ConsoleKey.J | ConsoleKey.DownArrow ->
+            navigate SpatialCue.Next Navigator.next
+        | ConsoleKey.K | ConsoleKey.UpArrow ->
+            navigate SpatialCue.Previous Navigator.previous
+        | ConsoleKey.L | ConsoleKey.RightArrow ->
+            navigate SpatialCue.Descend Navigator.descend
+        | ConsoleKey.H | ConsoleKey.LeftArrow ->
+            navigate SpatialCue.Ascend Navigator.ascend
         | ConsoleKey.R ->
             let chunk =
                 lock gate (fun () ->

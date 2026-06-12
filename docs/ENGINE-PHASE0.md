@@ -63,10 +63,40 @@ debugging mirror only — audio is the product surface).
 | `k` / Up | Previous chunk |
 | `l` / Right | Descend into the chunk's children |
 | `h` / Left | Ascend to the parent |
-| `r` | Re-narrate the focused chunk |
-| `s` | Stop speech |
+| `r` | Re-narrate the focused chunk (full body — navigation reads are capped at 600 chars with an honest "Truncated" marker) |
+| `w` | Where am I — kind + position + ancestor trail + depth (ADR 0012 S2) |
+| `s` | Stop speech (cancels AND clears everything queued) |
 | `?` | Speak the key list |
 | `q` | Quit |
+
+## The semantic outline (ADR 0012 S1)
+
+Responses are no longer flat: a heading absorbs its section's
+content as children, so the tree carries the document's real
+outline. Practically: after `g`, `j`/`k` step **section to
+section** (headings announce their size — "Heading level 2:
+Setup. 4 items inside."), `l` enters the section you're on,
+and every move ends with its position ("…, 2 of 5").
+
+## The spatial stage (ADR 0012 S3/S4)
+
+Every universal-event-bus event also renders as a short
+stereo-positioned tone (best on headphones; speakers work).
+The stage layout encodes the attention contract by position:
+
+- **Center** — the narrative thread: your request landing
+  (660 Hz blip), response complete (bright 880 Hz), response
+  failed (low 220 Hz, longer).
+- **Near right** — the content trickle: one soft tick per
+  sealed chunk, **pitch identifies the kind** (headings ring
+  high B5, paragraphs C5, code F5, tool errors low D#4…).
+- **Right** — turn progress: a rising pitch series as the
+  count grows.
+- **Far left / left** — lifecycle (session start) /
+  diagnostic notes.
+- **Navigation** — a crisp tick panned toward the movement
+  (next right, previous left; descend low, ascend high); a
+  refused move (an edge) rings dull on the side you bumped.
 
 ## The attention contract, audible
 
@@ -105,6 +135,19 @@ Run on the local machine, judged on the self-voicing channel
    utterances, interrupt is immediate. Note SAPI voice quality
    itself is the E7 bootstrap tradeoff — judge *reliability*
    here; voice upgrade is a sink swap later.
+8. **Outline + orientation (ADR 0012 S1/S2):** on a response
+   with headings, confirm `j`/`k` at the top level move
+   section-to-section, headings announce "N items inside",
+   `l` enters the section, every move ends "…, N of M", and
+   `w` speaks a correct breadcrumb (kind, position, ancestor
+   trail, depth) from anywhere in the tree.
+9. **The spatial stage (ADR 0012 S3/S4), on headphones:**
+   during a turn, confirm the seal ticks sit near right and
+   differ in pitch by content kind; progress sits right and
+   rises; completion is a bright center tone; nav ticks pan
+   toward the movement and an edge rings dull on the bumped
+   side. The check: with speech stopped (`s`), navigate and
+   tell next from previous from edge **by ear alone**.
 
 Record the outcome in
 [`docs/ACCESSIBILITY-TESTING.md`](ACCESSIBILITY-TESTING.md)
