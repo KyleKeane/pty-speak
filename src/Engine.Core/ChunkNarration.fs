@@ -158,6 +158,43 @@ module ChunkNarration =
             inside
             (List.length ancestors + 1)
 
+    /// The structure below the focused chunk as counts by kind
+    /// — data at hand to decide the next move without reading
+    /// any of it. Direct children only (descend to drill).
+    let summarizeChildren
+            (tree: ChunkTree.Tree)
+            (chunk: Chunk.Chunk)
+            : string =
+        let children = ChunkTree.children (Some chunk.Id) tree
+        if List.isEmpty children then
+            "Nothing inside."
+        else
+            let pluralLabel (kind: Chunk.ChunkKind) : string =
+                match kind with
+                | Chunk.Heading _ -> "sections"
+                | Chunk.Paragraph -> "paragraphs"
+                | Chunk.ListBlock _ -> "lists"
+                | Chunk.ListItem -> "list items"
+                | Chunk.CodeBlock _ -> "code blocks"
+                | Chunk.BlockQuote -> "quotes"
+                | Chunk.ThematicBreak -> "separators"
+                | Chunk.UserRequest -> "requests"
+                | Chunk.ToolUse _ -> "tool calls"
+                | Chunk.ToolResult _ -> "tool results"
+                | Chunk.AgentError -> "agent errors"
+                | Chunk.SystemNote -> "notes"
+            let part (label: string, group: Chunk.Chunk list) =
+                let n = List.length group
+                let word =
+                    if n = 1 then label.TrimEnd('s') else label
+                sprintf "%d %s" n word
+            let counts =
+                children
+                |> List.groupBy (fun c -> pluralLabel c.Kind)
+                |> List.map part
+                |> String.concat ", "
+            sprintf "Contains %s." counts
+
     /// ADR 0012 S5 — `describe` bounded for navigation reads:
     /// a long body (a big code block, a wall of tool output) is
     /// cut at `maxChars` with an honest marker telling the

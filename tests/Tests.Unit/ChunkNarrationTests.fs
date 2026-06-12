@@ -114,6 +114,21 @@ let ``the structure prefix survives the cut`` () =
         describeCappedSolo 80 (CodeBlock (Some "fsharp")) longCode
     Assert.StartsWith("Code block, fsharp, ", rendered)
 
+[<Fact>]
+let ``summarizeChildren counts kinds with honest singulars`` () =
+    let h, tree = ok (ChunkTree.append None (Heading 1) "Plan" ChunkTree.empty)
+    let _, tree = ok (ChunkTree.append (Some h.Id) Paragraph "a" tree)
+    let _, tree = ok (ChunkTree.append (Some h.Id) Paragraph "b" tree)
+    let _, tree = ok (ChunkTree.append (Some h.Id) (CodeBlock None) "x" tree)
+    Assert.Equal(
+        "Contains 2 paragraphs, 1 code block.",
+        ChunkNarration.summarizeChildren tree h)
+
+[<Fact>]
+let ``summarizeChildren on a leaf says nothing inside`` () =
+    let p, tree = ok (ChunkTree.append None Paragraph "leaf" ChunkTree.empty)
+    Assert.Equal("Nothing inside.", ChunkNarration.summarizeChildren tree p)
+
 // --- ADR 0012 S2 — positional orientation ---------------------------
 
 /// req ── [p1; heading ── [inner]; p2]

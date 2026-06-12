@@ -150,6 +150,39 @@ let ``first and last sibling jump within the level`` () =
     movedTo f.P1.Id m3
 
 [<Fact>]
+let ``nth sibling addresses the level directly and edges honestly`` () =
+    let f = fixture ()
+    let s0, _ = Navigator.focus f.P1.Id Navigator.initial f.Tree
+    let s1, m1 = Navigator.nthSibling 3 s0 f.Tree
+    movedTo f.P2.Id m1
+    let _, m2 = Navigator.nthSibling 9 s1 f.Tree
+    match m2 with
+    | Edge text -> Assert.Contains("9", text)
+    | other -> failwithf "expected Edge, got %A" other
+
+[<Fact>]
+let ``findNext searches forward case-insensitively and wraps`` () =
+    let f = fixture ()
+    // Focus the last paragraph; "ALPHA" lives earlier (item1) —
+    // the search must wrap and still find it.
+    let s0, _ = Navigator.focus f.P2.Id Navigator.initial f.Tree
+    let s1, m1 = Navigator.findNext "ALPHA" s0 f.Tree
+    movedTo f.Item1.Id m1
+    // No match: an Edge naming the query, focus unchanged.
+    let s2, m2 = Navigator.findNext "zebra" s1 f.Tree
+    match m2 with
+    | Edge text ->
+        Assert.Contains("zebra", text)
+        Assert.Equal(Some f.Item1.Id, s2.Current)
+    | other -> failwithf "expected Edge, got %A" other
+
+[<Fact>]
+let ``findNext with no focus starts from the beginning`` () =
+    let f = fixture ()
+    let _, move = Navigator.findNext "first" Navigator.initial f.Tree
+    movedTo f.P1.Id move
+
+[<Fact>]
 let ``anchors nest as a stack`` () =
     let f = fixture ()
     let s0, _ = Navigator.focus f.P1.Id Navigator.initial f.Tree
