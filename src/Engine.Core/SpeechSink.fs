@@ -16,6 +16,10 @@ type ISpeechSink =
     /// Stop all current and queued speech immediately (the
     /// user's interrupt verb — §7.1 "interruptible").
     abstract member CancelAll: unit -> unit
+    /// ADR 0014 C3 — set the speaking rate. Implementations
+    /// clamp to their engine's range (SAPI −10…+10); the live
+    /// rate keys are the highest-leverage tuning knob (§1.1).
+    abstract member SetRate: rate: int -> unit
     /// Fires when an utterance finishes (spoken to the end or
     /// cancelled); the host's drain trigger.
     abstract member UtteranceCompleted: IEvent<unit>

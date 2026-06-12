@@ -56,7 +56,7 @@ let main _argv =
           Speaking = false
           TurnInFlight = false }
     let bus = EngineBus()
-    use sink = new Engine.Voice.SapiSink()
+    use sink = new Engine.Voice.SapiSink(0, None)
     let speech = sink :> ISpeechSink
 
     let claudeConfig : ClaudeCli.Config =

@@ -138,6 +138,18 @@ let ``return with no anchor is an Edge`` () =
     | other -> failwithf "expected Edge, got %A" other
 
 [<Fact>]
+let ``first and last sibling jump within the level`` () =
+    let f = fixture ()
+    let s0, _ = Navigator.focus f.List.Id Navigator.initial f.Tree
+    let s1, m1 = Navigator.lastSibling s0 f.Tree
+    movedTo f.P2.Id m1
+    let s2, m2 = Navigator.firstSibling s1 f.Tree
+    movedTo f.P1.Id m2
+    // Already first: re-focuses self (a re-announce), not an edge.
+    let _, m3 = Navigator.firstSibling s2 f.Tree
+    movedTo f.P1.Id m3
+
+[<Fact>]
 let ``anchors nest as a stack`` () =
     let f = fixture ()
     let s0, _ = Navigator.focus f.P1.Id Navigator.initial f.Tree

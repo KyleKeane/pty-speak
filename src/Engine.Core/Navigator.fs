@@ -81,6 +81,31 @@ module Navigator =
             state
             tree
 
+    /// First sibling at the focused chunk's level (re-focusing
+    /// self when already first — a re-announce, by design).
+    let firstSibling (state: State) (tree: ChunkTree.Tree) : State * Move =
+        moveVia
+            (fun id t ->
+                match ChunkTree.tryFind id t with
+                | None -> None
+                | Some chunk ->
+                    ChunkTree.children chunk.Parent t |> List.tryHead)
+            "nothing at this level"
+            state
+            tree
+
+    /// Last sibling at the focused chunk's level.
+    let lastSibling (state: State) (tree: ChunkTree.Tree) : State * Move =
+        moveVia
+            (fun id t ->
+                match ChunkTree.tryFind id t with
+                | None -> None
+                | Some chunk ->
+                    ChunkTree.children chunk.Parent t |> List.tryLast)
+            "nothing at this level"
+            state
+            tree
+
     /// The focused chunk, for re-narration (§6.2).
     let current (state: State) (tree: ChunkTree.Tree) : Chunk.Chunk option =
         state.Current
