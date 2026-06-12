@@ -58,6 +58,13 @@
     -->
     <Compile Include="Attention.fs" />
     <Compile Include="SpeechSink.fs" />
+    <!--
+      ADR 0012 S3 — deterministic spatial-audio signatures for
+      the universal event bus (pure cue model; renderers live
+      in Engine.Audio). Depends on EngineEvent, so it sits
+      after it.
+    -->
+    <Compile Include="SpatialCue.fs" />
   </ItemGroup>
 
   <ItemGroup>

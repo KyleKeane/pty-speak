@@ -106,6 +106,7 @@
     <Compile Include="NavigatorTests.fs" />
     <Compile Include="ChunkNarrationTests.fs" />
     <Compile Include="AttentionTests.fs" />
+    <Compile Include="SpatialCueTests.fs" />
     <Compile Include="ClaudeCliTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

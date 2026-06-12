@@ -15844,6 +15844,25 @@ ring) follow.
   surface at chunk scale, computed from the tree so it cannot
   drift. Help text + key map updated.
 
+### Cycle 53 ADR-0012 S3 (2026-06-12): spatial signatures for every bus event
+
+- **Added**: `Engine.Core/SpatialCue.fs` — every universal-
+  event-bus event maps to a deterministic stereo-stage cue
+  (`Pan` / `Pitch` / `DurationMs` / `Gain`). The stage layout
+  encodes the §7.3 attention contract by position: narrative
+  center (request 660 Hz, completion 880, failure 220 low+long);
+  content trickle near-right with a **unique pitch per
+  `ChunkKind`** (the ear hears WHAT kind of content sealed);
+  progress right with count-rising pitch (capped); lifecycle
+  far-left; notes left. Navigation cues are direction-coded
+  (next/previous pan toward the movement; descend low / ascend
+  high; an edge rings dull on the side of the refused move).
+  `SpatialCueTests` pin **uniqueness as a property** (pairwise
+  distinct family signatures; pairwise distinct kind pitches)
+  plus the stage layout, the rising progress series, the
+  low-and-long failure, and under-speech gains. Pure model
+  only — the renderer lands next.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
