@@ -71,7 +71,13 @@ items." and `l` walks into the items. Every move ends with
 its position — "…, 2 of 5" — so you always know where you are
 in the row, and `w` speaks the full breadcrumb: what you're
 on, its position, every ancestor, and the depth. `t` and `e`
-jump to the first and last item at the current level. You can
+jump to the first and last item at the current level; the
+digits `1`–`9` jump straight to the Nth item ("9 items
+inside"? press `4`); `z` answers "what's in here?" with
+counts ("Contains 2 paragraphs, 1 code block.") so you can
+decide before descending; and `f` finds text anywhere ahead
+of you, wrapping — press `f` then Enter to repeat the last
+search. You can
 never fall out of the content: at an edge the engine says so,
 plays a dull tone on the side you bumped, and stays put.
 

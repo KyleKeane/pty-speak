@@ -38,6 +38,9 @@ any remapping.
 | `e` | last item at this level | |
 | `r` | repeat in full | the uncapped read of the focused chunk |
 | `w` | where am I | kind, position, ancestor trail, depth |
+| `f` | find text from here | case-insensitive, forward with wrap; Enter alone repeats the last search |
+| `z` | what is inside | "Contains 2 paragraphs, 1 code block." — structure without content |
+| `1`–`9` | jump to the Nth item at this level | hardwired, like the arrows |
 | `p` | pin to the notebook | appends a live reference |
 | `y` | rerun the focused request | re-issues that request text as a new turn |
 | `n` | switch to the notebook | |
@@ -45,7 +48,7 @@ any remapping.
 | `o` | open the last saved session | restores tree + conversation continuity |
 | `d` | diagnostics | speaks the summary; writes + names the dump file |
 | `+` / `-` | speech rate up / down | SAPI −10…+10, confirmed aloud |
-| `s` | stop speech | cancels AND clears everything queued |
+| `s` / Escape | stop speech | cancels AND clears everything queued; Escape is hardwired |
 | `?` | speak the key list | generated from the table |
 | `q` | quit | |
 
@@ -75,7 +78,7 @@ Any verb can move to any single printable character via
 
 ```toml
 [keys]
-pin = "z"
+pin = "P"
 notebook_remove = "X"
 ```
 
@@ -88,7 +91,7 @@ Rules (all enforced, all spoken at startup if violated):
   conflict-free by construction.
 - A verb bound only in one mode may reuse a character that the
   other mode uses for something else (the modes never overlap).
-- Arrow keys cannot be unbound.
+- Arrow keys, the digits, and Escape cannot be unbound.
 
 ## Design notes (why these keys)
 

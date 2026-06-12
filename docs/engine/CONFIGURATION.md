@@ -58,7 +58,7 @@ for the verb names and the conflict rules.
 
 ```toml
 [keys]
-pin = "z"
+pin = "P"
 ```
 
 ## A complete example
@@ -81,7 +81,7 @@ enabled = true
 gain = 0.7
 
 [keys]
-pin = "z"
+pin = "P"
 rerun = "Y"
 ```
 
