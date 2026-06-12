@@ -15999,6 +15999,21 @@ ring) follow.
   seal count, and tree capture order equals seal-announcement
   order.
 
+### Cycle 54 PR-9 (2026-06-12): notebook persistence
+
+- **Added**: `Engine.Core/NotebookSerde.fs` — the authored
+  sequence as schema-v1 JSONL (pinned cells serialize their
+  chunk id ONLY — reference-not-copy survives the disk; the
+  session file carries the content). Tolerant typed-error
+  reader; round-trip + reference-semantics + schema-gate
+  tests. **Host**: every save now writes
+  `notebook-latest.jsonl` beside the session; `o` restores
+  the notebook with the session (cell count announced; a
+  corrupt notebook file degrades to an empty notebook with a
+  spoken note, never blocking the session restore). Closes
+  the ADR 0013 N4 gap found in audit — previously the
+  notebook was lost on restart.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
