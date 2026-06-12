@@ -77,3 +77,30 @@ let ``user request is labelled`` () =
 [<Fact>]
 let ``separator has a fixed word`` () =
     Assert.Equal("Separator.", describeSolo ThematicBreak "")
+
+// --- ADR 0012 S5 — capped narration ---------------------------------
+
+let private describeCappedSolo maxChars (kind: ChunkKind) (text: string) =
+    let chunk, tree = ok (ChunkTree.append None kind text ChunkTree.empty)
+    ChunkNarration.describeCapped maxChars tree chunk
+
+[<Fact>]
+let ``short bodies are not truncated`` () =
+    Assert.Equal(
+        "Plain words.",
+        describeCappedSolo 600 Paragraph "Plain words.")
+
+[<Fact>]
+let ``long bodies cut with an honest marker and remaining count`` () =
+    let longText = String.replicate 100 "abcdefghij" // 1000 chars
+    let rendered = describeCappedSolo 100 Paragraph longText
+    Assert.StartsWith(longText.Substring(0, 100), rendered)
+    Assert.Contains("Truncated; 900 more characters", rendered)
+    Assert.Contains("press r to hear all", rendered)
+
+[<Fact>]
+let ``the structure prefix survives the cut`` () =
+    let longCode = String.replicate 200 "let x = 1\n"
+    let rendered =
+        describeCappedSolo 80 (CodeBlock (Some "fsharp")) longCode
+    Assert.StartsWith("Code block, fsharp, ", rendered)

@@ -96,13 +96,17 @@ let main _argv =
             state.Queue <- Attention.enqueue utterance state.Queue)
         speakNext ()
 
-    /// A user-initiated read preempts whatever is being spoken:
-    /// cancel, then queue foreground. (Ambient still never
-    /// preempts — this is the user's own interrupt.)
+    /// A user-initiated read preempts whatever is being spoken
+    /// AND whatever narrative was queued (ADR 0012 S5): cancel
+    /// first, drop stale pending foreground, then queue this.
+    /// Ambient survives — awareness is not the user's target.
     let speakNow (text: string) =
-        lock gate (fun () ->
-            state.Queue <- Attention.enqueue (Attention.Foreground text) state.Queue)
         speech.CancelAll ()
+        lock gate (fun () ->
+            state.Queue <-
+                Attention.enqueue
+                    (Attention.Foreground text)
+                    (Attention.clearForeground state.Queue))
         speakNext ()
 
     // --- bus → attention --------------------------------------------
@@ -159,12 +163,19 @@ let main _argv =
         thread.Start()
 
     // --- navigation --------------------------------------------------
+    // Navigation reads are bounded (ADR 0012 S5); `r` reads
+    // the full body.
+    let moveReadCapChars = 600
+
     let narrateMove (move: Navigator.Move) =
         match move with
         | Navigator.Moved chunk ->
             let text =
                 lock gate (fun () ->
-                    ChunkNarration.describe state.Session.Tree chunk)
+                    ChunkNarration.describeCapped
+                        moveReadCapChars
+                        state.Session.Tree
+                        chunk)
             speakNow text
         | Navigator.Edge description ->
             speakNow description
@@ -241,7 +252,13 @@ let main _argv =
             match chunk with
             | Some text -> speakNow text
             | None -> speakNow "Nothing is focused."
-        | ConsoleKey.S -> speech.CancelAll ()
+        | ConsoleKey.S ->
+            // Stop means stop (ADR 0012 S5): silence the
+            // current utterance AND everything queued behind
+            // it — nothing may resume speaking after a stop.
+            lock gate (fun () ->
+                state.Queue <- Attention.clear state.Queue)
+            speech.CancelAll ()
         | _ when key.KeyChar = '?' -> speakNow helpText
         | _ -> ()
 

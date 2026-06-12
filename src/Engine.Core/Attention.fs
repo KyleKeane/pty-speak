@@ -65,6 +65,18 @@ module Attention =
             | (_, text) :: rest -> Some (text, { q with Amb = rest })
             | [] -> None
 
+    /// ADR 0012 S5 — drop pending foreground (ambient kept).
+    /// A user-initiated read supersedes stale queued narrative
+    /// (a queued "Response complete…" must not delay the chunk
+    /// the user just asked for).
+    let clearForeground (q: Queue) : Queue =
+        { q with Fg = [] }
+
+    /// ADR 0012 S5 — drop everything. The stop verb means
+    /// stop: nothing queued may resume speaking afterwards.
+    let clear (_q: Queue) : Queue =
+        empty
+
     /// The routing policy: engine event → utterance (or
     /// silence). Sealed chunks are deliberately NOT auto-spoken
     /// (§5.2 — the user navigates sealed content on demand; the

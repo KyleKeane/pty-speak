@@ -107,3 +107,24 @@ let ``notes are ambient`` () =
     match route (EngineNote "Unrecognized stream event type: x") with
     | Some (Ambient ("note", _)) -> ()
     | other -> failwithf "expected ambient note, got %A" other
+
+// --- ADR 0012 S5 audit fixes ----------------------------------------
+
+[<Fact>]
+let ``clearForeground drops pending narrative but keeps ambient`` () =
+    let q =
+        empty
+        |> enqueue (Foreground "stale completion")
+        |> enqueue (Ambient ("progress", "3 chunks so far."))
+        |> enqueue (Foreground "another stale")
+    Assert.Equal<string list>(
+        [ "3 chunks so far." ],
+        drain (clearForeground q))
+
+[<Fact>]
+let ``clear drops everything`` () =
+    let q =
+        empty
+        |> enqueue (Foreground "a")
+        |> enqueue (Ambient ("k", "b"))
+    Assert.True(isEmpty (clear q))

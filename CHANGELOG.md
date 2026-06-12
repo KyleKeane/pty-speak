@@ -15800,6 +15800,22 @@ ring) follow.
   `CYCLE-51-PLAYBOOK.md` path (rotted when the playbook moved
   to `docs/archive/cycle-closed/`).
 
+### Cycle 53 ADR-0012 S5 (2026-06-12): attention-layer audit fixes
+
+- **Fixed**: a user-initiated read (`speakNow`) now cancels
+  current speech FIRST and drops stale pending foreground
+  before queueing — a queued "Response complete…" no longer
+  delays the chunk the user just asked for (ambient survives).
+  New pure `Attention.clearForeground` / `Attention.clear`.
+- **Fixed**: the stop verb (`s`) now empties the whole queue as
+  well as cancelling — previously queued utterances resumed
+  speaking after a stop.
+- **Added**: `ChunkNarration.describeCapped` — navigation reads
+  are bounded (600 chars in the host) with an honest marker
+  ("Truncated; N more characters — press r to hear all."); `r`
+  reads the full body. The structure-first narration order
+  means the kind/label always survives the cut.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
