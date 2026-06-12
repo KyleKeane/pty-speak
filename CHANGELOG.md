@@ -15779,6 +15779,27 @@ ring) follow.
   (anchor = #454's squash) + the pending-tag push commands for
   the maintainer to sweep (sandbox cannot push tag refs).
 
+### Cycle 53 audit + ADR 0012 (2026-06-11): semantic outline + spatial signatures (decision record)
+
+- **Added (docs / decision record)**: [ADR 0012](docs/adr/0012-semantic-outline-and-spatial-event-signatures.md)
+  (Proposed) — S1 heading-scoped semantic outline at ingest
+  (recover the section structure the model already marks; ADR
+  0008 applied at section level); S2 positional orientation
+  ("N of M" on moves + a breadcrumb where-verb — the §10
+  orientation surface at chunk scale); S3 deterministic
+  spatial-audio signatures for every universal-event-bus event
+  (a stage layout encoding the §7.3 attention contract by
+  position; per-`ChunkKind` pitch identity, tested-unique); S4
+  an `Engine.Audio` stereo-pan renderer (HRTF = a later
+  renderer swap behind the same cue data); S5 attention-layer
+  audit corrections (user reads supersede stale foreground;
+  stop clears the queue; capped long-body narration with an
+  honest truncation marker).
+- **Fixed (docs)**: `docs/SESSION-HANDOFF.md` "Where to find
+  detail" still pointed at the pre-archive
+  `CYCLE-51-PLAYBOOK.md` path (rotted when the playbook moved
+  to `docs/archive/cycle-closed/`).
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
