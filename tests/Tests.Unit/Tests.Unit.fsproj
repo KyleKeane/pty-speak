@@ -112,6 +112,7 @@
     <Compile Include="NotebookTests.fs" />
     <Compile Include="KeyMapTests.fs" />
     <Compile Include="ChunkSerdeTests.fs" />
+    <Compile Include="EnginePropertyTests.fs" />
     <Compile Include="ClaudeCliTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
