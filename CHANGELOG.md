@@ -15955,6 +15955,16 @@ ring) follow.
   example-based AND property-based over arbitrary trees with
   all 14 chunk kinds; special characters covered.
 
+### Cycle 54 PR-6 (2026-06-12): speech controls + level-jump verbs
+
+- **Added**: `ISpeechSink.SetRate` (clamped) + `SapiSink`
+  rate/voice construction (ADR 0014 C3 — case-insensitive
+  substring voice match; a miss surfaces as a spoken note,
+  never a guess). `Navigator.firstSibling`/`lastSibling`
+  (the `t`/`e` level jumps; already-first re-announces by
+  design). Host integration of config/keymap/notebook/
+  persistence lands next.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
