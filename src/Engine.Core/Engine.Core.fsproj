@@ -76,6 +76,11 @@
       capture tree). Depends on ChunkNarration, so it sits last.
     -->
     <Compile Include="Notebook.fs" />
+    <!--
+      ADR 0014 C2 — the declarative keymap: one table, derived
+      dispatch / conflict checks / generated help / overrides.
+    -->
+    <Compile Include="KeyMap.fs" />
   </ItemGroup>
 
   <ItemGroup>
