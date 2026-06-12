@@ -14,7 +14,8 @@ module Engine.Host.Program
 //   g       jump to the start of the latest response
 //   j / ↓   next chunk        k / ↑   previous chunk
 //   l / →   descend into chunk  h / ←  ascend to parent
-//   r       re-narrate the focused chunk
+//   r       re-narrate the focused chunk (full body)
+//   w       where am I — breadcrumb + position + depth
 //   s       stop speech
 //   ?       speak the key list
 //   q       quit
@@ -43,7 +44,7 @@ type private HostState =
 let private helpText =
     "Keys: c compose. b branch at focus. a return to anchor. "
     + "g latest response. j next. k previous. l descend. "
-    + "h ascend. r repeat. s stop speech. q quit."
+    + "h ascend. r repeat. w where am I. s stop speech. q quit."
 
 [<EntryPoint>]
 let main _argv =
@@ -170,9 +171,10 @@ let main _argv =
     let narrateMove (move: Navigator.Move) =
         match move with
         | Navigator.Moved chunk ->
+            // ADR 0012 S2 — moves carry their position.
             let text =
                 lock gate (fun () ->
-                    ChunkNarration.describeCapped
+                    ChunkNarration.describeAt
                         moveReadCapChars
                         state.Session.Tree
                         chunk)
@@ -250,6 +252,17 @@ let main _argv =
                     |> Option.map (fun c ->
                         ChunkNarration.describe state.Session.Tree c))
             match chunk with
+            | Some text -> speakNow text
+            | None -> speakNow "Nothing is focused."
+        | ConsoleKey.W ->
+            // ADR 0012 S2 — the where-verb: breadcrumb +
+            // position + depth, from the tree (never drifts).
+            let located =
+                lock gate (fun () ->
+                    Navigator.current state.Nav state.Session.Tree
+                    |> Option.map (fun c ->
+                        ChunkNarration.locate state.Session.Tree c))
+            match located with
             | Some text -> speakNow text
             | None -> speakNow "Nothing is focused."
         | ConsoleKey.S ->

@@ -69,6 +69,95 @@ module ChunkNarration =
         | Chunk.SystemNote ->
             chunk.Text
 
+    /// ADR 0012 S2 — "N of M" among the chunk's siblings
+    /// (1-based; the screen-reader positional convention).
+    let positionOf
+            (tree: ChunkTree.Tree)
+            (chunk: Chunk.Chunk)
+            : int * int =
+        let siblings = ChunkTree.children chunk.Parent tree
+        let index =
+            siblings
+            |> List.tryFindIndex (fun c -> c.Id = chunk.Id)
+            |> Option.defaultValue 0
+        (index + 1, List.length siblings)
+
+    /// A short label for a chunk used in breadcrumb trails;
+    /// long texts are clipped — the trail is orientation, not
+    /// content.
+    let private trailLabel (chunk: Chunk.Chunk) : string =
+        let clip (text: string) =
+            if text.Length > 40 then text.Substring(0, 40) + "…"
+            else text
+        match chunk.Kind with
+        | Chunk.Heading _ -> sprintf "section %s" (clip chunk.Text)
+        | Chunk.UserRequest ->
+            sprintf "your request: %s" (clip chunk.Text)
+        | Chunk.ListBlock true -> "a numbered list"
+        | Chunk.ListBlock false -> "a bulleted list"
+        | Chunk.ListItem -> sprintf "list item %s" (clip chunk.Text)
+        | Chunk.ToolUse name -> sprintf "tool call %s" name
+        | Chunk.BlockQuote -> "a quote"
+        | Chunk.Paragraph -> "a paragraph"
+        | Chunk.CodeBlock _ -> "a code block"
+        | Chunk.ThematicBreak -> "a separator"
+        | Chunk.ToolResult _ -> "a tool result"
+        | Chunk.AgentError -> "an agent error"
+        | Chunk.SystemNote -> "a note"
+
+    /// The focused chunk's own short label (kind-first, no
+    /// body) for the where-verb.
+    let private selfLabel (chunk: Chunk.Chunk) : string =
+        let clip (text: string) =
+            if text.Length > 40 then text.Substring(0, 40) + "…"
+            else text
+        match chunk.Kind with
+        | Chunk.Heading level ->
+            sprintf "Heading level %d: %s" level (clip chunk.Text)
+        | Chunk.Paragraph -> "Paragraph"
+        | Chunk.ListBlock true -> "Numbered list"
+        | Chunk.ListBlock false -> "Bulleted list"
+        | Chunk.ListItem -> "List item"
+        | Chunk.CodeBlock (Some lang) -> sprintf "Code block, %s" lang
+        | Chunk.CodeBlock None -> "Code block"
+        | Chunk.BlockQuote -> "Quote"
+        | Chunk.ThematicBreak -> "Separator"
+        | Chunk.UserRequest -> "Your request"
+        | Chunk.ToolUse name -> sprintf "Tool call %s" name
+        | Chunk.ToolResult true -> "Tool error result"
+        | Chunk.ToolResult false -> "Tool result"
+        | Chunk.AgentError -> "Agent error"
+        | Chunk.SystemNote -> "Note"
+
+    /// ADR 0012 S2 — the where-verb: the focused chunk's kind
+    /// and position, then the ancestor trail innermost-first,
+    /// then the depth. The §10 orientation surface at chunk
+    /// scale — computed from the tree, so it can never drift.
+    let locate
+            (tree: ChunkTree.Tree)
+            (chunk: Chunk.Chunk)
+            : string =
+        let position, total = positionOf tree chunk
+        let rec trail (current: Chunk.Chunk) (acc: string list) =
+            match current.Parent with
+            | None -> acc
+            | Some parentId ->
+                match ChunkTree.tryFind parentId tree with
+                | None -> acc
+                | Some parent ->
+                    trail parent (acc @ [ trailLabel parent ])
+        let ancestors = trail chunk []
+        let inside =
+            if List.isEmpty ancestors then ""
+            else ", inside " + String.concat ", inside " ancestors
+        sprintf
+            "%s, %d of %d%s. Depth %d."
+            (selfLabel chunk)
+            position
+            total
+            inside
+            (List.length ancestors + 1)
+
     /// ADR 0012 S5 — `describe` bounded for navigation reads:
     /// a long body (a big code block, a wall of tool output) is
     /// cut at `maxChars` with an honest marker telling the
@@ -89,3 +178,18 @@ module ChunkNarration =
                 "%s… Truncated; %d more characters — press r to hear all."
                 (full.Substring(0, maxChars))
                 remaining
+
+    /// ADR 0012 S2 — the navigation read: bounded content plus
+    /// the positional suffix ("…, 3 of 5"). The re-narrate verb
+    /// uses plain `describe` (pure content, no position).
+    let describeAt
+            (maxChars: int)
+            (tree: ChunkTree.Tree)
+            (chunk: Chunk.Chunk)
+            : string =
+        let position, total = positionOf tree chunk
+        sprintf
+            "%s — %d of %d."
+            (describeCapped maxChars tree chunk)
+            position
+            total
