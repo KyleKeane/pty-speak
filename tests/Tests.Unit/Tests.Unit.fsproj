@@ -109,6 +109,7 @@
     <Compile Include="SpatialCueTests.fs" />
     <Compile Include="EngineConfigTests.fs" />
     <Compile Include="EngineDiagnosticsTests.fs" />
+    <Compile Include="NotebookTests.fs" />
     <Compile Include="ClaudeCliTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

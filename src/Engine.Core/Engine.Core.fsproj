@@ -71,6 +71,11 @@
     -->
     <Compile Include="EngineConfig.fs" />
     <Compile Include="EngineDiagnostics.fs" />
+    <!--
+      ADR 0013 N1/N3 — the authored layer (notebook over the
+      capture tree). Depends on ChunkNarration, so it sits last.
+    -->
+    <Compile Include="Notebook.fs" />
   </ItemGroup>
 
   <ItemGroup>

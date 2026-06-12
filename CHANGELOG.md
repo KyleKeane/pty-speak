@@ -15913,6 +15913,20 @@ ring) follow.
   Tests pin both incl. forward-compatible unknown-key
   silence and ring eviction-vs-lifetime-count honesty.
 
+### Cycle 54 PR-3 (2026-06-12): the notebook model (authored layer)
+
+- **Added**: `Engine.Core/Notebook.fs` — ADR 0013 N1/N3: cells
+  are pinned chunk REFERENCES (render through the live tree —
+  a pinned heading announces its live child count), authored
+  narrative, and section headers; pin / addNarrative /
+  addSection / moveUp / moveDown / removeAt, all pure and
+  total (out-of-range = honest no-op report — editing by ear
+  never throws); `describeCell` narration; `toMarkdown` export
+  (sections → `##`, code re-fenced with language, lists
+  re-rendered from the live tree, requests/tool calls
+  labelled) — **provably re-ingestable** by the engine's own
+  chunker (tested). `NotebookTests` pin all of it.
+
 ## [0.0.1-preview.18] — 2026-04-28
 
 First preview cut from the Stage-3b state of `main`. The window now
