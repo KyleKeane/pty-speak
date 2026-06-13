@@ -33,7 +33,7 @@
       markdown→HTML; no JS, no DOM. `ManualTestsHtml.fs` is the
       only consumer.
     -->
-    <PackageVersion Include="Markdig" Version="0.38.0" />
+    <PackageVersion Include="Markdig" Version="1.2.0" />
     <!--
       RELAUNCH-SPEC Phase 0 (ADR 0011 E7) — System.Speech is
       the Windows SAPI wrapper backing Engine.Voice's
