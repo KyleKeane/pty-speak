@@ -9,7 +9,7 @@
     <!-- Runtime / framework -->
     <PackageVersion Include="FSharp.Core" Version="9.0.100" />
     <PackageVersion Include="Velopack" Version="0.0.1298" />
-    <PackageVersion Include="NAudio" Version="2.2.1" />
+    <PackageVersion Include="NAudio" Version="2.3.0" />
     <!--
       Logging — first-party Microsoft abstractions. We implement
       our own ILoggerProvider in Terminal.Core/FileLogger.fs to
