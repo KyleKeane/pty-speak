@@ -82,7 +82,7 @@ jobs:
         # key. Bump v1 → v2 when we want to force-pull a new
         # vpk version.
         id: cache-vpk
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.dotnet/tools
           key: ${{ runner.os }}-dotnet-tools-vpk-v1
